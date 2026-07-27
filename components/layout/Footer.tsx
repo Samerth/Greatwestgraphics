@@ -22,28 +22,28 @@ export function Footer() {
         <FooterCol
           title="Shop"
           links={[
-            { label: "Apparel", href: "/products" },
-            { label: "Bags & Totes", href: "/products" },
-            { label: "Promo Items", href: "/products" },
-            { label: "Safety Products", href: "/products" },
+            { label: "Apparel", href: "/products?category=apparel" },
+            { label: "Bags & Totes", href: "/products?category=bags" },
+            { label: "Promo Items", href: "/products?category=promo" },
+            { label: "Safety Products", href: "/products?category=safety" },
           ]}
         />
         <FooterCol
           title="Services"
           links={[
-            { label: "Screen Printing", href: "#" },
-            { label: "Embroidery", href: "#" },
+            { label: "Screen Printing", href: "/quote?method=screen" },
+            { label: "Embroidery", href: "/quote?method=embroidery" },
             { label: "Design Your Own", href: "/design" },
-            { label: "Bulk Orders", href: "#" },
+            { label: "Bulk Orders", href: "/quote?type=bulk" },
           ]}
         />
         <FooterCol
           title="Support"
           links={[
-            { label: "Get a Quote", href: "/#quote" },
-            { label: "Art Guidelines", href: "#" },
-            { label: "Shipping", href: "#" },
-            { label: "Contact", href: "#" },
+            { label: "Get a Quote", href: "/quote" },
+            { label: "Art Guidelines", href: "/design#art-guidelines" },
+            { label: "Shipping", href: "/shipping" },
+            { label: "Contact", href: "/contact" },
           ]}
         />
       </Container>

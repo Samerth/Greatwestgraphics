@@ -16,7 +16,7 @@ export function CheckoutSummary({
 
   return (
     <div className="border border-border rounded-lg p-sp-4 bg-bg-raised">
-      <h2 className="font-display font-bold mb-1">Order Summary</h2>
+      <h2 className="font-display font-bold mb-1">Request Estimate</h2>
       <div className="text-[13px] text-text-tertiary mb-sp-3">{t.pieces} pieces</div>
 
       <div className="space-y-1 mb-sp-3">
@@ -40,10 +40,12 @@ export function CheckoutSummary({
       <Row label="Delivery" value={fee === 0 ? "Free" : money(fee)} />
       <Row label="Est. GST (5%)" value={money(t.gst)} />
       <div className="flex justify-between border-t border-border mt-1.5 pt-3.5 font-display font-bold text-lg">
-        <span>Total</span>
+        <span>Current estimate</span>
         <span className="text-accent">{money(t.total)}</span>
       </div>
-      <Row label="Due today (50% deposit)" value={money(t.deposit)} bold />
+      <p className="text-[12.5px] text-text-tertiary mt-sp-3 mb-0">
+        No payment is due today. Final pricing is confirmed after design review.
+      </p>
     </div>
   );
 }

@@ -128,7 +128,7 @@ export default function CartPage() {
               Continue to Checkout
             </ButtonLink>
             <Link
-              href="/#quote"
+              href="/quote"
               className="block text-center mt-2.5 text-sm font-bold border border-border rounded-md py-2.5 hover:bg-fill-subtle-15 transition-colors"
             >
               Request Quote Instead

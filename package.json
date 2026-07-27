@@ -2,16 +2,28 @@
   "name": "great-west-graphics",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
   "scripts": {
     "dev": "next dev",
+    "dev:web": "next dev",
+    "dev:api": "npm run dev --workspace @gwg/commerce-api",
     "build": "next build",
+    "build:all": "npm run build --workspaces --if-present && npm run build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:all": "npm run typecheck --workspaces --if-present && npm run typecheck",
+    "test": "npm run test --workspaces --if-present",
     "start": "next start",
     "lint": "next lint",
-    "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:generate": "npm run db:generate --workspace @gwg/commerce-api",
+    "db:migrate": "npm run db:migrate --workspace @gwg/commerce-api",
+    "db:seed": "npm run db:seed --workspace @gwg/commerce-api",
+    "db:studio": "npm run db:studio --workspace @gwg/commerce-api"
   },
   "dependencies": {
+    "@gwg/contracts": "0.1.0",
     "@hookform/resolvers": "^3.9.1",
     "@neondatabase/serverless": "^0.10.4",
     "@radix-ui/react-accordion": "^1.2.2",

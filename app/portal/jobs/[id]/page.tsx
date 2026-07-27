@@ -1,0 +1,133 @@
+import { Container } from "@/components/shared/Container";
+import { Button, ButtonLink } from "@/components/shared/Button";
+import {
+  CommerceApiError,
+  createCommerceClient,
+} from "@/lib/commerce/client";
+import { jobStatusPresentation } from "@/lib/commerce/status";
+import { money } from "@/lib/utils/quote-pricing";
+
+export const dynamic = "force-dynamic";
+
+export default async function JobDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  let job;
+  let error: string | undefined;
+  try {
+    job = await createCommerceClient().getJobRequest(id);
+  } catch (caught) {
+    error =
+      caught instanceof CommerceApiError
+        ? caught.message
+        : "The customer portal is not configured for this environment.";
+  }
+
+  if (!job) {
+    return (
+      <section className="py-sp-8">
+        <Container>
+          <h1 className="font-display font-bold text-header">Job unavailable</h1>
+          <p role="alert" className="text-text-secondary">{error}</p>
+          <div className="flex gap-sp-2">
+            <ButtonLink href={`/portal/jobs/${id}`}>Retry</ButtonLink>
+            <ButtonLink href="/portal/jobs" variant="secondary">All jobs</ButtonLink>
+          </div>
+        </Container>
+      </section>
+    );
+  }
+
+  const presentation = jobStatusPresentation[job.status];
+
+  return (
+    <section className="py-sp-8">
+      <Container>
+        <p className="text-xs font-bold uppercase tracking-wider text-accent">
+          Development customer portal
+        </p>
+        <ButtonLink href="/portal/jobs" variant="secondary" size="sm">
+          ← All jobs
+        </ButtonLink>
+        <div className="flex flex-wrap items-start justify-between gap-sp-3 mt-sp-4 mb-sp-5">
+          <div>
+            <h1 className="font-display font-bold text-display-sm mb-1">
+              Job status
+            </h1>
+            <p className="font-mono text-sm text-text-secondary m-0">{job.id}</p>
+          </div>
+          <span className="bg-accent-tint text-accent px-3 py-1 rounded-full text-sm font-bold">
+            {presentation.label}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-sp-5 items-start">
+          <div className="space-y-sp-5">
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">
+                Submitted items
+              </h2>
+              <div className="space-y-sp-3">
+                {job.lines.map((line) => (
+                  <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
+                    <div className="flex justify-between gap-sp-3">
+                      <div>
+                        <b>{line.snapshot.description}</b>
+                        <p className="text-sm text-text-secondary mt-1 mb-0">
+                          Quantity {line.snapshot.quantity}
+                          {typeof line.snapshot.configuration.color === "string"
+                            ? ` · ${line.snapshot.configuration.color}`
+                            : ""}
+                        </p>
+                      </div>
+                      {line.snapshot.unitPriceEstimateMinor !== undefined && (
+                        <span className="text-sm whitespace-nowrap">
+                          Est. {money(line.snapshot.unitPriceEstimateMinor / 100)} each
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
+                These are immutable submission snapshots. Final pricing follows
+                design and availability review.
+              </p>
+            </section>
+
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">Timeline</h2>
+              <ol className="space-y-sp-3">
+                {job.timeline.map((entry) => (
+                  <li key={entry.id} className="border-l-2 border-accent pl-sp-3">
+                    <b>{jobStatusPresentation[entry.toStatus].label}</b>
+                    <p className="text-sm text-text-tertiary mt-1 mb-0">
+                      {new Date(entry.occurredAt).toLocaleString("en-CA")}
+                      {entry.reason ? ` · ${entry.reason}` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          </div>
+
+          <aside className="border border-border rounded-md p-sp-4">
+            <h2 className="font-display font-bold text-lg mb-sp-2">Next action</h2>
+            <p className="text-text-secondary">{presentation.nextAction}</p>
+            <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
+              {presentation.paymentReady
+                ? "The job is approved and payment-ready, but online payment is not connected yet."
+                : "Payment stays locked until design approval and final pricing are complete."}
+            </div>
+            <Button disabled className="w-full" title="Stripe is not connected">
+              Pay approved amount (coming soon)
+            </Button>
+          </aside>
+        </div>
+      </Container>
+    </section>
+  );
+}

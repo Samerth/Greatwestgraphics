@@ -8,9 +8,10 @@ export default function CheckoutPage() {
       <div className="bg-fill-subtle border-b border-border">
         <Container className="flex flex-wrap justify-between items-center gap-sp-3 py-sp-3">
           <p className="text-sm m-0">
-            Buying for a business? Skip checkout and request a formal PO-based quote instead.
+            Submit your cart for design review and final pricing. No payment is
+            collected today.
           </p>
-          <ButtonLink href="/#quote" variant="secondary" size="sm">
+          <ButtonLink href="/quote" variant="secondary" size="sm">
             Request Formal Quote
           </ButtonLink>
         </Container>

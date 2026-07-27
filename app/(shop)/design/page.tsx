@@ -16,8 +16,8 @@ export default function DesignPage() {
             you go.
           </h1>
           <p className="mt-sp-3 max-w-[52ch] text-white/75 text-[16px] leading-[1.6]">
-            Upload a logo, generate art with AI, drop it on the garment. The live mockup
-            updates the second you move a pixel — same file we send to press.
+            Upload a logo, try a sample AI concept, and place it on the garment.
+            The live mockup updates the second you move, scale or rotate a layer.
           </p>
         </Container>
       </section>
@@ -34,6 +34,37 @@ export default function DesignPage() {
       <section className="py-sp-8">
         <Container>
           <CrossSellGrid title="Pair it with these Products!" />
+        </Container>
+      </section>
+
+      <section id="art-guidelines" className="py-sp-8 border-t border-border scroll-mt-28">
+        <Container>
+          <div className="grid grid-cols-1 lg:grid-cols-[0.7fr_1.3fr] gap-sp-5">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+                Artwork guidelines
+              </span>
+              <h2 className="font-display text-header font-bold mt-sp-2">
+                Files that print cleanly.
+              </h2>
+              <p className="text-text-secondary mt-sp-2">
+                Start with the highest-quality source you have. Our team reviews every
+                production file before anything reaches the press.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-sp-3">
+              {[
+                ["Preferred", "Vector PDF, AI or SVG with outlined fonts."],
+                ["Also accepted", "Transparent PNG at 300 DPI and final print size."],
+                ["Avoid", "Screenshots, compressed logos and images copied from websites."],
+              ].map(([title, copy]) => (
+                <div key={title} className="rounded-lg border border-border bg-bg-raised p-sp-4">
+                  <h3 className="font-display font-bold">{title}</h3>
+                  <p className="text-sm text-text-secondary mt-sp-2">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </Container>
       </section>
     </>

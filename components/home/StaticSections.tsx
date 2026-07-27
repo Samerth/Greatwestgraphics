@@ -151,7 +151,7 @@ export function CtaBand() {
           </div>
           <div className="flex gap-2.5">
             <ButtonLink
-              href="/product/heavyweight-tee"
+              href="/design"
               variant="secondary"
               className="!bg-white !text-accent hover:!bg-white/90 border-transparent"
             >

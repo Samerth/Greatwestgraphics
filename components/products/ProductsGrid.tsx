@@ -16,8 +16,12 @@ const SIZE_CLASSES: Record<string, string> = {
   sq: "col-span-3 md:col-span-4",
 };
 
-export function ProductsGrid() {
-  const [activeCategory, setActiveCategory] = useState<Category | "All">("All");
+export function ProductsGrid({
+  initialCategory = "All",
+}: {
+  initialCategory?: Category | "All";
+}) {
+  const [activeCategory, setActiveCategory] = useState<Category | "All">(initialCategory);
   const [sort, setSort] = useState<SortKey>("popular");
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -32,6 +36,8 @@ export function ProductsGrid() {
         const parse = (s: string) => parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
         return parse(a.priceFrom) - parse(b.priceFrom);
       });
+    } else if (sort === "new") {
+      list = [...list].reverse();
     }
     return list;
   }, [activeCategory, sort]);

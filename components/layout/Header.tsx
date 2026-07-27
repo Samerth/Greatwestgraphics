@@ -18,7 +18,10 @@ const CATEGORIES = [
   { label: "Signs & Displays", href: "/products?category=signs-displays" },
 ];
 
-const PRIMARY_LINKS = [{ label: "Design Studio", href: "/design" }];
+const PRIMARY_LINKS = [
+  { label: "Design Studio", href: "/design" },
+  { label: "Contact", href: "/contact" },
+];
 
 export function Header() {
   const pieceCount = useCartStore((s) =>
@@ -26,6 +29,7 @@ export function Header() {
   );
 
   const [shopOpen, setShopOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openShop = () => {
@@ -137,14 +141,14 @@ export function Header() {
         {/* Actions */}
         <div className="flex items-center gap-sp-2 shrink-0">
           <ButtonLink
-            href="/#quote"
+            href="/quote"
             variant="secondary"
             size="sm"
             className="hidden md:inline-flex"
           >
             Get a Quote
           </ButtonLink>
-          <ButtonLink href="/design" variant="primary" size="sm">
+          <ButtonLink href="/design" variant="primary" size="sm" className="hidden sm:inline-flex">
             Start Designing
           </ButtonLink>
           <Link
@@ -156,8 +160,69 @@ export function Header() {
               {pieceCount}
             </span>
           </Link>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((open) => !open)}
+            aria-expanded={mobileOpen}
+            aria-label="Toggle navigation menu"
+            className="lg:hidden w-10 h-10 rounded-md border border-border grid place-items-center hover:bg-fill-subtle-15 transition-colors"
+          >
+            <span className="sr-only">Menu</span>
+            <span className="flex flex-col gap-1.5">
+              <span className="block w-5 h-0.5 bg-text-primary" />
+              <span className="block w-5 h-0.5 bg-text-primary" />
+              <span className="block w-5 h-0.5 bg-text-primary" />
+            </span>
+          </button>
         </div>
       </Container>
+
+      {mobileOpen && (
+        <nav className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4">
+          <div className="grid grid-cols-2 gap-2 mb-sp-3">
+            {CATEGORIES.map((cat) => (
+              <Link
+                key={cat.label}
+                href={cat.href}
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md border border-border bg-bg-raised px-3 py-2.5 text-sm font-semibold"
+              >
+                {cat.label}
+              </Link>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-border pt-sp-3">
+            <Link
+              href="/products"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              All Products
+            </Link>
+            <Link
+              href="/design"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              Design Studio
+            </Link>
+            <Link
+              href="/quote"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2 text-accent"
+            >
+              Get a Quote
+            </Link>
+            <Link
+              href="/contact"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              Contact
+            </Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

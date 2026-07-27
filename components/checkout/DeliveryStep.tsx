@@ -65,7 +65,7 @@ export function DeliveryStep({
         <Button variant="secondary" onClick={onBack}>
           ← Back
         </Button>
-        <Button onClick={() => onNext(selected)}>Continue to Payment →</Button>
+        <Button onClick={() => onNext(selected)}>Review Submission →</Button>
       </div>
     </div>
   );

@@ -1,11 +1,30 @@
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { ProductsGrid } from "@/components/products/ProductsGrid";
+import { CATEGORIES, type Category } from "@/lib/data/products";
 
-// NOTE: converted from the "Full Catalogue" mockup — you flagged this isn't
-// the final Figma design yet, so treat layout/copy as provisional until
-// the real products-page design comes through.
-export default function ProductsPage() {
+const CATEGORY_SLUGS: Record<string, Category> = {
+  apparel: "Apparel",
+  bags: "Bags",
+  "hats-beanies": "Headwear",
+  headwear: "Headwear",
+  outerwear: "Outerwear",
+  polos: "Polos",
+  promo: "Promo",
+  safety: "Safety",
+  "signs-displays": "Signs",
+  signs: "Signs",
+};
+
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
+  const { category } = await searchParams;
+  const initialCategory =
+    (category && CATEGORY_SLUGS[category.toLowerCase()]) || "All";
+
   return (
     <>
       <section className="pt-sp-8">
@@ -25,7 +44,13 @@ export default function ProductsPage() {
 
       <section className="py-sp-8">
         <Container>
-          <ProductsGrid />
+          <ProductsGrid
+            initialCategory={
+              CATEGORIES.includes(initialCategory as Category)
+                ? (initialCategory as Category)
+                : "All"
+            }
+          />
 
           <div className="mt-sp-4 border border-border rounded-lg bg-bg-raised px-sp-5 py-sp-4 flex flex-wrap gap-sp-3 justify-between items-center">
             <h4 className="text-[19px] max-w-[520px] font-display font-bold">
@@ -33,10 +58,10 @@ export default function ProductsPage() {
               items from every major North American blank supplier.
             </h4>
             <div className="flex gap-2.5">
-              <ButtonLink href="/#quote" variant="secondary">
+              <ButtonLink href="/products" variant="secondary">
                 Browse Full Catalogue
               </ButtonLink>
-              <ButtonLink href="/#quote" variant="primary">
+              <ButtonLink href="/quote" variant="primary">
                 Request a Custom Quote
               </ButtonLink>
             </div>

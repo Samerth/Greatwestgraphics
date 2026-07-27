@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   images: {
     // SanMar's media CDN — enabled once real product images come from
     // BulkData / Media Content instead of the local /public/images set.

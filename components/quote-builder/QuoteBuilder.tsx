@@ -186,14 +186,17 @@ export function QuoteBuilder() {
 
           <Button
             className="w-full"
-            disabled={locked}
             onClick={() => {
-              setLocked(true);
-              setTimeout(() => setLocked(false), 550);
+              setLocked((value) => !value);
             }}
           >
-            {locked ? "Queuing proof request…" : "Lock This Quote →"}
+            {locked ? "Estimate saved for this session ✓" : "Save This Estimate"}
           </Button>
+          {locked && (
+            <p className="text-[12px] text-text-secondary text-center mt-2">
+              Frontend preview only — submit your project details when quote services are connected.
+            </p>
+          )}
         </div>
       </div>
     </div>

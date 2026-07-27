@@ -40,7 +40,7 @@ export function Hero() {
               Get a Quote
             </ButtonLink>
             <ButtonLink
-              href="/product/heavyweight-tee"
+              href="/design"
               variant="secondary"
               className="border-white/50 text-white hover:border-white hover:bg-white/10"
             >

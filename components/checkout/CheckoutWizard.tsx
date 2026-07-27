@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import {
+  CommerceErrorResponseSchema,
+  JobRequestResponseSchema,
+  type JobRequestResponse,
+  type StorefrontJobSubmission,
+} from "@gwg/contracts";
+import { useEffect, useState } from "react";
 import { StepPills } from "./StepPills";
 import { ContactStep } from "./ContactStep";
 import { ShippingStep } from "./ShippingStep";
@@ -8,14 +14,12 @@ import { DeliveryStep } from "./DeliveryStep";
 import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
-import { useCartStore, computeCartTotals } from "@/lib/store/cart";
+import { useCartStore } from "@/lib/store/cart";
 import type {
   ContactValues,
   ShippingValues,
-  PaymentValues,
   DeliveryKey,
 } from "@/lib/schemas/checkout";
-import { DELIVERY_FEES } from "@/lib/schemas/checkout";
 
 interface CheckoutData {
   contact?: ContactValues;
@@ -29,9 +33,24 @@ export function CheckoutWizard() {
 
   const [step, setStep] = useState(1);
   const [data, setData] = useState<CheckoutData>({ delivery: "priority" });
-  const [placed, setPlaced] = useState(false);
+  const [placed, setPlaced] = useState<JobRequestResponse>();
+  const [submissionError, setSubmissionError] = useState<string>();
 
-  if (placed) return <CheckoutSuccess />;
+  useEffect(() => {
+    const saved = window.localStorage.getItem("gwg-checkout-details");
+    if (!saved) return;
+    try {
+      setData(JSON.parse(saved) as CheckoutData);
+    } catch {
+      window.localStorage.removeItem("gwg-checkout-details");
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("gwg-checkout-details", JSON.stringify(data));
+  }, [data]);
+
+  if (placed) return <CheckoutSuccess jobRequest={placed} />;
 
   if (items.length === 0) {
     return (
@@ -40,8 +59,6 @@ export function CheckoutWizard() {
       </p>
     );
   }
-
-  const deposit = computeCartTotals(items, DELIVERY_FEES[data.delivery]).deposit;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-sp-5 items-start">
@@ -82,13 +99,81 @@ export function CheckoutWizard() {
 
         {step === 4 && (
           <PaymentStep
-            deposit={deposit}
             onBack={() => setStep(3)}
-            onPlace={(_payment: PaymentValues) => {
-              // TODO: submit order to backend here (and eventually to
-              // SanMar's Purchase Order service once EDI access is live).
-              clearCart();
-              setPlaced(true);
+            error={submissionError}
+            onSubmit={async (customerNote) => {
+              if (!data.contact || !data.shipping) return;
+              setSubmissionError(undefined);
+              const { notes, sameBilling: _sameBilling, ...address } = data.shipping;
+              const submissionWithoutKey = {
+                contact: data.contact,
+                fulfillment: {
+                  method: data.delivery,
+                  address,
+                  deliveryNotes: notes || undefined,
+                },
+                customerNote: customerNote || undefined,
+                lines: items.map((item) => ({
+                  description: item.name,
+                  quantity: item.qty,
+                  unitPriceEstimateMinor: Math.round(item.unit * 100),
+                  currency: "CAD",
+                  configuration: {
+                    storefrontProductId: item.id,
+                    productMetadata: item.meta,
+                    color: item.color,
+                    image: item.image,
+                  },
+                })),
+              } satisfies Omit<StorefrontJobSubmission, "idempotencyKey">;
+              const fingerprint = JSON.stringify(submissionWithoutKey);
+              const savedKey = window.localStorage.getItem("gwg-submission-key");
+              let idempotencyKey = crypto.randomUUID();
+              if (savedKey) {
+                try {
+                  const saved = JSON.parse(savedKey) as {
+                    fingerprint: string;
+                    key: string;
+                  };
+                  if (saved.fingerprint === fingerprint) idempotencyKey = saved.key;
+                } catch {
+                  // Replace malformed local retry state below.
+                }
+              }
+              window.localStorage.setItem(
+                "gwg-submission-key",
+                JSON.stringify({ fingerprint, key: idempotencyKey }),
+              );
+
+              try {
+                const response = await fetch("/api/commerce/job-requests", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    ...submissionWithoutKey,
+                    idempotencyKey,
+                  }),
+                });
+                const payload: unknown = await response.json();
+                if (!response.ok) {
+                  const parsedError = CommerceErrorResponseSchema.safeParse(payload);
+                  throw new Error(
+                    parsedError.success
+                      ? parsedError.data.error.message
+                      : "The submission could not be completed.",
+                  );
+                }
+                const jobRequest = JobRequestResponseSchema.parse(payload);
+                setPlaced(jobRequest);
+                clearCart();
+                window.localStorage.removeItem("gwg-submission-key");
+              } catch (error) {
+                setSubmissionError(
+                  error instanceof Error
+                    ? error.message
+                    : "The submission could not be completed.",
+                );
+              }
             }}
           />
         )}

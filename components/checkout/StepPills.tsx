@@ -4,7 +4,7 @@ const STEPS = [
   { n: 1, label: "Contact" },
   { n: 2, label: "Ship To" },
   { n: 3, label: "Delivery" },
-  { n: 4, label: "Payment" },
+  { n: 4, label: "Review" },
 ];
 
 export function StepPills({ current }: { current: number }) {
