@@ -44,6 +44,8 @@ export function Footer() {
             { label: "Art Guidelines", href: "/design#art-guidelines" },
             { label: "Shipping", href: "/shipping" },
             { label: "Contact", href: "/contact" },
+            { label: "My jobs", href: "/portal/jobs" },
+            { label: "Staff login", href: "/admin/login" },
           ]}
         />
       </Container>

@@ -15,6 +15,20 @@
       "when": 1785132577392,
       "tag": "0001_crazy_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785271194216,
+      "tag": "0002_large_skaar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785340559490,
+      "tag": "0003_slow_earthquake",
+      "breakpoints": true
     }
   ]
 }

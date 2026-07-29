@@ -16,6 +16,7 @@ import type {
   Actor,
   CommerceEventEnvelope,
   JobRequestLineInput,
+  PricingConfig,
   SourceMetadata,
 } from "@gwg/contracts";
 
@@ -223,6 +224,261 @@ export const vendorMappings = pgTable(
   ],
 );
 
+/** S&S style = garment silhouette / style number (e.g. Gildan 2000). */
+export const ssStyles = pgTable(
+  "ss_styles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    styleId: integer("style_id").notNull(),
+    partNumber: text("part_number"),
+    brandName: text("brand_name").notNull(),
+    styleName: text("style_name").notNull(),
+    title: text("title"),
+    description: text("description"),
+    baseCategory: text("base_category"),
+    ssCategories: jsonb("ss_categories").$type<string[]>().notNull().default([]),
+    brandImagePath: text("brand_image_path"),
+    styleImagePath: text("style_image_path"),
+    brandImageUrl: text("brand_image_url"),
+    styleImageUrl: text("style_image_url"),
+    active: boolean("active").notNull().default(true),
+    modelUrl: text("model_url"),
+    modelStatus: text("model_status").notNull().default("none"),
+    modelSource: text("model_source"),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_styles_tenant_style_id_uq").on(table.tenantId, table.styleId),
+    index("ss_styles_tenant_brand_idx").on(table.tenantId, table.brandName),
+  ],
+);
+
+/** Website product = S&S style + color. */
+export const ssProducts = pgTable(
+  "ss_products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    styleUuid: uuid("style_uuid")
+      .notNull()
+      .references(() => ssStyles.id),
+    styleId: integer("style_id").notNull(),
+    colorName: text("color_name").notNull(),
+    colorCode: text("color_code"),
+    color1: text("color1"),
+    color2: text("color2"),
+    isDark: boolean("is_dark").notNull().default(false),
+    colorFrontImagePath: text("color_front_image_path"),
+    colorSideImagePath: text("color_side_image_path"),
+    colorBackImagePath: text("color_back_image_path"),
+    colorSwatchImagePath: text("color_swatch_image_path"),
+    colorFrontImageUrl: text("color_front_image_url"),
+    colorSideImageUrl: text("color_side_image_url"),
+    colorBackImageUrl: text("color_back_image_url"),
+    colorSwatchImageUrl: text("color_swatch_image_url"),
+    materialConfig: jsonb("material_config").$type<Record<string, unknown>>(),
+    qty: integer("qty").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    slug: text("slug").notNull(),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_products_tenant_style_color_uq").on(
+      table.tenantId,
+      table.styleId,
+      table.colorName,
+    ),
+    uniqueIndex("ss_products_tenant_slug_uq").on(table.tenantId, table.slug),
+    index("ss_products_tenant_style_uuid_idx").on(table.tenantId, table.styleUuid),
+  ],
+);
+
+/** Variant = size under a color product. */
+export const ssVariants = pgTable(
+  "ss_variants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productUuid: uuid("product_uuid")
+      .notNull()
+      .references(() => ssProducts.id),
+    skuId: integer("sku_id").notNull(),
+    sku: text("sku").notNull(),
+    gtin: text("gtin"),
+    sizeName: text("size_name").notNull(),
+    sizeCode: text("size_code"),
+    sizeOrder: integer("size_order").notNull().default(0),
+    customerPriceMinor: bigint("customer_price_minor", { mode: "number" }).notNull(),
+    mapPriceMinor: bigint("map_price_minor", { mode: "number" }),
+    qty: integer("qty").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_variants_tenant_sku_id_uq").on(table.tenantId, table.skuId),
+    uniqueIndex("ss_variants_tenant_sku_uq").on(table.tenantId, table.sku),
+    index("ss_variants_tenant_product_idx").on(table.tenantId, table.productUuid),
+  ],
+);
+
+export const categories = pgTable(
+  "categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    parentId: uuid("parent_id"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("categories_tenant_slug_uq").on(table.tenantId, table.slug),
+    index("categories_tenant_parent_idx").on(table.tenantId, table.parentId),
+  ],
+);
+
+export const ssProductCategories = pgTable(
+  "ss_product_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productUuid: uuid("product_uuid")
+      .notNull()
+      .references(() => ssProducts.id),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id),
+    assignmentSource: text("assignment_source").notNull().default("map"),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_product_categories_uq").on(
+      table.tenantId,
+      table.productUuid,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const ssCategoryMap = pgTable(
+  "ss_category_map",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    ssCategoryKey: text("ss_category_key").notNull(),
+    ssCategoryLabel: text("ss_category_label"),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id),
+    productCount: integer("product_count").notNull().default(0),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_category_map_uq").on(
+      table.tenantId,
+      table.ssCategoryKey,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const categoryOverrides = pgTable(
+  "category_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productUuid: uuid("product_uuid")
+      .notNull()
+      .references(() => ssProducts.id),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("category_overrides_uq").on(
+      table.tenantId,
+      table.productUuid,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const ssUnmappedCategories = pgTable(
+  "ss_unmapped_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    ssCategoryKey: text("ss_category_key").notNull(),
+    ssCategoryLabel: text("ss_category_label"),
+    styleCount: integer("style_count").notNull().default(0),
+    sampleStyleIds: jsonb("sample_style_ids").$type<number[]>().notNull().default([]),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("ss_unmapped_categories_uq").on(table.tenantId, table.ssCategoryKey),
+  ],
+);
+
+export const syncRuns = pgTable(
+  "sync_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    type: text("type").notNull(),
+    status: text("status").notNull(),
+    stylesProcessed: integer("styles_processed").notNull().default(0),
+    skusUpserted: integer("skus_upserted").notNull().default(0),
+    imagesDownloaded: integer("images_downloaded").notNull().default(0),
+    rateLimitRemaining: integer("rate_limit_remaining"),
+    errorSummary: text("error_summary"),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ...auditColumns,
+  },
+  (table) => [
+    index("sync_runs_tenant_started_idx").on(table.tenantId, table.startedAt),
+  ],
+);
+
+export const catalogSettings = pgTable(
+  "catalog_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    retailMarkup: text("retail_markup").notNull().default("2.0"),
+    brandAllowlist: jsonb("brand_allowlist").$type<string[]>().notNull().default([]),
+    storageConfig: jsonb("storage_config").$type<Record<string, unknown>>().notNull().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("catalog_settings_tenant_uq").on(table.tenantId),
+  ],
+);
+
 export const jobRequests = pgTable(
   "job_requests",
   {
@@ -402,6 +658,30 @@ export const finalQuotes = pgTable(
       table.jobRequestId,
       table.version,
     ),
+  ],
+);
+
+export const pricingConfigs = pgTable(
+  "pricing_configs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    version: integer("version").notNull(),
+    status: text("status").notNull(),
+    config: jsonb("config").$type<PricingConfig>().notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("pricing_configs_tenant_version_uq").on(
+      table.tenantId,
+      table.version,
+    ),
+    uniqueIndex("pricing_configs_tenant_published_uq")
+      .on(table.tenantId)
+      .where(sql`${table.status} = 'published'`),
   ],
 );
 

@@ -21,6 +21,7 @@ const CATEGORIES = [
 const PRIMARY_LINKS = [
   { label: "Design Studio", href: "/design" },
   { label: "Contact", href: "/contact" },
+  { label: "Staff", href: "/admin/login" },
 ];
 
 export function Header() {
@@ -219,6 +220,20 @@ export function Header() {
               className="text-sm font-bold px-3 py-2"
             >
               Contact
+            </Link>
+            <Link
+              href="/admin/login"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2 text-accent"
+            >
+              Staff
+            </Link>
+            <Link
+              href="/portal/jobs"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              My jobs
             </Link>
           </div>
         </nav>

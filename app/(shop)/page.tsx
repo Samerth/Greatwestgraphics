@@ -13,7 +13,16 @@ import {
   CtaBand,
 } from "@/components/home/StaticSections";
 import { ProductsGrid } from "@/components/products/ProductsGrid";
+import { DEFAULT_PRICING_CONFIG_V1 } from "@/lib/utils/quote-pricing";
+import {
+  CommerceApiError,
+  createCommerceClient,
+} from "@/lib/commerce/client";
+import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
+import type { PricingConfig } from "@gwg/contracts";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
 
 const QUICK_PATHS = [
   {
@@ -32,11 +41,31 @@ const QUICK_PATHS = [
     num: "03",
     title: "I have my own design",
     body: "Upload artwork and go. We proof it, match your colours, and print it right the first time.",
-    href: "/product/heavyweight-tee",
+    href: "/product/premium-custom-tshirts",
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  let pricingConfig: PricingConfig = DEFAULT_PRICING_CONFIG_V1;
+  try {
+    pricingConfig = (await createCommerceClient().getPublishedPricingConfig())
+      .config;
+  } catch (caught) {
+    if (!(caught instanceof CommerceApiError)) {
+      // keep bundled defaults
+    }
+  }
+
+  const catalog = await loadStorefrontCatalog({ limit: 48 });
+  const preferDb = catalog.source === "db" && catalog.products.length > 0;
+  const catalogProducts = catalog.products.slice(0, 16).map((p) => ({
+    id: p.id,
+    label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),
+    unitCostMinor: p.costMinor,
+    isDark: p.isDark,
+    available: p.available,
+  }));
+
   return (
     <>
       <Hero />
@@ -95,7 +124,11 @@ export default function HomePage() {
                 Real products, real methods, real starting prices. Filter by what you need.
               </p>
             </div>
-            <ProductsGrid />
+            <ProductsGrid
+              preferDb={preferDb}
+              dbProducts={catalog.products}
+              dbCategories={catalog.categories}
+            />
           </Container>
         </section>
       </Reveal>
@@ -107,7 +140,12 @@ export default function HomePage() {
       <Reveal>
         <section className="py-sp-8">
           <Container>
-            <QuoteBuilder />
+            <QuoteBuilder
+              pricingConfig={pricingConfig}
+              catalogProducts={
+                catalogProducts.length > 0 ? catalogProducts : undefined
+              }
+            />
           </Container>
         </section>
       </Reveal>

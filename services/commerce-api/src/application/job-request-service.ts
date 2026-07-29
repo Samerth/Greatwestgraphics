@@ -1,15 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type {
   Actor,
   CreateJobRequest,
   JobRequestDetailResponse,
+  JobRequestLineInput,
   JobRequestResponse,
   JobRequestStatus,
   SourceMetadata,
   SubmitJobRequest,
   TransitionJobRequest,
 } from "@gwg/contracts";
+import { QuoteInputSchema } from "@gwg/contracts";
+import { calculateQuote } from "@gwg/pricing";
 import type { CommerceDatabase } from "../db/client.js";
 import {
   accountPeople,
@@ -19,9 +20,13 @@ import {
   jobRequestSnapshots,
   jobRequestStatusHistory,
   outboxEvents,
+  pricingConfigs,
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { PricingConfigSchema } from "@gwg/contracts";
 
 export class ResourceNotFoundError extends Error {
   readonly code = "RESOURCE_NOT_FOUND";
@@ -41,6 +46,32 @@ export class DataIntegrityError extends Error {
 
 function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function repriceLine(
+  line: JobRequestLineInput,
+  published: { version: number; config: unknown },
+): JobRequestLineInput {
+  const pricingInput = line.configuration?.pricing?.input;
+  if (!pricingInput) return line;
+
+  const config = PricingConfigSchema.parse(published.config);
+  const input = QuoteInputSchema.parse(pricingInput);
+  const breakdown = calculateQuote(input, config);
+  return {
+    ...line,
+    quantity: input.quantity,
+    unitPriceEstimateMinor: breakdown.perPieceMinor,
+    currency: "CAD",
+    configuration: {
+      ...line.configuration,
+      pricing: {
+        input,
+        breakdown,
+        pricingConfigVersion: published.version,
+      },
+    },
+  };
 }
 
 function toResponse(row: typeof jobRequests.$inferSelect): JobRequestResponse {
@@ -134,6 +165,21 @@ export class JobRequestService {
         );
       }
 
+      const [publishedPricing] = await transaction
+        .select()
+        .from(pricingConfigs)
+        .where(
+          and(
+            eq(pricingConfigs.tenantId, tenantId),
+            eq(pricingConfigs.status, "published"),
+          ),
+        )
+        .limit(1);
+
+      const pricedLines = publishedPricing
+        ? command.lines.map((line) => repriceLine(line, publishedPricing))
+        : command.lines;
+
       const [created] = await transaction
         .insert(jobRequests)
         .values({
@@ -153,7 +199,7 @@ export class JobRequestService {
       }
 
       await transaction.insert(jobRequestLines).values(
-        command.lines.map((line, position) => ({
+        pricedLines.map((line, position) => ({
           tenantId,
           accountId,
           jobRequestId: created.id,
@@ -167,7 +213,7 @@ export class JobRequestService {
         jobRequestId: created.id,
         version: 1,
         reason: "created",
-        snapshot: command,
+        snapshot: { ...command, lines: pricedLines },
         createdBy: actor,
         source: command.source,
       });

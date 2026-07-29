@@ -1,0 +1,631 @@
+import { and, eq, inArray, sql } from "drizzle-orm";
+import type { Actor } from "@gwg/contracts";
+import type { CommerceDatabase } from "../../db/client.js";
+import {
+  catalogSettings,
+  categoryOverrides,
+  ssCategoryMap,
+  ssProductCategories,
+  ssProducts,
+  ssStyles,
+  ssUnmappedCategories,
+  ssVariants,
+  syncRuns,
+  vendorMappings,
+} from "../../db/schema.js";
+import {
+  SsActivewearClient,
+  SsAuthError,
+  SsNotFoundError,
+  dollarsToMinor,
+  isDarkHex,
+  slugify,
+  type SsProductSku,
+  type SsStyle,
+} from "./client.js";
+import { LocalSsImageStore } from "./image-store.js";
+
+const VENDOR = "ss_activewear";
+
+const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
+  { pattern: /hoodie|crewneck|sweatshirt/i, categorySlug: "hoodies-and-crewnecks" },
+  { pattern: /\btee\b|t-shirt|tshirt/i, categorySlug: "t-shirts" },
+  { pattern: /hat|cap|beanie/i, categorySlug: "hats" },
+  { pattern: /tote|bag/i, categorySlug: "tote-bags" },
+  { pattern: /jacket/i, categorySlug: "jackets" },
+  { pattern: /vest/i, categorySlug: "vests" },
+  { pattern: /jersey/i, categorySlug: "jerseys" },
+];
+
+function normalizeCategories(
+  value: SsStyle["categories"] | string | undefined,
+  baseCategory?: string,
+): string[] {
+  const keys = new Set<string>();
+  if (baseCategory) keys.add(baseCategory.trim());
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item?.trim()) keys.add(item.trim());
+    }
+  } else if (typeof value === "string" && value.trim()) {
+    for (const part of value.split(/[,|;]/)) {
+      if (part.trim()) keys.add(part.trim());
+    }
+  }
+  return [...keys];
+}
+
+function groupSkusByColor(skus: SsProductSku[]): Map<string, SsProductSku[]> {
+  const map = new Map<string, SsProductSku[]>();
+  for (const sku of skus) {
+    const key = sku.colorName?.trim() || "Unknown";
+    const list = map.get(key) ?? [];
+    list.push(sku);
+    map.set(key, list);
+  }
+  return map;
+}
+
+export class SsSyncService {
+  constructor(
+    private readonly db: CommerceDatabase,
+    private readonly client: SsActivewearClient,
+    private readonly images = new LocalSsImageStore(),
+  ) {}
+
+  async runFullSync(tenantId: string, actor: Actor) {
+    const [run] = await this.db
+      .insert(syncRuns)
+      .values({
+        tenantId,
+        type: "full",
+        status: "running",
+        createdBy: actor,
+        source: { system: "commerce_api" },
+      })
+      .returning();
+    if (!run) throw new Error("Failed to create sync run");
+
+    let stylesProcessed = 0;
+    let skusUpserted = 0;
+    let imagesDownloaded = 0;
+    const errors: string[] = [];
+
+    try {
+      const styles = await this.client.listStyles();
+      const settings = await this.getSettings(tenantId);
+      const allowlist = new Set(
+        (settings?.brandAllowlist ?? []).map((brand) => brand.toLowerCase()),
+      );
+
+      for (const style of styles) {
+        if (
+          allowlist.size > 0 &&
+          !allowlist.has((style.brandName ?? "").toLowerCase())
+        ) {
+          continue;
+        }
+        try {
+          const result = await this.upsertStyleTree(tenantId, style, actor);
+          stylesProcessed += 1;
+          skusUpserted += result.skusUpserted;
+          imagesDownloaded += result.imagesDownloaded;
+        } catch (error) {
+          if (error instanceof SsNotFoundError) {
+            await this.markStyleInactive(tenantId, style.styleID);
+            continue;
+          }
+          errors.push(
+            `style ${style.styleID}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      await this.refreshUnmapped(tenantId);
+
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: errors.length ? "completed_with_errors" : "completed",
+          stylesProcessed,
+          skusUpserted,
+          imagesDownloaded,
+          rateLimitRemaining: this.client.rateLimitRemaining,
+          errorSummary: errors.slice(0, 20).join("\n") || null,
+          details: { errorCount: errors.length },
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+
+      return {
+        id: run.id,
+        stylesProcessed,
+        skusUpserted,
+        imagesDownloaded,
+        errors,
+        rateLimitRemaining: this.client.rateLimitRemaining,
+      };
+    } catch (error) {
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: "failed",
+          stylesProcessed,
+          skusUpserted,
+          imagesDownloaded,
+          rateLimitRemaining: this.client.rateLimitRemaining,
+          errorSummary:
+            error instanceof SsAuthError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : String(error),
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+      throw error;
+    }
+  }
+
+  async runInventorySync(tenantId: string, actor: Actor) {
+    const [run] = await this.db
+      .insert(syncRuns)
+      .values({
+        tenantId,
+        type: "inventory",
+        status: "running",
+        createdBy: actor,
+        source: { system: "commerce_api" },
+      })
+      .returning();
+    if (!run) throw new Error("Failed to create inventory sync run");
+
+    try {
+      const rows = await this.client.listInventory();
+      let updated = 0;
+      for (const row of rows) {
+        if (row.skuID != null) {
+          await this.db
+            .update(ssVariants)
+            .set({ qty: row.qty ?? 0, updatedAt: new Date() })
+            .where(
+              and(
+                eq(ssVariants.tenantId, tenantId),
+                eq(ssVariants.skuId, row.skuID),
+              ),
+            );
+          updated += 1;
+        } else if (row.sku) {
+          await this.db
+            .update(ssVariants)
+            .set({ qty: row.qty ?? 0, updatedAt: new Date() })
+            .where(
+              and(eq(ssVariants.tenantId, tenantId), eq(ssVariants.sku, row.sku)),
+            );
+          updated += 1;
+        }
+      }
+
+      await this.recomputeProductQty(tenantId);
+
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: "completed",
+          skusUpserted: updated,
+          rateLimitRemaining: this.client.rateLimitRemaining,
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+
+      return { id: run.id, updated };
+    } catch (error) {
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: "failed",
+          errorSummary: error instanceof Error ? error.message : String(error),
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+      throw error;
+    }
+  }
+
+  private async getSettings(tenantId: string) {
+    const [row] = await this.db
+      .select()
+      .from(catalogSettings)
+      .where(eq(catalogSettings.tenantId, tenantId))
+      .limit(1);
+    return row;
+  }
+
+  private async markStyleInactive(tenantId: string, styleId: number) {
+    await this.db
+      .update(ssStyles)
+      .set({ active: false, updatedAt: new Date() })
+      .where(and(eq(ssStyles.tenantId, tenantId), eq(ssStyles.styleId, styleId)));
+    await this.db
+      .update(ssProducts)
+      .set({ active: false, updatedAt: new Date() })
+      .where(
+        and(eq(ssProducts.tenantId, tenantId), eq(ssProducts.styleId, styleId)),
+      );
+  }
+
+  private async upsertStyleTree(
+    tenantId: string,
+    style: SsStyle,
+    actor: Actor,
+  ) {
+    const ssCategories = normalizeCategories(style.categories, style.baseCategory);
+    const brandImageUrl = await this.images.ensure(style.brandImage);
+    const styleImageUrl = await this.images.ensure(style.styleImage);
+    let imagesDownloaded = 0;
+    if (brandImageUrl) imagesDownloaded += 1;
+    if (styleImageUrl) imagesDownloaded += 1;
+
+    const [existing] = await this.db
+      .select()
+      .from(ssStyles)
+      .where(
+        and(eq(ssStyles.tenantId, tenantId), eq(ssStyles.styleId, style.styleID)),
+      )
+      .limit(1);
+
+    const styleValues = {
+      tenantId,
+      styleId: style.styleID,
+      partNumber: style.partNumber ?? null,
+      brandName: style.brandName,
+      styleName: style.styleName,
+      title: style.title ?? null,
+      description: style.description ?? null,
+      baseCategory: style.baseCategory ?? null,
+      ssCategories,
+      brandImagePath: style.brandImage ?? null,
+      styleImagePath: style.styleImage ?? null,
+      brandImageUrl,
+      styleImageUrl,
+      active: true,
+      modelStatus: existing?.modelStatus ?? "none",
+      updatedAt: new Date(),
+      createdBy: actor,
+      source: { system: "vendor" as const },
+    };
+
+    let styleRow = existing;
+    if (existing) {
+      const [updated] = await this.db
+        .update(ssStyles)
+        .set(styleValues)
+        .where(eq(ssStyles.id, existing.id))
+        .returning();
+      styleRow = updated ?? existing;
+    } else {
+      const [created] = await this.db
+        .insert(ssStyles)
+        .values(styleValues)
+        .returning();
+      styleRow = created!;
+      await this.db.insert(vendorMappings).values({
+        tenantId,
+        vendor: VENDOR,
+        entityType: "style",
+        entityId: styleRow.id,
+        externalId: String(style.styleID),
+        metadata: {},
+        createdBy: actor,
+        source: { system: "vendor" },
+      });
+      // Phase 2: leave model_status none (no-op enqueue)
+    }
+
+    let skus: SsProductSku[] = [];
+    try {
+      skus = await this.client.listProductsByStyle(style.styleID);
+    } catch (error) {
+      if (error instanceof SsNotFoundError) {
+        await this.markStyleInactive(tenantId, style.styleID);
+        return { skusUpserted: 0, imagesDownloaded };
+      }
+      throw error;
+    }
+
+    let skusUpserted = 0;
+    const byColor = groupSkusByColor(skus);
+    for (const [colorName, colorSkus] of byColor) {
+      const sample = colorSkus[0]!;
+      const front = await this.images.ensure(sample.colorFrontImage);
+      const side = await this.images.ensure(sample.colorSideImage);
+      const back = await this.images.ensure(sample.colorBackImage);
+      const swatch = await this.images.ensure(sample.colorSwatchImage);
+      for (const url of [front, side, back, swatch]) {
+        if (url) imagesDownloaded += 1;
+      }
+
+      const slug = slugify(
+        style.brandName,
+        style.styleName,
+        colorName,
+        String(style.styleID),
+      );
+      const qty = colorSkus.reduce((sum, sku) => sum + (sku.qty ?? 0), 0);
+      const [existingProduct] = await this.db
+        .select()
+        .from(ssProducts)
+        .where(
+          and(
+            eq(ssProducts.tenantId, tenantId),
+            eq(ssProducts.styleId, style.styleID),
+            eq(ssProducts.colorName, colorName),
+          ),
+        )
+        .limit(1);
+
+      const productValues = {
+        tenantId,
+        styleUuid: styleRow!.id,
+        styleId: style.styleID,
+        colorName,
+        colorCode: sample.colorCode ?? null,
+        color1: sample.color1 ?? null,
+        color2: sample.color2 ?? null,
+        isDark: existingProduct?.isDark ?? isDarkHex(sample.color1),
+        colorFrontImagePath: sample.colorFrontImage ?? null,
+        colorSideImagePath: sample.colorSideImage ?? null,
+        colorBackImagePath: sample.colorBackImage ?? null,
+        colorSwatchImagePath: sample.colorSwatchImage ?? null,
+        colorFrontImageUrl: front,
+        colorSideImageUrl: side,
+        colorBackImageUrl: back,
+        colorSwatchImageUrl: swatch,
+        materialConfig: {
+          baseColor: sample.color1 ?? null,
+          accentColor: sample.color2 ?? null,
+        },
+        qty,
+        active: true,
+        slug,
+        updatedAt: new Date(),
+        createdBy: actor,
+        source: { system: "vendor" as const },
+      };
+
+      let productRow = existingProduct;
+      if (existingProduct) {
+        const [updated] = await this.db
+          .update(ssProducts)
+          .set(productValues)
+          .where(eq(ssProducts.id, existingProduct.id))
+          .returning();
+        productRow = updated ?? existingProduct;
+      } else {
+        const [created] = await this.db
+          .insert(ssProducts)
+          .values(productValues)
+          .returning();
+        productRow = created!;
+        await this.db.insert(vendorMappings).values({
+          tenantId,
+          vendor: VENDOR,
+          entityType: "product",
+          entityId: productRow.id,
+          externalId: `${style.styleID}:${colorName}`,
+          metadata: {},
+          createdBy: actor,
+          source: { system: "vendor" },
+        });
+      }
+
+      await this.assignCategories(tenantId, productRow!.id, ssCategories, style);
+
+      for (const sku of colorSkus) {
+        const [existingVariant] = await this.db
+          .select()
+          .from(ssVariants)
+          .where(
+            and(
+              eq(ssVariants.tenantId, tenantId),
+              eq(ssVariants.skuId, sku.skuID),
+            ),
+          )
+          .limit(1);
+        const variantValues = {
+          tenantId,
+          productUuid: productRow!.id,
+          skuId: sku.skuID,
+          sku: sku.sku,
+          gtin: sku.gtin ?? null,
+          sizeName: sku.sizeName,
+          sizeCode: sku.sizeCode ?? null,
+          sizeOrder: sku.sizeOrder ?? 0,
+          customerPriceMinor: dollarsToMinor(sku.customerPrice),
+          mapPriceMinor:
+            sku.mapPrice == null ? null : dollarsToMinor(sku.mapPrice),
+          qty: sku.qty ?? 0,
+          active: true,
+          updatedAt: new Date(),
+          createdBy: actor,
+          source: { system: "vendor" as const },
+        };
+        if (existingVariant) {
+          await this.db
+            .update(ssVariants)
+            .set(variantValues)
+            .where(eq(ssVariants.id, existingVariant.id));
+        } else {
+          const [created] = await this.db
+            .insert(ssVariants)
+            .values(variantValues)
+            .returning();
+          await this.db.insert(vendorMappings).values({
+            tenantId,
+            vendor: VENDOR,
+            entityType: "variant",
+            entityId: created!.id,
+            externalId: String(sku.skuID),
+            metadata: { sku: sku.sku },
+            createdBy: actor,
+            source: { system: "vendor" },
+          });
+        }
+        skusUpserted += 1;
+      }
+    }
+
+    return { skusUpserted, imagesDownloaded };
+  }
+
+  private async assignCategories(
+    tenantId: string,
+    productUuid: string,
+    ssCategories: string[],
+    style: SsStyle,
+  ) {
+    const overrides = await this.db
+      .select()
+      .from(categoryOverrides)
+      .where(
+        and(
+          eq(categoryOverrides.tenantId, tenantId),
+          eq(categoryOverrides.productUuid, productUuid),
+        ),
+      );
+
+    await this.db
+      .delete(ssProductCategories)
+      .where(
+        and(
+          eq(ssProductCategories.tenantId, tenantId),
+          eq(ssProductCategories.productUuid, productUuid),
+        ),
+      );
+
+    if (overrides.length > 0) {
+      for (const override of overrides) {
+        await this.db.insert(ssProductCategories).values({
+          tenantId,
+          productUuid,
+          categoryId: override.categoryId,
+          assignmentSource: "override",
+        });
+      }
+      return;
+    }
+
+    const mappedIds = new Set<string>();
+    for (const key of ssCategories) {
+      const maps = await this.db
+        .select()
+        .from(ssCategoryMap)
+        .where(
+          and(
+            eq(ssCategoryMap.tenantId, tenantId),
+            eq(ssCategoryMap.ssCategoryKey, key),
+          ),
+        );
+      for (const map of maps) mappedIds.add(map.categoryId);
+    }
+
+    if (mappedIds.size === 0) {
+      const text = `${style.styleName} ${style.title ?? ""} ${style.baseCategory ?? ""}`;
+      const { categories } = await import("../../db/schema.js");
+      for (const rule of KEYWORD_FALLBACKS) {
+        if (!rule.pattern.test(text)) continue;
+        const [cat] = await this.db
+          .select()
+          .from(categories)
+          .where(
+            and(
+              eq(categories.tenantId, tenantId),
+              eq(categories.slug, rule.categorySlug),
+            ),
+          )
+          .limit(1);
+        if (cat) mappedIds.add(cat.id);
+      }
+    }
+
+    if (mappedIds.size === 0) {
+      for (const key of ssCategories.length ? ssCategories : ["uncategorized"]) {
+        const [existingUnmapped] = await this.db
+          .select()
+          .from(ssUnmappedCategories)
+          .where(
+            and(
+              eq(ssUnmappedCategories.tenantId, tenantId),
+              eq(ssUnmappedCategories.ssCategoryKey, key),
+            ),
+          )
+          .limit(1);
+        if (!existingUnmapped) {
+          await this.db.insert(ssUnmappedCategories).values({
+            tenantId,
+            ssCategoryKey: key,
+            ssCategoryLabel: key,
+            styleCount: 1,
+            sampleStyleIds: [style.styleID],
+          });
+        } else {
+          const samples = new Set([
+            ...(existingUnmapped.sampleStyleIds ?? []),
+            style.styleID,
+          ]);
+          await this.db
+            .update(ssUnmappedCategories)
+            .set({
+              styleCount: existingUnmapped.styleCount + 1,
+              sampleStyleIds: [...samples].slice(0, 20),
+              updatedAt: new Date(),
+            })
+            .where(eq(ssUnmappedCategories.id, existingUnmapped.id));
+        }
+      }
+      return;
+    }
+
+    for (const categoryId of mappedIds) {
+      await this.db.insert(ssProductCategories).values({
+        tenantId,
+        productUuid,
+        categoryId,
+          assignmentSource: "map",
+      });
+    }
+  }
+
+  private async refreshUnmapped(tenantId: string) {
+    const mappedKeys = await this.db
+      .select({ key: ssCategoryMap.ssCategoryKey })
+      .from(ssCategoryMap)
+      .where(eq(ssCategoryMap.tenantId, tenantId));
+    const keys = mappedKeys.map((row) => row.key);
+    if (keys.length === 0) return;
+    await this.db
+      .delete(ssUnmappedCategories)
+      .where(
+        and(
+          eq(ssUnmappedCategories.tenantId, tenantId),
+          inArray(ssUnmappedCategories.ssCategoryKey, keys),
+        ),
+      );
+  }
+
+  private async recomputeProductQty(tenantId: string) {
+    await this.db.execute(sql`
+      update ss_products p
+      set qty = coalesce((
+        select sum(v.qty)::int from ss_variants v
+        where v.product_uuid = p.id and v.tenant_id = p.tenant_id and v.active = true
+      ), 0),
+      updated_at = now()
+      where p.tenant_id = ${tenantId}
+    `);
+  }
+}

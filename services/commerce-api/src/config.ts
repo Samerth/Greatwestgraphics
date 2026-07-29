@@ -11,6 +11,12 @@ const EnvironmentSchema = z
       .default("false")
       .transform((value) => value === "true"),
     DEV_ADMIN_TOKEN: z.string().min(16).optional(),
+    SS_ACCOUNT_NUMBER: z.string().optional(),
+    SS_API_KEY: z.string().optional(),
+    SS_API_BASE_URL: z
+      .string()
+      .url()
+      .default("https://api-ca.ssactivewear.com"),
   })
   .superRefine((environment, context) => {
     if (environment.ENABLE_DEV_ADMIN_ROUTES && environment.NODE_ENV === "production") {

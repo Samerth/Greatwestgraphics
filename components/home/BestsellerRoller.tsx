@@ -5,14 +5,14 @@ import Link from "next/link";
 import { ArtTile } from "@/components/shared/ArtTile";
 
 const ITEMS = [
-  { slug: "heavyweight-tee", name: "Heavyweight Tee", price: "from $9.20", artIndex: 1 },
-  { slug: "fleece-hoodie", name: "Fleece Hoodie", price: "from $24.00", artIndex: 2 },
-  { slug: "6-panel-cap", name: "6-Panel Cap", price: "from $9.70", artIndex: 3 },
-  { slug: "canvas-tote", name: "Canvas Tote", price: "from $6.50", artIndex: 4 },
-  { slug: "hi-vis-crew", name: "Hi-Vis Crew", price: "from $14.00", artIndex: 5 },
-  { slug: "pique-polo", name: "Piqué Polo", price: "from $16.00", artIndex: 6 },
-  { slug: "softshell-jacket", name: "Softshell Jacket", price: "from $42.00", artIndex: 7 },
-  { slug: "ceramic-mug", name: "Ceramic Mug", price: "from $3.20", artIndex: 8 },
+  { slug: "premium-custom-tshirts", name: "Premium Custom Tees", price: "from $9.20", artIndex: 1 },
+  { slug: "hoodies-crewnecks", name: "Hoodies & Crewnecks", price: "from $24.00", artIndex: 2 },
+  { slug: "caps-beanies", name: "Caps & Beanies", price: "from $9.70", artIndex: 3 },
+  { slug: "bags-totes", name: "Bags & Totes", price: "from $6.50", artIndex: 4 },
+  { slug: "safety-hi-vis", name: "Safety Hi-Vis", price: "from $14.00", artIndex: 5 },
+  { slug: "corporate-polos", name: "Corporate Polos", price: "from $16.00", artIndex: 6 },
+  { slug: "jackets-outerwear", name: "Jackets & Outerwear", price: "from $42.00", artIndex: 7 },
+  { slug: "drinkware-mugs", name: "Drinkware & Mugs", price: "from $3.20", artIndex: 8 },
 ];
 
 export function BestsellerRoller() {

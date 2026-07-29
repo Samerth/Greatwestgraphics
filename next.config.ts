@@ -2,13 +2,20 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  transpilePackages: ["@gwg/contracts", "@gwg/pricing"],
   images: {
-    // SanMar's media CDN — enabled once real product images come from
-    // BulkData / Media Content instead of the local /public/images set.
     remotePatterns: [
       {
         protocol: "https",
         hostname: "media.sanmarcanada.com",
+      },
+      {
+        protocol: "https",
+        hostname: "www.ssactivewear.com",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.ssactivewear.com",
       },
     ],
   },

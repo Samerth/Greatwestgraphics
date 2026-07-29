@@ -1,38 +1,178 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
+import type { DecorationMethod, PricingConfig, QuoteInput } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
-import { Button } from "@/components/shared/Button";
+import { ButtonLink } from "@/components/shared/Button";
 import { AnimatedNumber } from "@/components/shared/AnimatedNumber";
 import {
+  QB_METHODS,
+  QB_METHOD_DAYS,
+  QB_PRODUCT_COST_MINOR,
+  QB_PRODUCT_IS_DARK,
   QB_PRODUCTS,
   QB_QTY_OPTIONS,
-  QB_METHODS,
   calculateQuote,
+  moneyFromMinor,
   type QbProduct,
-  type QbMethod,
 } from "@/lib/utils/quote-pricing";
 
-const INK_OPTIONS = [1, 2, 3, 4, 5, 6];
+const LOCATIONS = [
+  { id: "front", label: "Front" },
+  { id: "back", label: "Back" },
+  { id: "leftChest", label: "Left chest" },
+  { id: "sleeve", label: "Sleeve" },
+] as const;
 
-export function QuoteBuilder() {
+const COLOUR_OPTIONS = [1, 2, 3, 4] as const;
+const STITCH_PRESETS = [
+  { id: "small", stitches: 5000, label: "Small logo" },
+  { id: "medium", stitches: 8000, label: "Medium logo" },
+  { id: "large", stitches: 12000, label: "Large logo" },
+] as const;
+const DTF_SIZES = [
+  { id: "small", label: "Small", hint: "Up to 4\"" },
+  { id: "medium", label: "Medium", hint: "Up to 8\"" },
+  { id: "large", label: "Large", hint: "Up to 12\"" },
+  { id: "oversize", label: "Oversize", hint: "12\"+" },
+] as const;
+
+type CatalogOption = {
+  id: string;
+  label: string;
+  unitCostMinor: number;
+  isDark: boolean;
+  available: boolean;
+};
+
+type Props = {
+  pricingConfig: PricingConfig;
+  catalogProducts?: CatalogOption[];
+  initialMethod?: DecorationMethod;
+  initialQty?: number;
+};
+
+export function QuoteBuilder({
+  pricingConfig,
+  catalogProducts = [],
+  initialMethod = "screenPrint",
+  initialQty = 48,
+}: Props) {
+  const useCatalog = catalogProducts.length > 0;
+  const [catalogProductId, setCatalogProductId] = useState(
+    catalogProducts[0]?.id ?? "",
+  );
   const [product, setProduct] = useState<QbProduct>("T-Shirts");
-  const [qty, setQty] = useState<number>(48);
-  const [method, setMethod] = useState<QbMethod>("Screen Print");
-  const [ink, setInk] = useState<number>(2);
-  const [locked, setLocked] = useState(false);
-
+  const [qty, setQty] = useState(initialQty);
+  const [locations, setLocations] = useState<string[]>(["front"]);
+  const [method, setMethod] = useState<DecorationMethod>(initialMethod);
+  const [colours, setColours] = useState<number | "unsure">(1);
+  const [stitchPreset, setStitchPreset] = useState<"small" | "medium" | "large">(
+    "medium",
+  );
+  const [dtfSize, setDtfSize] = useState<"small" | "medium" | "large" | "oversize">(
+    "medium",
+  );
+  const [showMore, setShowMore] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [rush, setRush] = useState(false);
+  const [includePacking, setIncludePacking] = useState(true);
   const [customInput, setCustomInput] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
 
-  const { perUnit, total, savePct, turnaround } = calculateQuote({
-    product,
-    qty,
-    method,
-    ink,
-  });
+  const needsArtworkReview = colours === "unsure";
+  const effectiveColours = colours === "unsure" ? 1 : colours;
+
+  const selectedCatalog = useCatalog
+    ? catalogProducts.find((p) => p.id === catalogProductId) ?? catalogProducts[0]
+    : null;
+
+  const quoteInput: QuoteInput = useMemo(
+    () => ({
+      quantity: qty,
+      garment: {
+        unitCostMinor: selectedCatalog
+          ? selectedCatalog.unitCostMinor
+          : QB_PRODUCT_COST_MINOR[product],
+        isDark: selectedCatalog
+          ? selectedCatalog.isDark
+          : QB_PRODUCT_IS_DARK[product],
+      },
+      decorations: locations.map((location) => ({
+        method,
+        location,
+        colours: method === "screenPrint" ? effectiveColours : undefined,
+        stitchCount:
+          method === "embroidery"
+            ? STITCH_PRESETS.find((p) => p.id === stitchPreset)?.stitches
+            : undefined,
+        size: method === "dtf" ? dtfSize : undefined,
+        isOversized: false,
+        isRepeatArtwork: false,
+      })),
+      options: {
+        rush,
+        designHours: 0,
+        includePacking,
+        shippingCostMinor: 0,
+      },
+      needsArtworkReview,
+    }),
+    [
+      qty,
+      product,
+      selectedCatalog,
+      locations,
+      method,
+      effectiveColours,
+      stitchPreset,
+      dtfSize,
+      rush,
+      includePacking,
+      needsArtworkReview,
+    ],
+  );
+
+  const breakdown = useMemo(
+    () => calculateQuote(quoteInput, pricingConfig),
+    [quoteInput, pricingConfig],
+  );
+
+  const tierNudge = useMemo(() => {
+    const tiers = pricingConfig.screenPrintMatrix.qtyTiers;
+    const next = tiers.find((tier) => tier.min > qty);
+    if (!next || method !== "screenPrint") return null;
+    const currentIdx = tiers.findIndex(
+      (tier) => qty >= tier.min && (tier.max === null || qty <= tier.max),
+    );
+    const nextIdx = tiers.findIndex((tier) => tier.min === next.min);
+    const colourKey = String(effectiveColours);
+    const currentPrice =
+      pricingConfig.screenPrintMatrix.pricesByColour[colourKey]?.[currentIdx];
+    const nextPrice =
+      pricingConfig.screenPrintMatrix.pricesByColour[colourKey]?.[nextIdx];
+    if (currentPrice == null || nextPrice == null || nextPrice >= currentPrice) {
+      return null;
+    }
+    const save = (currentPrice - nextPrice) / 100;
+    return `Order ${next.min}+ and save ${moneyFromMinor(currentPrice - nextPrice)} per shirt on print.`;
+  }, [qty, method, effectiveColours, pricingConfig]);
+
+  const oneTimeLines = breakdown.lines.filter((line) =>
+    ["setup", "digitizing", "artwork_minimum", "design"].includes(line.kind),
+  );
+
+  function toggleLocation(id: string) {
+    setLocations((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((item) => item !== id);
+      }
+      return [...prev, id];
+    });
+  }
 
   function handleCustomSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,13 +186,6 @@ export function QuoteBuilder() {
     setIsCustom(true);
   }
 
-  function selectPreset(q: number) {
-    setQty(q);
-    setIsCustom(false);
-    setCustomInput("");
-    setCustomError(null);
-  }
-
   return (
     <div id="quote" className="grid grid-cols-1 lg:grid-cols-2 gap-sp-5 items-start">
       <div className="bg-bg-raised border border-border rounded-lg shadow-card p-sp-5">
@@ -61,25 +194,50 @@ export function QuoteBuilder() {
           Live Quote Builder
         </div>
         <h2 className="font-display font-bold text-header leading-header mb-sp-4">
-          Watch your price build itself.
+          Three answers. Instant estimate.
         </h2>
 
-        <QbRow label="Product">
-          {QB_PRODUCTS.map((p) => (
-            <Pill key={p} active={product === p} onClick={() => setProduct(p)}>
-              {p}
-            </Pill>
-          ))}
+        <QbRow label="1. Pick your product">
+          {useCatalog
+            ? catalogProducts.map((p) => (
+                <Pill
+                  key={p.id}
+                  active={catalogProductId === p.id}
+                  onClick={() => setCatalogProductId(p.id)}
+                >
+                  {p.label}
+                  {!p.available ? " (unavailable)" : ""}
+                </Pill>
+              ))
+            : QB_PRODUCTS.map((p) => (
+                <Pill key={p} active={product === p} onClick={() => setProduct(p)}>
+                  {p}
+                </Pill>
+              ))}
         </QbRow>
 
-        <QbRow label="Quantity">
+        <QbRow label="2. How many?">
           {QB_QTY_OPTIONS.map((q) => (
-            <Pill key={q} active={!isCustom && qty === q} onClick={() => selectPreset(q)}>
+            <Pill
+              key={q}
+              active={!isCustom && qty === q}
+              onClick={() => {
+                setQty(q);
+                setIsCustom(false);
+                setCustomInput("");
+                setCustomError(null);
+              }}
+            >
               {q}
               {q === 500 ? "+" : ""}
             </Pill>
           ))}
         </QbRow>
+        {tierNudge && (
+          <p className="text-[12.5px] text-accent font-semibold -mt-2 mb-sp-3">
+            {tierNudge}
+          </p>
+        )}
 
         <div className="mb-sp-4">
           <label className="block text-xs font-bold tracking-[0.1em] uppercase text-text-tertiary mb-sp-2">
@@ -108,32 +266,115 @@ export function QuoteBuilder() {
           {customError && (
             <p className="text-[12.5px] text-red-600 font-semibold mt-1.5">{customError}</p>
           )}
-          {isCustom && !customError && (
-            <p className="text-[12.5px] text-accent font-semibold mt-1.5">
-              Pricing custom quantity: {qty.toLocaleString()} pieces
-            </p>
-          )}
         </div>
 
-        <QbRow label="Print Method">
-          {QB_METHODS.map((m) => (
-            <Pill key={m} active={method === m} onClick={() => setMethod(m)}>
-              {m}
+        <QbRow label="3. Where does your design go?">
+          {LOCATIONS.map((loc) => (
+            <Pill
+              key={loc.id}
+              active={locations.includes(loc.id)}
+              onClick={() => toggleLocation(loc.id)}
+            >
+              {loc.label}
             </Pill>
           ))}
         </QbRow>
 
-        <QbRow label="Ink Colours">
-          {INK_OPTIONS.map((i) => (
-            <Pill key={i} round active={ink === i} onClick={() => setInk(i)}>
-              {i}
-            </Pill>
-          ))}
-        </QbRow>
-        <p className="text-[12.5px] text-text-tertiary -mt-2">
-          <span className="text-accent">●</span> Pricing drops automatically at 50, 100
-          and 250+ units.
-        </p>
+        <button
+          type="button"
+          className="text-sm font-bold text-accent mb-sp-3"
+          onClick={() => setShowMore((v) => !v)}
+        >
+          {showMore ? "Hide optional details" : "Printing method & more options"}
+        </button>
+
+        {showMore && (
+          <div className="border-t border-border pt-sp-3 space-y-sp-4">
+            <QbRow label="Printing method">
+              {QB_METHODS.map((m) => (
+                <Pill
+                  key={m.id}
+                  active={method === m.id}
+                  onClick={() => setMethod(m.id)}
+                >
+                  <span className="block">{m.label}</span>
+                  <span className="block text-[11px] font-medium opacity-80">
+                    {m.blurb}
+                  </span>
+                </Pill>
+              ))}
+            </QbRow>
+
+            {method === "screenPrint" && (
+              <QbRow label="How many colours in your design?">
+                {COLOUR_OPTIONS.map((c) => (
+                  <Pill
+                    key={c}
+                    round
+                    active={colours === c}
+                    onClick={() => setColours(c)}
+                  >
+                    {c === 4 ? "4+" : c}
+                  </Pill>
+                ))}
+                <Pill
+                  active={colours === "unsure"}
+                  onClick={() => setColours("unsure")}
+                >
+                  Not sure
+                </Pill>
+              </QbRow>
+            )}
+
+            {method === "embroidery" && (
+              <QbRow label="Logo size">
+                {STITCH_PRESETS.map((p) => (
+                  <Pill
+                    key={p.id}
+                    active={stitchPreset === p.id}
+                    onClick={() => setStitchPreset(p.id)}
+                  >
+                    {p.label}
+                  </Pill>
+                ))}
+              </QbRow>
+            )}
+
+            {method === "dtf" && (
+              <QbRow label="Transfer size">
+                {DTF_SIZES.map((s) => (
+                  <Pill
+                    key={s.id}
+                    active={dtfSize === s.id}
+                    onClick={() => setDtfSize(s.id)}
+                  >
+                    <span className="block">{s.label}</span>
+                    <span className="block text-[11px] opacity-80">{s.hint}</span>
+                  </Pill>
+                ))}
+              </QbRow>
+            )}
+
+            <div className="flex flex-col gap-2 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={includePacking}
+                  onChange={(e) => setIncludePacking(e.target.checked)}
+                />
+                Include packing
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rush}
+                  onChange={(e) => setRush(e.target.checked)}
+                />
+                Rush production
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-text-primary text-white rounded-lg overflow-hidden">
@@ -146,7 +387,9 @@ export function QuoteBuilder() {
           />
           <div className="absolute left-sp-3 top-sp-3">
             <b className="block font-display text-[15px]">{product.toUpperCase()}</b>
-            <span className="text-xs text-white/60">Product photography</span>
+            <span className="text-xs text-white/60">
+              {locations.join(" · ")} · {method}
+            </span>
           </div>
         </div>
 
@@ -157,46 +400,57 @@ export function QuoteBuilder() {
           </div>
 
           <div className="flex justify-between items-center py-2">
-            <span>Per unit</span>
+            <span>Per shirt</span>
             <b>
-              <AnimatedNumber value={perUnit} />
+              <AnimatedNumber value={breakdown.perPieceMinor / 100} />
             </b>
           </div>
           <div className="flex justify-between items-center py-2 font-display text-[22px] font-bold">
-            <span className="text-body font-body font-normal">Estimated total</span>
+            <span className="text-body font-body font-normal">Order total</span>
             <span className="text-accent">
-              <AnimatedNumber value={total} />
+              <AnimatedNumber value={breakdown.totalMinor / 100} />
             </span>
           </div>
+
+          {oneTimeLines.length > 0 && (
+            <div className="border border-border rounded-sm mb-sp-3">
+              <button
+                type="button"
+                className="w-full flex justify-between items-center px-3 py-2 text-sm font-semibold"
+                onClick={() => setSetupOpen((v) => !v)}
+              >
+                <span>
+                  One-time setup: {moneyFromMinor(breakdown.oneTimeFeesMinor)}
+                </span>
+                <span>{setupOpen ? "⌃" : "⌄"}</span>
+              </button>
+              {setupOpen && (
+                <ul className="px-3 pb-2 text-[12.5px] text-text-secondary space-y-1">
+                  {oneTimeLines.map((line) => (
+                    <li key={line.label} className="flex justify-between gap-2">
+                      <span>{line.label}</span>
+                      <span>{moneyFromMinor(line.extendedAmountMinor)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <div className="text-[12.5px] text-text-secondary my-1.5 mb-sp-3">
-            {turnaround} · {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}
+            {QB_METHOD_DAYS[method]} · {qty.toLocaleString()}{" "}
+            {qty === 1 ? "piece" : "pieces"}
           </div>
 
-          <div className="flex gap-2 flex-wrap mb-sp-3">
-            <span className="text-xs font-bold bg-bg-raised border border-accent text-accent rounded-sm px-2.5 py-1.5">
-              {qty > 24
-                ? `Saving ${Math.max(savePct, 0)}% vs. our 24-unit base price`
-                : "Base pricing shown for a 24-unit order"}
-            </span>
-            <span className="text-xs font-bold bg-bg-raised border border-border rounded-sm px-2.5 py-1.5">
-              Free digital proof
-            </span>
-          </div>
+          <p className="text-[12.5px] text-text-secondary mb-sp-3">
+            {needsArtworkReview
+              ? "Estimated from a 1-colour print — final price confirmed by our team within 1 business day."
+              : "Estimated from your selections — final price confirmed when we review your artwork."}
+          </p>
 
-          <Button
-            className="w-full"
-            onClick={() => {
-              setLocked((value) => !value);
-            }}
-          >
-            {locked ? "Estimate saved for this session ✓" : "Save This Estimate"}
-          </Button>
-          {locked && (
-            <p className="text-[12px] text-text-secondary text-center mt-2">
-              Frontend preview only — submit your project details when quote services are connected.
-            </p>
-          )}
+          <ButtonLink href="/checkout" className="w-full">
+            Get exact quote
+          </ButtonLink>
         </div>
       </div>
     </div>
@@ -227,15 +481,16 @@ function Pill({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "border font-semibold text-sm transition-colors",
+        "border font-semibold text-sm transition-colors text-left",
         round
           ? "w-[38px] h-[38px] rounded-full grid place-items-center p-0 text-xs"
           : "px-4 py-2.5 rounded-sm",
         active
           ? "bg-accent border-accent text-white"
-          : "bg-bg-raised border-border text-text-primary hover:border-text-tertiary"
+          : "bg-bg-raised border-border text-text-primary hover:border-text-tertiary",
       )}
     >
       {children}

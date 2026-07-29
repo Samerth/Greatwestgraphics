@@ -1,0 +1,28 @@
+{
+  "name": "@gwg/pricing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretypecheck": "npm run build --workspace @gwg/contracts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build --workspace @gwg/contracts && npm run build",
+    "test": "vitest run",
+    "prebuild": "npm run build --workspace @gwg/contracts"
+  },
+  "dependencies": {
+    "@gwg/contracts": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.0"
+  }
+}

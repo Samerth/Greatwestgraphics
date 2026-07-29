@@ -65,6 +65,245 @@ export const IdempotencyKeySchema = z
   .max(255)
   .regex(/^[A-Za-z0-9._:-]+$/);
 
+export const MinorAmountSchema = z.number().int().nonnegative();
+export type MinorAmount = z.infer<typeof MinorAmountSchema>;
+
+export const QtyTierSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive().nullable(),
+});
+export type QtyTier = z.infer<typeof QtyTierSchema>;
+
+export const PricingConfigStatusSchema = z.enum([
+  "draft",
+  "published",
+  "archived",
+]);
+export type PricingConfigStatus = z.infer<typeof PricingConfigStatusSchema>;
+
+export const PricingSettingsSchema = z.object({
+  minimumOrderQty: z.number().int().positive(),
+  setupFeeNewPerColourMinor: MinorAmountSchema,
+  setupFeeRepeatPerColourMinor: MinorAmountSchema,
+  artworkMinimumFeeMinor: MinorAmountSchema,
+  designHourlyRateMinor: MinorAmountSchema,
+  rushFeePercent: z.number().min(0).max(5),
+  oversizedSurchargePerLocationMinor: MinorAmountSchema,
+  packingFeePerGarmentMinor: MinorAmountSchema,
+  shippingMarkupPercent: z.number().min(0).max(5),
+  roundGarmentCostUpToWholeDollar: z.boolean(),
+  garmentCostCapForMarkupMinor: MinorAmountSchema,
+});
+export type PricingSettings = z.infer<typeof PricingSettingsSchema>;
+
+export const PricingMultipliersSchema = z.object({
+  screenPrint: z.number().positive(),
+  darkGarmentPremium: z.number().positive(),
+  embroidery: z.number().positive(),
+  dtf: z.number().positive(),
+  garmentMarkup: z.number().positive(),
+});
+export type PricingMultipliers = z.infer<typeof PricingMultipliersSchema>;
+
+export const ScreenPrintMatrixSchema = z.object({
+  qtyTiers: z.array(QtyTierSchema).min(1),
+  /** Keys "1".."8"; each array aligns with qtyTiers, values in minor units. */
+  pricesByColour: z.record(z.string(), z.array(MinorAmountSchema).min(1)),
+});
+export type ScreenPrintMatrix = z.infer<typeof ScreenPrintMatrixSchema>;
+
+export const EmbroideryTierSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive().nullable(),
+  baseTo5000Minor: MinorAmountSchema,
+  extraPer1000Minor: MinorAmountSchema,
+  digitizingFeeMinor: MinorAmountSchema,
+});
+export type EmbroideryTier = z.infer<typeof EmbroideryTierSchema>;
+
+export const DtfTierSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive().nullable(),
+  smallMinor: MinorAmountSchema,
+  mediumMinor: MinorAmountSchema,
+  largeMinor: MinorAmountSchema,
+  oversizeMinor: MinorAmountSchema,
+});
+export type DtfTier = z.infer<typeof DtfTierSchema>;
+
+export const GarmentMarkupSchema = z.object({
+  mode: z.enum(["anchorGrid", "formula"]),
+  /** Whole-dollar cost anchors in major units (e.g. 1, 5, 10). */
+  costAnchors: z.array(z.number().positive()).min(2),
+  qtyAnchors: z.array(z.number().int().positive()).min(2),
+  /** rows = costAnchors, cols = qtyAnchors; unitless markup multipliers. */
+  grid: z.array(z.array(z.number().positive()).min(2)).min(2),
+});
+export type GarmentMarkup = z.infer<typeof GarmentMarkupSchema>;
+
+export const PricingConfigSchema = z.object({
+  version: z.number().int().positive(),
+  status: PricingConfigStatusSchema,
+  effectiveFrom: z.string().optional(),
+  settings: PricingSettingsSchema,
+  multipliers: PricingMultipliersSchema,
+  screenPrintMatrix: ScreenPrintMatrixSchema,
+  embroideryTiers: z.array(EmbroideryTierSchema).min(1),
+  dtfTiers: z.array(DtfTierSchema).min(1),
+  garmentMarkup: GarmentMarkupSchema,
+});
+export type PricingConfig = z.infer<typeof PricingConfigSchema>;
+
+export const DecorationMethodSchema = z.enum([
+  "screenPrint",
+  "embroidery",
+  "dtf",
+]);
+export type DecorationMethod = z.infer<typeof DecorationMethodSchema>;
+
+export const DtfSizeSchema = z.enum(["small", "medium", "large", "oversize"]);
+export type DtfSize = z.infer<typeof DtfSizeSchema>;
+
+export const DecorationLocationInputSchema = z.object({
+  method: DecorationMethodSchema,
+  location: z.string().min(1).max(100),
+  colours: z.number().int().min(1).max(8).optional(),
+  stitchCount: z.number().int().positive().optional(),
+  size: DtfSizeSchema.optional(),
+  isOversized: z.boolean().default(false),
+  isRepeatArtwork: z.boolean().default(false),
+});
+export type DecorationLocationInput = z.infer<
+  typeof DecorationLocationInputSchema
+>;
+
+export const QuoteInputSchema = z.object({
+  quantity: z.number().int().positive(),
+  garment: z.object({
+    unitCostMinor: MinorAmountSchema,
+    isDark: z.boolean().default(false),
+  }),
+  decorations: z.array(DecorationLocationInputSchema).max(20).default([]),
+  options: z
+    .object({
+      rush: z.boolean().default(false),
+      designHours: z.number().min(0).max(200).default(0),
+      includePacking: z.boolean().default(false),
+      shippingCostMinor: MinorAmountSchema.default(0),
+    })
+    .default({}),
+  needsArtworkReview: z.boolean().default(false),
+});
+export type QuoteInput = z.infer<typeof QuoteInputSchema>;
+
+export const QuoteLineKindSchema = z.enum([
+  "garment",
+  "decoration",
+  "setup",
+  "digitizing",
+  "artwork_minimum",
+  "design",
+  "packing",
+  "shipping",
+  "rush",
+  "oversized",
+]);
+export type QuoteLineKind = z.infer<typeof QuoteLineKindSchema>;
+
+export const QuoteBreakdownLineSchema = z.object({
+  kind: QuoteLineKindSchema,
+  label: z.string().min(1).max(200),
+  quantity: z.number().int().nonnegative(),
+  unitAmountMinor: z.number().int(),
+  extendedAmountMinor: z.number().int(),
+  meta: z.record(z.unknown()).optional(),
+});
+export type QuoteBreakdownLine = z.infer<typeof QuoteBreakdownLineSchema>;
+
+export const QuoteBreakdownSchema = z.object({
+  pricingConfigVersion: z.number().int().positive(),
+  currency: z.literal("CAD").default("CAD"),
+  quantity: z.number().int().positive(),
+  garmentSellPerPieceMinor: MinorAmountSchema,
+  decorationPerPieceMinor: MinorAmountSchema,
+  perPieceMinor: MinorAmountSchema,
+  oneTimeFeesMinor: MinorAmountSchema,
+  packingMinor: MinorAmountSchema,
+  shippingMinor: MinorAmountSchema,
+  rushMinor: MinorAmountSchema,
+  subtotalBeforeRushMinor: MinorAmountSchema,
+  totalMinor: MinorAmountSchema,
+  needsArtworkReview: z.boolean(),
+  lines: z.array(QuoteBreakdownLineSchema).min(1),
+});
+export type QuoteBreakdown = z.infer<typeof QuoteBreakdownSchema>;
+
+export const LinePricingSnapshotSchema = z.object({
+  input: QuoteInputSchema,
+  breakdown: QuoteBreakdownSchema,
+  pricingConfigVersion: z.number().int().positive(),
+});
+export type LinePricingSnapshot = z.infer<typeof LinePricingSnapshotSchema>;
+
+export const PublishedPricingConfigResponseSchema = z.object({
+  id: CanonicalIdSchema,
+  tenantId: CanonicalIdSchema,
+  version: z.number().int().positive(),
+  status: z.literal("published"),
+  publishedAt: z.string().datetime().nullable(),
+  config: PricingConfigSchema,
+});
+export type PublishedPricingConfigResponse = z.infer<
+  typeof PublishedPricingConfigResponseSchema
+>;
+
+export const PricingConfigVersionSummarySchema = z.object({
+  id: CanonicalIdSchema,
+  version: z.number().int().positive(),
+  status: PricingConfigStatusSchema,
+  publishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type PricingConfigVersionSummary = z.infer<
+  typeof PricingConfigVersionSummarySchema
+>;
+
+export const PricingConfigDraftResponseSchema = z.object({
+  id: CanonicalIdSchema,
+  tenantId: CanonicalIdSchema,
+  version: z.number().int().positive(),
+  status: z.literal("draft"),
+  config: PricingConfigSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type PricingConfigDraftResponse = z.infer<
+  typeof PricingConfigDraftResponseSchema
+>;
+
+export const UpsertPricingConfigDraftSchema = z.object({
+  context: RequestContextSchema,
+  config: PricingConfigSchema,
+});
+export type UpsertPricingConfigDraft = z.infer<
+  typeof UpsertPricingConfigDraftSchema
+>;
+
+export const PublishPricingConfigSchema = z.object({
+  context: RequestContextSchema,
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type PublishPricingConfig = z.infer<typeof PublishPricingConfigSchema>;
+
+export const RestorePricingConfigDraftSchema = z.object({
+  context: RequestContextSchema,
+  version: z.number().int().positive(),
+});
+export type RestorePricingConfigDraft = z.infer<
+  typeof RestorePricingConfigDraftSchema
+>;
+
 export const JobRequestLineInputSchema = z.object({
   productId: CanonicalIdSchema.optional(),
   styleId: CanonicalIdSchema.optional(),
@@ -73,7 +312,12 @@ export const JobRequestLineInputSchema = z.object({
   quantity: z.number().int().positive(),
   unitPriceEstimateMinor: z.number().int().nonnegative().optional(),
   currency: z.string().length(3).toUpperCase().default("CAD"),
-  configuration: z.record(z.unknown()).default({}),
+  configuration: z
+    .object({
+      pricing: LinePricingSnapshotSchema.optional(),
+    })
+    .passthrough()
+    .default({}),
 });
 export type JobRequestLineInput = z.infer<typeof JobRequestLineInputSchema>;
 

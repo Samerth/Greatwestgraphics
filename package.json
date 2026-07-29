@@ -20,10 +20,12 @@
     "db:generate": "npm run db:generate --workspace @gwg/commerce-api",
     "db:migrate": "npm run db:migrate --workspace @gwg/commerce-api",
     "db:seed": "npm run db:seed --workspace @gwg/commerce-api",
-    "db:studio": "npm run db:studio --workspace @gwg/commerce-api"
+    "db:studio": "npm run db:studio --workspace @gwg/commerce-api",
+    "sync:ss": "npm run sync:ss --workspace @gwg/commerce-api"
   },
   "dependencies": {
     "@gwg/contracts": "0.1.0",
+    "@gwg/pricing": "0.1.0",
     "@hookform/resolvers": "^3.9.1",
     "@neondatabase/serverless": "^0.10.4",
     "@radix-ui/react-accordion": "^1.2.2",

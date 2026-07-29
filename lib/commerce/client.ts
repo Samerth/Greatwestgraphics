@@ -5,13 +5,21 @@ import {
   JobRequestDetailResponseSchema,
   JobRequestListResponseSchema,
   JobRequestResponseSchema,
+  PricingConfigDraftResponseSchema,
+  PricingConfigVersionSummarySchema,
+  PublishedPricingConfigResponseSchema,
   SubmitJobRequestSchema,
   type JobRequestDetailResponse,
   type JobRequestListResponse,
   type JobRequestResponse,
+  type PricingConfig,
+  type PricingConfigDraftResponse,
+  type PricingConfigVersionSummary,
+  type PublishedPricingConfigResponse,
   type StorefrontJobSubmission,
+  type UpsertPricingConfigDraft,
 } from "@gwg/contracts";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   loadCommerceWebEnvironment,
   type CommerceWebEnvironment,
@@ -30,7 +38,7 @@ export class CommerceApiError extends Error {
 export class CommerceClient {
   constructor(private readonly environment: CommerceWebEnvironment) {}
 
-  private headers(idempotencyKey?: string): HeadersInit {
+  private headers(idempotencyKey?: string, adminToken?: string): HeadersInit {
     return {
       "content-type": "application/json",
       [CommerceHeaders.tenantId]: this.environment.COMMERCE_DEV_TENANT_ID,
@@ -41,6 +49,7 @@ export class CommerceClient {
       ...(idempotencyKey
         ? { [CommerceHeaders.idempotencyKey]: idempotencyKey }
         : {}),
+      ...(adminToken ? { "x-dev-admin-token": adminToken } : {}),
     };
   }
 
@@ -55,7 +64,7 @@ export class CommerceClient {
         ...init,
         headers: { ...this.headers(), ...init.headers },
         cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
+        signal: init.signal ?? AbortSignal.timeout(10_000),
       });
     } catch {
       throw new CommerceApiError(
@@ -86,6 +95,76 @@ export class CommerceClient {
       );
     }
     return parsed.data;
+  }
+
+  getPublishedPricingConfig(): Promise<PublishedPricingConfigResponse> {
+    return this.request(
+      "/pricing-config/published",
+      PublishedPricingConfigResponseSchema,
+    );
+  }
+
+  getPricingDraft(adminToken: string): Promise<PricingConfigDraftResponse> {
+    return this.request(
+      "/admin/pricing-config/draft",
+      PricingConfigDraftResponseSchema,
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  savePricingDraft(
+    config: PricingConfig,
+    adminToken: string,
+  ): Promise<PricingConfigDraftResponse> {
+    const body: UpsertPricingConfigDraft = {
+      context: {
+        tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+        accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+        storeId: this.environment.COMMERCE_DEV_STORE_ID,
+      },
+      config,
+    };
+    return this.request(
+      "/admin/pricing-config/draft",
+      PricingConfigDraftResponseSchema,
+      {
+        method: "PUT",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  publishPricingDraft(
+    adminToken: string,
+    idempotencyKey: string,
+  ): Promise<PublishedPricingConfigResponse> {
+    return this.request(
+      "/admin/pricing-config/publish",
+      PublishedPricingConfigResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(idempotencyKey, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+          },
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  listPricingVersions(
+    adminToken: string,
+  ): Promise<PricingConfigVersionSummary[]> {
+    return this.request(
+      "/admin/pricing-config/versions",
+      z.array(PricingConfigVersionSummarySchema),
+      { headers: this.headers(undefined, adminToken) },
+    );
   }
 
   async submitJobRequest(
@@ -145,6 +224,214 @@ export class CommerceClient {
       `/v1/job-requests/${encodeURIComponent(id)}`,
       JobRequestDetailResponseSchema,
     );
+  }
+
+  transitionJobRequest(
+    id: string,
+    toStatus: string,
+    adminToken: string,
+    reason?: string,
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/transition`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+          },
+          toStatus,
+          reason,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  getAdminDashboard(adminToken: string) {
+    return this.request("/admin/dashboard", z.record(z.unknown()), {
+      headers: this.headers(undefined, adminToken),
+    });
+  }
+
+  listCatalogProducts(
+    query?: { search?: string; categoryId?: string; limit?: number },
+    adminToken?: string,
+  ) {
+    const params = new URLSearchParams();
+    if (query?.search) params.set("search", query.search);
+    if (query?.categoryId) params.set("categoryId", query.categoryId);
+    if (query?.limit) params.set("limit", String(query.limit));
+    const qs = params.toString();
+    const path = adminToken
+      ? `/admin/catalog/products${qs ? `?${qs}` : ""}`
+      : `/v1/catalog/products${qs ? `?${qs}` : ""}`;
+    return this.request(path, z.array(z.record(z.unknown())), {
+      headers: adminToken
+        ? this.headers(undefined, adminToken)
+        : this.headers(),
+    });
+  }
+
+  getCatalogProduct(productId: string, adminToken?: string) {
+    const path = adminToken
+      ? `/admin/catalog/products/${encodeURIComponent(productId)}`
+      : `/v1/catalog/products/${encodeURIComponent(productId)}`;
+    return this.request(path, z.record(z.unknown()), {
+      headers: adminToken
+        ? this.headers(undefined, adminToken)
+        : this.headers(),
+    });
+  }
+
+  patchCatalogProduct(
+    productId: string,
+    body: { active?: boolean; isDark?: boolean; categoryIds?: string[] },
+    adminToken: string,
+  ) {
+    return this.request(
+      `/admin/catalog/products/${encodeURIComponent(productId)}`,
+      z.record(z.unknown()),
+      {
+        method: "PATCH",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  listCategories(adminToken?: string) {
+    const path = adminToken ? "/admin/categories" : "/v1/catalog/categories";
+    return this.request(path, z.array(z.record(z.unknown())), {
+      headers: adminToken
+        ? this.headers(undefined, adminToken)
+        : this.headers(),
+    });
+  }
+
+  createCategory(
+    body: {
+      name: string;
+      slug: string;
+      parentId?: string | null;
+      sortOrder?: number;
+    },
+    adminToken: string,
+  ) {
+    return this.request("/admin/categories", z.record(z.unknown()), {
+      method: "POST",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateCategory(
+    categoryId: string,
+    body: Partial<{
+      name: string;
+      slug: string;
+      parentId: string | null;
+      sortOrder: number;
+    }>,
+    adminToken: string,
+  ) {
+    return this.request(
+      `/admin/categories/${encodeURIComponent(categoryId)}`,
+      z.record(z.unknown()),
+      {
+        method: "PATCH",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  deleteCategory(categoryId: string, adminToken: string) {
+    return this.request(
+      `/admin/categories/${encodeURIComponent(categoryId)}`,
+      z.object({ ok: z.boolean() }),
+      {
+        method: "DELETE",
+        headers: this.headers(undefined, adminToken),
+      },
+    );
+  }
+
+  reorderCategories(orderedIds: string[], adminToken: string) {
+    return this.request("/admin/categories/reorder", z.array(z.record(z.unknown())), {
+      method: "PUT",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify({ orderedIds }),
+    });
+  }
+
+  getCategoryMappings(adminToken: string) {
+    return this.request(
+      "/admin/categories/mappings",
+      z.object({
+        mappings: z.array(z.record(z.unknown())),
+        unmapped: z.array(z.record(z.unknown())),
+      }),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  putCategoryMapping(
+    body: {
+      ssCategoryKey: string;
+      ssCategoryLabel?: string;
+      categoryIds: string[];
+    },
+    adminToken: string,
+  ) {
+    return this.request("/admin/categories/mappings", z.array(z.record(z.unknown())), {
+      method: "PUT",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify(body),
+    });
+  }
+
+  getCatalogSettings(adminToken: string) {
+    return this.request("/admin/catalog/settings", z.record(z.unknown()), {
+      headers: this.headers(undefined, adminToken),
+    });
+  }
+
+  updateCatalogSettings(
+    body: { retailMarkup?: string; brandAllowlist?: string[] },
+    adminToken: string,
+  ) {
+    return this.request("/admin/catalog/settings", z.record(z.unknown()), {
+      method: "PUT",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify(body),
+    });
+  }
+
+  listSyncRuns(adminToken: string) {
+    return this.request("/admin/catalog/sync-runs", z.array(z.record(z.unknown())), {
+      headers: this.headers(undefined, adminToken),
+    });
+  }
+
+  runCatalogSync(type: "full" | "inventory", adminToken: string) {
+    return this.request("/admin/catalog/sync", z.record(z.unknown()), {
+      method: "POST",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify({
+        context: {
+          tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+          accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+          storeId: this.environment.COMMERCE_DEV_STORE_ID,
+        },
+        type,
+      }),
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
   }
 }
 
