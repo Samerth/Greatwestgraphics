@@ -13,8 +13,8 @@ export default async function AdminCategoryMappingsPage() {
 
   try {
     const [mapPayload, cats] = await Promise.all([
-      adminClient().getCategoryMappings(token),
-      adminClient().listCategories(token),
+      (await adminClient()).getCategoryMappings(token),
+      (await adminClient()).listCategories(token),
     ]);
     mappings = mapPayload.mappings;
     unmapped = mapPayload.unmapped;

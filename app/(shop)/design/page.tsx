@@ -1,8 +1,59 @@
+import type { Metadata } from "next";
 import { Container } from "@/components/shared/Container";
-import { DesignStudio } from "@/components/design/DesignStudio";
+import { DesignStudio, type SavedDesignProject } from "@/components/design/DesignStudio";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
+import { loadStorefrontCatalog, toCrossSellItems } from "@/lib/commerce/catalog";
+import { getCustomerSession } from "@/lib/auth/session";
+import { createCommerceClient } from "@/lib/commerce/client";
 
-export default function DesignPage() {
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Design Studio — Upload & Preview Your Artwork Live",
+  description:
+    "Upload your logo or artwork and preview it live on real garments before you order. Move, scale and rotate your design and see the mockup update instantly.",
+  alternates: { canonical: "/design" },
+};
+
+export default async function DesignPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ loadDesignId?: string; garmentId?: string }>;
+}) {
+  const { loadDesignId, garmentId } = await searchParams;
+  const [catalog, session] = await Promise.all([
+    // Catalog is sorted brand-then-style alphabetically and Adidas alone
+    // has 170 colourways — a small limit would silently only ever offer
+    // Adidas garments. 150 trades some brand variety for lower latency.
+    loadStorefrontCatalog({ limit: 150 }),
+    getCustomerSession(),
+  ]);
+  const garments = catalog.products
+    .filter((p) => p.available)
+    .map((p) => ({
+      id: p.id,
+      label: p.name,
+      colorName: p.colorName,
+      imageUrl: p.imageUrl,
+      isDark: p.isDark,
+    }));
+  const crossSellItems = toCrossSellItems(catalog.products);
+
+  let initialDesign: SavedDesignProject | null = null;
+  if (loadDesignId && session) {
+    try {
+      const row = await (await createCommerceClient()).getDesignProject(loadDesignId);
+      initialDesign = {
+        id: String(row.id),
+        name: String(row.name),
+        garmentProductId: row.garmentProductId ? String(row.garmentProductId) : null,
+        artworksBySide: row.artworksBySide as SavedDesignProject["artworksBySide"],
+      };
+    } catch {
+      initialDesign = null;
+    }
+  }
+
   return (
     <>
       <section className="bg-text-primary text-white pt-sp-7 pb-sp-6 relative overflow-hidden">
@@ -27,13 +78,21 @@ export default function DesignPage() {
           <div className="text-[13px] text-text-tertiary mb-sp-4">
             Home / <b className="text-text-primary">Design Studio</b>
           </div>
-          <DesignStudio />
+          <DesignStudio
+            garments={garments}
+            signedIn={Boolean(session)}
+            initialDesign={initialDesign}
+            garmentIdOverride={garmentId ?? null}
+          />
         </Container>
       </section>
 
       <section className="py-sp-8">
         <Container>
-          <CrossSellGrid title="Pair it with these Products!" />
+          <CrossSellGrid
+            title="Pair it with these Products!"
+            items={crossSellItems.length > 0 ? crossSellItems : undefined}
+          />
         </Container>
       </section>
 

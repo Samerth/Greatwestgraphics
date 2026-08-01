@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { Button, ButtonLink } from "@/components/shared/Button";
 import {
@@ -6,6 +7,8 @@ import {
 } from "@/lib/commerce/client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { money } from "@/lib/utils/quote-pricing";
+import { getCustomerSession } from "@/lib/auth/session";
+import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +18,15 @@ export default async function JobDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const session = await getCustomerSession();
+  if (!session) {
+    redirect(`/account?next=/portal/jobs/${id}`);
+  }
+
   let job;
   let error: string | undefined;
   try {
-    job = await createCommerceClient().getJobRequest(id);
+    job = await (await createCommerceClient()).getJobRequest(id);
   } catch (caught) {
     error =
       caught instanceof CommerceApiError
@@ -47,7 +55,7 @@ export default async function JobDetailPage({
     <section className="py-sp-8">
       <Container>
         <p className="text-xs font-bold uppercase tracking-wider text-accent">
-          Development customer portal
+          Customer portal
         </p>
         <ButtonLink href="/portal/jobs" variant="secondary" size="sm">
           ← All jobs
@@ -71,26 +79,39 @@ export default async function JobDetailPage({
                 Submitted items
               </h2>
               <div className="space-y-sp-3">
-                {job.lines.map((line) => (
-                  <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
-                    <div className="flex justify-between gap-sp-3">
-                      <div>
-                        <b>{line.snapshot.description}</b>
-                        <p className="text-sm text-text-secondary mt-1 mb-0">
-                          Quantity {line.snapshot.quantity}
-                          {typeof line.snapshot.configuration.color === "string"
-                            ? ` · ${line.snapshot.configuration.color}`
-                            : ""}
-                        </p>
+                {job.lines.map((line) => {
+                  const roster = line.snapshot.configuration.roster as
+                    | RosterEntry[]
+                    | undefined;
+                  return (
+                    <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
+                      <div className="flex justify-between gap-sp-3">
+                        <div>
+                          <b>{line.snapshot.description}</b>
+                          <p className="text-sm text-text-secondary mt-1 mb-0">
+                            Quantity {line.snapshot.quantity}
+                            {typeof line.snapshot.configuration.color === "string"
+                              ? ` · ${line.snapshot.configuration.color}`
+                              : ""}
+                          </p>
+                        </div>
+                        {line.snapshot.unitPriceEstimateMinor !== undefined && (
+                          <span className="text-sm whitespace-nowrap">
+                            Est. {money(line.snapshot.unitPriceEstimateMinor / 100)} each
+                          </span>
+                        )}
                       </div>
-                      {line.snapshot.unitPriceEstimateMinor !== undefined && (
-                        <span className="text-sm whitespace-nowrap">
-                          Est. {money(line.snapshot.unitPriceEstimateMinor / 100)} each
-                        </span>
+                      {roster && roster.length > 0 && (
+                        <div className="mt-sp-3">
+                          <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                            Team roster submitted
+                          </p>
+                          <RosterTable roster={roster} />
+                        </div>
                       )}
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
               <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
                 These are immutable submission snapshots. Final pricing follows

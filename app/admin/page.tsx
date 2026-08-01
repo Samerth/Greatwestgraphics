@@ -7,7 +7,7 @@ export default async function AdminDashboardPage() {
   let dash: Record<string, unknown> | null = null;
   let error: string | undefined;
   try {
-    dash = await adminClient().getAdminDashboard(requireAdminToken());
+    dash = await (await adminClient()).getAdminDashboard(requireAdminToken());
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Dashboard unavailable";
   }

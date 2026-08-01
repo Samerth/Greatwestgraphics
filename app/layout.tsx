@@ -16,10 +16,36 @@ const ibmPlexSans = IBM_Plex_Sans({
   display: "swap",
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_NAME = "Great West Graphics";
+const DEFAULT_TITLE =
+  "Great West Graphics · Vancouver Screen Printing & Embroidery";
+const DEFAULT_DESCRIPTION =
+  "Vancouver screen printing and embroidery studio. Ink, thread and 46 years of getting it right, proofed before a single sheet runs.";
+const DEFAULT_OG_IMAGE = "/images/hero-press.jpg";
+
 export const metadata: Metadata = {
-  title: "Great West Graphics · Vancouver Screen Printing & Embroidery",
-  description:
-    "Vancouver screen printing and embroidery studio. Ink, thread and 45 years of getting it right, proofed before a single sheet runs.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: DEFAULT_TITLE,
+    template: "%s · Great West Graphics",
+  },
+  description: DEFAULT_DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    url: "/",
+    images: [{ url: DEFAULT_OG_IMAGE }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE],
+  },
 };
 
 export default function RootLayout({

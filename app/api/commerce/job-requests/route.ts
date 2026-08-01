@@ -9,7 +9,7 @@ import {
 export async function POST(request: Request) {
   try {
     const submission = StorefrontJobSubmissionSchema.parse(await request.json());
-    const jobRequest = await createCommerceClient().submitJobRequest(submission);
+    const jobRequest = await (await createCommerceClient()).submitJobRequest(submission);
     return NextResponse.json(jobRequest, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) {

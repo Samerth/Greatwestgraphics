@@ -19,6 +19,7 @@ import {
   SsNotFoundError,
   dollarsToMinor,
   isDarkHex,
+  parseSizeOrder,
   slugify,
   type SsProductSku,
   type SsStyle,
@@ -35,6 +36,7 @@ const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
   { pattern: /jacket/i, categorySlug: "jackets" },
   { pattern: /vest/i, categorySlug: "vests" },
   { pattern: /jersey/i, categorySlug: "jerseys" },
+  { pattern: /\bpolo\b/i, categorySlug: "polos" },
 ];
 
 function normalizeCategories(
@@ -186,14 +188,14 @@ export class SsSyncService {
       const rows = await this.client.listInventory();
       let updated = 0;
       for (const row of rows) {
-        if (row.skuID != null) {
+        if (row.skuID_Master != null) {
           await this.db
             .update(ssVariants)
             .set({ qty: row.qty ?? 0, updatedAt: new Date() })
             .where(
               and(
                 eq(ssVariants.tenantId, tenantId),
-                eq(ssVariants.skuId, row.skuID),
+                eq(ssVariants.skuId, row.skuID_Master),
               ),
             );
           updated += 1;
@@ -432,19 +434,19 @@ export class SsSyncService {
           .where(
             and(
               eq(ssVariants.tenantId, tenantId),
-              eq(ssVariants.skuId, sku.skuID),
+              eq(ssVariants.skuId, sku.skuID_Master),
             ),
           )
           .limit(1);
         const variantValues = {
           tenantId,
           productUuid: productRow!.id,
-          skuId: sku.skuID,
+          skuId: sku.skuID_Master,
           sku: sku.sku,
           gtin: sku.gtin ?? null,
           sizeName: sku.sizeName,
           sizeCode: sku.sizeCode ?? null,
-          sizeOrder: sku.sizeOrder ?? 0,
+          sizeOrder: parseSizeOrder(sku.sizeOrder),
           customerPriceMinor: dollarsToMinor(sku.customerPrice),
           mapPriceMinor:
             sku.mapPrice == null ? null : dollarsToMinor(sku.mapPrice),
@@ -469,7 +471,7 @@ export class SsSyncService {
             vendor: VENDOR,
             entityType: "variant",
             entityId: created!.id,
-            externalId: String(sku.skuID),
+            externalId: String(sku.skuID_Master),
             metadata: { sku: sku.sku },
             createdBy: actor,
             source: { system: "vendor" },

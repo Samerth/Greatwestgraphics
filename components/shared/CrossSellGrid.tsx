@@ -6,6 +6,8 @@ export interface CrossSellItem {
   name: string;
   meta: string;
   artIndex: number;
+  imageUrl?: string | null;
+  href?: string;
 }
 
 const DEFAULT_ITEMS: CrossSellItem[] = [
@@ -28,11 +30,11 @@ export function CrossSellGrid({
         {items.map((item) => (
           <Link
             key={item.slug}
-            href={`/product/${item.slug}`}
+            href={item.href ?? `/product/${item.slug}`}
             className="group block border border-border rounded-lg overflow-hidden bg-bg-raised hover:-translate-y-0.5 hover:shadow-card-hover hover:border-accent transition-all"
           >
             <div className="relative w-full aspect-[4/3]">
-              <ArtTile artIndex={item.artIndex} alt={item.name} />
+              <ArtTile artIndex={item.artIndex} imageSrc={item.imageUrl ?? undefined} alt={item.name} />
             </div>
             <div className="p-sp-3">
               <h4 className="font-bold text-[14px] mb-0.5 truncate">{item.name}</h4>

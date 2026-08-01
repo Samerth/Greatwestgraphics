@@ -24,6 +24,20 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
+// Only names GWG's real, confirmed clients (per their own site) or a
+// generic, non-attributed job description — never a specific named
+// organization we have no evidence actually ordered from GWG.
+const GALLERY_LABELS = [
+  { name: "Marriott", meta: "Staff uniforms · embroidered" },
+  { name: "Fujitsu", meta: "Corporate polos · branded" },
+  { name: "St. George's School", meta: "Athletics hoodies · 3-colour" },
+  { name: "Grande West", meta: "Crew tees · branded" },
+  { name: "Local nonprofit", meta: "Canvas totes · benefit run" },
+  { name: "Community event", meta: "Staff tees · rush order" },
+  { name: "Trade & safety crew", meta: "Hi-vis hoodies · CSA" },
+  { name: "Corporate client", meta: "Uniform run · repeat order" },
+];
+
 const QUICK_PATHS = [
   {
     num: "01",
@@ -41,14 +55,14 @@ const QUICK_PATHS = [
     num: "03",
     title: "I have my own design",
     body: "Upload artwork and go. We proof it, match your colours, and print it right the first time.",
-    href: "/product/premium-custom-tshirts",
+    href: "/design",
   },
 ];
 
 export default async function HomePage() {
   let pricingConfig: PricingConfig = DEFAULT_PRICING_CONFIG_V1;
   try {
-    pricingConfig = (await createCommerceClient().getPublishedPricingConfig())
+    pricingConfig = (await (await createCommerceClient()).getPublishedPricingConfig())
       .config;
   } catch (caught) {
     if (!(caught instanceof CommerceApiError)) {
@@ -56,14 +70,49 @@ export default async function HomePage() {
     }
   }
 
-  const catalog = await loadStorefrontCatalog({ limit: 48 });
-  const preferDb = catalog.source === "db" && catalog.products.length > 0;
-  const catalogProducts = catalog.products.slice(0, 16).map((p) => ({
+  const [catalog, quoteCatalog] = await Promise.all([
+    loadStorefrontCatalog({ limit: 120 }),
+    // The catalog is sorted brand-then-style alphabetically, and Adidas
+    // alone has 170 colourways — a small limit here would silently only
+    // ever offer Adidas. 150 is a deliberately conservative trade-off:
+    // spans a few brands while staying fast — this is a stopgap, not a
+    // substitute for the real pagination /products has.
+    loadStorefrontCatalog({ limit: 150 }),
+  ]);
+  const preferDb = catalog.source === "db" || catalog.source === "empty";
+  const catalogProducts = quoteCatalog.products.map((p) => ({
     id: p.id,
     label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),
+    brandName: p.brandName,
+    styleName: p.styleName,
+    colorName: p.colorName,
     unitCostMinor: p.costMinor,
     isDark: p.isDark,
     available: p.available,
+  }));
+  // One representative colourway per style, so "bestsellers" and the
+  // gallery show a variety of garments rather than the same shirt five
+  // times over in different colours.
+  const seenStyles = new Set<string>();
+  const withPhoto = catalog.products.filter((p) => {
+    if (!p.available || !p.imageUrl) return false;
+    const styleKey = `${p.brandName}::${p.styleName}`;
+    if (seenStyles.has(styleKey)) return false;
+    seenStyles.add(styleKey);
+    return true;
+  });
+  const bestsellerItems = withPhoto.slice(0, 8).map((p, index) => ({
+    slug: p.slug,
+    name: p.name,
+    price: p.priceFrom,
+    artIndex: index + 1,
+    imageUrl: p.imageUrl,
+    href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
+  }));
+  const galleryItems = GALLERY_LABELS.map((label, index) => ({
+    ...label,
+    artIndex: index + 1,
+    imageUrl: withPhoto[(index + 8) % Math.max(withPhoto.length, 1)]?.imageUrl,
   }));
 
   return (
@@ -99,7 +148,7 @@ export default async function HomePage() {
       <TrustStrip />
 
       <Reveal>
-        <BestsellerRoller />
+        <BestsellerRoller items={bestsellerItems.length > 0 ? bestsellerItems : undefined} />
       </Reveal>
 
       <Reveal>
@@ -126,9 +175,25 @@ export default async function HomePage() {
             </div>
             <ProductsGrid
               preferDb={preferDb}
-              dbProducts={catalog.products}
+              // A short, diverse preview (one colourway per style) rather
+              // than dumping the full 120-item fetch here — apparel alone
+              // outnumbers every other category by 10-100x in the real
+              // catalog, so an unfiltered/uncapped grid on the homepage
+              // reads as an endless apparel wall with no way to page
+              // through it. Full browsing + real pagination lives on
+              // /products; this section's job is to preview and funnel
+              // there, not duplicate it.
+              dbProducts={withPhoto.slice(0, 24)}
               dbCategories={catalog.categories}
             />
+            <div className="mt-sp-5 flex justify-center">
+              <Link
+                href="/products"
+                className="inline-block rounded-md border border-border bg-bg-raised font-bold text-sm px-5 py-3 hover:border-accent hover:text-accent transition-colors"
+              >
+                View Full Catalogue →
+              </Link>
+            </div>
           </Container>
         </section>
       </Reveal>
@@ -151,7 +216,7 @@ export default async function HomePage() {
       </Reveal>
 
       <Reveal>
-        <Gallery />
+        <Gallery items={galleryItems} />
       </Reveal>
 
       <StatsBand />

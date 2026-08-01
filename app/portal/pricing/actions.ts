@@ -13,20 +13,20 @@ function adminToken(): string {
 }
 
 export async function savePricingDraftAction(config: PricingConfig) {
-  await createCommerceClient().savePricingDraft(config, adminToken());
+  await (await createCommerceClient()).savePricingDraft(config, adminToken());
   revalidatePath("/admin/pricing");
   revalidatePath("/portal/pricing");
 }
 
 export async function publishPricingDraftAction() {
   const key = `publish-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  await createCommerceClient().publishPricingDraft(adminToken(), key);
+  await (await createCommerceClient()).publishPricingDraft(adminToken(), key);
   revalidatePath("/admin/pricing");
   revalidatePath("/portal/pricing");
 }
 
 export async function restorePricingVersionAction(version: number) {
-  const client = createCommerceClient();
+  const client = (await createCommerceClient());
   const token = adminToken();
   // Restore via admin restore endpoint through a temporary draft upsert from version list view.
   const env = process.env;

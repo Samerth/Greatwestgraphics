@@ -29,13 +29,13 @@ export function FabricWall() {
             The Fabric Wall
           </div>
           <h2 className="font-display font-bold text-[clamp(30px,4vw,52px)] leading-[1.05] tracking-tight my-sp-3">
-            Forty colourways.
+            37 stock ink colours.
             <br />
             <span className="text-accent">Pick yours.</span>
           </h2>
           <p className="text-text-secondary max-w-[42ch] mb-sp-5 text-[15px]">
             Not little circles on a product page — the whole garment changes. Hover a
-            swatch and see your team in it.
+            swatch below to preview a few, or ask about full Pantone matching.
           </p>
 
           <div className="grid grid-cols-5 gap-3 max-w-[300px]">

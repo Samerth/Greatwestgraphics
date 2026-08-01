@@ -4,7 +4,16 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArtTile } from "@/components/shared/ArtTile";
 
-const ITEMS = [
+export type BestsellerItem = {
+  slug: string;
+  name: string;
+  price: string;
+  artIndex: number;
+  imageUrl?: string | null;
+  href?: string;
+};
+
+const FALLBACK_ITEMS: BestsellerItem[] = [
   { slug: "premium-custom-tshirts", name: "Premium Custom Tees", price: "from $9.20", artIndex: 1 },
   { slug: "hoodies-crewnecks", name: "Hoodies & Crewnecks", price: "from $24.00", artIndex: 2 },
   { slug: "caps-beanies", name: "Caps & Beanies", price: "from $9.70", artIndex: 3 },
@@ -15,9 +24,15 @@ const ITEMS = [
   { slug: "drinkware-mugs", name: "Drinkware & Mugs", price: "from $3.20", artIndex: 8 },
 ];
 
-export function BestsellerRoller() {
+export function BestsellerRoller({
+  items = FALLBACK_ITEMS,
+}: {
+  items?: BestsellerItem[];
+}) {
+  const ITEMS = items.length > 0 ? items : FALLBACK_ITEMS;
   const trackRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(false);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Gentle continuous auto-scroll, pausing on hover/touch — replaces the
   // CSS @keyframes roller-scroll + JS scrollBy hybrid from the original.
@@ -35,13 +50,26 @@ export function BestsellerRoller() {
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
   }, []);
 
   function scrollByCards(dir: 1 | -1) {
     const el = trackRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * 256 * 2, behavior: "smooth" });
+    // The arrow buttons sit outside the scroll track, so hovering/clicking
+    // them never set pausedRef via the track's mouse listeners — the
+    // continuous auto-scroll kept incrementing scrollLeft every frame and
+    // fought the smooth scrollBy below, making the arrows look broken.
+    // Pause explicitly on click and resume after a few seconds of idle.
+    pausedRef.current = true;
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    resumeTimerRef.current = setTimeout(() => {
+      pausedRef.current = false;
+    }, 4000);
+    el.scrollBy({ left: dir * 296 * 2, behavior: "smooth" });
   }
 
   return (
@@ -86,11 +114,11 @@ export function BestsellerRoller() {
           {[...ITEMS, ...ITEMS].map((item, i) => (
             <Link
               key={`${item.slug}-${i}`}
-              href={`/product/${item.slug}`}
-              className="flex-none w-[240px] border border-border rounded-lg overflow-hidden bg-bg-raised hover:-translate-y-0.5 hover:shadow-card-hover hover:border-accent transition-all"
+              href={item.href ?? `/product/${item.slug}`}
+              className="flex-none w-[280px] md:w-[320px] border border-border rounded-lg overflow-hidden bg-bg-raised hover:-translate-y-0.5 hover:shadow-card-hover hover:border-accent transition-all"
             >
-              <div className="relative h-[170px]">
-                <ArtTile artIndex={item.artIndex} alt={item.name} />
+              <div className="relative h-[240px] md:h-[280px]">
+                <ArtTile artIndex={item.artIndex} imageSrc={item.imageUrl ?? undefined} alt={item.name} />
               </div>
               <div className="p-sp-3">
                 <h4 className="font-display text-[16px] mb-1">{item.name}</h4>

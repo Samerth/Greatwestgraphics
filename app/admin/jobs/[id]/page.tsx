@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import type { JobRequestStatus } from "@gwg/contracts";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +26,11 @@ export default async function AdminJobDetailPage({
   const { id } = await params;
   let error: string | undefined;
   let detail: Awaited<
-    ReturnType<ReturnType<typeof adminClient>["getJobRequest"]>
+    ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequest"]>
   > | null = null;
 
   try {
-    detail = await adminClient().getJobRequest(id);
+    detail = await (await adminClient()).getJobRequest(id);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -113,32 +114,72 @@ export default async function AdminJobDetailPage({
       <section className="space-y-sp-3">
         <h2 className="font-display font-bold text-xl m-0">Lines</h2>
         {detail.lines.map((line) => {
-          const pricing = (
-            line.snapshot.configuration as {
-              pricing?: { breakdown?: { totalMinor?: number } };
-            }
-          )?.pricing;
+          const configuration = line.snapshot.configuration as
+            | {
+                pricing?: { breakdown?: { totalMinor?: number } };
+                image?: string;
+                artworkProofUrl?: string;
+                color?: string;
+                productMetadata?: string;
+                roster?: RosterEntry[];
+              }
+            | undefined;
+          const pricing = configuration?.pricing;
           return (
             <article
               key={line.id}
-              className="border border-border rounded-md p-sp-3"
+              className="border border-border rounded-md p-sp-3 flex gap-sp-3"
             >
-              <p className="font-semibold m-0">{line.snapshot.description}</p>
-              <p className="text-sm text-text-secondary mt-1 mb-0">
-                Qty {line.snapshot.quantity}
-                {line.snapshot.unitPriceEstimateMinor != null
-                  ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
-                  : ""}
-                {pricing?.breakdown?.totalMinor != null
-                  ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
-                  : ""}
-              </p>
-              {(line.snapshot.productId || line.snapshot.variantId) && (
-                <p className="text-xs text-text-tertiary mt-1 mb-0">
-                  Catalog: {line.snapshot.productId || "—"} /{" "}
-                  {line.snapshot.variantId || "—"}
-                </p>
+              {configuration?.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={configuration.image}
+                  alt=""
+                  className="w-16 h-16 rounded-sm object-cover object-top border border-border shrink-0"
+                />
               )}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold m-0">{line.snapshot.description}</p>
+                <p className="text-sm text-text-secondary mt-1 mb-0">
+                  Qty {line.snapshot.quantity}
+                  {line.snapshot.unitPriceEstimateMinor != null
+                    ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
+                    : ""}
+                  {pricing?.breakdown?.totalMinor != null
+                    ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
+                    : ""}
+                </p>
+                {configuration?.productMetadata && (
+                  <p className="text-xs text-text-tertiary mt-1 mb-0">
+                    {configuration.productMetadata}
+                    {configuration.color ? ` · ${configuration.color}` : ""}
+                  </p>
+                )}
+                {(line.snapshot.productId || line.snapshot.variantId) && (
+                  <p className="text-xs text-text-tertiary mt-1 mb-0">
+                    Catalog: {line.snapshot.productId || "—"} /{" "}
+                    {line.snapshot.variantId || "—"}
+                  </p>
+                )}
+                {configuration?.artworkProofUrl && (
+                  <a
+                    href={configuration.artworkProofUrl}
+                    download={`job-${line.id}-artwork.png`}
+                    className="inline-block text-xs font-bold text-accent hover:underline mt-1"
+                  >
+                    Download custom artwork proof
+                  </a>
+                )}
+                {configuration?.roster && configuration.roster.length > 0 && (
+                  <div className="mt-sp-3 pt-sp-3 border-t border-fill-subtle">
+                    <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                      Team roster — production must print exactly these{" "}
+                      {configuration.roster.length} pieces
+                    </p>
+                    <RosterTable roster={configuration.roster} />
+                  </div>
+                )}
+              </div>
             </article>
           );
         })}

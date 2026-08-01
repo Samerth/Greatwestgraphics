@@ -7,7 +7,7 @@ export default async function AdminSyncPage() {
   let runs: Record<string, unknown>[] = [];
   let error: string | undefined;
   try {
-    runs = await adminClient().listSyncRuns(requireAdminToken());
+    runs = await (await adminClient()).listSyncRuns(requireAdminToken());
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Sync history unavailable";
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { motion } from "framer-motion";
 
 const STATIONS = [
@@ -7,27 +8,25 @@ const STATIONS = [
     num: "01",
     title: "Ink Room",
     body: "Every colour is hand-mixed and Pantone-matched before it touches a screen.",
-    gradient:
-      "radial-gradient(60% 50% at 30% 45%, rgba(255,140,60,.55), transparent 65%), radial-gradient(80% 60% at 65% 60%, #d05a24, #6a2410 55%, #150703 100%)",
+    image: "/images/shop-ink.jpg",
   },
   {
     num: "02",
     title: "Thread Floor",
     body: "Logos are digitized stitch-by-stitch, then hand-trimmed after every run.",
-    gradient: "radial-gradient(60% 60% at 50% 40%, #2a3a5c, #0b1526 70%, #05080f 100%)",
+    image: "/images/shop-embroidery.jpg",
   },
   {
     num: "03",
     title: "The Press",
     body: "Cured at exact temperature so prints survive a hundred washes, not ten.",
-    gradient:
-      "radial-gradient(50% 45% at 50% 55%, rgba(255,180,110,.35), transparent 65%), radial-gradient(80% 60% at 50% 60%, #2b241d, #100a06 70%, #050302 100%)",
+    image: "/images/shop-press.jpg",
   },
   {
     num: "04",
     title: "Pack & Ship",
     body: "Counted twice, folded once, packed locally — rush orders out in 48 hours.",
-    gradient: "linear-gradient(180deg, #1a1a1e 0%, #0a0a0c 100%)",
+    image: "/images/shop-packing.jpg",
   },
 ];
 
@@ -60,10 +59,17 @@ export function WalkTheFloor() {
             >
               <motion.div
                 className="absolute inset-0"
-                style={{ background: s.gradient }}
                 variants={{ hover: { scale: 1.06 } }}
                 transition={{ duration: 0.9, ease: [0.16, 0.8, 0.3, 1] }}
-              />
+              >
+                <Image
+                  src={s.image}
+                  alt={s.title}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 768px) 50vw, 25vw"
+                />
+              </motion.div>
               <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_30%,rgba(0,0,0,.55)_70%,rgba(0,0,0,.95)_100%)]" />
               <motion.div
                 className="absolute inset-0"

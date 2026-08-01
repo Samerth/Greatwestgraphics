@@ -25,8 +25,22 @@ import {
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
-import { PricingConfigService } from "./application/pricing-config-service.js";
+import {
+  applyStorePricingAdjustment,
+  PricingConfigService,
+} from "./application/pricing-config-service.js";
 import { CatalogService } from "./application/catalog-service.js";
+import { DesignProjectService } from "./application/design-project-service.js";
+import { StoreService } from "./application/store-service.js";
+import { PersonService } from "./application/person-service.js";
+import { AccountService, SlugTakenError } from "./application/account-service.js";
+import {
+  InviteService,
+  NotAccountOwnerError,
+  InviteNotFoundError,
+  InviteExpiredError,
+  InviteEmailMismatchError,
+} from "./application/invite-service.js";
 import { SsActivewearClient } from "./adapters/ss-activewear/client.js";
 import { SsSyncService } from "./adapters/ss-activewear/sync-service.js";
 import { AuthenticationUnavailableError } from "./auth.js";
@@ -86,6 +100,11 @@ export function buildApp(input: {
   const service = new JobRequestService(input.db);
   const pricingService = new PricingConfigService(input.db);
   const catalogService = new CatalogService(input.db);
+  const designProjectService = new DesignProjectService(input.db);
+  const storeService = new StoreService(input.db);
+  const personService = new PersonService(input.db);
+  const accountService = new AccountService(input.db);
+  const inviteService = new InviteService(input.db);
 
   function staffActor(auth: AuthContext) {
     return {
@@ -124,9 +143,20 @@ export function buildApp(input: {
 
   app.get("/pricing-config/published", async (request) => {
     const auth = await input.auth.resolve(request);
-    return PublishedPricingConfigResponseSchema.parse(
-      await pricingService.getPublished(auth.tenantId),
-    );
+    const published = await pricingService.getPublished(auth.tenantId);
+    const store = await storeService
+      .getById(auth.tenantId, auth.storeId)
+      .catch(() => null);
+    const config = store
+      ? applyStorePricingAdjustment(
+          published.config,
+          store.pricingAdjustmentPercent,
+        )
+      : published.config;
+    return PublishedPricingConfigResponseSchema.parse({
+      ...published,
+      config,
+    });
   });
 
   app.post("/v1/job-requests", async (request, reply) => {
@@ -172,12 +202,36 @@ export function buildApp(input: {
       search?: string;
       categoryId?: string;
       limit?: string;
+      offset?: string;
+      brand?: string | string[];
+      priceMin?: string;
+      priceMax?: string;
     };
-    return catalogService.listProducts(auth.tenantId, {
+    const brands = query.brand
+      ? Array.isArray(query.brand)
+        ? query.brand
+        : [query.brand]
+      : undefined;
+    const filters = {
       search: query.search,
       categoryId: query.categoryId,
-      limit: query.limit ? Number(query.limit) : 50,
-    });
+      storeId: auth.storeId,
+      brands,
+      priceMinMinor: query.priceMin ? Number(query.priceMin) : undefined,
+      priceMaxMinor: query.priceMax ? Number(query.priceMax) : undefined,
+    };
+    const limit = query.limit ? Number(query.limit) : 50;
+    const offset = query.offset ? Number(query.offset) : 0;
+    const [products, total] = await Promise.all([
+      catalogService.listProducts(auth.tenantId, { ...filters, limit, offset }),
+      catalogService.countProducts(auth.tenantId, filters),
+    ]);
+    return { products, total };
+  });
+
+  app.get("/v1/catalog/brands", async (request) => {
+    const auth = await input.auth.resolve(request);
+    return catalogService.listBrands(auth.tenantId);
   });
 
   app.get("/v1/catalog/products/:productId", async (request) => {
@@ -190,7 +244,244 @@ export function buildApp(input: {
 
   app.get("/v1/catalog/categories", async (request) => {
     const auth = await input.auth.resolve(request);
-    return catalogService.listCategories(auth.tenantId);
+    const onlyWithProducts = (request.query as { onlyWithProducts?: string })
+      .onlyWithProducts === "true";
+    return catalogService.listCategories(auth.tenantId, auth.storeId, onlyWithProducts);
+  });
+
+  function requirePersonId(auth: AuthContext): string {
+    if (!auth.actor.id) {
+      throw new UnauthorizedError("Sign in to manage saved designs");
+    }
+    return auth.actor.id;
+  }
+
+  app.get("/v1/design-projects", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = requirePersonId(auth);
+    return designProjectService.list(auth.tenantId, personId);
+  });
+
+  app.get("/v1/design-projects/:id", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = requirePersonId(auth);
+    const id = CanonicalIdSchema.parse(
+      (request.params as { id?: string }).id,
+    );
+    return designProjectService.get(auth.tenantId, personId, id);
+  });
+
+  app.post("/v1/design-projects", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = requirePersonId(auth);
+    const body = z
+      .object({
+        name: z.string().min(1).max(120),
+        garmentProductId: z.string().uuid().nullable(),
+        artworksBySide: z.unknown(),
+        proofImageUrl: z.string().nullable(),
+      })
+      .parse(request.body);
+    return designProjectService.save(
+      auth.tenantId,
+      personId,
+      body,
+      { type: "customer", id: personId, displayName: "Customer" },
+    );
+  });
+
+  app.put("/v1/design-projects/:id", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = requirePersonId(auth);
+    const id = CanonicalIdSchema.parse(
+      (request.params as { id?: string }).id,
+    );
+    const body = z
+      .object({
+        name: z.string().min(1).max(120).optional(),
+        garmentProductId: z.string().uuid().nullable().optional(),
+        artworksBySide: z.unknown().optional(),
+        proofImageUrl: z.string().nullable().optional(),
+      })
+      .parse(request.body);
+    return designProjectService.update(auth.tenantId, personId, id, body);
+  });
+
+  app.delete("/v1/design-projects/:id", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = requirePersonId(auth);
+    const id = CanonicalIdSchema.parse(
+      (request.params as { id?: string }).id,
+    );
+    return designProjectService.delete(auth.tenantId, personId, id);
+  });
+
+  // Intentionally not tenant-scoped by the caller — resolving tenant/account
+  // /store identity from the inbound host IS this route's job.
+  app.get("/v1/stores/by-host", async (request, reply) => {
+    const query = request.query as { host?: string };
+    const host = z.string().min(1).parse(query.host);
+    const resolved = await storeService.resolveByHost(host);
+    if (!resolved) {
+      return reply.code(404).send({
+        error: { code: "STORE_NOT_FOUND", message: "No store for this host" },
+      });
+    }
+    return resolved;
+  });
+
+  app.post("/v1/auth/link-person", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const body = z
+      .object({
+        system: z.string().min(1),
+        externalId: z.string().min(1),
+        email: z.string().email(),
+        name: z.string().min(1),
+      })
+      .parse(request.body);
+    const store = await storeService.getById(auth.tenantId, auth.storeId);
+    const isPublicStore = !store.accentColor && !store.logoUrl;
+    return personService.findOrCreateByExternalIdentity(
+      auth.tenantId,
+      auth.accountId,
+      isPublicStore,
+      body.system,
+      body.externalId,
+      { email: body.email, name: body.name },
+    );
+  });
+
+  app.get("/v1/accounts/suggest-slug", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const query = request.query as { base?: string };
+    const base = z.string().min(1).parse(query.base);
+    const slug = await accountService.suggestSlug(auth.tenantId, base);
+    return { slug };
+  });
+
+  app.post("/v1/accounts", async (request, reply) => {
+    const auth = await input.auth.resolve(request);
+    const body = z
+      .object({
+        personId: CanonicalIdSchema,
+        accountName: z.string().min(1).max(200),
+        storeName: z.string().min(1).max(200),
+        slug: z
+          .string()
+          .min(2)
+          .max(63)
+          .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
+        accentColor: z.string().max(20).optional(),
+        logoUrl: z.string().url().max(2000).optional(),
+        tagline: z.string().max(200).optional(),
+      })
+      .parse(request.body);
+    try {
+      const result = await accountService.createAccountWithStore(
+        auth.tenantId,
+        body.personId,
+        body,
+        { type: "customer", id: body.personId, displayName: body.accountName },
+      );
+      return reply.code(201).send(result);
+    } catch (error) {
+      if (error instanceof SlugTakenError) {
+        return reply
+          .code(409)
+          .send({ error: { code: error.code, message: error.message } });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/people/:personId/memberships", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const personId = CanonicalIdSchema.parse(
+      (request.params as { personId?: string }).personId,
+    );
+    return accountService.listMembershipsForPerson(auth.tenantId, personId);
+  });
+
+  app.post("/v1/accounts/:accountId/invites", async (request, reply) => {
+    const auth = await input.auth.resolve(request);
+    const accountId = CanonicalIdSchema.parse(
+      (request.params as { accountId?: string }).accountId,
+    );
+    const body = z
+      .object({ inviterPersonId: CanonicalIdSchema, email: z.string().email() })
+      .parse(request.body);
+    try {
+      const result = await inviteService.createInvite(
+        auth.tenantId,
+        accountId,
+        body.inviterPersonId,
+        body.email,
+        { type: "customer", id: body.inviterPersonId },
+      );
+      return reply.code(201).send(result);
+    } catch (error) {
+      if (error instanceof NotAccountOwnerError) {
+        return reply
+          .code(403)
+          .send({ error: { code: error.code, message: error.message } });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/accounts/invites/:token", async (request, reply) => {
+    const token = z
+      .string()
+      .min(1)
+      .parse((request.params as { token?: string }).token);
+    try {
+      const invite = await inviteService.getInvite(token);
+      return {
+        email: invite.email,
+        accountId: invite.accountId,
+        status: invite.status,
+        expiresAt: invite.expiresAt,
+      };
+    } catch (error) {
+      if (error instanceof InviteNotFoundError) {
+        return reply
+          .code(404)
+          .send({ error: { code: error.code, message: error.message } });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/v1/accounts/invites/:token/accept", async (request, reply) => {
+    await input.auth.resolve(request);
+    const token = z
+      .string()
+      .min(1)
+      .parse((request.params as { token?: string }).token);
+    const body = z
+      .object({ personId: CanonicalIdSchema, personEmail: z.string().email() })
+      .parse(request.body);
+    try {
+      const result = await inviteService.acceptInvite(
+        token,
+        body.personId,
+        body.personEmail,
+        { type: "customer", id: body.personId },
+      );
+      return result;
+    } catch (error) {
+      if (
+        error instanceof InviteNotFoundError ||
+        error instanceof InviteExpiredError ||
+        error instanceof InviteEmailMismatchError
+      ) {
+        return reply
+          .code(400)
+          .send({ error: { code: error.code, message: error.message } });
+      }
+      throw error;
+    }
   });
 
   if (input.environment.ENABLE_DEV_ADMIN_ROUTES) {
@@ -264,6 +555,95 @@ export function buildApp(input: {
       const jobs = await service.list(auth.tenantId, auth.accountId);
       return { ...dash, openJobs: jobs.length };
     });
+
+    app.get("/admin/accounts/pending", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return accountService.listPendingStores(auth.tenantId);
+    });
+
+    app.get("/admin/accounts/all", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return accountService.listAllStores(auth.tenantId);
+    });
+
+    app.get("/admin/accounts/stores/:storeId", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const storeId = CanonicalIdSchema.parse(
+        (request.params as { storeId?: string }).storeId,
+      );
+      return storeService.getById(auth.tenantId, storeId);
+    });
+
+    app.post("/admin/accounts/stores/:storeId/status", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const storeId = CanonicalIdSchema.parse(
+        (request.params as { storeId?: string }).storeId,
+      );
+      const body = z
+        .object({ status: z.enum(["active", "suspended"]) })
+        .parse(request.body);
+      return accountService.setStoreStatus(auth.tenantId, storeId, body.status);
+    });
+
+    app.get(
+      "/admin/accounts/stores/:storeId/category-visibility",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const storeId = CanonicalIdSchema.parse(
+          (request.params as { storeId?: string }).storeId,
+        );
+        const categoryIds = await catalogService.getCategoryVisibility(
+          auth.tenantId,
+          storeId,
+        );
+        return { categoryIds };
+      },
+    );
+
+    app.put(
+      "/admin/accounts/stores/:storeId/category-visibility",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const storeId = CanonicalIdSchema.parse(
+          (request.params as { storeId?: string }).storeId,
+        );
+        const body = z
+          .object({ categoryIds: z.array(z.string().uuid()) })
+          .parse(request.body);
+        const categoryIds = await catalogService.setCategoryVisibility(
+          auth.tenantId,
+          storeId,
+          body.categoryIds,
+          staffActor(auth),
+        );
+        return { categoryIds };
+      },
+    );
+
+    app.post(
+      "/admin/accounts/stores/:storeId/pricing-adjustment",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const storeId = CanonicalIdSchema.parse(
+          (request.params as { storeId?: string }).storeId,
+        );
+        const body = z
+          .object({ percent: z.number().min(-0.9).max(2).nullable() })
+          .parse(request.body);
+        return storeService.setPricingAdjustment(
+          auth.tenantId,
+          storeId,
+          body.percent,
+        );
+      },
+    );
 
     app.get("/admin/catalog/products", async (request) => {
       assertAdmin(request, input.environment);

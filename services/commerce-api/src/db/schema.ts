@@ -27,6 +27,12 @@ const auditColumns = {
   source: jsonb("source").$type<SourceMetadata>(),
 };
 
+export const storeStatusEnum = pgEnum("store_status", [
+  "pending_review",
+  "active",
+  "suspended",
+]);
+
 export const jobRequestStatusEnum = pgEnum("job_request_status", [
   "draft",
   "submitted",
@@ -72,6 +78,16 @@ export const stores = pgTable(
       .references(() => accounts.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    status: storeStatusEnum("status").notNull().default("active"),
+    logoUrl: text("logo_url"),
+    accentColor: text("accent_color"),
+    tagline: text("tagline"),
+    customDomain: text("custom_domain"),
+    // Signed decimal string, e.g. "-0.1" for a 10% storewide discount off
+    // the tenant's published pricing config, "0.05" for a 5% markup. Null
+    // means no override — the store sees the tenant's published pricing
+    // unchanged. Applied to markup multipliers only, not flat fees.
+    pricingAdjustmentPercent: text("pricing_adjustment_percent"),
     ...auditColumns,
   },
   (table) => [
@@ -85,6 +101,11 @@ export const stores = pgTable(
       table.accountId,
       table.id,
     ),
+    // Subdomains are resolved per-tenant regardless of which account owns
+    // the store, so the slug must be unique across the whole tenant, not
+    // just within one account.
+    uniqueIndex("stores_tenant_slug_uq").on(table.tenantId, table.slug),
+    uniqueIndex("stores_custom_domain_uq").on(table.customDomain),
   ],
 );
 
@@ -117,6 +138,7 @@ export const accountPeople = pgTable(
       .notNull()
       .references(() => people.id),
     customerReference: text("customer_reference"),
+    role: text("role").notNull().default("member"),
     ...auditColumns,
   },
   (table) => [
@@ -124,6 +146,34 @@ export const accountPeople = pgTable(
       table.tenantId,
       table.accountId,
       table.personId,
+    ),
+  ],
+);
+
+export const accountInvites = pgTable(
+  "account_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("member"),
+    token: text("token").notNull(),
+    status: text("status").notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    invitedBy: jsonb("invited_by").$type<Actor>(),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("account_invites_token_uq").on(table.token),
+    index("account_invites_tenant_account_email_idx").on(
+      table.tenantId,
+      table.accountId,
+      table.email,
     ),
   ],
 );
@@ -344,6 +394,33 @@ export const categories = pgTable(
   (table) => [
     uniqueIndex("categories_tenant_slug_uq").on(table.tenantId, table.slug),
     index("categories_tenant_parent_idx").on(table.tenantId, table.parentId),
+  ],
+);
+
+// A store with zero rows here sees the full tenant catalog (default,
+// unchanged behaviour). Rows present restrict that store's storefront to
+// only the listed categories — staff-curated per corporate client.
+export const storeCategoryVisibility = pgTable(
+  "store_category_visibility",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => stores.id),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("store_category_visibility_uq").on(
+      table.storeId,
+      table.categoryId,
+    ),
+    index("store_category_visibility_store_idx").on(table.storeId),
   ],
 );
 
@@ -657,6 +734,30 @@ export const finalQuotes = pgTable(
     uniqueIndex("final_quotes_request_version_uq").on(
       table.jobRequestId,
       table.version,
+    ),
+  ],
+);
+
+export const designProjects = pgTable(
+  "design_projects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id),
+    name: text("name").notNull(),
+    garmentProductId: uuid("garment_product_id").references(() => ssProducts.id),
+    artworksBySide: jsonb("artworks_by_side").notNull(),
+    proofImageUrl: text("proof_image_url"),
+    ...auditColumns,
+  },
+  (table) => [
+    index("design_projects_tenant_person_idx").on(
+      table.tenantId,
+      table.personId,
     ),
   ],
 );

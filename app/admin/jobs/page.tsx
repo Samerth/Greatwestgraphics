@@ -17,11 +17,12 @@ const STAFF_TRANSITIONS: JobRequestStatus[] = [
 ];
 
 export default async function AdminJobsPage() {
-  let jobs: Awaited<ReturnType<ReturnType<typeof adminClient>["listJobRequests"]>> =
-    [];
+  let jobs: Awaited<
+    ReturnType<Awaited<ReturnType<typeof adminClient>>["listJobRequests"]>
+  > = [];
   let error: string | undefined;
   try {
-    jobs = await adminClient().listJobRequests();
+    jobs = await (await adminClient()).listJobRequests();
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Jobs unavailable";
   }

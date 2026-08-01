@@ -15,8 +15,10 @@ export function ArtTile({
 }) {
   if (imageSrc) {
     return (
-      <div className={cn("absolute inset-0", className)}>
-        <Image src={imageSrc} alt={alt} fill className="object-cover" />
+      <div className={cn("absolute inset-0 bg-bg-raised", className)}>
+        <div className="absolute inset-3 sm:inset-5">
+          <Image src={imageSrc} alt={alt} fill className="object-contain" />
+        </div>
       </div>
     );
   }

@@ -50,7 +50,17 @@ export function CheckoutWizard() {
     window.localStorage.setItem("gwg-checkout-details", JSON.stringify(data));
   }, [data]);
 
+  // The cart is persisted to localStorage, invisible to the server, so the
+  // server always renders as if it were empty. Wait for mount before
+  // branching on `items` so the first client render matches the server's —
+  // otherwise a returning visitor with items already in their cart sees a
+  // hydration error and a flash of the wrong state.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   if (placed) return <CheckoutSuccess jobRequest={placed} />;
+
+  if (!mounted) return null;
 
   if (items.length === 0) {
     return (
@@ -114,6 +124,9 @@ export function CheckoutWizard() {
                 },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => ({
+                  productId: item.productId,
+                  styleId: item.styleId,
+                  variantId: item.variantId,
                   description: item.name,
                   quantity: item.qty,
                   unitPriceEstimateMinor: Math.round(item.unit * 100),
@@ -123,6 +136,9 @@ export function CheckoutWizard() {
                     productMetadata: item.meta,
                     color: item.color,
                     image: item.image,
+                    artworkProofUrl: item.artworkProofUrl,
+                    pricing: item.pricingSnapshot,
+                    roster: item.roster,
                   },
                 })),
               } satisfies Omit<StorefrontJobSubmission, "idempotencyKey">;

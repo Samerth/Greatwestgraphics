@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+export const runtime = "nodejs";
+
 const COOKIE = "gwg_staff_session";
 
 function validSession(token: string | undefined): boolean {

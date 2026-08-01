@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import {
@@ -5,15 +6,21 @@ import {
   createCommerceClient,
 } from "@/lib/commerce/client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
+import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobsPage() {
+  const session = await getCustomerSession();
+  if (!session) {
+    redirect("/account?next=/portal/jobs");
+  }
+
   let jobs: JobRequestListResponse | undefined;
   let error: string | undefined;
   try {
-    jobs = await createCommerceClient().listJobRequests();
+    jobs = await (await createCommerceClient()).listJobRequests();
   } catch (caught) {
     error =
       caught instanceof CommerceApiError
@@ -25,15 +32,13 @@ export default async function JobsPage() {
     <section className="py-sp-8">
       <Container>
         <p className="text-xs font-bold uppercase tracking-wider text-accent">
-          Development customer portal
+          Customer portal
         </p>
         <h1 className="font-display font-bold text-display-sm mb-sp-2">
           Your Jobs
         </h1>
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
-          This local portal uses the Phase 1 development identity configured in
-          environment variables. Production customer authentication is not yet
-          implemented.
+          Signed in as {session.name || session.email}.
         </p>
 
         {error && (

@@ -12,7 +12,7 @@ export default async function AdminCategoriesPage() {
   let categories: Record<string, unknown>[] = [];
   let error: string | undefined;
   try {
-    categories = await adminClient().listCategories(requireAdminToken());
+    categories = await (await adminClient()).listCategories(requireAdminToken());
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Categories unavailable";
   }

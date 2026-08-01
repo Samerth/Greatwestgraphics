@@ -32,7 +32,9 @@ export type SsStyle = {
 };
 
 export type SsProductSku = {
-  skuID: number;
+  // S&S's v2 API always returns this as `skuID_Master`, never the documented
+  // `skuID` (that name only appears nested per-warehouse in `warehouses[]`).
+  skuID_Master: number;
   styleID: number;
   sku: string;
   gtin?: string;
@@ -42,7 +44,8 @@ export type SsProductSku = {
   color2?: string;
   sizeName: string;
   sizeCode?: string;
-  sizeOrder?: number;
+  // Alphanumeric in practice (e.g. "B1".."B6" for extended sizes), not numeric.
+  sizeOrder?: string;
   customerPrice?: number;
   mapPrice?: number;
   qty?: number;
@@ -59,7 +62,7 @@ export type SsCategory = {
 };
 
 export type SsInventoryRow = {
-  skuID?: number;
+  skuID_Master?: number;
   sku?: string;
   qty?: number;
 };
@@ -72,7 +75,7 @@ type FetchResult<T> = {
 const STYLE_FIELDS =
   "styleID,partNumber,brandName,styleName,title,description,baseCategory,categories,brandImage,styleImage";
 const PRODUCT_FIELDS =
-  "skuID,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage";
+  "skuID_Master,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage";
 
 export class SsActivewearClient {
   private remaining = 60;
@@ -122,7 +125,7 @@ export class SsActivewearClient {
 
   async listInventory(): Promise<SsInventoryRow[]> {
     const result = await this.getJson<SsInventoryRow[] | SsInventoryRow>(
-      `/v2/inventory/?fields=skuID,sku,qty`,
+      `/v2/inventory/?fields=skuID_Master,sku,qty`,
     );
     return Array.isArray(result.data) ? result.data : [result.data];
   }
@@ -233,6 +236,14 @@ export function isDarkHex(hex: string | null | undefined): boolean {
   const b = Number.parseInt(cleaned.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance < 0.45;
+}
+
+export function parseSizeOrder(raw: string | undefined | null): number {
+  if (!raw) return 0;
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return 0;
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function slugify(...parts: string[]): string {

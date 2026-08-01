@@ -77,7 +77,7 @@ export function ProductDetail({ slug }: { slug: string }) {
             <img
               src={cartImage}
               alt={product.name}
-              className="w-full h-full object-cover"
+              className="w-4/5 h-4/5 object-contain"
             />
           )}
           <span className="absolute left-sp-3 bottom-sp-3 rounded-full border border-border bg-bg-raised/90 px-3 py-1 text-xs font-bold">

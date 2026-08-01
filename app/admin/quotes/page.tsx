@@ -5,11 +5,12 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 export const dynamic = "force-dynamic";
 
 export default async function AdminQuotesPage() {
-  let jobs: Awaited<ReturnType<ReturnType<typeof adminClient>["listJobRequests"]>> =
-    [];
+  let jobs: Awaited<
+    ReturnType<Awaited<ReturnType<typeof adminClient>>["listJobRequests"]>
+  > = [];
   let error: string | undefined;
   try {
-    jobs = await adminClient().listJobRequests();
+    jobs = await (await adminClient()).listJobRequests();
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Quotes unavailable";
   }
@@ -27,7 +28,7 @@ export default async function AdminQuotesPage() {
   if (!error) {
     for (const job of jobs.slice(0, 40)) {
       try {
-        const detail = await adminClient().getJobRequest(job.id);
+        const detail = await (await adminClient()).getJobRequest(job.id);
         for (const line of detail.lines) {
           const pricing = (
             line.snapshot.configuration as {

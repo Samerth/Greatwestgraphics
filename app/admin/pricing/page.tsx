@@ -21,7 +21,7 @@ export default async function AdminPricingPage() {
     if (!adminToken) {
       throw new Error("DEV_ADMIN_TOKEN is required for pricing admin.");
     }
-    const client = createCommerceClient();
+    const client = (await createCommerceClient());
     const [draftResponse, versionList] = await Promise.all([
       client.getPricingDraft(adminToken),
       client.listPricingVersions(adminToken),

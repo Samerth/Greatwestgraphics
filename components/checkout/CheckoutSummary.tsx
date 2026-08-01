@@ -3,6 +3,7 @@ import { computeCartTotals } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import type { DeliveryKey } from "@/lib/schemas/checkout";
 import { DELIVERY_FEES } from "@/lib/schemas/checkout";
+import { RosterTable } from "@/components/shared/RosterTable";
 
 export function CheckoutSummary({
   items,
@@ -23,14 +24,28 @@ export function CheckoutSummary({
         {items.map((item) => (
           <div
             key={`${item.id}-${item.color}`}
-            className="flex justify-between text-sm border-b border-fill-subtle py-2"
+            className="text-sm border-b border-fill-subtle py-2"
           >
-            <span>
-              {item.name}
-              <br />
-              <span className="text-[12.5px] text-text-tertiary">×{item.qty} pieces</span>
-            </span>
-            <b>{money(item.qty * item.unit)}</b>
+            <div className="flex justify-between">
+              <span>
+                {item.name}
+                <br />
+                <span className="text-[12.5px] text-text-tertiary">
+                  ×{item.qty} pieces{item.roster ? " · team order" : ""}
+                </span>
+              </span>
+              <b>{money(item.qty * item.unit)}</b>
+            </div>
+            {item.roster && (
+              <details className="mt-1.5">
+                <summary className="text-[12px] font-bold text-accent cursor-pointer">
+                  Review names &amp; numbers before you submit
+                </summary>
+                <div className="mt-1.5">
+                  <RosterTable roster={item.roster} />
+                </div>
+              </details>
+            )}
           </div>
         ))}
       </div>

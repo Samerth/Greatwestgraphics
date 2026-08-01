@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
 import {
@@ -11,6 +11,7 @@ import {
   ssStyles,
   ssUnmappedCategories,
   ssVariants,
+  storeCategoryVisibility,
   syncRuns,
 } from "../db/schema.js";
 import { retailFromCost } from "../adapters/ss-activewear/client.js";
@@ -18,6 +19,15 @@ import {
   DataIntegrityError,
   ResourceNotFoundError,
 } from "./job-request-service.js";
+
+type ProductFilterQuery = {
+  search?: string;
+  categoryId?: string;
+  storeId?: string;
+  brands?: string[];
+  priceMinMinor?: number;
+  priceMaxMinor?: number;
+};
 
 export class CatalogService {
   constructor(private readonly db: CommerceDatabase) {}
@@ -62,12 +72,81 @@ export class CatalogService {
     return updated!;
   }
 
-  async listCategories(tenantId: string) {
-    return this.db
+  async listCategories(
+    tenantId: string,
+    storeId?: string,
+    /** Storefront use only — hides categories with zero active products
+     * (e.g. taxonomy seeded ahead of a vendor that doesn't carry that
+     * product type yet) so customers never land on a dead-end "0 items"
+     * filter. Staff/admin keeps seeing every category regardless, since
+     * they need to manage ones that are empty today. */
+    onlyWithProducts = false,
+  ) {
+    let rows = await this.db
       .select()
       .from(categories)
       .where(eq(categories.tenantId, tenantId))
       .orderBy(asc(categories.sortOrder), asc(categories.name));
+
+    if (storeId) {
+      const allowedIds = await this.visibleCategoryIds(storeId);
+      if (allowedIds !== null) {
+        const allowed = new Set(allowedIds);
+        rows = rows.filter((row) => allowed.has(row.id));
+      }
+    }
+
+    if (onlyWithProducts) {
+      const withProducts = await this.db
+        .selectDistinct({ categoryId: ssProductCategories.categoryId })
+        .from(ssProductCategories)
+        .innerJoin(ssProducts, eq(ssProductCategories.productUuid, ssProducts.id))
+        .where(
+          and(
+            eq(ssProductCategories.tenantId, tenantId),
+            eq(ssProducts.active, true),
+          ),
+        );
+      const nonEmpty = new Set(withProducts.map((row) => row.categoryId));
+      rows = rows.filter((row) => nonEmpty.has(row.id));
+    }
+
+    return rows;
+  }
+
+  /** null = no restriction (store sees the full catalog); array = allow-list. */
+  private async visibleCategoryIds(storeId: string): Promise<string[] | null> {
+    const rows = await this.db
+      .select({ categoryId: storeCategoryVisibility.categoryId })
+      .from(storeCategoryVisibility)
+      .where(eq(storeCategoryVisibility.storeId, storeId));
+    if (rows.length === 0) return null;
+    return rows.map((row) => row.categoryId);
+  }
+
+  async getCategoryVisibility(tenantId: string, storeId: string) {
+    return this.visibleCategoryIds(storeId);
+  }
+
+  async setCategoryVisibility(
+    tenantId: string,
+    storeId: string,
+    categoryIds: string[],
+    actor: Actor,
+  ) {
+    await this.db
+      .delete(storeCategoryVisibility)
+      .where(eq(storeCategoryVisibility.storeId, storeId));
+    for (const categoryId of categoryIds) {
+      await this.db.insert(storeCategoryVisibility).values({
+        tenantId,
+        storeId,
+        categoryId,
+        createdBy: actor,
+        source: { system: "commerce_api" },
+      });
+    }
+    return this.visibleCategoryIds(storeId);
   }
 
   async createCategory(
@@ -277,72 +356,205 @@ export class CatalogService {
     return updated;
   }
 
-  async listProducts(
-    tenantId: string,
-    query?: { search?: string; categoryId?: string; limit?: number },
-  ) {
-    const limit = query?.limit ?? 50;
-    const settings = await this.getSettings(tenantId);
-    const markup = Number(settings.retailMarkup) || 2;
-
+  /** Distinct brand names with at least one active product, for the
+   * storefront brand filter — mirrors listCategories' onlyWithProducts
+   * shape so a brand never appears as a dead-end filter option. */
+  async listBrands(tenantId: string) {
     const rows = await this.db
-      .select({
-        product: ssProducts,
-        style: ssStyles,
-      })
-      .from(ssProducts)
-      .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
-      .where(
-        and(
-          eq(ssProducts.tenantId, tenantId),
-          query?.search
-            ? or(
-                ilike(ssProducts.colorName, `%${query.search}%`),
-                ilike(ssStyles.brandName, `%${query.search}%`),
-                ilike(ssStyles.styleName, `%${query.search}%`),
-                ilike(ssProducts.slug, `%${query.search}%`),
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(asc(ssStyles.brandName), asc(ssStyles.styleName))
-      .limit(limit);
+      .selectDistinct({ brandName: ssStyles.brandName })
+      .from(ssStyles)
+      .innerJoin(ssProducts, eq(ssProducts.styleUuid, ssStyles.id))
+      .where(and(eq(ssStyles.tenantId, tenantId), eq(ssProducts.active, true)))
+      .orderBy(asc(ssStyles.brandName));
+    return rows.map((row) => row.brandName);
+  }
 
-    const result = [];
-    for (const row of rows) {
-      if (query?.categoryId) {
-        const [link] = await this.db
-          .select()
-          .from(ssProductCategories)
-          .where(
+  /** Shared by listProducts/countProducts so the row count and the page of
+   * rows are always computed against identical filters. */
+  private async resolveProductFilters(
+    tenantId: string,
+    query?: ProductFilterQuery,
+  ): Promise<{ whereClause: ReturnType<typeof and>; empty: boolean }> {
+    let visibleProductIds: string[] | null = null;
+    if (query?.storeId) {
+      const allowedCategoryIds = await this.visibleCategoryIds(query.storeId);
+      if (allowedCategoryIds !== null) {
+        if (query.categoryId && !allowedCategoryIds.includes(query.categoryId)) {
+          return { whereClause: undefined, empty: true };
+        }
+        if (!query.categoryId) {
+          const rows = await this.db
+            .selectDistinct({ productUuid: ssProductCategories.productUuid })
+            .from(ssProductCategories)
+            .where(
+              and(
+                eq(ssProductCategories.tenantId, tenantId),
+                inArray(ssProductCategories.categoryId, allowedCategoryIds),
+              ),
+            );
+          visibleProductIds = rows.map((row) => row.productUuid);
+          if (visibleProductIds.length === 0) {
+            return { whereClause: undefined, empty: true };
+          }
+        }
+      }
+    }
+
+    let priceFilteredIds: string[] | null = null;
+    if (query?.priceMinMinor != null || query?.priceMaxMinor != null) {
+      const settings = await this.getSettings(tenantId);
+      const markup = Number(settings.retailMarkup) || 2;
+      const min = query.priceMinMinor ?? 0;
+      const max = query.priceMaxMinor ?? Number.MAX_SAFE_INTEGER;
+      // Filter on the same "from" price shown on the tile (cheapest
+      // variant per product), not any variant — otherwise a product
+      // displayed as "from $8" could appear under a $10-$15 filter just
+      // because an unrelated size happens to fall in that range.
+      const cheapestPerProduct = await this.db
+        .selectDistinctOn([ssVariants.productUuid], {
+          productUuid: ssVariants.productUuid,
+          customerPriceMinor: ssVariants.customerPriceMinor,
+          mapPriceMinor: ssVariants.mapPriceMinor,
+        })
+        .from(ssVariants)
+        .innerJoin(ssProducts, eq(ssProducts.id, ssVariants.productUuid))
+        .where(eq(ssProducts.tenantId, tenantId))
+        .orderBy(asc(ssVariants.productUuid), asc(ssVariants.customerPriceMinor));
+      priceFilteredIds = cheapestPerProduct
+        .filter((v) => {
+          const retail = retailFromCost(v.customerPriceMinor, v.mapPriceMinor, markup);
+          return retail >= min && retail <= max;
+        })
+        .map((v) => v.productUuid);
+      if (priceFilteredIds.length === 0) {
+        return { whereClause: undefined, empty: true };
+      }
+    }
+
+    const whereClause = and(
+      eq(ssProducts.tenantId, tenantId),
+      query?.search
+        ? or(
+            ilike(ssProducts.colorName, `%${query.search}%`),
+            ilike(ssStyles.brandName, `%${query.search}%`),
+            ilike(ssStyles.styleName, `%${query.search}%`),
+            ilike(ssProducts.slug, `%${query.search}%`),
+          )
+        : undefined,
+      visibleProductIds ? inArray(ssProducts.id, visibleProductIds) : undefined,
+      query?.brands?.length ? inArray(ssStyles.brandName, query.brands) : undefined,
+      priceFilteredIds ? inArray(ssProducts.id, priceFilteredIds) : undefined,
+    );
+    return { whereClause, empty: false };
+  }
+
+  async countProducts(
+    tenantId: string,
+    query?: ProductFilterQuery,
+  ): Promise<number> {
+    const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
+    if (empty) return 0;
+
+    const [row] = query?.categoryId
+      ? await this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .innerJoin(
+            ssProductCategories,
             and(
-              eq(ssProductCategories.productUuid, row.product.id),
+              eq(ssProductCategories.productUuid, ssProducts.id),
               eq(ssProductCategories.categoryId, query.categoryId),
             ),
           )
-          .limit(1);
-        if (!link) continue;
-      }
-      const [variant] = await this.db
-        .select()
-        .from(ssVariants)
-        .where(eq(ssVariants.productUuid, row.product.id))
-        .orderBy(asc(ssVariants.customerPriceMinor))
-        .limit(1);
+          .where(whereClause)
+      : await this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .where(whereClause);
+    return row?.count ?? 0;
+  }
+
+  async listProducts(
+    tenantId: string,
+    query?: ProductFilterQuery & { limit?: number; offset?: number },
+  ) {
+    const limit = query?.limit ?? 50;
+    const offset = query?.offset ?? 0;
+    const settings = await this.getSettings(tenantId);
+    const markup = Number(settings.retailMarkup) || 2;
+
+    const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
+    if (empty) return [];
+
+    // Category filtering is done as a join in the same query (not a
+    // per-row post-filter) so `limit` is honoured correctly and the
+    // category check doesn't cost a round trip per row. A stable order
+    // (brand, style, id) keeps pagination deterministic across pages.
+    const rows = query?.categoryId
+      ? await this.db
+          .select({ product: ssProducts, style: ssStyles })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .innerJoin(
+            ssProductCategories,
+            and(
+              eq(ssProductCategories.productUuid, ssProducts.id),
+              eq(ssProductCategories.categoryId, query.categoryId),
+            ),
+          )
+          .where(whereClause)
+          .orderBy(asc(ssStyles.brandName), asc(ssStyles.styleName), asc(ssProducts.id))
+          .limit(limit)
+          .offset(offset)
+      : await this.db
+          .select({ product: ssProducts, style: ssStyles })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .where(whereClause)
+          .orderBy(asc(ssStyles.brandName), asc(ssStyles.styleName), asc(ssProducts.id))
+          .limit(limit)
+          .offset(offset);
+
+    if (rows.length === 0) return [];
+
+    // Cheapest variant per product in a single batched query instead of
+    // one round trip per product (was the dominant cost of this endpoint).
+    const productIds = rows.map((row) => row.product.id);
+    const cheapestVariants = await this.db
+      .selectDistinctOn([ssVariants.productUuid], {
+        productUuid: ssVariants.productUuid,
+        customerPriceMinor: ssVariants.customerPriceMinor,
+        mapPriceMinor: ssVariants.mapPriceMinor,
+      })
+      .from(ssVariants)
+      .where(inArray(ssVariants.productUuid, productIds))
+      .orderBy(asc(ssVariants.productUuid), asc(ssVariants.customerPriceMinor));
+    const variantByProduct = new Map(
+      cheapestVariants.map((v) => [v.productUuid, v]),
+    );
+
+    return rows.map((row) => {
+      const variant = variantByProduct.get(row.product.id);
       const cost = variant?.customerPriceMinor ?? 0;
       const map = variant?.mapPriceMinor ?? null;
-      result.push({
+      return {
         ...row.product,
         brandName: row.style.brandName,
         styleName: row.style.styleName,
         title: row.style.title,
+        // Falls back to the style's generic photo when this colorway has
+        // no photo of its own — without it, ~5% of active products (no
+        // per-color photo from the vendor feed) rendered as a blank grey
+        // card with no image at all, even though a usable photo existed.
+        styleImageUrl: row.style.styleImageUrl,
         costMinor: cost,
         retailMinor: retailFromCost(cost, map, markup),
         mapPriceMinor: map,
         available: (row.product.qty ?? 0) > 0 && row.product.active,
-      });
-    }
-    return result;
+      };
+    });
   }
 
   async getProductDetail(tenantId: string, productUuid: string) {
@@ -378,6 +590,29 @@ export class CatalogService {
       .where(eq(ssProductCategories.productUuid, productUuid));
     const settings = await this.getSettings(tenantId);
     const markup = Number(settings.retailMarkup) || 2;
+
+    // Other colorways of the same style, so the PDP can offer a real
+    // colour switcher instead of showing one fixed photo with no way to
+    // see what else the garment comes in.
+    const colorways = await this.db
+      .select({
+        id: ssProducts.id,
+        slug: ssProducts.slug,
+        colorName: ssProducts.colorName,
+        swatchImageUrl: ssProducts.colorSwatchImageUrl,
+        frontImageUrl: ssProducts.colorFrontImageUrl,
+        active: ssProducts.active,
+      })
+      .from(ssProducts)
+      .where(
+        and(
+          eq(ssProducts.tenantId, tenantId),
+          eq(ssProducts.styleUuid, row.product.styleUuid),
+          eq(ssProducts.active, true),
+        ),
+      )
+      .orderBy(asc(ssProducts.colorName));
+
     return {
       product: row.product,
       style: row.style,
@@ -390,6 +625,7 @@ export class CatalogService {
         ),
       })),
       categories: cats,
+      colorways,
       retailMarkup: markup,
     };
   }

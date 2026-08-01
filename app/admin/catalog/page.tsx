@@ -13,10 +13,10 @@ export default async function AdminCatalogPage({
   let products: Record<string, unknown>[] = [];
   let error: string | undefined;
   try {
-    products = await adminClient().listCatalogProducts(
+    ({ products } = await (await adminClient()).listCatalogProducts(
       { search: q, limit: 100 },
       requireAdminToken(),
-    );
+    ));
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Catalog unavailable";
   }

@@ -31,25 +31,31 @@ const ids = {
   catalogSettingsId: "77777777-7777-4777-8777-777777777777",
 } as const;
 
-/** Coastal Reign nav structure only (names/slugs) — no copy/design. */
+/** Finalized against greatwestgraphics.com's own real category structure
+ * (Apparel/Bags/Promo Items/Safety Products/Signs) plus coastalreign.com as
+ * a comparable Vancouver print shop for industry-standard naming. Dropped
+ * "Made In Canada" and "And More..." — neither appears as a real category
+ * on either reference site and no product ever needs them; kept Socks/
+ * Notebooks/Patches/Swag Boxes since Coastal Reign carries all four as real
+ * categories even though S&S doesn't stock them yet (same quote-only
+ * treatment as Drinkware/Technology/Safety below). */
 const coastalCategories: Array<{ slug: string; name: string; sortOrder: number }> =
   [
     { slug: "t-shirts", name: "T-Shirts", sortOrder: 10 },
+    { slug: "polos", name: "Polos", sortOrder: 15 },
     { slug: "hoodies-and-crewnecks", name: "Hoodies and Crewnecks", sortOrder: 20 },
     { slug: "hats", name: "Hats", sortOrder: 30 },
     { slug: "tote-bags", name: "Tote Bags", sortOrder: 40 },
     { slug: "jackets", name: "Jackets", sortOrder: 50 },
     { slug: "vests", name: "Vests", sortOrder: 60 },
     { slug: "jerseys", name: "Jerseys", sortOrder: 70 },
+    { slug: "safety", name: "Safety Products", sortOrder: 75 },
     { slug: "drinkware", name: "Drinkware", sortOrder: 80 },
-    { slug: "made-in-canada", name: "Made In Canada", sortOrder: 90 },
     { slug: "swag-boxes", name: "Swag Boxes", sortOrder: 100 },
-    { slug: "eco-friendly", name: "Eco-Friendly", sortOrder: 110 },
     { slug: "notebooks", name: "Notebooks", sortOrder: 120 },
     { slug: "technology", name: "Technology", sortOrder: 130 },
     { slug: "socks", name: "Socks", sortOrder: 140 },
     { slug: "patches", name: "Patches", sortOrder: 150 },
-    { slug: "and-more", name: "And More...", sortOrder: 160 },
   ];
 
 const database = createDatabase(databaseUrl);

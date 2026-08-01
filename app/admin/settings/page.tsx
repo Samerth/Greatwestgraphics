@@ -7,7 +7,7 @@ export default async function AdminSettingsPage() {
   let settings: Record<string, unknown> | null = null;
   let error: string | undefined;
   try {
-    settings = await adminClient().getCatalogSettings(requireAdminToken());
+    settings = await (await adminClient()).getCatalogSettings(requireAdminToken());
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Settings unavailable";
   }

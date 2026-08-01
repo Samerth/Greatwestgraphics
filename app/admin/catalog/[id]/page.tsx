@@ -18,8 +18,8 @@ export default async function AdminCatalogProductPage({
 
   try {
     [detail, categories] = await Promise.all([
-      adminClient().getCatalogProduct(id, token),
-      adminClient().listCategories(token),
+      (await adminClient()).getCatalogProduct(id, token),
+      (await adminClient()).listCategories(token),
     ]);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Product unavailable";

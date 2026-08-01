@@ -57,6 +57,30 @@ function toDraft(
   };
 }
 
+/**
+ * Applies a store's negotiated storewide adjustment (e.g. -0.1 for a 10%
+ * discount, 0.05 for a 5% markup) on top of the tenant's published config.
+ * Only markup/decoration multipliers scale — flat fees (setup, digitizing,
+ * packing, artwork minimum) are cost-recovery, not margin, and stay as-is.
+ */
+export function applyStorePricingAdjustment(
+  config: PricingConfig,
+  percent: number | null,
+): PricingConfig {
+  if (!percent) return config;
+  const scale = 1 + percent;
+  return {
+    ...config,
+    multipliers: {
+      ...config.multipliers,
+      garmentMarkup: config.multipliers.garmentMarkup * scale,
+      screenPrint: config.multipliers.screenPrint * scale,
+      embroidery: config.multipliers.embroidery * scale,
+      dtf: config.multipliers.dtf * scale,
+    },
+  };
+}
+
 export class PricingConfigService {
   constructor(private readonly db: CommerceDatabase) {}
 

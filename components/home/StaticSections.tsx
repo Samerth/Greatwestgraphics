@@ -59,7 +59,14 @@ export function Testimonials() {
   );
 }
 
-const GALLERY = [
+export type GalleryItem = {
+  name: string;
+  meta: string;
+  artIndex: number;
+  imageUrl?: string | null;
+};
+
+const FALLBACK_GALLERY: GalleryItem[] = [
   { name: "SFU Athletics", meta: "240 hoodies · 3-colour", artIndex: 6 },
   { name: "North Van Fire", meta: "Embroidered polos", artIndex: 2 },
   { name: "Kettle Society", meta: "Canvas totes · benefit run", artIndex: 4 },
@@ -70,7 +77,8 @@ const GALLERY = [
   { name: "Vancouver Trades", meta: "Crew tees · 48hr rush", artIndex: 7 },
 ];
 
-export function Gallery() {
+export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] }) {
+  const GALLERY = items.length > 0 ? items : FALLBACK_GALLERY;
   return (
     <section className="py-sp-8 bg-fill-subtle-15">
       <div className="max-w-container mx-auto px-4 md:px-8 xl:px-24">
@@ -85,18 +93,19 @@ export function Gallery() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-sp-3">
           {GALLERY.map((g) => (
-            <div
+            <Link
               key={g.name}
-              className="relative rounded-lg overflow-hidden aspect-square group"
+              href="/quote"
+              className="relative rounded-lg overflow-hidden aspect-square group block"
             >
               <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-[1.06]">
-                <ArtTile artIndex={g.artIndex} alt={g.name} />
+                <ArtTile artIndex={g.artIndex} imageSrc={g.imageUrl ?? undefined} alt={g.name} />
               </div>
               <div className="absolute left-0 right-0 bottom-0 p-sp-3 bg-[linear-gradient(0deg,rgba(0,0,0,.75),transparent)] text-white">
                 <b className="block text-[13.5px]">{g.name}</b>
                 <span className="text-xs text-white/80">{g.meta}</span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
@@ -105,10 +114,10 @@ export function Gallery() {
 }
 
 const STATS = [
-  { n: "45", l: "Years in Vancouver", accent: false },
-  { n: "18M+", l: "Garments printed", accent: true },
-  { n: "2,800+", l: "Businesses served", accent: false },
-  { n: "99.4%", l: "On-time delivery", accent: true },
+  { n: "1980", l: "Founded in Vancouver", accent: false },
+  { n: "30+", l: "Years combined team experience", accent: true },
+  { n: "37", l: "Stock ink colours", accent: false },
+  { n: "CA & US", l: "Shipping coverage", accent: true },
 ];
 
 export function StatsBand() {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
 import {
@@ -9,6 +10,13 @@ import { DEFAULT_PRICING_CONFIG_V1 } from "@/lib/utils/quote-pricing";
 import type { DecorationMethod, PricingConfig } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Get an Instant Print Quote",
+  description:
+    "Build a live custom print quote — choose a product, quantity and decoration method (screen printing, embroidery or DTF) and see instant estimated pricing.",
+  alternates: { canonical: "/quote" },
+};
 
 function parseMethod(raw?: string): DecorationMethod | undefined {
   if (!raw) return undefined;
@@ -29,7 +37,7 @@ export default async function QuotePage({
   let pricingNote: string | undefined;
 
   try {
-    const published = await createCommerceClient().getPublishedPricingConfig();
+    const published = await (await createCommerceClient()).getPublishedPricingConfig();
     pricingConfig = published.config;
   } catch (caught) {
     pricingNote =
@@ -38,10 +46,16 @@ export default async function QuotePage({
         : "Showing bundled pricing defaults.";
   }
 
-  const catalog = await loadStorefrontCatalog({ limit: 40 });
-  const catalogProducts = catalog.products.slice(0, 24).map((p) => ({
+  // Sorted brand-then-style alphabetically, and Adidas alone has 170
+  // colourways — a small limit would silently only ever offer Adidas.
+  // 150 is a conservative trade-off between brand variety and latency.
+  const catalog = await loadStorefrontCatalog({ limit: 150 });
+  const catalogProducts = catalog.products.map((p) => ({
     id: p.id,
     label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),
+    brandName: p.brandName,
+    styleName: p.styleName,
+    colorName: p.colorName,
     unitCostMinor: p.costMinor,
     isDark: p.isDark,
     available: p.available,

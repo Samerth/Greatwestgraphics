@@ -1,18 +1,65 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
+import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
 import { useCartStore, computeCartTotals } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
+import { RosterTable } from "@/components/shared/RosterTable";
+import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
 
 export default function CartPage() {
   const items = useCartStore((s) => s.items);
   const updateQty = useCartStore((s) => s.updateQty);
   const removeItem = useCartStore((s) => s.removeItem);
   const totals = computeCartTotals(items);
+
+  // The cart is persisted to localStorage, which the server can't see, so
+  // the server always renders as if the cart were empty. Wait for mount
+  // before branching on `items` so the first client render matches the
+  // server's — otherwise a returning visitor with items already in their
+  // cart sees a hydration error and a flash of the wrong state.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const [crossSellItems, setCrossSellItems] = useState<CrossSellItem[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/commerce/catalog/products?limit=12")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { products?: StorefrontCatalogProduct[] } | null) => {
+        if (cancelled || !data?.products) return;
+        const seenStyles = new Set<string>();
+        setCrossSellItems(
+          data.products
+            .filter((p) => {
+              if (!p.available || !p.imageUrl) return false;
+              const styleKey = `${p.brandName}::${p.styleName}`;
+              if (seenStyles.has(styleKey)) return false;
+              seenStyles.add(styleKey);
+              return true;
+            })
+            .slice(0, 3)
+            .map((p, index) => ({
+              slug: p.slug,
+              name: p.name,
+              meta: `${p.colorName} · ${p.priceFrom}`,
+              artIndex: index + 1,
+              imageUrl: p.imageUrl,
+              href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
+            })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!mounted) return null;
 
   if (items.length === 0) {
     return (
@@ -41,7 +88,9 @@ export default function CartPage() {
                 className="flex flex-col sm:flex-row gap-sp-4 border border-border rounded-lg p-sp-4 bg-bg-raised"
               >
                 <div className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle">
-                  <Image src={item.image} alt={item.name} fill className="object-cover" />
+                  {item.image && (
+                    <Image src={item.image} alt={item.name} fill className="object-cover object-top" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-start justify-between gap-sp-3">
@@ -56,32 +105,49 @@ export default function CartPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center border border-border rounded-full overflow-hidden w-fit">
-                        <button
-                          aria-label="Decrease quantity"
-                          className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
-                          onClick={() => updateQty(item.id, item.color, item.qty - 1)}
-                        >
-                          −
-                        </button>
-                        <span className="w-11 text-center font-bold text-[13.5px]">
-                          {item.qty}
+                      {item.roster ? (
+                        <span className="text-[13.5px] font-bold text-text-secondary">
+                          {item.qty} pieces · team order
                         </span>
-                        <button
-                          aria-label="Increase quantity"
-                          className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
-                          onClick={() => updateQty(item.id, item.color, item.qty + 1)}
-                        >
-                          +
-                        </button>
-                      </div>
+                      ) : (
+                        <div className="flex items-center border border-border rounded-full overflow-hidden w-fit">
+                          <button
+                            aria-label="Decrease quantity"
+                            className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
+                            onClick={() => updateQty(item.id, item.color, item.qty - 1, item.variantId)}
+                          >
+                            −
+                          </button>
+                          <span className="w-11 text-center font-bold text-[13.5px]">
+                            {item.qty}
+                          </span>
+                          <button
+                            aria-label="Increase quantity"
+                            className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
+                            onClick={() => updateQty(item.id, item.color, item.qty + 1, item.variantId)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
                       <button
                         className="text-[12.5px] font-semibold text-text-tertiary hover:text-accent transition-colors"
-                        onClick={() => removeItem(item.id, item.color)}
+                        onClick={() => removeItem(item.id, item.color, item.variantId)}
                       >
                         Remove
                       </button>
                     </div>
+
+                    {item.roster && (
+                      <details className="mt-sp-3">
+                        <summary className="text-[12.5px] font-bold text-accent cursor-pointer">
+                          View roster ({item.roster.length})
+                        </summary>
+                        <div className="mt-2">
+                          <RosterTable roster={item.roster} />
+                        </div>
+                      </details>
+                    )}
                   </div>
 
                   <div className="shrink-0 text-right sm:text-right">
@@ -99,11 +165,7 @@ export default function CartPage() {
             <div className="pt-sp-5">
               <CrossSellGrid
                 title="You might also like"
-                items={[
-                  { slug: "drinkware-mugs", name: "Drinkware", meta: "11oz ceramic — from $3.20", artIndex: 8 },
-                  { slug: "caps-beanies", name: "Caps", meta: "Custom woven — from $2.10", artIndex: 11 },
-                  { slug: "stickers-decals", name: "Sticker Sheets", meta: "Die-cut, weatherproof — from $1.85", artIndex: 9 },
-                ]}
+                items={crossSellItems.length > 0 ? crossSellItems : undefined}
               />
             </div>
           </div>

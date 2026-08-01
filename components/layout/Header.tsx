@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
+import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
+import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
-const CATEGORIES = [
+const FALLBACK_CATEGORIES = [
   { label: "Apparel", href: "/products?category=apparel" },
   { label: "Bags", href: "/products?category=bags" },
   { label: "Hats & Beanies", href: "/products?category=hats-beanies" },
@@ -20,14 +22,40 @@ const CATEGORIES = [
 
 const PRIMARY_LINKS = [
   { label: "Design Studio", href: "/design" },
+  { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
-  { label: "Staff", href: "/admin/login" },
 ];
 
-export function Header() {
-  const pieceCount = useCartStore((s) =>
+export function Header({
+  categories = [],
+  customerName = null,
+  storeName,
+  storeLogoUrl = null,
+}: {
+  categories?: StorefrontCategory[];
+  customerName?: string | null;
+  /** Set only for a branded corporate store — swaps the GWG logo/name. */
+  storeName?: string;
+  storeLogoUrl?: string | null;
+}) {
+  const CATEGORIES =
+    categories.length > 0
+      ? categories.map((c) => ({
+          label: c.name,
+          href: `/products?category=${encodeURIComponent(c.slug)}`,
+        }))
+      : FALLBACK_CATEGORIES;
+  const rawPieceCount = useCartStore((s) =>
     s.items.reduce((sum, i) => sum + i.qty, 0)
   );
+  // Zustand's persist middleware only reads localStorage on the client, so
+  // the server always renders an empty cart. Gate the real count behind a
+  // post-mount flag so the first client render matches the server's, then
+  // update — otherwise React logs a hydration mismatch for any returning
+  // visitor who already has items in their cart.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const pieceCount = mounted ? rawPieceCount : 0;
 
   const [shopOpen, setShopOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -46,14 +74,27 @@ export function Header() {
       <Container className="h-[76px] flex items-center justify-between gap-sp-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
-          <Image
-            src="/images/logo.png"
-            alt="Great West Graphics"
-            width={160}
-            height={40}
-            priority
-            className="h-9 w-auto"
-          />
+          {storeName ? (
+            storeLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={storeLogoUrl}
+                alt={storeName}
+                className="h-9 w-auto max-w-[180px] object-contain"
+              />
+            ) : (
+              <span className="font-display font-bold text-lg">{storeName}</span>
+            )
+          ) : (
+            <Image
+              src="/images/logo-mark.png"
+              alt="Great West Graphics"
+              width={366}
+              height={209}
+              priority
+              className="h-12 w-auto"
+            />
+          )}
         </Link>
 
         {/* Primary nav */}
@@ -141,17 +182,13 @@ export function Header() {
 
         {/* Actions */}
         <div className="flex items-center gap-sp-2 shrink-0">
-          <ButtonLink
-            href="/quote"
-            variant="secondary"
-            size="sm"
-            className="hidden md:inline-flex"
+          <ActiveDesignBadge />
+          <Link
+            href={customerName ? "/portal/jobs" : "/account"}
+            className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
           >
-            Get a Quote
-          </ButtonLink>
-          <ButtonLink href="/design" variant="primary" size="sm" className="hidden sm:inline-flex">
-            Start Designing
-          </ButtonLink>
+            {customerName ? `Hi, ${customerName.split(" ")[0]}` : "Sign In"}
+          </Link>
           <Link
             href="/cart"
             className="relative inline-flex items-center gap-sp-2 px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
@@ -161,6 +198,14 @@ export function Header() {
               {pieceCount}
             </span>
           </Link>
+          <ButtonLink
+            href="/quote"
+            variant="primary"
+            size="sm"
+            className="hidden md:inline-flex"
+          >
+            Get a Quote
+          </ButtonLink>
           <button
             type="button"
             onClick={() => setMobileOpen((open) => !open)}
@@ -215,6 +260,13 @@ export function Header() {
               Get a Quote
             </Link>
             <Link
+              href="/about"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              About
+            </Link>
+            <Link
               href="/contact"
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2"
@@ -222,18 +274,11 @@ export function Header() {
               Contact
             </Link>
             <Link
-              href="/admin/login"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm font-bold px-3 py-2 text-accent"
-            >
-              Staff
-            </Link>
-            <Link
-              href="/portal/jobs"
+              href={customerName ? "/portal/jobs" : "/account"}
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2"
             >
-              My jobs
+              {customerName ? `Hi, ${customerName.split(" ")[0]}` : "Sign In"}
             </Link>
           </div>
         </nav>

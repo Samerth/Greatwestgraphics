@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { DecorationMethod, PricingConfig, QuoteInput } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
-import { ButtonLink } from "@/components/shared/Button";
+import { Button } from "@/components/shared/Button";
 import { AnimatedNumber } from "@/components/shared/AnimatedNumber";
+import { useCartStore } from "@/lib/store/cart";
 import {
   QB_METHODS,
   QB_METHOD_DAYS,
@@ -41,6 +43,11 @@ const DTF_SIZES = [
 type CatalogOption = {
   id: string;
   label: string;
+  /** Optional — when present, options are grouped by style so "Pick your
+   * product" shows one entry per garment, not one per colourway. */
+  brandName?: string;
+  styleName?: string;
+  colorName?: string;
   unitCostMinor: number;
   isDark: boolean;
   available: boolean;
@@ -59,10 +66,40 @@ export function QuoteBuilder({
   initialMethod = "screenPrint",
   initialQty = 48,
 }: Props) {
+  const router = useRouter();
+  const addItem = useCartStore((s) => s.addItem);
+  const [addedToCart, setAddedToCart] = useState(false);
   const useCatalog = catalogProducts.length > 0;
+
+  // Group colourways of the same garment under one style, so "Pick your
+  // product" offers one button per garment instead of one per colour.
+  const styleGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; label: string; colours: CatalogOption[] }>();
+    for (const p of catalogProducts) {
+      const key = p.brandName && p.styleName ? `${p.brandName}::${p.styleName}` : p.id;
+      const label = p.brandName && p.styleName ? `${p.brandName} ${p.styleName}`.trim() : p.label;
+      if (!groups.has(key)) groups.set(key, { key, label, colours: [] });
+      groups.get(key)!.colours.push(p);
+    }
+    return [...groups.values()];
+  }, [catalogProducts]);
+  const hasStyleGroups = styleGroups.some((g) => g.colours.length > 1);
+
+  const [selectedStyleKey, setSelectedStyleKey] = useState(
+    styleGroups[0]?.key ?? "",
+  );
   const [catalogProductId, setCatalogProductId] = useState(
     catalogProducts[0]?.id ?? "",
   );
+  const activeStyleGroup =
+    styleGroups.find((g) => g.key === selectedStyleKey) ?? styleGroups[0];
+
+  function selectStyle(key: string) {
+    setSelectedStyleKey(key);
+    const group = styleGroups.find((g) => g.key === key);
+    const nextColour = group?.colours.find((c) => c.available) ?? group?.colours[0];
+    if (nextColour) setCatalogProductId(nextColour.id);
+  }
   const [product, setProduct] = useState<QbProduct>("T-Shirts");
   const [qty, setQty] = useState(initialQty);
   const [locations, setLocations] = useState<string[]>(["front"]);
@@ -174,6 +211,35 @@ export function QuoteBuilder({
     });
   }
 
+  function addQuoteToCart() {
+    const label = useCatalog && selectedCatalog ? selectedCatalog.label : product;
+    addItem({
+      id:
+        useCatalog && selectedCatalog
+          ? selectedCatalog.id
+          : `custom-quote-${product}-${method}-${Date.now()}`,
+      productId: useCatalog && selectedCatalog ? selectedCatalog.id : undefined,
+      name: label,
+      meta: `${QB_METHODS.find((m) => m.id === method)?.label ?? method} · ${locations
+        .map((l) => LOCATIONS.find((loc) => loc.id === l)?.label ?? l)
+        .join(", ")}${needsArtworkReview ? " · Artwork review needed" : ""}`,
+      color: "As quoted",
+      qty,
+      unit: breakdown.perPieceMinor / 100,
+      image: "",
+      pricingSnapshot: {
+        input: quoteInput,
+        breakdown,
+        pricingConfigVersion: pricingConfig.version,
+      },
+    });
+    setAddedToCart(true);
+    setTimeout(() => {
+      setAddedToCart(false);
+      router.push("/checkout");
+    }, 700);
+  }
+
   function handleCustomSubmit(e: React.FormEvent) {
     e.preventDefault();
     const n = parseInt(customInput, 10);
@@ -198,23 +264,48 @@ export function QuoteBuilder({
         </h2>
 
         <QbRow label="1. Pick your product">
-          {useCatalog
-            ? catalogProducts.map((p) => (
+          {useCatalog && hasStyleGroups
+            ? styleGroups.map((g) => (
                 <Pill
-                  key={p.id}
-                  active={catalogProductId === p.id}
-                  onClick={() => setCatalogProductId(p.id)}
+                  key={g.key}
+                  active={selectedStyleKey === g.key}
+                  onClick={() => selectStyle(g.key)}
                 >
-                  {p.label}
-                  {!p.available ? " (unavailable)" : ""}
+                  {g.label}
                 </Pill>
               ))
-            : QB_PRODUCTS.map((p) => (
-                <Pill key={p} active={product === p} onClick={() => setProduct(p)}>
-                  {p}
-                </Pill>
-              ))}
+            : useCatalog
+              ? catalogProducts.map((p) => (
+                  <Pill
+                    key={p.id}
+                    active={catalogProductId === p.id}
+                    onClick={() => setCatalogProductId(p.id)}
+                  >
+                    {p.label}
+                    {!p.available ? " (unavailable)" : ""}
+                  </Pill>
+                ))
+              : QB_PRODUCTS.map((p) => (
+                  <Pill key={p} active={product === p} onClick={() => setProduct(p)}>
+                    {p}
+                  </Pill>
+                ))}
         </QbRow>
+
+        {useCatalog && hasStyleGroups && activeStyleGroup && activeStyleGroup.colours.length > 1 && (
+          <QbRow label="Colour">
+            {activeStyleGroup.colours.map((c) => (
+              <Pill
+                key={c.id}
+                active={catalogProductId === c.id}
+                onClick={() => setCatalogProductId(c.id)}
+              >
+                {c.colorName || c.label}
+                {!c.available ? " (unavailable)" : ""}
+              </Pill>
+            ))}
+          </QbRow>
+        )}
 
         <QbRow label="2. How many?">
           {QB_QTY_OPTIONS.map((q) => (
@@ -383,6 +474,7 @@ export function QuoteBuilder({
             src="/images/prod-hoodie.jpg"
             alt="Product photography"
             fill
+            sizes="(max-width: 1024px) 100vw, 50vw"
             className="object-cover"
           />
           <div className="absolute left-sp-3 top-sp-3">
@@ -448,9 +540,9 @@ export function QuoteBuilder({
               : "Estimated from your selections — final price confirmed when we review your artwork."}
           </p>
 
-          <ButtonLink href="/checkout" className="w-full">
-            Get exact quote
-          </ButtonLink>
+          <Button className="w-full" onClick={addQuoteToCart}>
+            {addedToCart ? "Added to cart ✓" : "Add to cart & continue"}
+          </Button>
         </div>
       </div>
     </div>

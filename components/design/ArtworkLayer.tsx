@@ -7,7 +7,7 @@ import type Konva from "konva";
 
 export interface PlacedArtwork {
   id: string;
-  src: string; // object URL for now — swap to a real hosted URL once storage is picked
+  src: string; // object URL until upload completes, then a durable hosted URL
   x: number;
   y: number;
   scaleX: number;
