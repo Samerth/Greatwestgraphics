@@ -4,7 +4,14 @@ import { cookies } from "next/headers";
 const COOKIE = "gwg_staff_session";
 
 function secret() {
-  return process.env.STAFF_SESSION_SECRET || "dev-insecure-session-secret";
+  const value = process.env.STAFF_SESSION_SECRET;
+  if (!value) {
+    // No insecure fallback: that string would sit in source control, so any
+    // deploy that forgets to set this would let anyone forge a valid staff
+    // admin session cookie from the public repo alone.
+    throw new Error("STAFF_SESSION_SECRET is required");
+  }
+  return value;
 }
 
 function sign(payload: string): string {

@@ -8,8 +8,13 @@ const COOKIE = "gwg_staff_session";
 
 function validSession(token: string | undefined): boolean {
   if (!token) return false;
-  const secret =
-    process.env.STAFF_SESSION_SECRET || "dev-insecure-session-secret";
+  const secret = process.env.STAFF_SESSION_SECRET;
+  if (!secret) {
+    // No insecure fallback: that string would sit in source control, so any
+    // deploy that forgets to set this would let anyone forge a valid staff
+    // admin session cookie from the public repo alone.
+    return false;
+  }
   const parts = token.split(".");
   if (parts.length !== 3) return false;
   const [username, expRaw, signature] = parts;

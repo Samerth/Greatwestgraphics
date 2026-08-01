@@ -12,7 +12,14 @@ export type CustomerSession = {
 };
 
 function secret() {
-  return process.env.CUSTOMER_SESSION_SECRET || "dev-insecure-session-secret";
+  const value = process.env.CUSTOMER_SESSION_SECRET;
+  if (!value) {
+    // No insecure fallback: that string would sit in source control, so any
+    // deploy that forgets to set this would let anyone forge a valid
+    // customer session cookie from the public repo alone.
+    throw new Error("CUSTOMER_SESSION_SECRET is required");
+  }
+  return value;
 }
 
 function sign(payload: string): string {

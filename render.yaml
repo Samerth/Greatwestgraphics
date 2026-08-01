@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: gwg-commerce-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build --workspace @gwg/commerce-api
+    startCommand: npm run start --workspace @gwg/commerce-api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: DATABASE_URL
+        sync: false
+      - key: COMMERCE_API_HOST
+        value: 0.0.0.0
+      - key: COMMERCE_API_PORT
+        value: 4000
+      - key: SS_ACCOUNT_NUMBER
+        sync: false
+      - key: SS_API_KEY
+        sync: false
+      - key: SS_API_BASE_URL
+        value: https://api-ca.ssactivewear.com
+      - key: DEV_ADMIN_TOKEN
+        sync: false
+      - key: STAFF_ADMIN_USER
+        sync: false
+      - key: STAFF_ADMIN_PASSWORD
+        sync: false
+      - key: STAFF_SESSION_SECRET
+        sync: false
+      - key: CUSTOMER_SESSION_SECRET
+        sync: false
+      - key: COGNITO_REGION
+        value: ca-central-1
+      - key: COGNITO_USER_POOL_ID
+        sync: false
+      - key: COGNITO_APP_CLIENT_ID
+        sync: false
+      - key: COGNITO_APP_CLIENT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: CONTACT_FROM_EMAIL
+        sync: false
+      - key: CONTACT_TO_EMAIL
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_S3_PUBLIC_BASE_URL
+        sync: false
