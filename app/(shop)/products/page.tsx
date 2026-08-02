@@ -59,6 +59,7 @@ export default async function ProductsPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    q?: string;
     category?: string;
     page?: string;
     brand?: string | string[];
@@ -66,12 +67,14 @@ export default async function ProductsPage({
     priceMax?: string;
   }>;
 }) {
-  const { category, page: pageParam, brand, priceMin, priceMax } = await searchParams;
+  const { q, category, page: pageParam, brand, priceMin, priceMax } = await searchParams;
+  const search = q?.trim() || undefined;
   const page = Math.max(1, Number(pageParam) || 1);
   const brands = brand ? (Array.isArray(brand) ? brand : [brand]) : undefined;
   const priceMinMinor = priceMin ? Number(priceMin) : undefined;
   const priceMaxMinor = priceMax ? Number(priceMax) : undefined;
   const catalog = await loadStorefrontCatalog({
+    search,
     categorySlug: category,
     limit: PAGE_SIZE,
     page,
@@ -128,6 +131,7 @@ export default async function ProductsPage({
             activeBrands={brands}
             activePriceMinMinor={priceMinMinor}
             activePriceMaxMinor={priceMaxMinor}
+            activeSearch={search ?? null}
             initialCategory={
               CATEGORIES.includes(initialCategory as Category)
                 ? (initialCategory as Category)
@@ -145,6 +149,7 @@ export default async function ProductsPage({
               brands={brands}
               priceMinMinor={priceMinMinor}
               priceMaxMinor={priceMaxMinor}
+              search={search}
             />
           )}
 

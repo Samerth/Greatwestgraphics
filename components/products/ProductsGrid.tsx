@@ -14,7 +14,7 @@ import type {
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
 
-type SortKey = "popular" | "price-asc" | "new";
+type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
 const SIZE_CLASSES: Record<string, string> = {
   hero: "col-span-6 md:col-span-7 row-span-2",
@@ -33,6 +33,7 @@ type Props = {
   activeBrands?: string[];
   activePriceMinMinor?: number | null;
   activePriceMaxMinor?: number | null;
+  activeSearch?: string | null;
 };
 
 export function ProductsGrid({
@@ -45,6 +46,7 @@ export function ProductsGrid({
   activeBrands = [],
   activePriceMinMinor = null,
   activePriceMaxMinor = null,
+  activeSearch = null,
 }: Props) {
   const useDb = preferDb;
   const router = useRouter();
@@ -69,6 +71,7 @@ export function ProductsGrid({
   const [priceMaxInput, setPriceMaxInput] = useState(
     activePriceMaxMinor != null ? String(activePriceMaxMinor / 100) : "",
   );
+  const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const activeFilterCount =
     selectedBrands.length + (priceMinInput ? 1 : 0) + (priceMaxInput ? 1 : 0);
 
@@ -77,12 +80,15 @@ export function ProductsGrid({
     brands?: string[];
     priceMin?: string;
     priceMax?: string;
+    search?: string;
   }) {
     const category = next.category !== undefined ? next.category : activeCategory;
     const brands = next.brands !== undefined ? next.brands : selectedBrands;
     const priceMin = next.priceMin !== undefined ? next.priceMin : priceMinInput;
     const priceMax = next.priceMax !== undefined ? next.priceMax : priceMaxInput;
+    const search = next.search !== undefined ? next.search : searchInput;
     const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
     if (category && category !== "All") params.set("category", category);
     for (const brand of brands) params.append("brand", brand);
     if (priceMin) params.set("priceMin", String(Math.round(parseFloat(priceMin) * 100)));
@@ -96,6 +102,8 @@ export function ProductsGrid({
       let list = [...dbProducts];
       if (sort === "price-asc") {
         list.sort((a, b) => a.retailMinor - b.retailMinor);
+      } else if (sort === "price-desc") {
+        list.sort((a, b) => b.retailMinor - a.retailMinor);
       } else if (sort === "new") {
         list.reverse();
       }
@@ -121,11 +129,16 @@ export function ProductsGrid({
         ? CATALOG
         : CATALOG.filter((t) => t.category === activeCategory);
 
+    const parsePrice = (s: string) =>
+      parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
     if (sort === "price-asc") {
-      list = [...list].sort((a, b) => {
-        const parse = (s: string) => parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
-        return parse(a.priceFrom) - parse(b.priceFrom);
-      });
+      list = [...list].sort(
+        (a, b) => parsePrice(a.priceFrom) - parsePrice(b.priceFrom),
+      );
+    } else if (sort === "price-desc") {
+      list = [...list].sort(
+        (a, b) => parsePrice(b.priceFrom) - parsePrice(a.priceFrom),
+      );
     } else if (sort === "new") {
       list = [...list].reverse();
     }
@@ -145,6 +158,53 @@ export function ProductsGrid({
 
   return (
     <>
+      {useDb && (
+        <form
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            navigate({ search: searchInput });
+          }}
+          className="flex gap-2 mb-sp-4 max-w-[520px]"
+        >
+          <label htmlFor="catalog-search" className="sr-only">
+            Search products
+          </label>
+          <input
+            id="catalog-search"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by brand, style or colour — e.g. navy hoodie"
+            className="flex-1 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-sm outline-none focus:border-accent"
+          />
+          <button
+            type="submit"
+            className="rounded-sm bg-accent px-4 py-2.5 text-sm font-bold text-white hover:bg-accent-hover transition-colors"
+          >
+            Search
+          </button>
+          {activeSearch && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput("");
+                navigate({ search: "" });
+              }}
+              className="rounded-sm border border-border px-3.5 py-2.5 text-sm font-semibold hover:border-text-tertiary transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </form>
+      )}
+
+      {activeSearch && (
+        <p className="text-sm text-text-secondary mb-sp-4">
+          Showing results for <b className="text-text-primary">{activeSearch}</b>
+        </p>
+      )}
+
       <div className="flex flex-wrap justify-between items-center gap-sp-3 mb-sp-5">
         <div className="flex flex-wrap gap-2">
           <Chip
@@ -286,6 +346,7 @@ export function ProductsGrid({
           >
             <option value="popular">Most popular</option>
             <option value="price-asc">Price: low to high</option>
+            <option value="price-desc">Price: high to low</option>
             <option value="new">New arrivals</option>
           </select>
         </div>

@@ -10,6 +10,7 @@ export function Pagination({
   brands,
   priceMinMinor,
   priceMaxMinor,
+  search,
 }: {
   page: number;
   pageCount: number;
@@ -19,11 +20,13 @@ export function Pagination({
   brands?: string[];
   priceMinMinor?: number;
   priceMaxMinor?: number;
+  search?: string;
 }) {
   if (pageCount <= 1) return null;
 
   function hrefFor(target: number) {
     const params = new URLSearchParams();
+    if (search) params.set("q", search);
     if (category) params.set("category", category);
     for (const brand of brands ?? []) params.append("brand", brand);
     if (priceMinMinor != null) params.set("priceMin", String(priceMinMinor));

@@ -25,6 +25,8 @@ export type StorefrontCategory = {
 };
 
 export type StorefrontFilters = {
+  /** Free-text query matched against brand, style, colour and slug. */
+  search?: string;
   categorySlug?: string;
   limit?: number;
   /** 1-indexed. */
@@ -103,6 +105,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
     }
 
     const { products: filtered, total } = await client.listCatalogProducts({
+      search: options?.search,
       categoryId: categoryId || undefined,
       limit,
       offset,

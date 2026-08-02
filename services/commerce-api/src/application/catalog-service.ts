@@ -431,16 +431,28 @@ export class CatalogService {
       }
     }
 
+    // Every whitespace-separated word must match somewhere, but not
+    // necessarily in the same column — "navy hoodie" is colour on the
+    // product and garment type in the style title, so matching the raw
+    // phrase against any single column would return nothing.
+    const searchTerms = (query?.search ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const searchClauses = searchTerms.map((term) =>
+      or(
+        ilike(ssProducts.colorName, `%${term}%`),
+        ilike(ssStyles.brandName, `%${term}%`),
+        ilike(ssStyles.styleName, `%${term}%`),
+        ilike(ssStyles.title, `%${term}%`),
+        ilike(ssStyles.baseCategory, `%${term}%`),
+        ilike(ssProducts.slug, `%${term}%`),
+      ),
+    );
+
     const whereClause = and(
       eq(ssProducts.tenantId, tenantId),
-      query?.search
-        ? or(
-            ilike(ssProducts.colorName, `%${query.search}%`),
-            ilike(ssStyles.brandName, `%${query.search}%`),
-            ilike(ssStyles.styleName, `%${query.search}%`),
-            ilike(ssProducts.slug, `%${query.search}%`),
-          )
-        : undefined,
+      ...searchClauses,
       visibleProductIds ? inArray(ssProducts.id, visibleProductIds) : undefined,
       query?.brands?.length ? inArray(ssStyles.brandName, query.brands) : undefined,
       priceFilteredIds ? inArray(ssProducts.id, priceFilteredIds) : undefined,
