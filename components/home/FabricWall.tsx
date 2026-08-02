@@ -3,18 +3,24 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { RecolorGarment } from "@/components/pdp/RecolorGarment";
+import { ButtonLink } from "@/components/shared/Button";
 
+// `search` is the catalogue term the "Shop this colour" link uses. It is
+// deliberately broader than the ink name: these are Great West's stock ink
+// colours, while the catalogue stores each manufacturer's own colour names,
+// so linking the literal ink name would dead-end on an empty result page
+// for anything the vendors don't happen to call the same thing.
 const SWATCHES = [
-  { hex: "#1d2a44", name: "Navy" },
-  { hex: "#1b1b1b", name: "Ink Black" },
-  { hex: "#AA3300", name: "Burnt Orange" },
-  { hex: "#2d4a38", name: "Forest" },
-  { hex: "#5c2430", name: "Burgundy" },
-  { hex: "#3d5670", name: "Steel Blue" },
-  { hex: "#5a5a3c", name: "Olive" },
-  { hex: "#e8e0d0", name: "Natural" },
-  { hex: "#a8a8ac", name: "Ash Grey" },
-  { hex: "#c08a8a", name: "Dusty Rose" },
+  { hex: "#1d2a44", name: "Navy", search: "Navy" },
+  { hex: "#1b1b1b", name: "Ink Black", search: "Black" },
+  { hex: "#AA3300", name: "Burnt Orange", search: "Orange" },
+  { hex: "#2d4a38", name: "Forest", search: "Forest" },
+  { hex: "#5c2430", name: "Burgundy", search: "Burgundy" },
+  { hex: "#3d5670", name: "Steel Blue", search: "Blue" },
+  { hex: "#5a5a3c", name: "Olive", search: "Olive" },
+  { hex: "#e8e0d0", name: "Natural", search: "Natural" },
+  { hex: "#a8a8ac", name: "Ash Grey", search: "Grey" },
+  { hex: "#c08a8a", name: "Dusty Rose", search: "Pink" },
 ];
 
 export function FabricWall() {
@@ -42,6 +48,9 @@ export function FabricWall() {
             {SWATCHES.map((s) => (
               <button
                 key={s.name}
+                type="button"
+                aria-label={`Preview ${s.name}`}
+                aria-pressed={active.name === s.name}
                 onMouseEnter={() => setActive(s)}
                 onFocus={() => setActive(s)}
                 onClick={() => setActive(s)}
@@ -59,6 +68,19 @@ export function FabricWall() {
             <span className="block font-body font-semibold text-[13.5px] text-text-tertiary mt-0.5 tracking-wide">
               in stock · S–4XL · Premium 400gsm fleece
             </span>
+          </div>
+
+          <div className="mt-sp-4 flex flex-wrap gap-2.5">
+            <ButtonLink
+              href={`/products?q=${encodeURIComponent(active.search)}`}
+              variant="primary"
+              size="sm"
+            >
+              Shop garments in this colour
+            </ButtonLink>
+            <ButtonLink href="/quote" variant="secondary" size="sm">
+              Ask about Pantone matching
+            </ButtonLink>
           </div>
         </div>
 
