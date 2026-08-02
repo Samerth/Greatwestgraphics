@@ -1,0 +1,64 @@
+# Great West Graphics
+
+> Custom screen printing and embroidery studio in Vancouver, British
+> Columbia, founded in 1980. Great West Graphics decorates apparel and
+> promotional products for businesses, schools, teams and events, and
+> proofs every order before it goes to production.
+
+Great West Graphics is a production print shop, not a print-on-demand
+marketplace. Work is done in-house in Vancouver: screen printing,
+embroidery, and direct-to-garment printing on blank apparel sourced from
+major North American suppliers.
+
+## Services
+
+- Screen printing — up to 37 stock ink colours, with full Pantone Matching
+  System colour matching available on request.
+- Embroidery — logos digitized stitch-by-stitch and hand-trimmed after
+  every run.
+- Direct-to-garment printing for detailed or full-colour artwork.
+- Branded team and company stores, for organizations that want a fixed
+  product selection their people can order from. These run as bulk print
+  batches rather than one-off print-on-demand, so a curated product list
+  works better than an unlimited catalogue.
+- Bulk and repeat orders, including blind/drop shipping on a third party's
+  behalf.
+
+## Ordering
+
+Customers can browse the catalogue, build an instant estimate in the quote
+builder, or upload artwork in the Design Studio and place it on a garment
+before ordering. Every order is proofed before print. Final pricing is
+confirmed after the team reviews the artwork.
+
+## Artwork requirements
+
+- Preferred: vector files — PDF, AI or SVG with fonts converted to
+  outlines. Vector art scales to any size without losing quality.
+- Also accepted: transparent PNG at 300 DPI, at final print size.
+- Avoid: screenshots, compressed logos, and images copied from websites.
+  These are raster/pixel-based and lose quality when scaled up.
+
+## Shipping
+
+Great West Graphics ships anywhere in Canada and the United States.
+Customers can also arrange their own carrier pickup by contacting the
+office.
+
+## Key pages
+
+- Home: https://greatwestgraphics.com/
+- Full catalogue: https://greatwestgraphics.com/products
+- Quote builder: https://greatwestgraphics.com/quote
+- Design Studio: https://greatwestgraphics.com/design
+- FAQ: https://greatwestgraphics.com/faq
+- Shipping: https://greatwestgraphics.com/shipping
+- About: https://greatwestgraphics.com/about
+- Contact: https://greatwestgraphics.com/contact
+
+## Contact
+
+- Address: #105 – 342 East Kent Avenue South, Vancouver, BC V5X 4N6, Canada
+- Phone: (604) 321-3285
+- Email: info@greatwestgraphics.com
+- Hours: Monday to Friday, 8:30am–4:30pm Pacific Time

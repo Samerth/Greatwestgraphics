@@ -127,6 +127,27 @@ function ProductJsonLd({
   );
 }
 
+/** Machine-readable twin of the "Home / Shop / …" trail rendered above the
+ * product, so search results can show the same path. */
+function BreadcrumbJsonLd({ name, url }: { name: string; url: string }) {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Shop", item: `${SITE_URL}/products` },
+      { "@type": "ListItem", position: 3, name, item: url },
+    ],
+  };
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+    />
+  );
+}
+
 export default async function ProductPage({
   params,
   searchParams,
@@ -160,6 +181,10 @@ export default async function ProductPage({
           url={`${SITE_URL}/product/${encodeURIComponent(slug)}?id=${id}`}
           priceMinor={Number(variants[0]?.retailMinor || 0)}
           available={available}
+        />
+        <BreadcrumbJsonLd
+          name={`${title} · ${String(product.colorName || "")}`.trim()}
+          url={`${SITE_URL}/product/${encodeURIComponent(slug)}?id=${id}`}
         />
         <section className="py-sp-8">
           <Container>
