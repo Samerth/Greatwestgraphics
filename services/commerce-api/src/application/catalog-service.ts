@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, not, or, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
 import {
@@ -19,6 +19,10 @@ import {
   DataIntegrityError,
   ResourceNotFoundError,
 } from "./job-request-service.js";
+
+/** S&S sells its own printed catalogue through the same styles feed.
+ * These are not garment brands and are hidden from shopper-facing lists. */
+const NON_GARMENT_BRANDS = ["Catalogs"];
 
 type ProductFilterQuery = {
   search?: string;
@@ -364,7 +368,17 @@ export class CatalogService {
       .selectDistinct({ brandName: ssStyles.brandName })
       .from(ssStyles)
       .innerJoin(ssProducts, eq(ssProducts.styleUuid, ssStyles.id))
-      .where(and(eq(ssStyles.tenantId, tenantId), eq(ssProducts.active, true)))
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssProducts.active, true),
+          // S&S lists its own printed paper catalogue under a "Catalogs"
+          // brand. It isn't a garment manufacturer, so showing it beside
+          // Adidas and Champion in the shopper-facing brand filter is
+          // just confusing.
+          not(inArray(ssStyles.brandName, NON_GARMENT_BRANDS)),
+        ),
+      )
       .orderBy(asc(ssStyles.brandName));
     return rows.map((row) => row.brandName);
   }
