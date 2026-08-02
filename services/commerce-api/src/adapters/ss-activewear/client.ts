@@ -205,7 +205,9 @@ export class SsActivewearClient {
 export function ssImageUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   if (path.startsWith("http")) return path;
-  return `https://www.ssactivewear.com/${path.replace(/^\//, "")}`;
+  // www.ssactivewear.com 301s every image to cdn.ssactivewear.com, so point
+  // at the CDN directly — one less hop on every product image request.
+  return `https://cdn.ssactivewear.com/${path.replace(/^\//, "")}`;
 }
 
 export function pathHash(path: string): string {
