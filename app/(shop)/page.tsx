@@ -85,6 +85,7 @@ export default async function HomePage() {
     label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),
     brandName: p.brandName,
     styleName: p.styleName,
+    title: p.title,
     colorName: p.colorName,
     unitCostMinor: p.costMinor,
     isDark: p.isDark,

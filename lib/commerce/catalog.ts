@@ -8,6 +8,8 @@ export type StorefrontCatalogProduct = {
   name: string;
   brandName: string;
   styleName: string;
+  /** Manufacturer's descriptive name, e.g. "Men's Ultimate365 Elevated Hoodie". */
+  title: string | null;
   colorName: string;
   categorySlugs: string[];
   retailMinor: number;
@@ -136,6 +138,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
         name: `${row.brandName || ""} ${row.styleName || row.title || ""}`.trim(),
         brandName: String(row.brandName || ""),
         styleName: String(row.styleName || ""),
+        title: (row.title as string | null) || null,
         colorName: String(row.colorName || ""),
         categorySlugs: [],
         retailMinor,

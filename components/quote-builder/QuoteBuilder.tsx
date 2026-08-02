@@ -47,6 +47,8 @@ type CatalogOption = {
    * product" shows one entry per garment, not one per colourway. */
   brandName?: string;
   styleName?: string;
+  /** Manufacturer's descriptive name, shown so the picker isn't a wall of style codes. */
+  title?: string | null;
   colorName?: string;
   unitCostMinor: number;
   isDark: boolean;
@@ -74,11 +76,14 @@ export function QuoteBuilder({
   // Group colourways of the same garment under one style, so "Pick your
   // product" offers one button per garment instead of one per colour.
   const styleGroups = useMemo(() => {
-    const groups = new Map<string, { key: string; label: string; colours: CatalogOption[] }>();
+    const groups = new Map<
+      string,
+      { key: string; label: string; title: string | null; colours: CatalogOption[] }
+    >();
     for (const p of catalogProducts) {
       const key = p.brandName && p.styleName ? `${p.brandName}::${p.styleName}` : p.id;
       const label = p.brandName && p.styleName ? `${p.brandName} ${p.styleName}`.trim() : p.label;
-      if (!groups.has(key)) groups.set(key, { key, label, colours: [] });
+      if (!groups.has(key)) groups.set(key, { key, label, title: p.title ?? null, colours: [] });
       groups.get(key)!.colours.push(p);
     }
     return [...groups.values()];
@@ -271,7 +276,16 @@ export function QuoteBuilder({
                   active={selectedStyleKey === g.key}
                   onClick={() => selectStyle(g.key)}
                 >
-                  {g.label}
+                  {g.title ? (
+                    <span className="flex flex-col items-start leading-tight">
+                      <span>{g.title}</span>
+                      <span className="text-[11px] font-normal opacity-70">
+                        {g.label}
+                      </span>
+                    </span>
+                  ) : (
+                    g.label
+                  )}
                 </Pill>
               ))
             : useCatalog
