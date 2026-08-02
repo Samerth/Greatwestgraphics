@@ -32,7 +32,7 @@ export default async function MyDesignsPage() {
         </p>
         <h1 className="font-display font-bold text-display-sm mb-sp-2">My Designs</h1>
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
-          Artwork you&apos;ve saved from the Design Studio. Reopen any of these to
+          Artwork you&apos;ve saved from the AI Design Studio. Reopen any of these to
           keep editing or apply it to a different garment.
         </p>
 
@@ -46,7 +46,7 @@ export default async function MyDesignsPage() {
           <div className="border border-border rounded-md p-sp-4 text-text-secondary flex flex-wrap items-center justify-between gap-3">
             <span>No saved designs yet.</span>
             <ButtonLink href="/design" size="sm">
-              Open Design Studio
+              Open AI Design Studio
             </ButtonLink>
           </div>
         )}

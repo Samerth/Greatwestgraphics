@@ -21,7 +21,7 @@ const FALLBACK_CATEGORIES = [
 ];
 
 const PRIMARY_LINKS = [
-  { label: "Design Studio", href: "/design" },
+  { label: "AI Design Studio", href: "/design" },
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
 ];
@@ -256,7 +256,7 @@ export function Header({
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2"
             >
-              Design Studio
+              AI Design Studio
             </Link>
             <Link
               href="/quote"
