@@ -803,10 +803,16 @@ export function DesignStudio({
             </p>
           )}
 
-          <Button className="w-full" onClick={handleApprove}>
+          <Button
+            className="w-full"
+            onClick={handleApprove}
+            disabled={artworks.length === 0}
+          >
             {approved
               ? "Artwork export ready ✓"
-              : `Export ${GARMENT_VIEWS[activeSide].label} Artwork`}
+              : artworks.length === 0
+                ? `Add artwork to the ${GARMENT_VIEWS[activeSide].label.toLowerCase()} first`
+                : `Export ${GARMENT_VIEWS[activeSide].label} Artwork`}
           </Button>
           {exportedUrl && (
             <>

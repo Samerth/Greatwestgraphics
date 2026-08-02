@@ -14,6 +14,7 @@ const config: Config = {
     extend: {
       colors: {
         bg: "var(--color-bg)",
+        "bg-90": "var(--color-bg-90)",
         "bg-raised": "var(--color-bg-raised)",
         "text-primary": "var(--color-text-primary)",
         "text-secondary": "var(--color-text-secondary)",

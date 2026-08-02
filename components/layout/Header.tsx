@@ -70,7 +70,7 @@ export function Header({
   };
 
   return (
-    <header className="sticky top-0 z-[60] bg-bg/90 backdrop-blur-lg border-b border-border">
+    <header className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border">
       <Container className="h-[76px] flex items-center justify-between gap-sp-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
@@ -184,6 +184,12 @@ export function Header({
         <div className="flex items-center gap-sp-2 shrink-0">
           <ActiveDesignBadge />
           <Link
+            href="/admin/login"
+            className="hidden lg:inline-flex items-center px-2 text-xs font-semibold text-text-tertiary hover:text-text-primary transition-colors"
+          >
+            Staff
+          </Link>
+          <Link
             href={customerName ? "/portal/jobs" : "/account"}
             className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
           >
@@ -279,6 +285,13 @@ export function Header({
               className="text-sm font-bold px-3 py-2"
             >
               {customerName ? `Hi, ${customerName.split(" ")[0]}` : "Sign In"}
+            </Link>
+            <Link
+              href="/admin/login"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2 text-text-tertiary"
+            >
+              Staff
             </Link>
           </div>
         </nav>
