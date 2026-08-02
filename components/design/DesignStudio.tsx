@@ -583,83 +583,82 @@ export function DesignStudio({
 
       {/* Canvas */}
       <div className="bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
-        <div className="px-sp-4 py-sp-3 flex justify-between items-center border-b border-white/10">
+        <div className="px-sp-4 py-sp-3 border-b border-white/10">
+          <b className="font-display text-[15px]">2D Design Canvas</b>
+          <span className="block text-[11px] text-white/55 mt-0.5">
+            Drag your artwork into position on the garment below.
+          </span>
+        </div>
+
+        <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3">
           <div>
-            <b className="font-display text-[15px]">2D Design Canvas</b>
-            <span className="block text-[11px] text-white/55 mt-0.5">
-              {GARMENT_VIEWS[activeSide].label} side · independent artwork
+            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
+              Which side are you designing?
             </span>
-          </div>
-          <label className="relative">
-            <span className="sr-only">Placement zone</span>
-            <select
-              value={placementBySide[activeSide]}
-              onChange={(e) =>
-                setPlacementBySide((prev) => ({ ...prev, [activeSide]: e.target.value }))
-              }
-              className="bg-accent text-white text-xs font-bold pl-3 pr-7 py-1.5 rounded-md appearance-none cursor-pointer"
-            >
-              {PLACEMENT_ZONES[activeSide].map((zone) => (
-                <option key={zone} value={zone} className="text-text-primary">
-                  {zone}
-                </option>
+            <div className="flex gap-2">
+              {(Object.entries(GARMENT_VIEWS) as [GarmentSide, (typeof GARMENT_VIEWS)[GarmentSide]][]).map(([side, view]) => (
+                <button
+                  key={side}
+                  onClick={() => {
+                    setActiveSide(side);
+                    setExportedUrl(null);
+                  }}
+                  aria-pressed={activeSide === side}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-[13px] font-bold transition-colors",
+                    activeSide === side
+                      ? "bg-accent border-accent text-white"
+                      : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
+                  )}
+                >
+                  {view.label}
+                  {artworksBySide[side].length > 0 && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 text-[10px] font-bold",
+                        activeSide === side ? "bg-white/25" : "bg-white/15"
+                      )}
+                    >
+                      {artworksBySide[side].length}
+                    </span>
+                  )}
+                </button>
               ))}
-            </select>
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 12 8"
-              fill="none"
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
-            >
-              <path d="M1 1.5L6 6.5L11 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
+              Where the print goes
+            </span>
+            <div className="relative">
+              <select
+                value={placementBySide[activeSide]}
+                onChange={(e) =>
+                  setPlacementBySide((prev) => ({ ...prev, [activeSide]: e.target.value }))
+                }
+                className="bg-accent text-white text-[13px] font-bold pl-3.5 pr-8 py-2 rounded-md appearance-none cursor-pointer"
+              >
+                {PLACEMENT_ZONES[activeSide].map((zone) => (
+                  <option key={zone} value={zone} className="text-text-primary">
+                    {zone}
+                  </option>
+                ))}
+              </select>
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 12 8"
+                fill="none"
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+              >
+                <path d="M1 1.5L6 6.5L11 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           </label>
         </div>
 
-        <div className="p-sp-3 grid grid-cols-1 sm:grid-cols-[60px_1fr] gap-sp-3 min-h-[340px] overflow-x-auto">
-          <div className="flex flex-row sm:flex-col gap-2">
-            {(Object.entries(GARMENT_VIEWS) as [GarmentSide, (typeof GARMENT_VIEWS)[GarmentSide]][]).map(([side, view]) => (
-              <button
-                key={side}
-                onClick={() => {
-                  setActiveSide(side);
-                  setExportedUrl(null);
-                }}
-                aria-label={`Edit ${view.label.toLowerCase()} side`}
-                title={`${view.label} side — ${artworksBySide[side].length} artwork layer${artworksBySide[side].length === 1 ? "" : "s"} placed`}
-                className={cn(
-                  "w-[72px] sm:w-[60px] h-[70px] rounded-md bg-[#1a1a1a] grid place-items-center border-[1.5px] text-[10px] font-bold overflow-hidden py-1.5",
-                  activeSide === side ? "border-accent text-white" : "border-transparent text-white/55"
-                )}
-              >
-                <span>
-                  {photoBySide[side] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={photoBySide[side]!}
-                      alt=""
-                      className="block w-8 h-6 mx-auto mb-0.5 rounded-sm object-cover object-top"
-                    />
-                  ) : (
-                    <span
-                      className={cn(
-                        "block w-8 h-7 mx-auto mb-1 rounded-sm",
-                        side === "back" && "-scale-x-100"
-                      )}
-                      style={{ background: view.color }}
-                    />
-                  )}
-                  {view.label}
-                  <span className="block text-[9px] font-normal normal-case opacity-80">
-                    {artworksBySide[side].length} layer
-                    {artworksBySide[side].length === 1 ? "" : "s"}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-
+        <div className="p-sp-3 min-h-[340px] overflow-x-auto">
           <div className="bg-[#141414] rounded-md flex items-center justify-center p-sp-3 min-w-[340px]">
             <div
               className="relative"

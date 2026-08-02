@@ -15,6 +15,11 @@ export class LocalSsImageStore {
     if (!remotePath) return null;
     const absoluteRemote = ssImageUrl(remotePath);
     if (!absoluteRemote) return null;
+    // Serverless hosts (Vercel/Render) have no durable local disk, so
+    // downloading into public/ only works for a machine that both syncs and
+    // serves. SS_IMAGE_STORAGE=remote stores the S&S CDN URL directly —
+    // next.config.ts already whitelists ssactivewear.com for next/image.
+    if (process.env.SS_IMAGE_STORAGE === "remote") return absoluteRemote;
     const hash = pathHash(remotePath);
     const ext = path.extname(remotePath).split("?")[0] || ".jpg";
     const fileName = `${hash}${ext}`;
