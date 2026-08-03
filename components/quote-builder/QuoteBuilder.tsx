@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import type { DecorationMethod, PricingConfig, QuoteInput } from "@gwg/contracts";
+import { OptionalImage } from "@/components/shared/OptionalImage";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { AnimatedNumber } from "@/components/shared/AnimatedNumber";
@@ -260,13 +260,35 @@ export function QuoteBuilder({
   return (
     <div id="quote" className="grid grid-cols-1 lg:grid-cols-2 gap-sp-5 items-start">
       <div className="bg-bg-raised border border-border rounded-lg shadow-card p-sp-5">
-        <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-2">
+        <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-3">
           <span className="w-1.5 h-1.5 rounded-full bg-accent" />
           Live Quote Builder
         </div>
-        <h2 className="font-display font-bold text-header leading-header mb-sp-4">
+        <h2 className="font-display font-bold text-header leading-header mb-sp-1">
           Three answers. Instant estimate.
         </h2>
+        <p className="text-sm text-text-secondary mb-sp-4">
+          Customize your order and see the price update live.
+        </p>
+
+        {/* Step Progress */}
+        <div className="flex items-center gap-sp-2 mb-sp-6 text-xs font-semibold">
+          {[1, 2, 3].map((step) => (
+            <div key={step} className="flex items-center gap-sp-2 flex-1">
+              <div
+                className={cn(
+                  "w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px]",
+                  step <= 3 ? "bg-accent" : "bg-border text-text-tertiary",
+                )}
+              >
+                {step}
+              </div>
+              {step < 3 && (
+                <div className={cn("flex-1 h-0.5", step < 3 ? "bg-border" : "bg-border")} />
+              )}
+            </div>
+          ))}
+        </div>
 
         <QbRow label="1. Pick your product">
           {useCatalog && hasStyleGroups
@@ -394,21 +416,30 @@ export function QuoteBuilder({
         </button>
 
         {showMore && (
-          <div className="border-t border-border pt-sp-3 space-y-sp-4">
-            <QbRow label="Printing method">
-              {QB_METHODS.map((m) => (
-                <Pill
-                  key={m.id}
-                  active={method === m.id}
-                  onClick={() => setMethod(m.id)}
-                >
-                  <span className="block">{m.label}</span>
-                  <span className="block text-[11px] font-medium opacity-80">
-                    {m.blurb}
-                  </span>
-                </Pill>
-              ))}
-            </QbRow>
+          <div className="border-t border-border pt-sp-4 space-y-sp-4">
+            <div>
+              <label className="block text-xs font-bold tracking-[0.1em] uppercase text-text-tertiary mb-sp-3">
+                Printing method
+              </label>
+              <div className="space-y-2">
+                {QB_METHODS.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMethod(m.id)}
+                    className={cn(
+                      "w-full text-left px-4 py-3 rounded-sm border transition-colors",
+                      method === m.id
+                        ? "bg-accent border-accent text-white"
+                        : "bg-bg-raised border-border text-text-primary hover:border-text-tertiary",
+                    )}
+                  >
+                    <div className="font-semibold text-sm">{m.label}</div>
+                    <div className="text-[12px] opacity-70 mt-0.5">{m.blurb}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {method === "screenPrint" && (
               <QbRow label="How many colours in your design?">
@@ -482,60 +513,69 @@ export function QuoteBuilder({
         )}
       </div>
 
-      <div className="bg-text-primary text-white rounded-lg overflow-hidden">
+      <div className="bg-text-primary text-white rounded-lg overflow-hidden sticky top-sp-5 lg:top-sp-2">
         <div className="h-[140px] relative bg-[linear-gradient(135deg,#2a2a28,#0d0d0d)]">
-          <Image
+          <OptionalImage
             src="/images/prod-hoodie.jpg"
             alt="Product photography"
             fill
             sizes="(max-width: 1024px) 100vw, 50vw"
             className="object-cover"
           />
-          <div className="absolute left-sp-3 top-sp-3">
-            <b className="block font-display text-[15px]">{product.toUpperCase()}</b>
-            <span className="text-xs text-white/60">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+          <div className="absolute left-sp-4 bottom-sp-3">
+            <div className="font-display text-sm font-bold opacity-90">{product.toUpperCase()}</div>
+            <div className="text-[11px] text-white/70 mt-1">
               {locations.join(" · ")} · {method}
-            </span>
+            </div>
           </div>
         </div>
 
-        <div className="p-sp-4 bg-fill-subtle text-text-primary">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.1em] uppercase text-accent mb-sp-3">
+        <div className="p-sp-5 bg-fill-subtle text-text-primary space-y-sp-4">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.1em] uppercase text-accent">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
             Live Estimate
           </div>
 
-          <div className="flex justify-between items-center py-2">
-            <span>Per shirt</span>
-            <b>
-              <AnimatedNumber value={breakdown.perPieceMinor / 100} />
-            </b>
+          <div>
+            <div className="text-[13px] text-white/75 mb-1">Per shirt</div>
+            <div className="text-[28px] font-display font-bold text-white">
+              $<AnimatedNumber value={breakdown.perPieceMinor / 100} />
+            </div>
           </div>
-          <div className="flex justify-between items-center py-2 font-display text-[22px] font-bold">
-            <span className="text-body font-body font-normal">Order total</span>
-            <span className="text-accent">
-              <AnimatedNumber value={breakdown.totalMinor / 100} />
-            </span>
+
+          <div className="border-t border-white/10 pt-sp-4">
+            <div className="text-[12px] text-white/70 mb-2">Order total</div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[24px] font-display font-bold text-accent">
+                $<AnimatedNumber value={breakdown.totalMinor / 100} />
+              </span>
+              <span className="text-[12px] text-white/60">
+                for {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}
+              </span>
+            </div>
           </div>
 
           {oneTimeLines.length > 0 && (
-            <div className="border border-border rounded-sm mb-sp-3">
+            <div className="border border-white/10 rounded-sm bg-white/5 overflow-hidden">
               <button
                 type="button"
-                className="w-full flex justify-between items-center px-3 py-2 text-sm font-semibold"
+                className="w-full flex justify-between items-center px-4 py-3 text-sm font-semibold hover:bg-white/10 transition-colors"
                 onClick={() => setSetupOpen((v) => !v)}
               >
                 <span>
-                  One-time setup: {moneyFromMinor(breakdown.oneTimeFeesMinor)}
+                  One-time setup: ${moneyFromMinor(breakdown.oneTimeFeesMinor)}
                 </span>
-                <span>{setupOpen ? "⌃" : "⌄"}</span>
+                <span className="text-[12px]">{setupOpen ? "▲" : "▼"}</span>
               </button>
               {setupOpen && (
-                <ul className="px-3 pb-2 text-[12.5px] text-text-secondary space-y-1">
+                <ul className="px-4 pb-3 pt-2 text-[12px] text-white/75 space-y-1.5 border-t border-white/10">
                   {oneTimeLines.map((line) => (
-                    <li key={line.label} className="flex justify-between gap-2">
+                    <li key={line.label} className="flex justify-between gap-3">
                       <span>{line.label}</span>
-                      <span>{moneyFromMinor(line.extendedAmountMinor)}</span>
+                      <span className="font-semibold text-white">
+                        ${moneyFromMinor(line.extendedAmountMinor)}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -543,12 +583,12 @@ export function QuoteBuilder({
             </div>
           )}
 
-          <div className="text-[12.5px] text-text-secondary my-1.5 mb-sp-3">
-            {QB_METHOD_DAYS[method]} · {qty.toLocaleString()}{" "}
-            {qty === 1 ? "piece" : "pieces"}
+          <div className="text-[12px] text-white/70 space-y-1">
+            <div>⏱️ {QB_METHOD_DAYS[method]}</div>
+            <div>📦 {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}</div>
           </div>
 
-          <p className="text-[12.5px] text-text-secondary mb-sp-3">
+          <p className="text-[11px] text-white/60 italic">
             {needsArtworkReview
               ? "Estimated from a 1-colour print — final price confirmed by our team within 1 business day."
               : "Estimated from your selections — final price confirmed when we review your artwork."}
@@ -590,13 +630,13 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "border font-semibold text-sm transition-colors text-left",
+        "border font-semibold text-sm transition-all duration-200 text-left cursor-pointer",
         round
           ? "w-[38px] h-[38px] rounded-full grid place-items-center p-0 text-xs"
-          : "px-4 py-2.5 rounded-sm",
+          : "px-4 py-2.5 rounded-md",
         active
-          ? "bg-accent border-accent text-white"
-          : "bg-bg-raised border-border text-text-primary hover:border-text-tertiary",
+          ? "bg-accent border-accent text-white shadow-md scale-[1.02]"
+          : "bg-bg-raised border-border text-text-primary hover:border-text-secondary hover:shadow-sm hover:scale-[1.01]",
       )}
     >
       {children}
