@@ -6,7 +6,9 @@ import { loadStorefrontCatalog, toCrossSellItems } from "@/lib/commerce/catalog"
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 
-export const dynamic = "force-dynamic";
+// ISR: revalidate catalog every 1 hour (3600s) instead of on every request
+// This avoids the cold-start timeout on first load
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "AI Design Studio — Upload & Preview Your Artwork Live",

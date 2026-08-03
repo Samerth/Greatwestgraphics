@@ -80,7 +80,7 @@ export class CommerceClient {
         ...(revalidate !== undefined
           ? { next: { revalidate } }
           : { cache: "no-store" as const }),
-        signal: init.signal ?? AbortSignal.timeout(20_000),
+        signal: init.signal ?? AbortSignal.timeout(60_000),
       });
     } catch {
       throw new CommerceApiError(
