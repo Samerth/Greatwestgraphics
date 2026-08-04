@@ -1,0 +1,8 @@
+{
+  "_comment": "Maps style IDs to size chart keys. Update when adding new styles or charts.",
+  "mappings": {
+    "adidas-a2009": "adidas-a2009",
+    "adidas-a2020": "adidas-a2020",
+    "gildan-18500": "gildan-18500"
+  }
+}

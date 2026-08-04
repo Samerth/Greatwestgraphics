@@ -1,0 +1,43 @@
+{
+  "adidas-a2009": {
+    "label": "Men's Ultimate365 Elevated Hoodie",
+    "unit": "inches",
+    "measurements": [
+      { "size": "XS", "chest": "32-34", "length": "26.5", "sleeve": "31.5" },
+      { "size": "S", "chest": "34-36", "length": "27.5", "sleeve": "32.5" },
+      { "size": "M", "chest": "38-40", "length": "28.5", "sleeve": "33.5" },
+      { "size": "L", "chest": "42-44", "length": "29.5", "sleeve": "34.5" },
+      { "size": "XL", "chest": "46-48", "length": "30.5", "sleeve": "35.5" },
+      { "size": "2XL", "chest": "50-52", "length": "31.5", "sleeve": "36" },
+      { "size": "3XL", "chest": "54-56", "length": "32.5", "sleeve": "36.5" },
+      { "size": "4XL", "chest": "58-60", "length": "33.5", "sleeve": "37" }
+    ],
+    "notes": "Relaxed fit. Measurements taken flat. Add 2\" to actual body measurement for comfort."
+  },
+  "adidas-a2020": {
+    "label": "Men's Ultimate365 Cozy Quarter-Zip Pullover",
+    "unit": "inches",
+    "measurements": [
+      { "size": "XS", "chest": "32-34", "length": "26", "sleeve": "31" },
+      { "size": "S", "chest": "34-36", "length": "27", "sleeve": "32" },
+      { "size": "M", "chest": "38-40", "length": "28", "sleeve": "33" },
+      { "size": "L", "chest": "42-44", "length": "29", "sleeve": "34" },
+      { "size": "XL", "chest": "46-48", "length": "30", "sleeve": "35" },
+      { "size": "2XL", "chest": "50-52", "length": "31", "sleeve": "35.5" }
+    ],
+    "notes": "Modern fit. Chest to chest measurements. See care instructions for washing guidelines."
+  },
+  "gildan-18500": {
+    "label": "Gildan Heavy Blend Hooded Sweatshirt",
+    "unit": "inches",
+    "measurements": [
+      { "size": "S", "chest": "34-36", "length": "27", "sleeve": "32" },
+      { "size": "M", "chest": "38-40", "length": "28", "sleeve": "33" },
+      { "size": "L", "chest": "42-44", "length": "29", "sleeve": "34" },
+      { "size": "XL", "chest": "46-48", "length": "30", "sleeve": "35" },
+      { "size": "2XL", "chest": "50-52", "length": "31", "sleeve": "36" },
+      { "size": "3XL", "chest": "54-56", "length": "32", "sleeve": "36.5" }
+    ],
+    "notes": "Classic unisex fit. True to size. Pre-shrunk fabric."
+  }
+}

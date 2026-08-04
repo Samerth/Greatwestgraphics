@@ -6,6 +6,7 @@ import { Container } from "@/components/shared/Container";
 import { ProductDetail } from "@/components/pdp/ProductDetail";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
+import { ProductSizeGuide } from "@/components/pdp/ProductSizeGuide";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
 import { ButtonLink } from "@/components/shared/Button";
 import { CATALOG } from "@/lib/data/products";
@@ -297,6 +298,12 @@ export default async function ProductPage({
                     }))}
                   />
                 </div>
+
+                <ProductSizeGuide
+                  brandName={String(style.brandName || "")}
+                  styleName={String(style.styleName || "")}
+                  productName={title}
+                />
 
                 <div className="mt-sp-4 flex gap-3">
                   <ButtonLink href="/quote" variant="secondary">
