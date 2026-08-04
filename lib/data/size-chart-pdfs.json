@@ -1,0 +1,30 @@
+{
+  "_comment": "Maps garment styles to their size chart PDFs. URLs can be from S&S CDN, manufacturer, or your own storage.",
+  "charts": {
+    "adidas-a2009": {
+      "label": "Adidas Men's Ultimate365 Elevated Hoodie",
+      "pdfUrl": "https://cdn.ssactivewear.com/size-charts/adidas-a2009.pdf",
+      "source": "S&S Activewear"
+    },
+    "adidas-a2020": {
+      "label": "Adidas Men's Ultimate365 Cozy Quarter-Zip",
+      "pdfUrl": "https://cdn.ssactivewear.com/size-charts/adidas-a2020.pdf",
+      "source": "S&S Activewear"
+    },
+    "adidas-a2027": {
+      "label": "Adidas Men's Ultimate365 Wind Quarter-Zip",
+      "pdfUrl": "https://cdn.ssactivewear.com/size-charts/adidas-a2027.pdf",
+      "source": "S&S Activewear"
+    },
+    "gildan-18500": {
+      "label": "Gildan Heavy Blend Hooded Sweatshirt",
+      "pdfUrl": "https://www.gildan.com/documents/gildan-18500-size-chart.pdf",
+      "source": "Gildan"
+    },
+    "gildan-64000": {
+      "label": "Gildan Softstyle T-Shirt",
+      "pdfUrl": "https://www.gildan.com/documents/gildan-64000-size-chart.pdf",
+      "source": "Gildan"
+    }
+  }
+}

@@ -226,9 +226,13 @@ export const productStyles = pgTable(
       .notNull()
       .references(() => products.id),
     name: text("name").notNull(),
+    sizeChartPdfUrl: text("size_chart_pdf_url"),
     ...auditColumns,
   },
-  (table) => [uniqueIndex("product_styles_tenant_id_uq").on(table.tenantId, table.id)],
+  (table) => [
+    uniqueIndex("product_styles_tenant_id_uq").on(table.tenantId, table.id),
+    index("product_styles_size_chart_idx").on(table.sizeChartPdfUrl),
+  ],
 );
 
 export const productVariants = pgTable(
