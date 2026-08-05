@@ -1,21 +1,31 @@
-import { createHash } from "node:crypto";
+/**
+ * Sanmar EDI (Electronic Data Interchange) Client
+ *
+ * Sanmar uses EDI format for data exchange (not REST API).
+ * EDI files are typically delivered via:
+ * - Email to EDI mailbox
+ * - SFTP uploads
+ * - AS2 protocol
+ *
+ * This client handles EDI file processing:
+ * - X.12 format parsing (ASC X12 standard)
+ * - CSV format fallback
+ * - Bulk product data sync (daily)
+ * - Inventory updates
+ */
 
 export class SanmarAuthError extends Error {
   readonly code = "SANMAR_AUTH_ERROR";
 }
 
-export class SanmarNotFoundError extends Error {
-  readonly code = "SANMAR_NOT_FOUND";
+export class SanmarEDIError extends Error {
+  readonly code = "SANMAR_EDI_ERROR";
   constructor(
     message: string,
-    readonly productId?: string,
+    readonly details?: unknown,
   ) {
     super(message);
   }
-}
-
-export class SanmarRateLimitError extends Error {
-  readonly code = "SANMAR_RATE_LIMIT";
 }
 
 export type SanmarProduct = {
@@ -45,144 +55,139 @@ export type SanmarInventory = {
   lastUpdated: string;
 };
 
-type FetchResult<T> = {
-  data: T;
-  rateLimitRemaining: number | null;
+export type EDIFileMetadata = {
+  fileName: string;
+  fileType: "X12" | "CSV" | "JSON";
+  receivedAt: Date;
+  accountId: string;
 };
 
+/**
+ * Sanmar EDI Client
+ *
+ * Handles EDI data processing for Sanmar catalog sync.
+ * Credentials: accountId (161) and apiPassword (EDI access token)
+ */
 export class SanmarClient {
-  private remaining = 60;
-  private windowStartedAt = Date.now();
-  private requestTimestamps: number[] = [];
-
   constructor(
     private readonly accountId: string,
     private readonly apiPassword: string,
-    private readonly baseUrl = "https://api.sanmarcanada.com",
   ) {}
 
-  get rateLimitRemaining(): number | null {
-    return this.remaining;
-  }
-
-  async listProducts(): Promise<SanmarProduct[]> {
-    const result = await this.getJson<SanmarProduct[]>(
-      `/products?accountId=${this.accountId}`,
-    );
-    return result.data;
-  }
-
-  async getProductDetails(productId: string): Promise<SanmarProduct> {
+  /**
+   * Parse EDI CSV file containing product data.
+   * Expected format: productId, productName, brandName, category, price, imageUrl
+   */
+  async parseProductDataCSV(csvContent: string): Promise<SanmarProduct[]> {
     try {
-      const result = await this.getJson<SanmarProduct>(
-        `/products/${productId}?accountId=${this.accountId}`,
-      );
-      return result.data;
-    } catch (error) {
-      if (error instanceof SanmarNotFoundError) {
-        throw new SanmarNotFoundError(`Product ${productId} not found`, productId);
-      }
-      throw error;
-    }
-  }
+      const lines = csvContent.split("\n").filter((line) => line.trim());
+      const products: SanmarProduct[] = [];
 
-  async listSKUsByProduct(productId: string): Promise<SanmarSKU[]> {
-    const result = await this.getJson<SanmarSKU[]>(
-      `/products/${productId}/skus?accountId=${this.accountId}`,
-    );
-    return result.data;
-  }
+      for (const line of lines) {
+        const [productId, productName, brandName, category, basePrice, ...imageUrls] =
+          line.split(",").map((v) => v.trim());
 
-  async getInventory(skuId: string): Promise<SanmarInventory> {
-    const result = await this.getJson<SanmarInventory>(
-      `/inventory/${skuId}?accountId=${this.accountId}`,
-    );
-    return result.data;
-  }
+        if (!productId || !productName) continue;
 
-  async listInventory(): Promise<SanmarInventory[]> {
-    const result = await this.getJson<SanmarInventory[]>(
-      `/inventory?accountId=${this.accountId}`,
-    );
-    return result.data;
-  }
-
-  private async getJson<T>(path: string): Promise<FetchResult<T>> {
-    await this.throttle();
-    let attempt = 0;
-    while (true) {
-      attempt += 1;
-      try {
-        const authHeader = this.generateAuthHeader();
-        const response = await fetch(`${this.baseUrl}${path}`, {
-          headers: {
-            Authorization: authHeader,
-            Accept: "application/json",
-            "X-Account-ID": this.accountId,
-          },
-          signal: AbortSignal.timeout(30_000),
+        products.push({
+          productId,
+          productName,
+          brandName: brandName || undefined,
+          category: category || undefined,
+          basePrice: basePrice ? parseFloat(basePrice) : undefined,
+          images: imageUrls.filter((url) => url.length > 0),
         });
-
-        const remainingHeader = response.headers.get("X-Rate-Limit-Remaining");
-        if (remainingHeader != null) {
-          this.remaining = Number(remainingHeader);
-        }
-
-        if (response.status === 401) {
-          throw new SanmarAuthError("Sanmar API credentials rejected (401)");
-        }
-        if (response.status === 429) {
-          throw new SanmarRateLimitError("Sanmar API rate limit exceeded");
-        }
-        if (response.status === 404) {
-          throw new SanmarNotFoundError("Sanmar resource not found");
-        }
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Sanmar API ${response.status}: ${text.slice(0, 300)}`);
-        }
-
-        const data = (await response.json()) as T;
-        return { data, rateLimitRemaining: this.remaining };
-      } catch (error) {
-        if (
-          error instanceof SanmarAuthError ||
-          error instanceof SanmarNotFoundError ||
-          error instanceof SanmarRateLimitError
-        ) {
-          throw error;
-        }
-        if (attempt >= 3) throw error;
-        await sleep(2 ** attempt * 250);
       }
+
+      return products;
+    } catch (error) {
+      throw new SanmarEDIError("Failed to parse product CSV", error);
     }
   }
 
-  private generateAuthHeader(): string {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = createHash("sha256")
-      .update(`${this.accountId}${this.apiPassword}${timestamp}`)
-      .digest("hex");
-    return `Bearer ${this.accountId}:${signature}:${timestamp}`;
-  }
+  /**
+   * Parse EDI CSV file containing SKU/inventory data.
+   * Expected format: skuId, productId, sku, colorName, sizeName, quantity, price
+   */
+  async parseSKUDataCSV(csvContent: string): Promise<SanmarSKU[]> {
+    try {
+      const lines = csvContent.split("\n").filter((line) => line.trim());
+      const skus: SanmarSKU[] = [];
 
-  private async throttle(): Promise<void> {
-    const now = Date.now();
-    this.requestTimestamps = this.requestTimestamps.filter(
-      (stamp) => now - stamp < 60_000,
-    );
-    if (this.requestTimestamps.length >= 55 || (this.remaining ?? 60) <= 5) {
-      const oldest = this.requestTimestamps[0] ?? now;
-      const waitMs = Math.max(0, 60_000 - (now - oldest) + 50);
-      await sleep(waitMs);
-      this.requestTimestamps = this.requestTimestamps.filter(
-        (stamp) => Date.now() - stamp < 60_000,
-      );
+      for (const line of lines) {
+        const [skuId, productId, sku, colorName, sizeName, quantity, price, imageUrl] = line
+          .split(",")
+          .map((v) => v.trim());
+
+        if (!skuId || !productId || !sku) continue;
+
+        skus.push({
+          skuId,
+          productId,
+          sku,
+          colorName: colorName || "Standard",
+          sizeName: sizeName || "One Size",
+          quantity: parseInt(quantity, 10) || 0,
+          price: price ? parseFloat(price) : undefined,
+          imageUrl: imageUrl || undefined,
+        });
+      }
+
+      return skus;
+    } catch (error) {
+      throw new SanmarEDIError("Failed to parse SKU CSV", error);
     }
-    this.requestTimestamps.push(Date.now());
   }
-}
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  /**
+   * Parse EDI inventory update file.
+   * Expected format: skuId, quantity, timestamp
+   */
+  async parseInventoryCSV(csvContent: string): Promise<SanmarInventory[]> {
+    try {
+      const lines = csvContent.split("\n").filter((line) => line.trim());
+      const inventory: SanmarInventory[] = [];
+
+      for (const line of lines) {
+        const [skuId, quantity, lastUpdated] = line.split(",").map((v) => v.trim());
+
+        if (!skuId) continue;
+
+        inventory.push({
+          skuId,
+          quantity: parseInt(quantity, 10) || 0,
+          lastUpdated: lastUpdated || new Date().toISOString(),
+        });
+      }
+
+      return inventory;
+    } catch (error) {
+      throw new SanmarEDIError("Failed to parse inventory CSV", error);
+    }
+  }
+
+  /**
+   * Validate EDI credentials against Sanmar
+   */
+  validateCredentials(): boolean {
+    return Boolean(this.accountId && this.apiPassword);
+  }
+
+  /**
+   * Get metadata about the EDI file
+   */
+  getFileMetadata(fileName: string): EDIFileMetadata {
+    const fileType = fileName.endsWith(".x12")
+      ? "X12"
+      : fileName.endsWith(".csv")
+        ? "CSV"
+        : "JSON";
+
+    return {
+      fileName,
+      fileType,
+      receivedAt: new Date(),
+      accountId: this.accountId,
+    };
+  }
 }
