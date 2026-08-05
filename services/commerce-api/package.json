@@ -26,7 +26,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "sync:ss": "tsx src/scripts/sync-ss.ts"
+    "sync:ss": "tsx src/scripts/sync-ss.ts",
+    "sync:sanmar": "tsx src/scripts/sync-sanmar.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

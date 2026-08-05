@@ -17,6 +17,13 @@ const EnvironmentSchema = z
       .string()
       .url()
       .default("https://api-ca.ssactivewear.com"),
+    SANMAR_ACCOUNT_ID: z.string().optional(),
+    SANMAR_API_PASSWORD: z.string().optional(),
+    SANMAR_API_BASE_URL: z
+      .string()
+      .url()
+      .default("https://api.sanmarcanada.com")
+      .optional(),
   })
   .superRefine((environment, context) => {
     if (environment.ENABLE_DEV_ADMIN_ROUTES && environment.NODE_ENV === "production") {
