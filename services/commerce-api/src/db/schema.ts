@@ -47,6 +47,16 @@ export const jobRequestStatusEnum = pgEnum("job_request_status", [
   "ready_for_production",
 ]);
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "not_started",
+  "requires_payment",
+  "processing",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "refunded",
+]);
+
 export const tenants = pgTable("tenants", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -543,6 +553,230 @@ export const syncRuns = pgTable(
   ],
 );
 
+// Media assets for unified storage (images, 3D models)
+export const mediaAssets = pgTable(
+  "media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    assetType: text("asset_type").notNull(), // "image" | "model_3d"
+    mediaType: text("media_type").notNull(), // "image/jpeg", "model/gltf+json", etc.
+    vendor: text("vendor").notNull(), // "ss_activewear", "somar", "manual", etc.
+    externalId: text("external_id"), // Vendor's image ID
+    s3Url: text("s3_url").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    imagePosition: text("image_position"), // "front", "back", "left", "right", "swatch"
+    width: integer("width"),
+    height: integer("height"),
+    fileSize: integer("file_size"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    index("media_assets_tenant_vendor_idx").on(table.tenantId, table.vendor),
+    index("media_assets_asset_type_idx").on(table.assetType),
+  ],
+);
+
+// Link media to products
+export const productMedia = pgTable(
+  "product_media",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => ssProducts.id),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id),
+    displayOrder: integer("display_order").notNull().default(0),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("product_media_uq").on(table.tenantId, table.productId, table.mediaAssetId),
+    index("product_media_product_idx").on(table.productId),
+  ],
+);
+
+// 3D models for products
+export const product3dModels = pgTable(
+  "product_3d_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => ssProducts.id),
+    vendor: text("vendor"), // Which vendor provided this model
+    modelFormat: text("model_format").notNull(), // "glb", "gltf", "fbx", "usdz"
+    s3Url: text("s3_url").notNull(),
+    version: integer("version").notNull().default(1),
+    source: text("source").notNull(), // "vendor_upload", "ai_generated", "manual"
+    aiModel: text("ai_model"), // "meshy_v2", "tripo", etc.
+    isActive: boolean("is_active").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("product_3d_models_uq").on(table.tenantId, table.productId, table.version),
+    index("product_3d_models_source_idx").on(table.source),
+  ],
+);
+
+// CRM order sync tracking
+export const crmOrderSyncs = pgTable(
+  "crm_order_syncs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    jobRequestId: uuid("job_request_id")
+      .notNull()
+      .references(() => jobRequests.id),
+    codCrmJobId: text("cod_crm_job_id"), // COD CRM's ServiceJob ID
+    syncStatus: text("sync_status").notNull(), // "pending", "synced", "failed"
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("crm_order_syncs_job_request_uq").on(table.tenantId, table.jobRequestId),
+    index("crm_order_syncs_status_idx").on(table.syncStatus),
+  ],
+);
+
+// CRM status updates from COD CRM
+export const crmStatusUpdates = pgTable(
+  "crm_status_updates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    jobRequestId: uuid("job_request_id")
+      .notNull()
+      .references(() => jobRequests.id),
+    codCrmStatus: text("cod_crm_status").notNull(), // "inquiry", "in_progress", "completed", etc.
+    mappedInternalStatus: text("mapped_internal_status"), // Mapped to internal status enum
+    isProcessed: boolean("is_processed").notNull().default(false),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    index("crm_status_updates_job_request_idx").on(table.jobRequestId),
+    index("crm_status_updates_is_processed_idx").on(table.isProcessed),
+  ],
+);
+
+// Payment tables
+export const stripeCheckoutSessions = pgTable(
+  "stripe_checkout_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    jobRequestId: uuid("job_request_id")
+      .notNull()
+      .references(() => jobRequests.id),
+    stripeSessionId: text("stripe_session_id").notNull().unique(),
+    stripeCustomerId: text("stripe_customer_id"),
+    clientSecret: text("client_secret"),
+    amountMinor: bigint("amount_minor", { mode: "number" }).notNull(), // Cents
+    currency: text("currency").notNull().default("CAD"),
+    paymentStatus: paymentStatusEnum("payment_status").notNull().default("requires_payment"),
+    successUrl: text("success_url").notNull(),
+    cancelUrl: text("cancel_url").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("stripe_sessions_job_request_uq").on(table.tenantId, table.jobRequestId),
+    index("stripe_sessions_status_idx").on(table.paymentStatus),
+  ],
+);
+
+export const paymentIntents = pgTable(
+  "payment_intents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    stripePaymentIntentId: text("stripe_payment_intent_id").notNull().unique(),
+    stripeCheckoutSessionId: uuid("stripe_checkout_session_id").references(() => stripeCheckoutSessions.id),
+    status: text("status").notNull(),
+    amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+    amountReceivedMinor: bigint("amount_received_minor", { mode: "number" }).notNull().default(0),
+    failureReason: text("failure_reason"),
+    lastWebhookEventId: text("last_webhook_event_id"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    index("payment_intents_status_idx").on(table.status),
+  ],
+);
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    jobRequestId: uuid("job_request_id")
+      .notNull()
+      .references(() => jobRequests.id),
+    stripeInvoiceId: text("stripe_invoice_id"),
+    invoiceNumber: text("invoice_number").notNull(),
+    status: text("status").notNull(),
+    amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+    amountPaidMinor: bigint("amount_paid_minor", { mode: "number" }).notNull().default(0),
+    amountDueMinor: bigint("amount_due_minor", { mode: "number" }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    pdfUrl: text("pdf_url"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("invoices_invoice_number_uq").on(table.tenantId, table.invoiceNumber),
+    index("invoices_job_request_idx").on(table.jobRequestId),
+  ],
+);
+
+export const refunds = pgTable(
+  "refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    stripeRefundId: text("stripe_refund_id").notNull().unique(),
+    stripePaymentIntentId: text("stripe_payment_intent_id").notNull(),
+    invoiceId: uuid("invoice_id").references(() => invoices.id),
+    amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull(),
+    ...auditColumns,
+  },
+);
+
 export const catalogSettings = pgTable(
   "catalog_settings",
   {
@@ -580,6 +814,14 @@ export const jobRequests = pgTable(
     version: integer("version").notNull().default(1),
     customerNote: text("customer_note"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    // Payment columns
+    paymentStatus: paymentStatusEnum("payment_status").notNull().default("not_started"),
+    stripeCheckoutSessionId: uuid("stripe_checkout_session_id").references(() => stripeCheckoutSessions.id),
+    finalQuoteAmountMinor: bigint("final_quote_amount_minor", { mode: "number" }), // Approved quote amount in cents
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    // CRM columns
+    codCrmJobId: text("cod_crm_job_id"), // COD CRM's ServiceJob ID
+    lastCrmSyncAt: timestamp("last_crm_sync_at", { withTimezone: true }),
     ...auditColumns,
   },
   (table) => [
@@ -593,6 +835,8 @@ export const jobRequests = pgTable(
       table.accountId,
       table.status,
     ),
+    index("job_requests_payment_status_idx").on(table.paymentStatus),
+    index("job_requests_cod_crm_job_id_idx").on(table.codCrmJobId),
   ],
 );
 
