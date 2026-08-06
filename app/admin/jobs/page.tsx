@@ -2,19 +2,9 @@ import Link from "next/link";
 import { transitionJobAction } from "@/app/admin/actions";
 import { adminClient } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
-import type { JobRequestStatus } from "@gwg/contracts";
+import { validNextStatuses } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
-
-const STAFF_TRANSITIONS: JobRequestStatus[] = [
-  "under_review",
-  "changes_requested",
-  "rejected",
-  "approved",
-  "awaiting_payment",
-  "paid",
-  "ready_for_production",
-];
 
 export default async function AdminJobsPage() {
   let jobs: Awaited<
@@ -59,6 +49,7 @@ export default async function AdminJobsPage() {
       <div className="space-y-sp-3">
         {jobs.map((job) => {
           const presentation = jobStatusPresentation[job.status];
+          const nextStatuses = validNextStatuses(job.status);
           return (
             <article
               key={job.id}
@@ -87,42 +78,49 @@ export default async function AdminJobsPage() {
                 >
                   Open
                 </Link>
-                <form
-                  action={async (formData) => {
-                    "use server";
-                    const toStatus = String(formData.get("toStatus") || "");
-                    const reason = String(formData.get("reason") || "") || undefined;
-                    await transitionJobAction(job.id, toStatus, reason);
-                  }}
-                  className="flex flex-wrap gap-2 items-center"
-                >
-                  <select
-                    name="toStatus"
-                    className="border border-border rounded-sm px-2 py-1 text-sm"
-                    defaultValue=""
-                    required
+                {nextStatuses.length > 0 ? (
+                  <form
+                    action={async (formData) => {
+                      "use server";
+                      const toStatus = String(formData.get("toStatus") || "");
+                      const reason =
+                        String(formData.get("reason") || "") || undefined;
+                      await transitionJobAction(job.id, toStatus, reason);
+                    }}
+                    className="flex flex-wrap gap-2 items-center"
                   >
-                    <option value="" disabled>
-                      Transition to…
-                    </option>
-                    {STAFF_TRANSITIONS.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
+                    <select
+                      name="toStatus"
+                      className="border border-border rounded-sm px-2 py-1 text-sm"
+                      defaultValue=""
+                      required
+                    >
+                      <option value="" disabled>
+                        Transition to…
                       </option>
-                    ))}
-                  </select>
-                  <input
-                    name="reason"
-                    placeholder="Reason (optional)"
-                    className="border border-border rounded-sm px-2 py-1 text-sm"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-accent text-white text-sm font-bold px-3 py-1 rounded-sm"
-                  >
-                    Apply
-                  </button>
-                </form>
+                      {nextStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      name="reason"
+                      placeholder="Reason (optional)"
+                      className="border border-border rounded-sm px-2 py-1 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-accent text-white text-sm font-bold px-3 py-1 rounded-sm"
+                    >
+                      Apply
+                    </button>
+                  </form>
+                ) : (
+                  <span className="text-xs text-text-tertiary">
+                    No further transitions
+                  </span>
+                )}
               </div>
             </article>
           );

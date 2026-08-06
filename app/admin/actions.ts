@@ -8,7 +8,7 @@ export async function transitionJobAction(
   toStatus: string,
   reason?: string,
 ) {
-  await (await adminClient()).transitionJobRequest(
+  await adminClient().transitionJobRequest(
     jobId,
     toStatus,
     requireAdminToken(),
@@ -18,46 +18,45 @@ export async function transitionJobAction(
   revalidatePath(`/admin/jobs/${jobId}`);
 }
 
-export async function setStoreStatusAction(
-  storeId: string,
-  status: "active" | "suspended",
-) {
-  await (await adminClient()).setStoreStatus(storeId, status, requireAdminToken());
-  revalidatePath("/admin/accounts");
-}
-
-export async function setStoreCategoryVisibilityAction(
-  storeId: string,
-  formData: FormData,
-) {
-  const categoryIds = formData.getAll("categoryIds").map(String);
-  await (await adminClient()).setStoreCategoryVisibility(
-    storeId,
-    categoryIds,
-    requireAdminToken(),
-  );
-  revalidatePath(`/admin/accounts/${storeId}`);
-}
-
-export async function setStorePricingAdjustmentAction(
-  storeId: string,
-  formData: FormData,
-) {
-  const raw = String(formData.get("percent") || "").trim();
-  const percent = raw === "" ? null : Number(raw) / 100;
-  if (percent !== null && (Number.isNaN(percent) || percent < -0.9 || percent > 2)) {
-    throw new Error("Adjustment must be between -90% and 200%");
+export async function createFinalQuoteAction(formData: FormData) {
+  const jobId = String(formData.get("jobId") || "");
+  const dollars = Number(formData.get("amountDollars") || "0");
+  const note = String(formData.get("note") || "") || undefined;
+  const markAwaitingPayment = formData.has("markAwaitingPayment");
+  if (!jobId || !Number.isFinite(dollars) || dollars <= 0) {
+    throw new Error("Job and a positive quote amount are required");
   }
-  await (await adminClient()).setStorePricingAdjustment(
-    storeId,
-    percent,
+  await adminClient().createFinalQuote(
+    jobId,
+    {
+      amountMinor: Math.round(dollars * 100),
+      note,
+      markAwaitingPayment,
+    },
     requireAdminToken(),
   );
-  revalidatePath(`/admin/accounts/${storeId}`);
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin/quotes");
+}
+
+export async function createProofAction(formData: FormData) {
+  const jobId = String(formData.get("jobId") || "");
+  const storageKey = String(formData.get("storageKey") || "").trim();
+  const note = String(formData.get("note") || "") || undefined;
+  if (!jobId || !storageKey) {
+    throw new Error("Job and proof storage key/URL are required");
+  }
+  await adminClient().createProof(
+    jobId,
+    { storageKey, note },
+    requireAdminToken(),
+  );
+  revalidatePath(`/admin/jobs/${jobId}`);
 }
 
 export async function runSyncAction(type: "full" | "inventory") {
-  const result = await (await adminClient()).runCatalogSync(
+  const result = await adminClient().runCatalogSync(
     type,
     requireAdminToken(),
   );
@@ -73,7 +72,7 @@ export async function saveSettingsAction(formData: FormData) {
     .split(/[\n,]/)
     .map((s) => s.trim())
     .filter(Boolean);
-  await (await adminClient()).updateCatalogSettings(
+  await adminClient().updateCatalogSettings(
     { retailMarkup, brandAllowlist },
     requireAdminToken(),
   );
@@ -88,19 +87,19 @@ export async function createCategoryAction(formData: FormData) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   if (!name || !slug) throw new Error("Name and slug are required");
-  await (await adminClient()).createCategory({ name, slug }, requireAdminToken());
+  await adminClient().createCategory({ name, slug }, requireAdminToken());
   revalidatePath("/admin/categories");
 }
 
 export async function deleteCategoryAction(categoryId: string) {
-  await (await adminClient()).deleteCategory(categoryId, requireAdminToken());
+  await adminClient().deleteCategory(categoryId, requireAdminToken());
   revalidatePath("/admin/categories");
 }
 
 export async function reorderCategoryAction(
   orderedIds: string[],
 ) {
-  await (await adminClient()).reorderCategories(orderedIds, requireAdminToken());
+  await adminClient().reorderCategories(orderedIds, requireAdminToken());
   revalidatePath("/admin/categories");
 }
 
@@ -108,7 +107,7 @@ export async function saveMappingAction(formData: FormData) {
   const ssCategoryKey = String(formData.get("ssCategoryKey") || "");
   const ssCategoryLabel = String(formData.get("ssCategoryLabel") || "");
   const categoryIds = formData.getAll("categoryIds").map(String);
-  await (await adminClient()).putCategoryMapping(
+  await adminClient().putCategoryMapping(
     {
       ssCategoryKey,
       ssCategoryLabel: ssCategoryLabel || undefined,
@@ -127,7 +126,7 @@ export async function patchProductAction(
   const active = formData.has("active");
   const isDark = formData.has("isDark");
   const categoryIds = formData.getAll("categoryIds").map(String);
-  await (await adminClient()).patchCatalogProduct(
+  await adminClient().patchCatalogProduct(
     productId,
     {
       active,

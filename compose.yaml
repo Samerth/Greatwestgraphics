@@ -24,7 +24,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/great_west_graphics
       COMMERCE_API_HOST: 0.0.0.0
       COMMERCE_API_PORT: 4000
-      ENABLE_DEV_ADMIN_ROUTES: "false"
+      ENABLE_DEV_ADMIN_ROUTES: "true"
+      DEV_ADMIN_TOKEN: compose-dev-admin-token-min-16
     ports:
       - "4000:4000"
     depends_on:
@@ -43,6 +44,11 @@ services:
       COMMERCE_DEV_ACCOUNT_ID: 22222222-2222-4222-8222-222222222222
       COMMERCE_DEV_STORE_ID: 33333333-3333-4333-8333-333333333333
       COMMERCE_DEV_CUSTOMER_PERSON_ID: 44444444-4444-4444-8444-444444444444
+      ENABLE_DEV_ADMIN_ROUTES: "true"
+      DEV_ADMIN_TOKEN: compose-dev-admin-token-min-16
+      STAFF_ADMIN_USER: admin
+      STAFF_ADMIN_PASSWORD: compose-staff-password
+      STAFF_SESSION_SECRET: compose-session-secret-at-least-32-chars
     ports:
       - "3000:3000"
     depends_on:

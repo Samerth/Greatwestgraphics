@@ -2,19 +2,23 @@ import {
   CommerceErrorResponseSchema,
   CommerceHeaders,
   CreateJobRequestSchema,
+  FinalQuoteResponseSchema,
   JobRequestDetailResponseSchema,
   JobRequestListResponseSchema,
   JobRequestResponseSchema,
   PricingConfigDraftResponseSchema,
   PricingConfigVersionSummarySchema,
+  ProofVersionResponseSchema,
   PublishedPricingConfigResponseSchema,
   SubmitJobRequestSchema,
+  type FinalQuoteResponse,
   type JobRequestDetailResponse,
   type JobRequestListResponse,
   type JobRequestResponse,
   type PricingConfig,
   type PricingConfigDraftResponse,
   type PricingConfigVersionSummary,
+  type ProofVersionResponse,
   type PublishedPricingConfigResponse,
   type StorefrontJobSubmission,
   type UpsertPricingConfigDraft,
@@ -505,6 +509,63 @@ export class CommerceClient {
           },
           toStatus,
           reason,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  createFinalQuote(
+    id: string,
+    input: {
+      amountMinor: number;
+      currency?: string;
+      note?: string;
+      markAwaitingPayment?: boolean;
+    },
+    adminToken: string,
+  ): Promise<FinalQuoteResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/final-quotes`,
+      FinalQuoteResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+          },
+          amountMinor: input.amountMinor,
+          currency: input.currency ?? "CAD",
+          note: input.note,
+          markAwaitingPayment: input.markAwaitingPayment ?? false,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  createProof(
+    id: string,
+    input: { storageKey: string; note?: string },
+    adminToken: string,
+  ): Promise<ProofVersionResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/proofs`,
+      ProofVersionResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
+            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
+            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+          },
+          storageKey: input.storageKey,
+          note: input.note,
           source: { system: "commerce_api" },
         }),
       },

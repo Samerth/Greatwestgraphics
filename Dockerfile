@@ -3,11 +3,12 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/pricing/package.json packages/pricing/package.json
 COPY services/commerce-api/package.json services/commerce-api/package.json
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build:all
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \

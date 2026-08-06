@@ -15,6 +15,7 @@ import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
 import { useCartStore } from "@/lib/store/cart";
+import { loadDesignProofs } from "@/lib/commerce/design-attachment";
 import type {
   ContactValues,
   ShippingValues,
@@ -50,17 +51,7 @@ export function CheckoutWizard() {
     window.localStorage.setItem("gwg-checkout-details", JSON.stringify(data));
   }, [data]);
 
-  // The cart is persisted to localStorage, invisible to the server, so the
-  // server always renders as if it were empty. Wait for mount before
-  // branching on `items` so the first client render matches the server's —
-  // otherwise a returning visitor with items already in their cart sees a
-  // hydration error and a flash of the wrong state.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
   if (placed) return <CheckoutSuccess jobRequest={placed} />;
-
-  if (!mounted) return null;
 
   if (items.length === 0) {
     return (
@@ -123,24 +114,29 @@ export function CheckoutWizard() {
                   deliveryNotes: notes || undefined,
                 },
                 customerNote: customerNote || undefined,
-                lines: items.map((item) => ({
-                  productId: item.productId,
-                  styleId: item.styleId,
-                  variantId: item.variantId,
-                  description: item.name,
-                  quantity: item.qty,
-                  unitPriceEstimateMinor: Math.round(item.unit * 100),
-                  currency: "CAD",
-                  configuration: {
-                    storefrontProductId: item.id,
-                    productMetadata: item.meta,
-                    color: item.color,
-                    image: item.image,
-                    artworkProofUrl: item.artworkProofUrl,
-                    pricing: item.pricingSnapshot,
-                    roster: item.roster,
-                  },
-                })),
+                lines: items.map((item) => {
+                  const proofs = loadDesignProofs();
+                  const designProofs =
+                    proofs?.front || proofs?.back
+                      ? { front: proofs.front, back: proofs.back }
+                      : undefined;
+                  return {
+                    description: item.name,
+                    quantity: item.qty,
+                    unitPriceEstimateMinor: Math.round(item.unit * 100),
+                    currency: "CAD",
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    configuration: {
+                      storefrontProductId: item.id,
+                      productMetadata: item.meta,
+                      color: item.color,
+                      size: item.size,
+                      image: item.image,
+                      designProofs,
+                    },
+                  };
+                }),
               } satisfies Omit<StorefrontJobSubmission, "idempotencyKey">;
               const fingerprint = JSON.stringify(submissionWithoutKey);
               const savedKey = window.localStorage.getItem("gwg-submission-key");

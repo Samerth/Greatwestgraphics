@@ -20,6 +20,27 @@ export const JobRequestStatuses = [
 export const JobRequestStatusSchema = z.enum(JobRequestStatuses);
 export type JobRequestStatus = z.infer<typeof JobRequestStatusSchema>;
 
+/** Canonical legal transitions for staff UI and API domain logic. */
+export const JobRequestTransitions = {
+  draft: ["submitted"],
+  submitted: ["under_review", "rejected"],
+  under_review: ["changes_requested", "rejected", "approved"],
+  changes_requested: ["submitted", "rejected"],
+  rejected: [],
+  approved: ["awaiting_payment"],
+  awaiting_payment: ["payment_pending"],
+  payment_pending: ["payment_failed", "paid"],
+  payment_failed: ["payment_pending"],
+  paid: ["ready_for_production"],
+  ready_for_production: [],
+} as const satisfies Record<JobRequestStatus, readonly JobRequestStatus[]>;
+
+export function validNextStatuses(
+  status: JobRequestStatus,
+): readonly JobRequestStatus[] {
+  return JobRequestTransitions[status];
+}
+
 export const ActorTypes = ["customer", "staff", "system", "integration"] as const;
 export const ActorSchema = z.object({
   type: z.enum(ActorTypes),
@@ -393,6 +414,46 @@ export const JobRequestResponseSchema = z.object({
 });
 export type JobRequestResponse = z.infer<typeof JobRequestResponseSchema>;
 
+export const FinalQuoteResponseSchema = z.object({
+  id: CanonicalIdSchema,
+  jobRequestId: CanonicalIdSchema,
+  version: z.number().int().positive(),
+  amountMinor: MinorAmountSchema,
+  currency: z.string().length(3).toUpperCase(),
+  acceptedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type FinalQuoteResponse = z.infer<typeof FinalQuoteResponseSchema>;
+
+export const ProofVersionResponseSchema = z.object({
+  id: CanonicalIdSchema,
+  jobRequestId: CanonicalIdSchema,
+  version: z.number().int().positive(),
+  storageKey: z.string().min(1).max(2_000),
+  decision: z.enum(["pending", "approved", "changes_requested"]).nullable(),
+  decidedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type ProofVersionResponse = z.infer<typeof ProofVersionResponseSchema>;
+
+export const CreateFinalQuoteSchema = z.object({
+  context: RequestContextSchema,
+  amountMinor: MinorAmountSchema,
+  currency: z.string().length(3).toUpperCase().default("CAD"),
+  note: z.string().max(2_000).optional(),
+  markAwaitingPayment: z.boolean().default(false),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type CreateFinalQuote = z.infer<typeof CreateFinalQuoteSchema>;
+
+export const CreateProofVersionSchema = z.object({
+  context: RequestContextSchema,
+  storageKey: z.string().min(1).max(2_000),
+  note: z.string().max(2_000).optional(),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type CreateProofVersion = z.infer<typeof CreateProofVersionSchema>;
+
 export const JobRequestDetailResponseSchema = JobRequestResponseSchema.extend({
   lines: z.array(
     z.object({
@@ -402,6 +463,8 @@ export const JobRequestDetailResponseSchema = JobRequestResponseSchema.extend({
     }),
   ),
   timeline: z.array(StatusHistoryEntrySchema),
+  finalQuotes: z.array(FinalQuoteResponseSchema).default([]),
+  proofs: z.array(ProofVersionResponseSchema).default([]),
 });
 export type JobRequestDetailResponse = z.infer<
   typeof JobRequestDetailResponseSchema
@@ -438,6 +501,9 @@ export const CommerceEventTypes = [
   "commerce.job_request.created.v1",
   "commerce.job_request.submitted.v1",
   "commerce.job_request.status_changed.v1",
+  "commerce.job_request.final_quote.created.v1",
+  "commerce.job_request.proof.created.v1",
+  "commerce.contact_request.received.v1",
 ] as const;
 export const CommerceEventTypeSchema = z.enum(CommerceEventTypes);
 export type CommerceEventType = z.infer<typeof CommerceEventTypeSchema>;

@@ -1,10 +1,14 @@
 import {
   CanonicalIdSchema,
   CommerceHeaders,
+  CreateFinalQuoteSchema,
   CreateJobRequestSchema,
+  CreateProofVersionSchema,
+  FinalQuoteResponseSchema,
   IdempotencyKeySchema,
   PricingConfigDraftResponseSchema,
   PricingConfigVersionSummarySchema,
+  ProofVersionResponseSchema,
   PublishPricingConfigSchema,
   PublishedPricingConfigResponseSchema,
   RestorePricingConfigDraftSchema,
@@ -46,6 +50,7 @@ import { SsSyncService } from "./adapters/ss-activewear/sync-service.js";
 import { AuthenticationUnavailableError } from "./auth.js";
 import type { Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
+import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
 import { RequestContextSchema } from "@gwg/contracts";
 
@@ -139,6 +144,46 @@ export function buildApp(input: {
       app.log.error({ error }, "Readiness check failed");
       return reply.code(503).send({ status: "not_ready" });
     }
+  });
+
+  app.post("/v1/contact-requests", async (request, reply) => {
+    const auth = await input.auth.resolve(request);
+    const body = z
+      .object({
+        name: z.string().min(2).max(200),
+        email: z.string().email(),
+        phone: z.string().max(50).optional(),
+        company: z.string().max(200).optional(),
+        topic: z.string().min(2).max(100),
+        details: z.string().min(10).max(4_000),
+      })
+      .parse(request.body);
+
+    const contactId = randomUUID();
+    const occurredAt = new Date();
+    await input.db.insert(outboxEvents).values({
+      id: randomUUID(),
+      tenantId: auth.tenantId,
+      accountId: auth.accountId,
+      aggregateType: "contact_request",
+      aggregateId: contactId,
+      eventType: "commerce.contact_request.received.v1",
+      payload: {
+        id: randomUUID(),
+        type: "commerce.contact_request.received.v1",
+        version: 1,
+        aggregateId: contactId,
+        tenantId: auth.tenantId,
+        accountId: auth.accountId,
+        occurredAt: occurredAt.toISOString(),
+        actor: auth.actor,
+        source: { system: "storefront" },
+        data: body,
+      },
+      occurredAt,
+    });
+
+    return reply.code(201).send({ id: contactId, status: "received" });
   });
 
   app.get("/pricing-config/published", async (request) => {
@@ -496,6 +541,48 @@ export function buildApp(input: {
         const command = TransitionJobRequestSchema.parse(request.body);
         assertScope(auth, command.context);
         return service.transition(jobRequestId, command, staffActor(auth));
+      },
+    );
+
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/final-quotes",
+      async (request, reply) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = CreateFinalQuoteSchema.parse(request.body);
+        assertScope(auth, command.context);
+        const created = await service.createFinalQuote(
+          jobRequestId,
+          command,
+          staffActor(auth),
+        );
+        return reply
+          .code(201)
+          .send(FinalQuoteResponseSchema.parse(created));
+      },
+    );
+
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/proofs",
+      async (request, reply) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = CreateProofVersionSchema.parse(request.body);
+        assertScope(auth, command.context);
+        const created = await service.createProof(
+          jobRequestId,
+          command,
+          staffActor(auth),
+        );
+        return reply
+          .code(201)
+          .send(ProofVersionResponseSchema.parse(created));
       },
     );
 

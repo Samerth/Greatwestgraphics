@@ -1,10 +1,14 @@
 import type {
   Actor,
+  CreateFinalQuote,
   CreateJobRequest,
+  CreateProofVersion,
+  FinalQuoteResponse,
   JobRequestDetailResponse,
   JobRequestLineInput,
   JobRequestResponse,
   JobRequestStatus,
+  ProofVersionResponse,
   SourceMetadata,
   SubmitJobRequest,
   TransitionJobRequest,
@@ -14,13 +18,16 @@ import { calculateQuote } from "@gwg/pricing";
 import type { CommerceDatabase } from "../db/client.js";
 import {
   accountPeople,
+  finalQuotes,
   idempotencyKeys,
   jobRequestLines,
   jobRequests,
   jobRequestSnapshots,
   jobRequestStatusHistory,
   outboxEvents,
+  paymentObligations,
   pricingConfigs,
+  proofVersions,
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
@@ -88,6 +95,40 @@ function toResponse(row: typeof jobRequests.$inferSelect): JobRequestResponse {
     submittedAt: row.submittedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toFinalQuoteResponse(
+  row: typeof finalQuotes.$inferSelect,
+): FinalQuoteResponse {
+  return {
+    id: row.id,
+    jobRequestId: row.jobRequestId,
+    version: row.version,
+    amountMinor: row.amountMinor,
+    currency: row.currency,
+    acceptedAt: row.acceptedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toProofResponse(
+  row: typeof proofVersions.$inferSelect,
+): ProofVersionResponse {
+  const decision =
+    row.decision === "approved" ||
+    row.decision === "changes_requested" ||
+    row.decision === "pending"
+      ? row.decision
+      : null;
+  return {
+    id: row.id,
+    jobRequestId: row.jobRequestId,
+    version: row.version,
+    storageKey: row.storageKey,
+    decision,
+    decidedAt: row.decidedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -310,7 +351,7 @@ export class JobRequestService {
     jobRequestId: string,
   ): Promise<JobRequestDetailResponse> {
     const row = await this.findScoped(this.db, tenantId, accountId, jobRequestId);
-    const [lines, history] = await Promise.all([
+    const [lines, history, quotes, proofs] = await Promise.all([
       this.db
         .select()
         .from(jobRequestLines)
@@ -333,6 +374,28 @@ export class JobRequestService {
           ),
         )
         .orderBy(asc(jobRequestStatusHistory.occurredAt)),
+      this.db
+        .select()
+        .from(finalQuotes)
+        .where(
+          and(
+            eq(finalQuotes.tenantId, tenantId),
+            eq(finalQuotes.accountId, accountId),
+            eq(finalQuotes.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(asc(finalQuotes.version)),
+      this.db
+        .select()
+        .from(proofVersions)
+        .where(
+          and(
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+            eq(proofVersions.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(asc(proofVersions.version)),
     ]);
 
     return {
@@ -351,7 +414,199 @@ export class JobRequestService {
         source: entry.source,
         occurredAt: entry.occurredAt.toISOString(),
       })),
+      finalQuotes: quotes.map(toFinalQuoteResponse),
+      proofs: proofs.map(toProofResponse),
     };
+  }
+
+  async createFinalQuote(
+    jobRequestId: string,
+    command: CreateFinalQuote,
+    actor: Actor,
+  ): Promise<FinalQuoteResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+      const [latest] = await transaction
+        .select({ version: finalQuotes.version })
+        .from(finalQuotes)
+        .where(
+          and(
+            eq(finalQuotes.tenantId, tenantId),
+            eq(finalQuotes.accountId, accountId),
+            eq(finalQuotes.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(desc(finalQuotes.version))
+        .limit(1);
+      const version = (latest?.version ?? 0) + 1;
+      const [created] = await transaction
+        .insert(finalQuotes)
+        .values({
+          tenantId,
+          accountId,
+          jobRequestId,
+          version,
+          amountMinor: command.amountMinor,
+          currency: command.currency,
+          createdBy: actor,
+          source: command.source,
+        })
+        .returning();
+      if (!created) {
+        throw new DataIntegrityError("Failed to create final quote");
+      }
+
+      await transaction.insert(paymentObligations).values({
+        tenantId,
+        accountId,
+        jobRequestId,
+        finalQuoteId: created.id,
+        amountMinor: command.amountMinor,
+        currency: command.currency,
+        status: "ready",
+        createdBy: actor,
+        source: command.source,
+      });
+
+      const eventId = randomUUID();
+      const occurredAt = new Date();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.final_quote.created.v1",
+        occurredAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.final_quote.created.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: occurredAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            finalQuoteId: created.id,
+            amountMinor: command.amountMinor,
+            currency: command.currency,
+            quoteVersion: version,
+            note: command.note,
+          },
+        },
+      });
+
+      if (command.markAwaitingPayment) {
+        let working = current;
+        if (working.status === "under_review") {
+          await this.applyTransition(
+            transaction,
+            working,
+            "approved",
+            command.note ?? "Approved with final quote",
+            actor,
+            command.source,
+          );
+          working = await this.findScoped(
+            transaction,
+            tenantId,
+            accountId,
+            jobRequestId,
+          );
+        }
+        if (working.status === "approved") {
+          await this.applyTransition(
+            transaction,
+            working,
+            "awaiting_payment",
+            command.note ?? "Final quote issued — awaiting payment",
+            actor,
+            command.source,
+          );
+        }
+      }
+
+      return toFinalQuoteResponse(created);
+    });
+  }
+
+  async createProof(
+    jobRequestId: string,
+    command: CreateProofVersion,
+    actor: Actor,
+  ): Promise<ProofVersionResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      await this.findScoped(transaction, tenantId, accountId, jobRequestId);
+      const [latest] = await transaction
+        .select({ version: proofVersions.version })
+        .from(proofVersions)
+        .where(
+          and(
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+            eq(proofVersions.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(desc(proofVersions.version))
+        .limit(1);
+      const version = (latest?.version ?? 0) + 1;
+      const [created] = await transaction
+        .insert(proofVersions)
+        .values({
+          tenantId,
+          accountId,
+          jobRequestId,
+          version,
+          storageKey: command.storageKey,
+          decision: "pending",
+          createdBy: actor,
+          source: command.source,
+        })
+        .returning();
+      if (!created) {
+        throw new DataIntegrityError("Failed to create proof version");
+      }
+
+      const eventId = randomUUID();
+      const occurredAt = new Date();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.proof.created.v1",
+        occurredAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.proof.created.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: occurredAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            proofId: created.id,
+            proofVersion: version,
+            storageKey: command.storageKey,
+            note: command.note,
+          },
+        },
+      });
+
+      return toProofResponse(created);
+    });
   }
 
   async list(

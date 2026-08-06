@@ -178,7 +178,10 @@ export default function CartPage() {
               {totals.discount > 0 && (
                 <SummaryRow label="Volume tier discount" value={`-${money(totals.discount)}`} muted={false} accent />
               )}
-              <SummaryRow label="Shipping (Vancouver)" value="Free" />
+              <SummaryRow
+                label="Delivery"
+                value="Calculated at checkout"
+              />
             </div>
             <div className="flex justify-between items-center border-t border-border mt-sp-3 pt-sp-4 mb-sp-4">
               <span className="font-display font-bold text-[16px]">Total</span>

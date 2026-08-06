@@ -1,22 +1,15 @@
 import Link from "next/link";
-import { transitionJobAction } from "@/app/admin/actions";
+import {
+  createFinalQuoteAction,
+  createProofAction,
+  transitionJobAction,
+} from "@/app/admin/actions";
 import { adminClient } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
-import type { JobRequestStatus } from "@gwg/contracts";
+import { validNextStatuses } from "@gwg/contracts";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
-import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 
 export const dynamic = "force-dynamic";
-
-const STAFF_TRANSITIONS: JobRequestStatus[] = [
-  "under_review",
-  "changes_requested",
-  "rejected",
-  "approved",
-  "awaiting_payment",
-  "paid",
-  "ready_for_production",
-];
 
 export default async function AdminJobDetailPage({
   params,
@@ -26,11 +19,11 @@ export default async function AdminJobDetailPage({
   const { id } = await params;
   let error: string | undefined;
   let detail: Awaited<
-    ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequest"]>
+    ReturnType<ReturnType<typeof adminClient>["getJobRequest"]>
   > | null = null;
 
   try {
-    detail = await (await adminClient()).getJobRequest(id);
+    detail = await adminClient().getJobRequest(id);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -49,6 +42,7 @@ export default async function AdminJobDetailPage({
   }
 
   const presentation = jobStatusPresentation[detail.status];
+  const nextStatuses = validNextStatuses(detail.status);
 
   return (
     <div className="space-y-sp-4 max-w-4xl">
@@ -67,122 +61,203 @@ export default async function AdminJobDetailPage({
         </span>
       </div>
 
-      <form
-        action={async (formData) => {
-          "use server";
-          await transitionJobAction(
-            detail!.id,
-            String(formData.get("toStatus") || ""),
-            String(formData.get("reason") || "") || undefined,
-          );
-        }}
-        className="flex flex-wrap gap-2 items-end border border-border rounded-md p-sp-3 bg-bg-raised"
-      >
-        <label className="text-sm font-semibold">
-          Transition
-          <select
-            name="toStatus"
-            className="block mt-1 border border-border rounded-sm px-2 py-1"
-            required
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Select status
-            </option>
-            {STAFF_TRANSITIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm font-semibold">
-          Reason
-          <input
-            name="reason"
-            className="block mt-1 border border-border rounded-sm px-2 py-1"
-          />
-        </label>
-        <button
-          type="submit"
-          className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+      {nextStatuses.length > 0 ? (
+        <form
+          action={async (formData) => {
+            "use server";
+            await transitionJobAction(
+              detail!.id,
+              String(formData.get("toStatus") || ""),
+              String(formData.get("reason") || "") || undefined,
+            );
+          }}
+          className="flex flex-wrap gap-2 items-end border border-border rounded-md p-sp-3 bg-bg-raised"
         >
-          Apply
-        </button>
-      </form>
+          <label className="text-sm font-semibold">
+            Transition
+            <select
+              name="toStatus"
+              className="block mt-1 border border-border rounded-sm px-2 py-1"
+              required
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Select status
+              </option>
+              {nextStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold">
+            Reason
+            <input
+              name="reason"
+              className="block mt-1 border border-border rounded-sm px-2 py-1"
+            />
+          </label>
+          <button
+            type="submit"
+            className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+          >
+            Apply
+          </button>
+        </form>
+      ) : (
+        <p className="border border-border rounded-md p-sp-3 text-sm text-text-secondary m-0">
+          This job is in a terminal status. No further staff transitions are available.
+        </p>
+      )}
 
       <section className="space-y-sp-3">
         <h2 className="font-display font-bold text-xl m-0">Lines</h2>
         {detail.lines.map((line) => {
-          const configuration = line.snapshot.configuration as
-            | {
-                pricing?: { breakdown?: { totalMinor?: number } };
-                image?: string;
-                artworkProofUrl?: string;
-                color?: string;
-                productMetadata?: string;
-                roster?: RosterEntry[];
-              }
-            | undefined;
+          const configuration = line.snapshot.configuration as {
+            pricing?: { breakdown?: { totalMinor?: number } };
+            designProofs?: { front?: string; back?: string };
+            color?: string;
+            size?: string;
+          };
           const pricing = configuration?.pricing;
+          const designProofs = configuration?.designProofs;
           return (
             <article
               key={line.id}
-              className="border border-border rounded-md p-sp-3 flex gap-sp-3"
+              className="border border-border rounded-md p-sp-3"
             >
-              {configuration?.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={configuration.image}
-                  alt=""
-                  className="w-16 h-16 rounded-sm object-cover object-top border border-border shrink-0"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold m-0">{line.snapshot.description}</p>
-                <p className="text-sm text-text-secondary mt-1 mb-0">
-                  Qty {line.snapshot.quantity}
-                  {line.snapshot.unitPriceEstimateMinor != null
-                    ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
-                    : ""}
-                  {pricing?.breakdown?.totalMinor != null
-                    ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
-                    : ""}
+              <p className="font-semibold m-0">{line.snapshot.description}</p>
+              <p className="text-sm text-text-secondary mt-1 mb-0">
+                Qty {line.snapshot.quantity}
+                {configuration?.color ? ` · ${configuration.color}` : ""}
+                {configuration?.size ? ` · ${configuration.size}` : ""}
+                {line.snapshot.unitPriceEstimateMinor != null
+                  ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
+                  : ""}
+                {pricing?.breakdown?.totalMinor != null
+                  ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
+                  : ""}
+              </p>
+              {(line.snapshot.productId || line.snapshot.variantId) && (
+                <p className="text-xs text-text-tertiary mt-1 mb-0">
+                  Catalog: {line.snapshot.productId || "—"} /{" "}
+                  {line.snapshot.variantId || "—"}
                 </p>
-                {configuration?.productMetadata && (
-                  <p className="text-xs text-text-tertiary mt-1 mb-0">
-                    {configuration.productMetadata}
-                    {configuration.color ? ` · ${configuration.color}` : ""}
-                  </p>
-                )}
-                {(line.snapshot.productId || line.snapshot.variantId) && (
-                  <p className="text-xs text-text-tertiary mt-1 mb-0">
-                    Catalog: {line.snapshot.productId || "—"} /{" "}
-                    {line.snapshot.variantId || "—"}
-                  </p>
-                )}
-                {configuration?.artworkProofUrl && (
-                  <a
-                    href={configuration.artworkProofUrl}
-                    download={`job-${line.id}-artwork.png`}
-                    className="inline-block text-xs font-bold text-accent hover:underline mt-1"
-                  >
-                    Download custom artwork proof
-                  </a>
-                )}
-                {configuration?.roster && configuration.roster.length > 0 && (
-                  <div className="mt-sp-3 pt-sp-3 border-t border-fill-subtle">
-                    <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
-                      Team roster — production must print exactly these{" "}
-                      {configuration.roster.length} pieces
-                    </p>
-                    <RosterTable roster={configuration.roster} />
-                  </div>
-                )}
-              </div>
+              )}
+              {(designProofs?.front || designProofs?.back) && (
+                <div className="flex flex-wrap gap-3 mt-3">
+                  {designProofs.front && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={designProofs.front}
+                      alt="Front artwork proof"
+                      className="h-24 w-auto border border-border rounded-sm bg-white"
+                    />
+                  )}
+                  {designProofs.back && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={designProofs.back}
+                      alt="Back artwork proof"
+                      className="h-24 w-auto border border-border rounded-sm bg-white"
+                    />
+                  )}
+                </div>
+              )}
             </article>
           );
         })}
+      </section>
+
+      <section className="grid gap-sp-3 md:grid-cols-2">
+        <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
+          <h2 className="font-display font-bold text-xl m-0">Final quote</h2>
+          {(detail.finalQuotes ?? []).length > 0 ? (
+            <ul className="m-0 p-0 list-none space-y-1 text-sm">
+              {(detail.finalQuotes ?? []).map((quote) => (
+                <li key={quote.id}>
+                  v{quote.version}: {moneyFromMinor(quote.amountMinor)}{" "}
+                  {quote.currency}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-text-secondary m-0">No final quote yet.</p>
+          )}
+          <form action={createFinalQuoteAction} className="space-y-2">
+            <input type="hidden" name="jobId" value={detail.id} />
+            <label className="block text-sm font-semibold">
+              Amount (CAD)
+              <input
+                name="amountDollars"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <label className="block text-sm font-semibold">
+              Note
+              <input
+                name="note"
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" name="markAwaitingPayment" value="1" />
+              Mark awaiting payment
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+            >
+              Issue final quote
+            </button>
+          </form>
+        </div>
+
+        <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
+          <h2 className="font-display font-bold text-xl m-0">Staff proofs</h2>
+          {(detail.proofs ?? []).length > 0 ? (
+            <ul className="m-0 p-0 list-none space-y-1 text-sm">
+              {(detail.proofs ?? []).map((proof) => (
+                <li key={proof.id} className="break-all">
+                  v{proof.version}: {proof.storageKey}
+                  {proof.decision ? ` · ${proof.decision}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-text-secondary m-0">No proofs yet.</p>
+          )}
+          <form action={createProofAction} className="space-y-2">
+            <input type="hidden" name="jobId" value={detail.id} />
+            <label className="block text-sm font-semibold">
+              Storage key / URL
+              <input
+                name="storageKey"
+                required
+                placeholder="local://proofs/job-v1.png or https://…"
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <label className="block text-sm font-semibold">
+              Note
+              <input
+                name="note"
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+            >
+              Attach proof
+            </button>
+          </form>
+        </div>
       </section>
 
       <section>
