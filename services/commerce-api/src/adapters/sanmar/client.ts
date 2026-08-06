@@ -46,6 +46,22 @@ export type SanmarProduct = {
   category?: string;
   basePrice?: number;
   images?: string[];
+  // PromoStandards Product Data fields
+  partNumber?: string;
+  colors?: Array<{
+    colorName: string;
+    colorCode?: string;
+    images?: string[];
+  }>;
+  sizes?: Array<{
+    sizeName: string;
+    sizeCode?: string;
+  }>;
+  materials?: string[]; // e.g., ["100% Cotton", "Cotton/Poly Blend"]
+  features?: string[]; // e.g., ["Preshrunk", "Tagless", "Moisture-wicking"]
+  weightGsm?: number;
+  certifications?: string[];
+  careInstructions?: string;
 };
 
 export type SanmarSKU = {
@@ -53,10 +69,16 @@ export type SanmarSKU = {
   productId: string;
   sku: string;
   colorName: string;
+  colorCode?: string;
   sizeName: string;
+  sizeCode?: string;
   quantity: number;
   price?: number;
+  mapPrice?: number;
   imageUrl?: string;
+  gtin?: string;
+  weight?: number;
+  sizeOrder?: number;
 };
 
 export type SanmarInventory = {
@@ -73,43 +95,62 @@ export type EDIFileMetadata = {
 };
 
 /**
- * Sanmar SOAP/EDI Client
+ * Somar/ATC PromoStandards SOAP/EDI Client
  *
- * Handles both:
- * 1. SOAP/WSDL for real-time PromoStandards integration
- * 2. EDI CSV files for bulk daily sync
+ * Integrates with Somar Canada via PromoStandards WSDL services:
+ * 1. Product Data Service v2.0.0 - GetProduct, GetProductSellable
+ * 2. Inventory Service v2.0.0 - GetInventoryInformation
+ * 3. Pricing & Configuration Service v1.0.0 - GetPricingAndConfiguration
+ * 4. Media Service v1.0.0 - GetMediaLibrary, GetMediaURL
+ * 5. Bulk Data Service - GetBulkData
+ * 6. EDI files for batch uploads via SFTP/Email
  *
+ * Account: Great West Graphics (GWG) - Account ID: 161
  * Credentials: accountId (161) and apiPassword (SOAP/EDI access token)
  */
 export class SanmarClient {
-  private soapEndpoint: string;
+  // PromoStandards WSDL Endpoints (ATC/Somar Canada Production)
+  private readonly endpoints = {
+    productData: "https://edi.atc-apparel.com/pstd/productdata2.0/ProductDataServiceV2.php",
+    inventory: "https://edi.atc-apparel.com/pstd/inventory2.0/InventoryServiceV2.php",
+    pricing: "https://edi.atc-apparel.com/pstd/productpricingconfiguration/PricingAndConfigurationService.php",
+    media: "https://edi.atc-apparel.com/pstd/mediaservice/MediaService.php",
+    bulkData: "https://edi.atc-apparel.com/bulk-data/BulkDataService.php",
+  };
 
   constructor(
     private readonly accountId: string,
     private readonly apiPassword: string,
-    baseUrl = "https://api.sanmarcanada.com",
+    baseUrl?: string,
   ) {
-    // SOAP endpoints typically at /soap or /webservices
-    this.soapEndpoint = `${baseUrl}/services/promostandardssoap`;
+    // baseUrl optional override for UAT/staging
+    if (baseUrl) {
+      Object.keys(this.endpoints).forEach((key) => {
+        (this.endpoints as Record<string, string>)[key] = (this.endpoints as Record<string, string>)[key].replace(
+          "edi.atc-apparel.com",
+          baseUrl,
+        );
+      });
+    }
   }
 
   /**
-   * Call Sanmar SOAP service method
+   * Call PromoStandards SOAP service method
    * Uses SOAP/WSDL for PromoStandards integration
    */
   private async callSOAPService<T>(
+    endpoint: string,
     method: string,
     params: Record<string, unknown>,
   ): Promise<T> {
     try {
-      // Build SOAP request envelope
       const soapBody = this.buildSOAPRequest(method, params);
 
-      const response = await fetch(this.soapEndpoint, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: `http://api.sanmarcanada.com/${method}`,
+          SOAPAction: `http://www.promostandards.org/WSDL/${method}`,
           Authorization: this.generateSOAPAuth(),
         },
         body: soapBody,
@@ -135,22 +176,79 @@ export class SanmarClient {
   }
 
   /**
-   * Get product list via SOAP
+   * Get product via PromoStandards GetProduct method
+   * Returns: productId, name, description, category, colors, sizes, pricing
    */
-  async getProductsSOAP(): Promise<SanmarProduct[]> {
-    const result = await this.callSOAPService<SanmarProduct[]>("GetProducts", {
-      accountId: this.accountId,
-    });
+  async getProduct(productId: string): Promise<SanmarProduct> {
+    const result = await this.callSOAPService<SanmarProduct>(
+      this.endpoints.productData,
+      "GetProduct",
+      {
+        id: productId,
+        accountId: this.accountId,
+      },
+    );
     return result;
   }
 
   /**
-   * Get inventory via SOAP (real-time)
+   * Get product sellable options via PromoStandards GetProductSellable
+   * Returns: available colors, sizes, pricing tiers, configurations
    */
-  async getInventorySOAP(): Promise<SanmarInventory[]> {
-    const result = await this.callSOAPService<SanmarInventory[]>("GetInventory", {
-      accountId: this.accountId,
-    });
+  async getProductSellable(productId: string): Promise<Record<string, unknown>> {
+    const result = await this.callSOAPService<Record<string, unknown>>(
+      this.endpoints.productData,
+      "GetProductSellable",
+      {
+        id: productId,
+        accountId: this.accountId,
+      },
+    );
+    return result;
+  }
+
+  /**
+   * Get inventory via PromoStandards GetInventoryInformation (real-time)
+   * Returns: SKU availability, stock levels by size/color
+   */
+  async getInventory(): Promise<SanmarInventory[]> {
+    const result = await this.callSOAPService<SanmarInventory[]>(
+      this.endpoints.inventory,
+      "GetInventoryInformation",
+      {
+        accountId: this.accountId,
+      },
+    );
+    return result;
+  }
+
+  /**
+   * Get pricing and configuration via PromoStandards
+   * Returns: base pricing, volume discounts, currency, pricing tiers
+   */
+  async getPricing(): Promise<Record<string, unknown>> {
+    const result = await this.callSOAPService<Record<string, unknown>>(
+      this.endpoints.pricing,
+      "GetPricingAndConfiguration",
+      {
+        accountId: this.accountId,
+      },
+    );
+    return result;
+  }
+
+  /**
+   * Get bulk data dump (all products, inventory, pricing)
+   * Returns: compressed archive with complete catalog data
+   */
+  async getBulkData(): Promise<Record<string, unknown>> {
+    const result = await this.callSOAPService<Record<string, unknown>>(
+      this.endpoints.bulkData,
+      "GetBulkData",
+      {
+        accountId: this.accountId,
+      },
+    );
     return result;
   }
 
