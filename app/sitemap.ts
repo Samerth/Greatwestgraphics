@@ -46,6 +46,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   try {
+    // loadStorefrontCatalog uses storefront-only listing (omits soft-hidden
+    // colorways). Also skip OOS / vendor-inactive SKUs from the sitemap.
     const catalog = await loadStorefrontCatalog({ limit: 5000 });
     for (const product of catalog.products) {
       if (!product.available) continue;

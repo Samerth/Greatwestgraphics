@@ -4,19 +4,21 @@ This document reflects provider information checked on July 26, 2026. Provider
 offers and prices change; verify the linked official pages before provisioning.
 No cloud resource is created by this repository.
 
+**Hands-on AWS cutover (ECS/ALB/RDS/S3/secrets/health checks):** see
+[`AWS_DEPLOYMENT.md`](./AWS_DEPLOYMENT.md).
+
 ## Recommended path
 
 Use one AWS region and keep the existing boundaries:
 
-- Next.js storefront: AWS Amplify Hosting first. It supports Next.js SSR and
-  avoids operating another container. If an Amplify compatibility check fails,
-  use the root `Dockerfile` on App Runner instead of changing application
-  architecture.
-- Commerce API: its container on App Runner for the smallest operational
-  footprint. App Runner has no dedicated free compute allowance and retains a
-  provisioned-memory charge while idle. Move to ECS/Fargate only when networking,
-  scaling, or background-worker requirements justify the extra load balancer,
-  task, and VPC configuration.
+- Next.js storefront: **ECS Fargate + ALB** using the root `Dockerfile` is the
+  primary path for a full AWS migration (see `AWS_DEPLOYMENT.md`). AWS Amplify
+  Hosting remains a lighter alternative for Next.js SSR if you want managed
+  hosting without operating web containers. App Runner can also run the web image.
+- Commerce API: **ECS Fargate + ALB** (same VPC as RDS) for production networking.
+  App Runner is still fine for a small operational footprint when a VPC connector
+  + private RDS design is confirmed. App Runner has no dedicated free compute
+  allowance and retains a provisioned-memory charge while idle.
 - PostgreSQL: private RDS PostgreSQL for production, Multi-AZ and backups when
   the recovery requirements warrant their cost. Aurora PostgreSQL is compatible
   but is not automatically cheaper. Use Neon Free only for development or
@@ -109,8 +111,9 @@ Official sources:
 
 ## Local container workflow
 
-The Compose file is development-only. Migrations remain an explicit operation
-and are never run by an application container:
+`compose.yaml` is development-only (fixture tenant IDs +
+`ENABLE_DEV_ADMIN_ROUTES=true`). Migrations remain an explicit operation and are
+never run by an application container:
 
 ```sh
 cp .env.example .env
@@ -121,8 +124,7 @@ docker compose up --build api web
 ```
 
 The root `.env` uses `localhost:5432` for host-run migration commands. Compose
-injects the internal `postgres` hostname into the API. The web and API containers
-run with development identity because no production auth adapter exists.
+injects the internal `postgres` hostname into the API.
 
 Build the production images from repository root:
 
@@ -131,10 +133,16 @@ docker build -t gwg-web .
 docker build -f services/commerce-api/Dockerfile -t gwg-commerce-api .
 ```
 
-The API exposes `/health` for process liveness and `/ready` for database
-readiness. Configure the platform health check to `/health`; use `/ready` as a
-deployment smoke test. Set the App Runner container port to `4000`. Run
-migrations as an explicit, reviewed release job before shifting traffic.
+Health checks:
+
+- API: `/health` (liveness), `/ready` (DB smoke)
+- Web: `/api/health` (liveness)
+
+Configure the platform health check to those liveness paths. Set the container
+port to `4000` (API) or `3000` (web). In production task definitions,
+`ENABLE_DEV_ADMIN_ROUTES` must be `false` or unset — the API refuses to start
+otherwise. Run migrations as an explicit, reviewed release job before shifting
+traffic.
 
 ## Exact prerequisites by milestone
 
@@ -231,6 +239,8 @@ source control.
 
 ## Known blockers
 
-Production auth, payment, CodCRM, vendor adapters, file upload, email dispatch,
-and outbox delivery are intentionally not implemented because their contracts
-and credentials are undecided. Containerization does not remove those blockers.
+Payment (Stripe), CodCRM production cutover, and outbox delivery still need
+product/credentials decisions — see `IMPLEMENTATION_STATUS.md`. Cognito, S3
+uploads, Resend contact email, and vendor sync adapters are partially wired;
+containerization does not finish those product blockers. Never enable
+`ENABLE_DEV_ADMIN_ROUTES` in production.

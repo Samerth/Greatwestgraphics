@@ -34,23 +34,13 @@
 ## ⏳ Not Yet Implemented (Remaining Work)
 
 ### Phase 2b: Vendor Sync Services
-- [ ] `S&SActivewearSyncService` - Extend AbstractVendorSyncService
-  - Implement fetchStyles() via S&S REST API
-  - Implement fetchVariants() 
-  - Implement fetchInventory()
-  
-- [ ] `SomarSyncService` - Extend AbstractVendorSyncService
-  - Implement fetchStyles() via SOAP PromoStandards
-  - Implement fetchVariants()
-  - Implement fetchInventory()
-  - Handle SOAP/EDI specifics
-
-- [ ] Import adapters for CSV/manual/JSON
-  - CSVImportAdapter
-  - ManualEntryAdapter
-  - JSONImportAdapter
-
-- [ ] SyncServiceFactory - Select sync service by vendor
+- [x] Shared `CatalogWriter` + `VendorCatalogAdapter` port (vendor-namespaced `ss_*` tables)
+- [x] `SsActivewearAdapter` — wraps existing S&S REST sync
+- [x] `SanmarSyncService` — EDI/CSV into real catalog (+ optional SOAP product IDs)
+- [x] `CsvVendorAdapter` — canonical CSV for any future vendor key
+- [x] `VendorSyncRegistry` — factory used by `/admin/catalog/sync`
+- [x] Admin Sync UI — vendor cards + CSV/EDI paste import
+- [ ] ManualEntryAdapter / JSONImportAdapter (optional; CSV covers file-drop vendors)
 
 ### Phase 3: Payment Integration
 - [ ] Payment routes (POST /api/checkout/create-session)
@@ -76,13 +66,14 @@ All pages must include: Search + Filters + Sort + CRUD (where relevant)
   - Sync history table with status badges
   - Color-coded statuses (green/yellow/red)
 
-- [ ] **Admin Catalog Page** (`app/admin/catalog/page.tsx`)
+- [x] **Admin Catalog Page** (`app/admin/catalog/page.tsx`) — Phase 1
   - Vendor filter dropdown
   - Search by product name/SKU/brand
   - Filter: category, brand, stock status, visibility
-  - Product table with inline visibility toggle
-  - Hover: edit/delete icons
+  - Product table with storefront visibility + vendor badge
   - Batch operations (select checkbox + bulk hide/show)
+  - Durable soft-hide: `storefront_visible` (sync-safe)
+  - [ ] Inline visibility toggle / hover edit icons (Phase 2)
 
 - [ ] **Admin Category Mapping Page** (`app/admin/categories/mappings/page.tsx`)
   - Step-by-step guided mapping workflow

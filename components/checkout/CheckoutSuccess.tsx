@@ -29,7 +29,7 @@ export function CheckoutSuccess({
         pricing before payment becomes available.
       </p>
       <p className="mt-sp-3 text-sm">
-        Job reference: <b className="font-mono">{jobRequest.id}</b>
+        Job reference: <b>{jobRequest.displayId}</b>
       </p>
       <ButtonLink
         href={`/portal/jobs/${jobRequest.id}`}

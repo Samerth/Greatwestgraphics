@@ -1,7 +1,7 @@
 import { adminToken } from "@/lib/admin/auth";
 import { createCommerceClient } from "@/lib/commerce/client";
 
-export function adminClient() {
+export async function adminClient() {
   return createCommerceClient();
 }
 

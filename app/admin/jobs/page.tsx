@@ -12,7 +12,8 @@ export default async function AdminJobsPage() {
   > = [];
   let error: string | undefined;
   try {
-    jobs = await (await adminClient()).listJobRequests();
+    const client = await adminClient();
+    jobs = await client.listJobRequests();
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Jobs unavailable";
   }
@@ -57,7 +58,9 @@ export default async function AdminJobsPage() {
             >
               <div className="flex flex-wrap justify-between gap-3">
                 <div>
-                  <p className="font-mono text-sm m-0">{job.id}</p>
+                  <p className="font-display font-bold text-lg m-0">
+                    {job.displayId}
+                  </p>
                   <p className="text-xs text-text-tertiary mt-1 mb-0">
                     {job.submittedAt
                       ? new Date(job.submittedAt).toLocaleString("en-CA")

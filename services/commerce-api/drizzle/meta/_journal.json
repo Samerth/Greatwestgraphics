@@ -50,6 +50,27 @@
       "when": 1785412539920,
       "tag": "0006_aspiring_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786152600000,
+      "tag": "0009_job_display_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786220000000,
+      "tag": "0010_vendor_catalog_namespace",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786300000000,
+      "tag": "0011_storefront_visible",
+      "breakpoints": true
     }
   ]
 }

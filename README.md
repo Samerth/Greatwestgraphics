@@ -28,9 +28,9 @@ npm run db:seed
 Database migration commands require `DATABASE_URL`. They are never run as part
 of install, build, or application startup. Point `DATABASE_URL` at a local
 PostgreSQL 15+ database or a development provider, then run the migration and
-idempotent development seed commands above. The optional Compose setup and AWS
-deployment/credential checklist are in
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+idempotent development seed commands above. Local Compose and provider notes:
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). ECS/ALB/RDS/S3 cutover steps:
+[`docs/AWS_DEPLOYMENT.md`](docs/AWS_DEPLOYMENT.md).
 
 ## Commands
 
