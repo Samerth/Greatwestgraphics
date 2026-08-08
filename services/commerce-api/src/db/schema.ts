@@ -264,6 +264,27 @@ export const productVariants = pgTable(
   ],
 );
 
+export const vendors = pgTable(
+  "vendors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    key: text("key").notNull(),
+    displayName: text("display_name").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    syncAdapter: text("sync_adapter"),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("vendors_tenant_key_uq").on(table.tenantId, table.key),
+    index("vendors_tenant_key_idx").on(table.tenantId, table.key),
+  ],
+);
+
 export const vendorMappings = pgTable(
   "vendor_mappings",
   {
@@ -288,7 +309,7 @@ export const vendorMappings = pgTable(
   ],
 );
 
-/** S&S style = garment silhouette / style number (e.g. Gildan 2000). */
+/** Style = garment silhouette / style number (vendor-namespaced). */
 export const ssStyles = pgTable(
   "ss_styles",
   {
@@ -296,6 +317,9 @@ export const ssStyles = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    vendor: text("vendor").notNull().default("ss_activewear"),
+    /** Vendor's opaque style key (S&S styleID as string, Sanmar part #, CSV style_key). */
+    externalKey: text("external_key"),
     styleId: integer("style_id").notNull(),
     partNumber: text("part_number"),
     brandName: text("brand_name").notNull(),
@@ -315,12 +339,17 @@ export const ssStyles = pgTable(
     ...auditColumns,
   },
   (table) => [
-    uniqueIndex("ss_styles_tenant_style_id_uq").on(table.tenantId, table.styleId),
+    uniqueIndex("ss_styles_tenant_vendor_style_id_uq").on(
+      table.tenantId,
+      table.vendor,
+      table.styleId,
+    ),
     index("ss_styles_tenant_brand_idx").on(table.tenantId, table.brandName),
+    index("ss_styles_tenant_vendor_idx").on(table.tenantId, table.vendor),
   ],
 );
 
-/** Website product = S&S style + color. */
+/** Website product = style + color (vendor-namespaced). */
 export const ssProducts = pgTable(
   "ss_products",
   {
@@ -328,6 +357,7 @@ export const ssProducts = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    vendor: text("vendor").notNull().default("ss_activewear"),
     styleUuid: uuid("style_uuid")
       .notNull()
       .references(() => ssStyles.id),
@@ -347,22 +377,36 @@ export const ssProducts = pgTable(
     colorSwatchImageUrl: text("color_swatch_image_url"),
     materialConfig: jsonb("material_config").$type<Record<string, unknown>>(),
     qty: integer("qty").notNull().default(0),
+    /** Vendor discontinued / sellable flag — sync may update this. */
     active: boolean("active").notNull().default(true),
+    /**
+     * Staff soft-hide for storefront PLP/brands/sitemap/design picker.
+     * Sync must NEVER overwrite this column (or hidden_at / hidden_by).
+     */
+    storefrontVisible: boolean("storefront_visible").notNull().default(true),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    hiddenBy: jsonb("hidden_by").$type<Actor>(),
     slug: text("slug").notNull(),
     ...auditColumns,
   },
   (table) => [
-    uniqueIndex("ss_products_tenant_style_color_uq").on(
+    uniqueIndex("ss_products_tenant_vendor_style_color_uq").on(
       table.tenantId,
+      table.vendor,
       table.styleId,
       table.colorName,
     ),
     uniqueIndex("ss_products_tenant_slug_uq").on(table.tenantId, table.slug),
     index("ss_products_tenant_style_uuid_idx").on(table.tenantId, table.styleUuid),
+    index("ss_products_tenant_vendor_idx").on(table.tenantId, table.vendor),
+    index("ss_products_tenant_storefront_visible_idx").on(
+      table.tenantId,
+      table.storefrontVisible,
+    ),
   ],
 );
 
-/** Variant = size under a color product. */
+/** Variant = size under a color product (vendor-namespaced). */
 export const ssVariants = pgTable(
   "ss_variants",
   {
@@ -370,6 +414,8 @@ export const ssVariants = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    vendor: text("vendor").notNull().default("ss_activewear"),
+    externalKey: text("external_key"),
     productUuid: uuid("product_uuid")
       .notNull()
       .references(() => ssProducts.id),
@@ -386,9 +432,18 @@ export const ssVariants = pgTable(
     ...auditColumns,
   },
   (table) => [
-    uniqueIndex("ss_variants_tenant_sku_id_uq").on(table.tenantId, table.skuId),
-    uniqueIndex("ss_variants_tenant_sku_uq").on(table.tenantId, table.sku),
+    uniqueIndex("ss_variants_tenant_vendor_sku_id_uq").on(
+      table.tenantId,
+      table.vendor,
+      table.skuId,
+    ),
+    uniqueIndex("ss_variants_tenant_vendor_sku_uq").on(
+      table.tenantId,
+      table.vendor,
+      table.sku,
+    ),
     index("ss_variants_tenant_product_idx").on(table.tenantId, table.productUuid),
+    index("ss_variants_tenant_vendor_idx").on(table.tenantId, table.vendor),
   ],
 );
 
@@ -536,6 +591,7 @@ export const syncRuns = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    vendor: text("vendor"),
     type: text("type").notNull(),
     status: text("status").notNull(),
     stylesProcessed: integer("styles_processed").notNull().default(0),
@@ -550,6 +606,7 @@ export const syncRuns = pgTable(
   },
   (table) => [
     index("sync_runs_tenant_started_idx").on(table.tenantId, table.startedAt),
+    index("sync_runs_tenant_vendor_idx").on(table.tenantId, table.vendor),
   ],
 );
 
@@ -619,7 +676,8 @@ export const product3dModels = pgTable(
     modelFormat: text("model_format").notNull(), // "glb", "gltf", "fbx", "usdz"
     s3Url: text("s3_url").notNull(),
     version: integer("version").notNull().default(1),
-    source: text("source").notNull(), // "vendor_upload", "ai_generated", "manual"
+    /** How the model was produced (distinct from audit `source` jsonb). */
+    origin: text("source").notNull(), // "vendor_upload", "ai_generated", "manual"
     aiModel: text("ai_model"), // "meshy_v2", "tripo", etc.
     isActive: boolean("is_active").notNull().default(true),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
@@ -627,7 +685,7 @@ export const product3dModels = pgTable(
   },
   (table) => [
     uniqueIndex("product_3d_models_uq").on(table.tenantId, table.productId, table.version),
-    index("product_3d_models_source_idx").on(table.source),
+    index("product_3d_models_source_idx").on(table.origin),
   ],
 );
 
@@ -810,6 +868,8 @@ export const jobRequests = pgTable(
     customerPersonId: uuid("customer_person_id")
       .notNull()
       .references(() => people.id),
+    /** Human-readable reference shown in UI (e.g. GWG-1001). UUID remains PK. */
+    displayId: text("display_id").notNull(),
     status: jobRequestStatusEnum("status").notNull().default("draft"),
     version: integer("version").notNull().default(1),
     customerNote: text("customer_note"),
@@ -829,6 +889,10 @@ export const jobRequests = pgTable(
       table.tenantId,
       table.accountId,
       table.id,
+    ),
+    uniqueIndex("job_requests_tenant_display_id_uq").on(
+      table.tenantId,
+      table.displayId,
     ),
     index("job_requests_scope_status_idx").on(
       table.tenantId,

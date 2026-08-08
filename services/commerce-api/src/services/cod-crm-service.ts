@@ -80,10 +80,10 @@ export class CodCRMService {
         customer.lastName || "Customer",
       );
 
-      // Create service job in COD CRM
+      // Create service job in COD CRM using the human job reference
       const serviceJob = await this.client.createServiceJob(
         contact.id,
-        `Order #${jobRequestId.slice(0, 8).toUpperCase()} - Custom Products`,
+        `${jobRequest.displayId} — Custom products`,
         this.buildJobDescription(jobRequest, customer),
       );
 
@@ -247,7 +247,7 @@ export class CodCRMService {
     customer: typeof people.$inferSelect,
   ): string {
     const lines = [
-      `Order ID: ${jobRequest.id.slice(0, 8).toUpperCase()}`,
+      `Job: ${jobRequest.displayId}`,
       `Customer: ${customer.firstName} ${customer.lastName}`,
       `Email: ${customer.email}`,
       `Amount: $${jobRequest.finalQuoteAmountMinor ? (jobRequest.finalQuoteAmountMinor / 100).toFixed(2) : "TBD"}`,

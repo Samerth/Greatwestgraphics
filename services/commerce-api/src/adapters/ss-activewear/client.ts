@@ -99,6 +99,18 @@ export class SsActivewearClient {
     return Array.isArray(result.data) ? result.data : [result.data];
   }
 
+  async getStyle(styleId: number): Promise<SsStyle> {
+    const result = await this.getJson<SsStyle[] | SsStyle>(
+      `/v2/styles/?styleid=${styleId}&fields=${STYLE_FIELDS}`,
+    );
+    const rows = Array.isArray(result.data) ? result.data : [result.data];
+    const style = rows[0];
+    if (!style) {
+      throw new SsNotFoundError(`Style ${styleId} not found`, styleId);
+    }
+    return style;
+  }
+
   async listProductsByStyle(styleId: number): Promise<SsProductSku[]> {
     try {
       const result = await this.getJson<SsProductSku[] | SsProductSku>(

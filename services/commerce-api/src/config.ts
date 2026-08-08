@@ -18,12 +18,24 @@ const EnvironmentSchema = z
       .url()
       .default("https://api-ca.ssactivewear.com"),
     SANMAR_ACCOUNT_ID: z.string().optional(),
+    /**
+     * SanMar Canada login e-mail — this is the PromoStandards "password" field
+     * per ATC_Pstd_IntegrationGuide_2025 (not the website password).
+     */
+    SANMAR_LOGIN_EMAIL: z.string().email().optional(),
+    /** Legacy alias for SANMAR_LOGIN_EMAIL (must be an e-mail). */
     SANMAR_API_PASSWORD: z.string().optional(),
     SANMAR_API_BASE_URL: z
       .string()
       .url()
-      .default("https://api.sanmarcanada.com")
+      .default("https://edi.atc-apparel.com")
       .optional(),
+    /** Directory with products.csv + skus.csv (+ optional inventory.csv). */
+    SANMAR_CSV_DIR: z.string().optional(),
+    /** Comma-separated style IDs; skips ACTIVE sellable discovery when set. */
+    SANMAR_PRODUCT_IDS: z.string().optional(),
+    SANMAR_MAX_PRODUCTS: z.string().optional(),
+    SANMAR_SELLABLE_MODE: z.enum(["ACTIVE", "ALL"]).optional(),
   })
   .superRefine((environment, context) => {
     if (environment.ENABLE_DEV_ADMIN_ROUTES && environment.NODE_ENV === "production") {

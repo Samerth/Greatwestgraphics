@@ -80,6 +80,7 @@ export class SsSyncService {
       .insert(syncRuns)
       .values({
         tenantId,
+        vendor: VENDOR,
         type: "full",
         status: "running",
         createdBy: actor,
@@ -171,11 +172,72 @@ export class SsSyncService {
     }
   }
 
+  /**
+   * Refresh one style from S&S (style metadata + colorways/SKUs).
+   * Does not overwrite storefront_visible on existing colorways.
+   */
+  async refreshStyle(tenantId: string, styleKey: string, actor: Actor) {
+    const styleId = Number.parseInt(styleKey, 10);
+    if (!Number.isFinite(styleId)) {
+      throw new Error(`Invalid S&S style id: ${styleKey}`);
+    }
+    const [run] = await this.db
+      .insert(syncRuns)
+      .values({
+        tenantId,
+        vendor: VENDOR,
+        type: "full",
+        status: "running",
+        createdBy: actor,
+        source: { system: "commerce_api" },
+      })
+      .returning();
+    if (!run) throw new Error("Failed to create sync run");
+
+    try {
+      const style = await this.client.getStyle(styleId);
+      const result = await this.upsertStyleTree(tenantId, style, actor);
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: "completed",
+          stylesProcessed: 1,
+          skusUpserted: result.skusUpserted,
+          imagesDownloaded: result.imagesDownloaded,
+          rateLimitRemaining: this.client.rateLimitRemaining,
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+      return {
+        id: run.id,
+        stylesProcessed: 1,
+        skusUpserted: result.skusUpserted,
+        imagesDownloaded: result.imagesDownloaded,
+        errors: [] as string[],
+        rateLimitRemaining: this.client.rateLimitRemaining,
+      };
+    } catch (error) {
+      await this.db
+        .update(syncRuns)
+        .set({
+          status: "failed",
+          errorSummary:
+            error instanceof Error ? error.message : String(error),
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(syncRuns.id, run.id));
+      throw error;
+    }
+  }
+
   async runInventorySync(tenantId: string, actor: Actor) {
     const [run] = await this.db
       .insert(syncRuns)
       .values({
         tenantId,
+        vendor: VENDOR,
         type: "inventory",
         status: "running",
         createdBy: actor,
@@ -195,6 +257,7 @@ export class SsSyncService {
             .where(
               and(
                 eq(ssVariants.tenantId, tenantId),
+                eq(ssVariants.vendor, VENDOR),
                 eq(ssVariants.skuId, row.skuID_Master),
               ),
             );
@@ -204,7 +267,11 @@ export class SsSyncService {
             .update(ssVariants)
             .set({ qty: row.qty ?? 0, updatedAt: new Date() })
             .where(
-              and(eq(ssVariants.tenantId, tenantId), eq(ssVariants.sku, row.sku)),
+              and(
+                eq(ssVariants.tenantId, tenantId),
+                eq(ssVariants.vendor, VENDOR),
+                eq(ssVariants.sku, row.sku),
+              ),
             );
           updated += 1;
         }
@@ -251,12 +318,22 @@ export class SsSyncService {
     await this.db
       .update(ssStyles)
       .set({ active: false, updatedAt: new Date() })
-      .where(and(eq(ssStyles.tenantId, tenantId), eq(ssStyles.styleId, styleId)));
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.vendor, VENDOR),
+          eq(ssStyles.styleId, styleId),
+        ),
+      );
     await this.db
       .update(ssProducts)
       .set({ active: false, updatedAt: new Date() })
       .where(
-        and(eq(ssProducts.tenantId, tenantId), eq(ssProducts.styleId, styleId)),
+        and(
+          eq(ssProducts.tenantId, tenantId),
+          eq(ssProducts.vendor, VENDOR),
+          eq(ssProducts.styleId, styleId),
+        ),
       );
   }
 
@@ -276,12 +353,18 @@ export class SsSyncService {
       .select()
       .from(ssStyles)
       .where(
-        and(eq(ssStyles.tenantId, tenantId), eq(ssStyles.styleId, style.styleID)),
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.vendor, VENDOR),
+          eq(ssStyles.styleId, style.styleID),
+        ),
       )
       .limit(1);
 
     const styleValues = {
       tenantId,
+      vendor: VENDOR,
+      externalKey: String(style.styleID),
       styleId: style.styleID,
       partNumber: style.partNumber ?? null,
       brandName: style.brandName,
@@ -364,6 +447,7 @@ export class SsSyncService {
         .where(
           and(
             eq(ssProducts.tenantId, tenantId),
+            eq(ssProducts.vendor, VENDOR),
             eq(ssProducts.styleId, style.styleID),
             eq(ssProducts.colorName, colorName),
           ),
@@ -372,6 +456,7 @@ export class SsSyncService {
 
       const productValues = {
         tenantId,
+        vendor: VENDOR,
         styleUuid: styleRow!.id,
         styleId: style.styleID,
         colorName,
@@ -392,8 +477,10 @@ export class SsSyncService {
           accentColor: sample.color2 ?? null,
         },
         qty,
+        // Vendor sellable flag only. Staff soft-hide is storefront_visible —
+        // never included here so sync cannot un-hide a colorway.
         active: true,
-        slug,
+        slug: existingProduct?.slug ?? slug,
         updatedAt: new Date(),
         createdBy: actor,
         source: { system: "vendor" as const },
@@ -434,12 +521,15 @@ export class SsSyncService {
           .where(
             and(
               eq(ssVariants.tenantId, tenantId),
+              eq(ssVariants.vendor, VENDOR),
               eq(ssVariants.skuId, sku.skuID_Master),
             ),
           )
           .limit(1);
         const variantValues = {
           tenantId,
+          vendor: VENDOR,
+          externalKey: String(sku.skuID_Master),
           productUuid: productRow!.id,
           skuId: sku.skuID_Master,
           sku: sku.sku,

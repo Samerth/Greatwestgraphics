@@ -84,6 +84,7 @@ function repriceLine(
 function toResponse(row: typeof jobRequests.$inferSelect): JobRequestResponse {
   return {
     id: row.id,
+    displayId: row.displayId,
     context: {
       tenantId: row.tenantId,
       accountId: row.accountId,
@@ -96,6 +97,27 @@ function toResponse(row: typeof jobRequests.$inferSelect): JobRequestResponse {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function nextDisplayId(
+  transaction: Parameters<
+    Parameters<CommerceDatabase["transaction"]>[0]
+  >[0],
+  tenantId: string,
+): Promise<string> {
+  await transaction.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`job_display_id:${tenantId}`}))`,
+  );
+  const rows = (await transaction.execute(sql`
+    select coalesce(
+      max(nullif(substring(display_id from 'GWG-([0-9]+)'), '')::int),
+      1000
+    ) + 1 as next
+    from job_requests
+    where tenant_id = ${tenantId}
+  `)) as unknown as Array<{ next: number | string }>;
+  const next = Number(rows[0]?.next ?? 1001);
+  return `GWG-${String(next).padStart(4, "0")}`;
 }
 
 function toFinalQuoteResponse(
@@ -221,6 +243,7 @@ export class JobRequestService {
         ? command.lines.map((line) => repriceLine(line, publishedPricing))
         : command.lines;
 
+      const displayId = await nextDisplayId(transaction, tenantId);
       const [created] = await transaction
         .insert(jobRequests)
         .values({
@@ -228,6 +251,7 @@ export class JobRequestService {
           accountId,
           storeId,
           customerPersonId: command.customerPersonId,
+          displayId,
           customerNote: command.customerNote,
           status: "draft",
           createdBy: actor,

@@ -63,9 +63,9 @@ export default async function JobDetailPage({
         <div className="flex flex-wrap items-start justify-between gap-sp-3 mt-sp-4 mb-sp-5">
           <div>
             <h1 className="font-display font-bold text-display-sm mb-1">
-              Job status
+              {job.displayId}
             </h1>
-            <p className="font-mono text-sm text-text-secondary m-0">{job.id}</p>
+            <p className="text-sm text-text-secondary m-0">Job status</p>
           </div>
           <span className="bg-accent-tint text-accent px-3 py-1 rounded-full text-sm font-bold">
             {presentation.label}

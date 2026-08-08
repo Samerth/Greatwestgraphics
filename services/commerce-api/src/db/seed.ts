@@ -11,6 +11,7 @@ import {
   pricingConfigs,
   stores,
   tenants,
+  vendors,
 } from "./schema.js";
 
 loadDotenv({
@@ -140,8 +141,41 @@ try {
       .onConflictDoNothing();
   }
 
+  const vendorSeeds = [
+    {
+      key: "ss_activewear",
+      displayName: "S&S Activewear Canada",
+      syncAdapter: "ss_activewear",
+    },
+    {
+      key: "sanmar",
+      displayName: "Sanmar / ATC",
+      syncAdapter: "sanmar",
+    },
+    {
+      key: "csv",
+      displayName: "Generic CSV",
+      syncAdapter: "csv",
+    },
+  ] as const;
+
+  for (const vendor of vendorSeeds) {
+    await database.db
+      .insert(vendors)
+      .values({
+        tenantId: ids.tenantId,
+        key: vendor.key,
+        displayName: vendor.displayName,
+        syncAdapter: vendor.syncAdapter,
+        isActive: true,
+        createdBy: { type: "system", displayName: "seed" },
+        source: { system: "commerce_api" },
+      })
+      .onConflictDoNothing();
+  }
+
   console.log(
-    "Seeded commerce scope, pricing v1, catalog settings, and Coastal category structure.",
+    "Seeded commerce scope, pricing v1, catalog settings, vendors, and Coastal category structure.",
   );
 } finally {
   await database.close();

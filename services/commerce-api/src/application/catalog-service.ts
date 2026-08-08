@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, not, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
 import {
@@ -31,6 +31,16 @@ type ProductFilterQuery = {
   brands?: string[];
   priceMinMinor?: number;
   priceMaxMinor?: number;
+  vendor?: string;
+  /** Staff soft-hide filter. Storefront callers should use storefrontOnly. */
+  visibility?: "visible" | "hidden" | "all";
+  stock?: "in" | "oos" | "any";
+  sort?: "brand" | "style" | "stock" | "updated";
+  /**
+   * When true, omit soft-hidden colorways entirely (PLP / brands / sitemap /
+   * design picker). Admin list sets this false and uses `visibility` instead.
+   */
+  storefrontOnly?: boolean;
 };
 
 export class CatalogService {
@@ -109,6 +119,7 @@ export class CatalogService {
           and(
             eq(ssProductCategories.tenantId, tenantId),
             eq(ssProducts.active, true),
+            eq(ssProducts.storefrontVisible, true),
           ),
         );
       const nonEmpty = new Set(withProducts.map((row) => row.categoryId));
@@ -344,11 +355,29 @@ export class CatalogService {
   async updateProduct(
     tenantId: string,
     productUuid: string,
-    input: Partial<{ active: boolean; isDark: boolean }>,
+    input: Partial<{
+      active: boolean;
+      isDark: boolean;
+      storefrontVisible: boolean;
+    }>,
+    actor?: Actor,
   ) {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.active !== undefined) patch.active = input.active;
+    if (input.isDark !== undefined) patch.isDark = input.isDark;
+    if (input.storefrontVisible !== undefined) {
+      patch.storefrontVisible = input.storefrontVisible;
+      if (input.storefrontVisible) {
+        patch.hiddenAt = null;
+        patch.hiddenBy = null;
+      } else {
+        patch.hiddenAt = new Date();
+        patch.hiddenBy = actor ?? null;
+      }
+    }
     const [updated] = await this.db
       .update(ssProducts)
-      .set({ ...input, updatedAt: new Date() })
+      .set(patch)
       .where(
         and(
           eq(ssProducts.tenantId, tenantId),
@@ -360,7 +389,42 @@ export class CatalogService {
     return updated;
   }
 
-  /** Distinct brand names with at least one active product, for the
+  async bulkSetStorefrontVisible(
+    tenantId: string,
+    productIds: string[],
+    storefrontVisible: boolean,
+    actor: Actor,
+  ) {
+    if (productIds.length === 0) {
+      return { updated: 0 };
+    }
+    const patch = storefrontVisible
+      ? {
+          storefrontVisible: true,
+          hiddenAt: null as Date | null,
+          hiddenBy: null as Actor | null,
+          updatedAt: new Date(),
+        }
+      : {
+          storefrontVisible: false,
+          hiddenAt: new Date(),
+          hiddenBy: actor,
+          updatedAt: new Date(),
+        };
+    const updated = await this.db
+      .update(ssProducts)
+      .set(patch)
+      .where(
+        and(
+          eq(ssProducts.tenantId, tenantId),
+          inArray(ssProducts.id, productIds),
+        ),
+      )
+      .returning({ id: ssProducts.id });
+    return { updated: updated.length };
+  }
+
+  /** Distinct brand names with at least one storefront-visible product, for the
    * storefront brand filter — mirrors listCategories' onlyWithProducts
    * shape so a brand never appears as a dead-end filter option. */
   async listBrands(tenantId: string) {
@@ -372,6 +436,7 @@ export class CatalogService {
         and(
           eq(ssStyles.tenantId, tenantId),
           eq(ssProducts.active, true),
+          eq(ssProducts.storefrontVisible, true),
           // S&S lists its own printed paper catalogue under a "Catalogs"
           // brand. It isn't a garment manufacturer, so showing it beside
           // Adidas and Champion in the shopper-facing brand filter is
@@ -461,8 +526,43 @@ export class CatalogService {
         ilike(ssStyles.title, `%${term}%`),
         ilike(ssStyles.baseCategory, `%${term}%`),
         ilike(ssProducts.slug, `%${term}%`),
+        ilike(ssStyles.externalKey, `%${term}%`),
+        ilike(ssStyles.partNumber, `%${term}%`),
+        exists(
+          this.db
+            .select({ id: ssVariants.id })
+            .from(ssVariants)
+            .where(
+              and(
+                eq(ssVariants.productUuid, ssProducts.id),
+                or(
+                  ilike(ssVariants.sku, `%${term}%`),
+                  ilike(ssVariants.externalKey, `%${term}%`),
+                ),
+              ),
+            ),
+        ),
       ),
     );
+
+    const storefrontOnly = query?.storefrontOnly === true;
+    const visibility = storefrontOnly
+      ? "visible"
+      : (query?.visibility ?? "all");
+    const visibilityClause =
+      visibility === "visible"
+        ? eq(ssProducts.storefrontVisible, true)
+        : visibility === "hidden"
+          ? eq(ssProducts.storefrontVisible, false)
+          : undefined;
+
+    const stock = query?.stock ?? "any";
+    const stockClause =
+      stock === "in"
+        ? gt(ssProducts.qty, 0)
+        : stock === "oos"
+          ? lte(ssProducts.qty, 0)
+          : undefined;
 
     const whereClause = and(
       eq(ssProducts.tenantId, tenantId),
@@ -470,8 +570,25 @@ export class CatalogService {
       visibleProductIds ? inArray(ssProducts.id, visibleProductIds) : undefined,
       query?.brands?.length ? inArray(ssStyles.brandName, query.brands) : undefined,
       priceFilteredIds ? inArray(ssProducts.id, priceFilteredIds) : undefined,
+      query?.vendor ? eq(ssProducts.vendor, query.vendor) : undefined,
+      visibilityClause,
+      stockClause,
     );
     return { whereClause, empty: false };
+  }
+
+  private productOrderBy(sort?: ProductFilterQuery["sort"]) {
+    switch (sort) {
+      case "style":
+        return [asc(ssStyles.styleName), asc(ssProducts.colorName), asc(ssProducts.id)];
+      case "stock":
+        return [desc(ssProducts.qty), asc(ssStyles.brandName), asc(ssProducts.id)];
+      case "updated":
+        return [desc(ssProducts.updatedAt), asc(ssProducts.id)];
+      case "brand":
+      default:
+        return [asc(ssStyles.brandName), asc(ssStyles.styleName), asc(ssProducts.id)];
+    }
   }
 
   async countProducts(
@@ -514,6 +631,8 @@ export class CatalogService {
     const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
     if (empty) return [];
 
+    const orderBy = this.productOrderBy(query?.sort);
+
     // Category filtering is done as a join in the same query (not a
     // per-row post-filter) so `limit` is honoured correctly and the
     // category check doesn't cost a round trip per row. A stable order
@@ -531,7 +650,7 @@ export class CatalogService {
             ),
           )
           .where(whereClause)
-          .orderBy(asc(ssStyles.brandName), asc(ssStyles.styleName), asc(ssProducts.id))
+          .orderBy(...orderBy)
           .limit(limit)
           .offset(offset)
       : await this.db
@@ -539,7 +658,7 @@ export class CatalogService {
           .from(ssProducts)
           .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
           .where(whereClause)
-          .orderBy(asc(ssStyles.brandName), asc(ssStyles.styleName), asc(ssProducts.id))
+          .orderBy(...orderBy)
           .limit(limit)
           .offset(offset);
 
@@ -570,6 +689,8 @@ export class CatalogService {
         brandName: row.style.brandName,
         styleName: row.style.styleName,
         title: row.style.title,
+        externalKey: row.style.externalKey,
+        partNumber: row.style.partNumber,
         // Falls back to the style's generic photo when this colorway has
         // no photo of its own — without it, ~5% of active products (no
         // per-color photo from the vendor feed) rendered as a blank grey
@@ -578,12 +699,19 @@ export class CatalogService {
         costMinor: cost,
         retailMinor: retailFromCost(cost, map, markup),
         mapPriceMinor: map,
-        available: (row.product.qty ?? 0) > 0 && row.product.active,
+        available:
+          (row.product.qty ?? 0) > 0 &&
+          row.product.active &&
+          row.product.storefrontVisible,
       };
     });
   }
 
-  async getProductDetail(tenantId: string, productUuid: string) {
+  async getProductDetail(
+    tenantId: string,
+    productUuid: string,
+    options?: { includeHiddenColorways?: boolean },
+  ) {
     const [row] = await this.db
       .select({
         product: ssProducts,
@@ -619,7 +747,8 @@ export class CatalogService {
 
     // Other colorways of the same style, so the PDP can offer a real
     // colour switcher instead of showing one fixed photo with no way to
-    // see what else the garment comes in.
+    // see what else the garment comes in. Storefront omits soft-hidden
+    // colorways; admin includes them with a visibility chip.
     const colorways = await this.db
       .select({
         id: ssProducts.id,
@@ -628,6 +757,8 @@ export class CatalogService {
         swatchImageUrl: ssProducts.colorSwatchImageUrl,
         frontImageUrl: ssProducts.colorFrontImageUrl,
         active: ssProducts.active,
+        storefrontVisible: ssProducts.storefrontVisible,
+        qty: ssProducts.qty,
       })
       .from(ssProducts)
       .where(
@@ -635,6 +766,9 @@ export class CatalogService {
           eq(ssProducts.tenantId, tenantId),
           eq(ssProducts.styleUuid, row.product.styleUuid),
           eq(ssProducts.active, true),
+          options?.includeHiddenColorways
+            ? undefined
+            : eq(ssProducts.storefrontVisible, true),
         ),
       )
       .orderBy(asc(ssProducts.colorName));
