@@ -51,7 +51,7 @@ export class VendorSyncRegistry {
         },
         configured: ssConfigured,
         notes: ssConfigured
-          ? undefined
+          ? "Full sync = first import / big updates. Update stock & price = daily qty + CUSTOMER cost."
           : "Set SS_ACCOUNT_NUMBER and SS_API_KEY",
       },
       {
@@ -64,7 +64,7 @@ export class VendorSyncRegistry {
         },
         configured: sanmarConfigured,
         notes: sanmarConfigured
-          ? "PromoStandards (customer ID + login e-mail) and/or CSV"
+          ? "Full sync = first import / big updates. Update stock & price = daily refresh."
           : "Set SANMAR_ACCOUNT_ID + SANMAR_LOGIN_EMAIL (login e-mail, not website password)",
       },
       {

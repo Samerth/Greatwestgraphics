@@ -34,8 +34,18 @@ const EnvironmentSchema = z
     SANMAR_CSV_DIR: z.string().optional(),
     /** Comma-separated style IDs; skips ACTIVE sellable discovery when set. */
     SANMAR_PRODUCT_IDS: z.string().optional(),
+    /** Cap getProduct enrichment (names/images), not sellable import. */
     SANMAR_MAX_PRODUCTS: z.string().optional(),
+    /** Cap per-style inventory/pricing fallback (unset = all styles). */
+    SANMAR_INVENTORY_MAX: z.string().optional(),
     SANMAR_SELLABLE_MODE: z.enum(["ACTIVE", "ALL"]).optional(),
+    /** Separate EDI media password for getMediaContent. */
+    SANMAR_MEDIA_PASSWORD: z.string().optional(),
+    /** Optional full URL overrides (UAT). Defaults use /pstd/ production paths. */
+    SANMAR_INVENTORY_URL: z.string().url().optional(),
+    SANMAR_PRICING_URL: z.string().url().optional(),
+    SANMAR_MEDIA_URL: z.string().url().optional(),
+    SANMAR_BULK_URL: z.string().url().optional(),
   })
   .superRefine((environment, context) => {
     if (environment.ENABLE_DEV_ADMIN_ROUTES && environment.NODE_ENV === "production") {

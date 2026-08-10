@@ -21,6 +21,32 @@ To add a new vendor:
 2. Register it in `VendorSyncRegistry.getAdapter()` / `listVendors()`.
 3. Optionally seed a `vendors` row for the tenant.
 
+## S&S Activewear Canada (REST v2)
+
+| Env | Value |
+|-----|--------|
+| `SS_ACCOUNT_NUMBER` | Account number (Basic auth user) |
+| `SS_API_KEY` | API key (Basic auth password) |
+| `SS_API_BASE_URL` | Default `https://api-ca.ssactivewear.com` |
+
+Rate limit: ~60 requests/minute (`X-Rate-Limit-Remaining`).
+
+### What staff click in Admin → Catalog sync
+
+| Button | When to use | What it does |
+|--------|-------------|--------------|
+| **Full sync** | First import, or big catalog refresh | Styles → products/SKUs (qty + `customerPrice` + images) |
+| **Update stock & price** | Daily after catalog exists | One Products pull (`skuID_Master,sku,qty,customerPrice,mapPrice`); Inventory API fallback is qty-only |
+
+Inventory responses nest qty under `warehouses[]` — the client sums those when a top-level `qty` is missing. Pricing is not on Inventory; daily refresh uses Products.
+
+CLI:
+
+```bash
+npm run sync:ss -w @gwg/commerce-api
+npm run sync:ss -w @gwg/commerce-api -- --inventory
+```
+
 ## SanMar Canada (ATC PromoStandards)
 
 Per `ATC_Pstd_IntegrationGuide_2025`:
@@ -29,15 +55,31 @@ Per `ATC_Pstd_IntegrationGuide_2025`:
 |-----|----------------------|--------|
 | `SANMAR_ACCOUNT_ID` | `id` | Customer ID (e.g. `161`) |
 | `SANMAR_LOGIN_EMAIL` | `password` | **Login e-mail** (not the website password) |
+| `SANMAR_MEDIA_PASSWORD` | Media `password` | Separate password from EDI team |
 | `SANMAR_API_BASE_URL` | host | `https://edi.atc-apparel.com` |
+
+Optional URL overrides (UAT): `SANMAR_INVENTORY_URL`, `SANMAR_PRICING_URL`, `SANMAR_MEDIA_URL`, `SANMAR_BULK_URL`.
 
 Also required by SanMar: static IP whitelist + EDI agreement (`edi@sanmarcanada.com`).
 
-Live sync uses:
+### What staff click in Admin → Catalog sync
 
-1. `getProductSellable` with `productId=ACTIVE` (or `ALL`) — upsert **all** active parts first (style code as name fallback)
-2. Optional `getProduct` enrichment for up to `SANMAR_MAX_PRODUCTS` styles (bounded concurrency) for name/brand/category/images
-3. `getInventoryLevels` per style for qty refresh (`--inventory`)
+| Button | When to use | What it does |
+|--------|-------------|--------------|
+| **Full sync** | First import, or weekly catalog refresh | 1) Import all ACTIVE sellable parts 2) Enrich names/images (capped) 3) Refresh **stock + CUSTOMER price** (Bulk Data preferred) |
+| **Update stock & price** | Daily stock/price update after catalog exists | Bulk Data qty+price (1 call/day), else per-style inventory + pricing SOAP |
+| **CSV import** | Offline / EDI file drop | Paste products+skus or inventory CSV |
+
+Storefront shoppers never run sync — they only see products after staff sync + soft-hide controls on Catalog.
+
+### Live API sequence (Full sync)
+
+1. `getProductSellable` (`ACTIVE` or `ALL`) — upsert **all** active parts (style code as name fallback; qty starts at 0)
+2. Optional `getProduct` + `getMediaContent` for up to `SANMAR_MAX_PRODUCTS` styles (names/brand/Primary image)
+3. Qty + price refresh:
+   - Prefer **Bulk Data** (qty + price for all parts; **1 call/day**)
+   - Else concurrent `getInventoryLevels` + `getConfigurationAndPricing` (Customer / CAD / Blank) over catalog styles
+4. Standalone **Inventory** button runs step 3 only
 
 Sellable `productId` values look like `NF0A529K(TNF Black,S,)` — parsed into style/color/size; trailing `S|M|X|C` means discontinued.
 
@@ -53,7 +95,6 @@ CLI:
 npm run sync:sanmar -w @gwg/commerce-api
 npm run sync:sanmar -w @gwg/commerce-api -- --inventory
 ```
-
 ## Canonical CSV (any vendor)
 
 Header row required. One row per size SKU:

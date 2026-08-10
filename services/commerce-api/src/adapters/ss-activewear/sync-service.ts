@@ -247,33 +247,39 @@ export class SsSyncService {
     if (!run) throw new Error("Failed to create inventory sync run");
 
     try {
-      const rows = await this.client.listInventory();
+      // Products includes customerPrice; Inventory is qty-only (and nests qty
+      // under warehouses). Prefer Products for "Update stock & price".
       let updated = 0;
-      for (const row of rows) {
-        if (row.skuID_Master != null) {
-          await this.db
-            .update(ssVariants)
-            .set({ qty: row.qty ?? 0, updatedAt: new Date() })
-            .where(
-              and(
-                eq(ssVariants.tenantId, tenantId),
-                eq(ssVariants.vendor, VENDOR),
-                eq(ssVariants.skuId, row.skuID_Master),
-              ),
-            );
-          updated += 1;
-        } else if (row.sku) {
-          await this.db
-            .update(ssVariants)
-            .set({ qty: row.qty ?? 0, updatedAt: new Date() })
-            .where(
-              and(
-                eq(ssVariants.tenantId, tenantId),
-                eq(ssVariants.vendor, VENDOR),
-                eq(ssVariants.sku, row.sku),
-              ),
-            );
-          updated += 1;
+      let source: "products" | "inventory" = "products";
+      let warning: string | null = null;
+
+      try {
+        const rows = await this.client.listStockAndPrice();
+        for (const row of rows) {
+          updated += await this.applyVariantStockPrice(tenantId, {
+            skuId: row.skuID_Master,
+            sku: row.sku,
+            qty: row.qty ?? 0,
+            customerPrice: row.customerPrice,
+            mapPrice: row.mapPrice,
+            updatePrice: true,
+          });
+        }
+      } catch (productsError) {
+        source = "inventory";
+        const message =
+          productsError instanceof Error
+            ? productsError.message
+            : String(productsError);
+        warning = `Stock updated via Inventory (qty only). Products price refresh failed: ${message}`;
+        const rows = await this.client.listInventory();
+        for (const row of rows) {
+          updated += await this.applyVariantStockPrice(tenantId, {
+            skuId: row.skuID_Master,
+            sku: row.sku,
+            qty: row.qty ?? 0,
+            updatePrice: false,
+          });
         }
       }
 
@@ -282,15 +288,17 @@ export class SsSyncService {
       await this.db
         .update(syncRuns)
         .set({
-          status: "completed",
+          status: warning ? "completed_with_errors" : "completed",
           skusUpserted: updated,
           rateLimitRemaining: this.client.rateLimitRemaining,
+          errorSummary: warning,
+          details: { source, errorCount: warning ? 1 : 0 },
           finishedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(syncRuns.id, run.id));
 
-      return { id: run.id, updated };
+      return { id: run.id, updated, source };
     } catch (error) {
       await this.db
         .update(syncRuns)
@@ -303,6 +311,63 @@ export class SsSyncService {
         .where(eq(syncRuns.id, run.id));
       throw error;
     }
+  }
+
+  private async applyVariantStockPrice(
+    tenantId: string,
+    input: {
+      skuId?: number;
+      sku?: string;
+      qty: number;
+      customerPrice?: number;
+      mapPrice?: number;
+      updatePrice: boolean;
+    },
+  ): Promise<number> {
+    const patch: {
+      qty: number;
+      updatedAt: Date;
+      customerPriceMinor?: number;
+      mapPriceMinor?: number | null;
+    } = {
+      qty: input.qty,
+      updatedAt: new Date(),
+    };
+    if (input.updatePrice) {
+      patch.customerPriceMinor = dollarsToMinor(input.customerPrice);
+      patch.mapPriceMinor =
+        input.mapPrice == null ? null : dollarsToMinor(input.mapPrice);
+    }
+
+    if (input.skuId != null) {
+      const result = await this.db
+        .update(ssVariants)
+        .set(patch)
+        .where(
+          and(
+            eq(ssVariants.tenantId, tenantId),
+            eq(ssVariants.vendor, VENDOR),
+            eq(ssVariants.skuId, input.skuId),
+          ),
+        )
+        .returning({ id: ssVariants.id });
+      return result.length ? 1 : 0;
+    }
+    if (input.sku) {
+      const result = await this.db
+        .update(ssVariants)
+        .set(patch)
+        .where(
+          and(
+            eq(ssVariants.tenantId, tenantId),
+            eq(ssVariants.vendor, VENDOR),
+            eq(ssVariants.sku, input.sku),
+          ),
+        )
+        .returning({ id: ssVariants.id });
+      return result.length ? 1 : 0;
+    }
+    return 0;
   }
 
   private async getSettings(tenantId: string) {

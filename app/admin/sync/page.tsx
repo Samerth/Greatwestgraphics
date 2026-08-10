@@ -6,6 +6,40 @@ import { adminClient, requireAdminToken } from "@/lib/admin/api";
 
 export const dynamic = "force-dynamic";
 
+function vendorGuidance(key: string): {
+  fullWhen: string;
+  stockWhen: string;
+  fullLabel: string;
+  stockLabel: string;
+} {
+  if (key === "sanmar") {
+    return {
+      fullLabel: "Full sync",
+      stockLabel: "Update stock & price",
+      fullWhen:
+        "Use once when first connecting SanMar, or after SanMar adds many new styles. Imports the sellable catalog, then refreshes stock and cost. Can take several minutes.",
+      stockWhen:
+        "Use daily (or when prices/stock look wrong). Refreshes qty and CUSTOMER cost only — does not re-import the whole catalog. SanMar Bulk Data is limited to about 1 call per day.",
+    };
+  }
+  if (key === "ss_activewear") {
+    return {
+      fullLabel: "Full sync",
+      stockLabel: "Update stock & price",
+      fullWhen:
+        "Use once when first connecting S&S, or after many new styles appear. Imports styles, colours, sizes, images, stock, and CUSTOMER cost. Can take several minutes (rate-limited).",
+      stockWhen:
+        "Use daily (or when prices/stock look wrong). One Products API pull refreshes qty and CUSTOMER cost for existing SKUs — does not re-import the whole catalog.",
+    };
+  }
+  return {
+    fullLabel: "Full sync",
+    stockLabel: "Update stock & price",
+    fullWhen: "Import or refresh this vendor’s full catalog.",
+    stockWhen: "Refresh stock and price without a full re-import.",
+  };
+}
+
 export default async function AdminSyncPage() {
   let runs: Record<string, unknown>[] = [];
   let vendors: Array<{
@@ -39,10 +73,40 @@ export default async function AdminSyncPage() {
         </p>
         <h1 className="font-display font-bold text-3xl m-0">Catalog sync</h1>
         <p className="text-text-secondary mt-2 mb-0">
-          Sync S&amp;S, Sanmar, or any CSV-based vendor into the shared catalog.
-          Each vendor is namespaced so SKUs never collide.
+          Staff-only tools to pull blank goods from vendors into the shared
+          catalog. Shoppers never see this page — they only see products after
+          you sync and (optionally) hide colourways in Catalog.
         </p>
       </div>
+
+      <section className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-2">
+        <h2 className="font-display font-bold text-lg m-0">How to update the catalog</h2>
+        <ol className="text-sm text-text-secondary m-0 list-decimal list-inside space-y-2">
+          <li>
+            <b>First time / big catalog changes</b> — click{" "}
+            <b>Full sync</b> on the vendor below. Wait for a completed run in
+            Recent runs.
+          </li>
+          <li>
+            <b>Day-to-day</b> — click <b>Update stock &amp; price</b> so
+            storefront qty and cost stay current without re-downloading every
+            style.
+          </li>
+          <li>
+            <b>After a good run</b> — open{" "}
+            <a href="/admin/catalog" className="text-accent font-bold">
+              Catalog
+            </a>
+            , filter by vendor, and confirm stock/cost look right. Soft-hide
+            anything you do not want on the storefront.
+          </li>
+        </ol>
+        <p className="text-sm text-text-secondary m-0 pt-1">
+          Quick check after sync: SanMar and S&amp;S rows should not be stuck at{" "}
+          <b>OOS / $0.00</b>. If they are, re-run <b>Update stock &amp; price</b>{" "}
+          and check Recent runs for errors.
+        </p>
+      </section>
 
       {error && (
         <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
@@ -52,64 +116,90 @@ export default async function AdminSyncPage() {
 
       <section className="space-y-3">
         <h2 className="font-display font-bold text-xl m-0">Vendors</h2>
-        {vendors.map((vendor) => (
-          <article
-            key={vendor.key}
-            className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3"
-          >
-            <div className="flex flex-wrap justify-between gap-2">
-              <div>
-                <p className="font-semibold m-0">{vendor.displayName}</p>
-                <p className="text-sm text-text-secondary m-0 mt-1">
-                  {vendor.key}
-                  {vendor.configured ? " · ready" : " · not configured"}
-                  {vendor.notes ? ` · ${vendor.notes}` : ""}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {vendor.capabilities.fullSync && (
-                  <form
-                    action={async () => {
-                      "use server";
-                      await runSyncAction("full", vendor.key);
-                    }}
-                  >
-                    <button
-                      type="submit"
-                      className="bg-accent text-white font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
-                      disabled={!vendor.configured && vendor.key !== "csv"}
+        {vendors.map((vendor) => {
+          const guidance = vendorGuidance(vendor.key);
+          return (
+            <article
+              key={vendor.key}
+              className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3"
+            >
+              <div className="flex flex-wrap justify-between gap-2">
+                <div>
+                  <p className="font-semibold m-0">{vendor.displayName}</p>
+                  <p className="text-sm text-text-secondary m-0 mt-1">
+                    {vendor.configured ? "Ready to sync" : "Not configured"}
+                    {vendor.notes ? ` · ${vendor.notes}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {vendor.capabilities.fullSync && (
+                    <form
+                      action={async () => {
+                        "use server";
+                        await runSyncAction("full", vendor.key);
+                      }}
                     >
-                      Full sync
-                    </button>
-                  </form>
+                      <button
+                        type="submit"
+                        className="bg-accent text-white font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
+                        disabled={!vendor.configured && vendor.key !== "csv"}
+                      >
+                        {guidance.fullLabel}
+                      </button>
+                    </form>
+                  )}
+                  {vendor.capabilities.inventorySync && (
+                    <form
+                      action={async () => {
+                        "use server";
+                        await runSyncAction("inventory", vendor.key);
+                      }}
+                    >
+                      <button
+                        type="submit"
+                        className="border border-border font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
+                        disabled={!vendor.configured && vendor.key !== "csv"}
+                      >
+                        {guidance.stockLabel}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 text-sm text-text-secondary">
+                {vendor.capabilities.fullSync && (
+                  <p className="m-0">
+                    <span className="font-semibold text-text-primary">
+                      {guidance.fullLabel}:
+                    </span>{" "}
+                    {guidance.fullWhen}
+                  </p>
                 )}
                 {vendor.capabilities.inventorySync && (
-                  <form
-                    action={async () => {
-                      "use server";
-                      await runSyncAction("inventory", vendor.key);
-                    }}
-                  >
-                    <button
-                      type="submit"
-                      className="border border-border font-bold px-3 py-1.5 rounded-sm text-sm"
-                    >
-                      Inventory
-                    </button>
-                  </form>
+                  <p className="m-0">
+                    <span className="font-semibold text-text-primary">
+                      {guidance.stockLabel}:
+                    </span>{" "}
+                    {guidance.stockWhen}
+                  </p>
                 )}
               </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display font-bold text-xl m-0">CSV / EDI import</h2>
+        <h2 className="font-display font-bold text-xl m-0">
+          CSV fallback (optional)
+        </h2>
         <p className="text-sm text-text-secondary m-0">
-          Use the canonical GWG CSV headers, or paste Sanmar products.csv +
-          skus.csv. For a future file-drop vendor, set a custom vendor key
-          (e.g. <code>acme_blanks</code>) so their SKUs stay isolated.
+          Only needed when live API sync is unavailable or you have a vendor
+          file drop. Prefer the vendor buttons above for SanMar and S&amp;S.
+          Paste a GWG canonical CSV, or SanMar <code>products.csv</code> +{" "}
+          <code>skus.csv</code>. Use a custom vendor key (e.g.{" "}
+          <code>acme_blanks</code>) so a future partner stays namespaced.
         </p>
         <form action={runCsvImportAction} className="space-y-3 border border-border rounded-md p-sp-3 bg-bg-raised">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -121,7 +211,7 @@ export default async function AdminSyncPage() {
                 className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
               >
                 <option value="csv">Generic CSV</option>
-                <option value="sanmar">Sanmar (EDI / CSV)</option>
+                <option value="sanmar">Sanmar (file paste)</option>
               </select>
             </label>
             <label className="text-sm block">
@@ -139,8 +229,8 @@ export default async function AdminSyncPage() {
                 defaultValue="full"
                 className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
               >
-                <option value="full">Catalog upsert</option>
-                <option value="inventory">Inventory only</option>
+                <option value="full">Full catalog from CSV</option>
+                <option value="inventory">Stock &amp; price from CSV only</option>
               </select>
             </label>
           </div>
@@ -184,6 +274,14 @@ export default async function AdminSyncPage() {
 
       <section className="space-y-2">
         <h2 className="font-display font-bold text-xl m-0">Recent runs</h2>
+        <p className="text-sm text-text-secondary m-0">
+          Wait for <b>completed</b> (or read errors if{" "}
+          <b>completed_with_errors</b>). Then verify results in{" "}
+          <a href="/admin/catalog" className="text-accent font-bold">
+            Catalog
+          </a>
+          .
+        </p>
         {runs.length === 0 && (
           <p className="text-sm text-text-secondary m-0">No runs logged yet.</p>
         )}

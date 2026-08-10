@@ -2,9 +2,11 @@
  * SanMar Canada / ATC PromoStandards client
  * (ATC_Pstd_IntegrationGuide_2025).
  *
- * Auth (Product Data + Inventory):
+ * Auth (Product Data + Inventory + Pricing + Bulk):
  *   id       = SanMar Canada customer ID
  *   password = SanMar Canada login e-mail address  ← NOT the website password
+ *
+ * Media Content uses a separate SANMAR_MEDIA_PASSWORD from the EDI team.
  *
  * getProductSellable.productId must be a style #, ACTIVE, or ALL.
  * Sellable productId values look like: NF0A529K(TNF Black,S,)
@@ -39,6 +41,10 @@ export class SanmarEDIError extends Error {
 
 export class SanmarNotFoundError extends Error {
   readonly code = "SANMAR_NOT_FOUND";
+}
+
+export class SanmarBulkLimitError extends Error {
+  readonly code = "SANMAR_BULK_LIMIT";
 }
 
 export type SanmarProduct = {
@@ -94,6 +100,25 @@ export type SanmarSellablePart = {
   rawProductId: string;
 };
 
+export type SanmarPartPrice = {
+  partId: string;
+  price: number;
+  minQuantity: number;
+};
+
+export type SanmarBulkProduct = {
+  /** SanMar part / inventory key (used as variant externalKey). */
+  partId: string;
+  styleId: string;
+  colorName?: string;
+  sizeName?: string;
+  quantity: number;
+  price?: number;
+  imageUrl?: string;
+  productName?: string;
+  brandName?: string;
+};
+
 export type SanmarClientOptions = {
   accountId: string;
   /** SanMar Canada login e-mail (PromoStandards "password" field). */
@@ -101,17 +126,32 @@ export type SanmarClientOptions = {
   baseUrl?: string;
   /** Cap unique styles hydrated via getProduct after sellable discovery. */
   maxProducts?: number;
+  /**
+   * Cap styles for per-style inventory/pricing fallback.
+   * Unset / 0 = no cap (refresh all provided style IDs).
+   */
+  inventoryMax?: number;
   /** Explicit style IDs (skips ACTIVE sellable discovery). */
   productIds?: string[];
   /** Directory containing products.csv / skus.csv / inventory.csv. */
   csvDir?: string;
   /** ACTIVE (default) or ALL for getProductSellable. */
   sellableMode?: "ACTIVE" | "ALL";
+  /** Separate EDI media password (required for getMediaContent). */
+  mediaPassword?: string;
+  /** Optional full URL overrides (UAT or custom). */
+  inventoryUrl?: string;
+  pricingUrl?: string;
+  mediaUrl?: string;
+  bulkUrl?: string;
 };
 
 const NS_PD =
   "http://www.promostandards.org/WSDL/ProductDataService/2.0.0/";
 const NS_INV = "http://www.promostandards.org/WSDL/Inventory/2.0.0/";
+const NS_PRICE =
+  "http://www.promostandards.org/WSDL/PricingAndConfiguration/1.0.0/";
+const NS_MEDIA = "http://www.promostandards.org/WSDL/MediaService/1.0.0/";
 
 function splitCsvLine(line: string): string[] {
   return line.split(",").map((v) => v.trim());
@@ -151,6 +191,152 @@ function serviceCode(xml: string): string | undefined {
 }
 
 /**
+ * Prefer quantityAvailable's Quantity/value (warehouse sum per guide p.19).
+ * Fall back to summing inventoryLocationQuantity values.
+ */
+export function parsePartInventoryQuantity(partBlock: string): number {
+  const availableMatch = partBlock.match(
+    /<(?:[\w.-]+:)?quantityAvailable\b[\s\S]*?<\/(?:[\w.-]+:)?quantityAvailable>/i,
+  );
+  if (availableMatch) {
+    const value = firstTag(availableMatch[0], "value");
+    if (value != null) {
+      const n = Number.parseInt(value, 10);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
+  const locationBlocks =
+    partBlock.match(
+      /<(?:[\w.-]+:)?inventoryLocationQuantity\b[\s\S]*?<\/(?:[\w.-]+:)?inventoryLocationQuantity>/gi,
+    ) ?? [];
+  if (locationBlocks.length > 0) {
+    return locationBlocks.reduce((sum, block) => {
+      const value = firstTag(block, "value");
+      return sum + (Number.parseInt(value || "0", 10) || 0);
+    }, 0);
+  }
+
+  return 0;
+}
+
+/** Parse GetInventoryLevels SOAP body into inventory rows. */
+export function parseInventoryLevelsXml(xml: string): SanmarInventory[] {
+  const blocks =
+    xml.match(
+      /<(?:[\w.-]+:)?PartInventory\b[\s\S]*?<\/(?:[\w.-]+:)?PartInventory>/gi,
+    ) ?? [];
+
+  return blocks
+    .map((block) => {
+      const partId = firstTag(block, "partId") || "";
+      if (!partId) return null;
+      return {
+        skuId: partId,
+        quantity: parsePartInventoryQuantity(block),
+        lastUpdated:
+          firstTag(block, "lastModified") || new Date().toISOString(),
+      };
+    })
+    .filter((row): row is SanmarInventory => row != null);
+}
+
+/** Parse GetConfigurationAndPricing SOAP body → part prices (lowest minQuantity). */
+export function parseConfigurationAndPricingXml(
+  xml: string,
+): SanmarPartPrice[] {
+  const partBlocks =
+    xml.match(/<(?:[\w.-]+:)?Part\b[\s\S]*?<\/(?:[\w.-]+:)?Part>/gi) ?? [];
+
+  const byPart = new Map<string, SanmarPartPrice>();
+
+  for (const block of partBlocks) {
+    const partId = firstTag(block, "partId");
+    if (!partId) continue;
+
+    const priceBlocks =
+      block.match(
+        /<(?:[\w.-]+:)?PartPrice\b[\s\S]*?<\/(?:[\w.-]+:)?PartPrice>/gi,
+      ) ?? [];
+
+    for (const priceBlock of priceBlocks) {
+      const priceText = firstTag(priceBlock, "price");
+      const minText = firstTag(priceBlock, "minQuantity") || "1";
+      const price = priceText ? Number.parseFloat(priceText) : NaN;
+      const minQuantity = Number.parseInt(minText, 10) || 1;
+      if (!Number.isFinite(price)) continue;
+
+      const existing = byPart.get(partId);
+      if (!existing || minQuantity < existing.minQuantity) {
+        byPart.set(partId, { partId, price, minQuantity });
+      }
+    }
+  }
+
+  return [...byPart.values()];
+}
+
+/** Parse getMediaContent SOAP body → Primary (1006) URLs first, then any image URLs. */
+export function parseMediaContentXml(xml: string): string[] {
+  const mediaBlocks =
+    xml.match(
+      /<(?:[\w.-]+:)?MediaContent\b[\s\S]*?<\/(?:[\w.-]+:)?MediaContent>/gi,
+    ) ?? [];
+
+  const primary: string[] = [];
+  const other: string[] = [];
+
+  for (const block of mediaBlocks) {
+    const url = firstTag(block, "url");
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    const classType =
+      firstTag(block, "classTypeId") ||
+      firstTag(block, "classType") ||
+      "";
+    if (classType === "1006" || /primary/i.test(classType)) {
+      primary.push(url);
+    } else {
+      other.push(url);
+    }
+  }
+
+  if (primary.length === 0 && other.length === 0) {
+    return extractTags(xml, "url").filter((u) => /^https?:\/\//i.test(u));
+  }
+  return [...new Set([...primary, ...other])];
+}
+
+/** Parse Bulk Data product list XML (qty + price + image per part). */
+export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
+  const blocks =
+    xml.match(/<(?:[\w.-]+:)?Product\b[\s\S]*?<\/(?:[\w.-]+:)?Product>/gi) ??
+    [];
+
+  const products: SanmarBulkProduct[] = [];
+  for (const block of blocks) {
+    const partId = firstTag(block, "productId");
+    const styleId = firstTag(block, "style");
+    if (!partId || !styleId) continue;
+    const quantity = Number.parseInt(firstTag(block, "quantity") || "0", 10) || 0;
+    const priceText = firstTag(block, "price");
+    const price = priceText ? Number.parseFloat(priceText) : undefined;
+    products.push({
+      partId,
+      styleId,
+      colorName:
+        firstTag(block, "swatchColor") || firstTag(block, "colorName"),
+      sizeName: firstTag(block, "size"),
+      quantity,
+      price: Number.isFinite(price) ? price : undefined,
+      imageUrl: firstTag(block, "image"),
+      productName: firstTag(block, "productName"),
+      brandName: firstTag(block, "brand"),
+    });
+  }
+  return products;
+}
+
+/**
  * Parse ATC sellable productId: STYLE(Color,Size,) or STYLE(Color,Size,C)
  */
 export function parseSellableProductId(raw: string): {
@@ -182,6 +368,9 @@ export class SanmarClient {
   private readonly endpoints: {
     productData: string;
     inventory: string;
+    pricing: string;
+    media: string;
+    bulk: string;
   };
   rateLimitRemaining: number | null = null;
 
@@ -192,12 +381,25 @@ export class SanmarClient {
     );
     this.endpoints = {
       productData: `${base}/pstd/productdata2.0/ProductDataServiceV2.php`,
-      inventory: `${base}/pstd/inventory2.0/InventoryServiceV2.php`,
+      inventory:
+        options.inventoryUrl ||
+        `${base}/pstd/inventory2.0/InventoryServiceV2.php`,
+      pricing:
+        options.pricingUrl ||
+        `${base}/pstd/productpricingconfiguration/PricingAndConfigurationService.php`,
+      media:
+        options.mediaUrl ||
+        `${base}/pstd/mediacontent1.1/MediaContentService.php`,
+      bulk: options.bulkUrl || `${base}/bulk-data/BulkDataService.php`,
     };
   }
 
   get accountId() {
     return this.options.accountId;
+  }
+
+  get hasMediaPassword() {
+    return Boolean(this.options.mediaPassword?.trim());
   }
 
   validateCredentials(): boolean {
@@ -339,21 +541,28 @@ export class SanmarClient {
       .map((part) => this.sellableToSku(part));
   }
 
-  async listInventory(): Promise<SanmarInventory[]> {
+  /**
+   * Fetch inventory for the given styles (or sellable styles when omitted).
+   * `inventoryMax` caps the style list when set; otherwise all styles are fetched.
+   */
+  async listInventory(styleIds?: string[]): Promise<SanmarInventory[]> {
     if (this.options.csvDir) {
       const content = await this.readCsvFile("inventory.csv");
       if (content) return this.parseInventoryCSV(content);
     }
 
-    const styleIds =
-      this.options.productIds?.length
-        ? this.options.productIds
-        : await this.listSellableProductIds();
+    const ids =
+      styleIds?.length
+        ? styleIds
+        : this.options.productIds?.length
+          ? this.options.productIds
+          : await this.listSellableProductIds();
 
-    const max = this.options.maxProducts ?? 500;
+    const max = this.options.inventoryMax;
+    const limited = max && max > 0 ? ids.slice(0, max) : ids;
     const inventory: SanmarInventory[] = [];
 
-    for (const styleId of styleIds.slice(0, max)) {
+    for (const styleId of limited) {
       try {
         inventory.push(...(await this.getInventoryLevels(styleId)));
       } catch (error) {
@@ -375,25 +584,94 @@ export class SanmarClient {
       </GetInventoryLevelsRequest>`,
     );
     this.assertAuth(xml);
+    return parseInventoryLevelsXml(xml);
+  }
 
-    const blocks =
-      xml.match(
-        /<(?:[\w.-]+:)?PartInventory\b[\s\S]*?<\/(?:[\w.-]+:)?PartInventory>/gi,
-      ) ?? [];
+  /**
+   * Customer blank pricing for a style (CAD). Returns one price per partId
+   * (lowest minQuantity tier).
+   */
+  async getConfigurationAndPricing(
+    productId: string,
+  ): Promise<SanmarPartPrice[]> {
+    const xml = await this.postSoap(
+      this.endpoints.pricing,
+      "getConfigurationAndPricing",
+      `<GetConfigurationAndPricingRequest xmlns="${NS_PRICE}">
+        <wsVersion>1.0.0</wsVersion>
+        <id>${escapeXml(this.options.accountId)}</id>
+        <password>${escapeXml(this.options.loginEmail)}</password>
+        <productId>${escapeXml(productId)}</productId>
+        <partId></partId>
+        <currency>CAD</currency>
+        <fobId></fobId>
+        <priceType>Customer</priceType>
+        <localizationCountry>CA</localizationCountry>
+        <localizationLanguage>en</localizationLanguage>
+        <configurationType>Blank</configurationType>
+      </GetConfigurationAndPricingRequest>`,
+    );
+    this.assertAuth(xml);
+    return parseConfigurationAndPricingXml(xml);
+  }
 
-    return blocks.map((block) => {
-      const partId = firstTag(block, "partId") || "";
-      const qtyText =
-        firstTag(block, "value") ||
-        firstTag(block, "Quantity") ||
-        firstTag(block, "quantity") ||
-        "0";
-      return {
-        skuId: partId,
-        quantity: Number.parseInt(qtyText, 10) || 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    });
+  /**
+   * Primary product images via Media Content 1.1.
+   * Requires mediaPassword. Returns [] when password is unset.
+   */
+  async getMediaContent(productId: string): Promise<string[]> {
+    if (!this.options.mediaPassword?.trim()) return [];
+
+    const xml = await this.postSoap(
+      this.endpoints.media,
+      "getMediaContent",
+      `<GetMediaContentRequest xmlns="${NS_MEDIA}">
+        <wsVersion xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">1.1.0</wsVersion>
+        <id xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(this.options.accountId)}</id>
+        <password xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(this.options.mediaPassword)}</password>
+        <cultureName xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">en</cultureName>
+        <mediaType xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">Image</mediaType>
+        <productId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(productId)}</productId>
+        <partId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/"></partId>
+        <classType>1006</classType>
+      </GetMediaContentRequest>`,
+    );
+    this.assertAuth(xml);
+    return parseMediaContentXml(xml);
+  }
+
+  /**
+   * Bulk Data — limited to ~1 call/day. Returns part-level qty + price + base image.
+   */
+  async getBulkProducts(): Promise<SanmarBulkProduct[]> {
+    const xml = await this.postSoap(
+      this.endpoints.bulk,
+      "getBulkData",
+      `<GetBulkDataRequest>
+        <wsVersion>1.0.0</wsVersion>
+        <id>${escapeXml(this.options.accountId)}</id>
+        <password>${escapeXml(this.options.loginEmail)}</password>
+      </GetBulkDataRequest>`,
+    );
+    this.assertAuth(xml);
+
+    if (
+      /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
+      serviceCode(xml) === "125"
+    ) {
+      throw new SanmarBulkLimitError(
+        firstTag(xml, "description") ||
+          "Bulk Data daily limit reached (1 call/day)",
+      );
+    }
+
+    const products = parseBulkProductsXml(xml);
+    if (products.length === 0) {
+      const description =
+        firstTag(xml, "description") || "Bulk Data returned no products";
+      throw new SanmarSOAPError(description, xml.slice(0, 2000));
+    }
+    return products;
   }
 
   async getProduct(productId: string): Promise<SanmarProduct> {
@@ -654,12 +932,19 @@ export function createSanmarClientFromEnv(env: {
   SANMAR_CSV_DIR?: string;
   SANMAR_PRODUCT_IDS?: string;
   SANMAR_MAX_PRODUCTS?: string;
+  SANMAR_INVENTORY_MAX?: string;
   SANMAR_SELLABLE_MODE?: string;
+  SANMAR_MEDIA_PASSWORD?: string;
+  SANMAR_INVENTORY_URL?: string;
+  SANMAR_PRICING_URL?: string;
+  SANMAR_MEDIA_URL?: string;
+  SANMAR_BULK_URL?: string;
 }): SanmarClient | null {
   const loginEmail = env.SANMAR_LOGIN_EMAIL || env.SANMAR_API_PASSWORD;
   if (!env.SANMAR_ACCOUNT_ID || !loginEmail) {
     if (!env.SANMAR_CSV_DIR) return null;
   }
+  const inventoryMaxRaw = env.SANMAR_INVENTORY_MAX?.trim();
   return new SanmarClient({
     accountId: env.SANMAR_ACCOUNT_ID || "csv",
     loginEmail: loginEmail || "csv@example.com",
@@ -671,7 +956,15 @@ export function createSanmarClientFromEnv(env: {
     maxProducts: env.SANMAR_MAX_PRODUCTS
       ? Number.parseInt(env.SANMAR_MAX_PRODUCTS, 10)
       : 500,
+    inventoryMax: inventoryMaxRaw
+      ? Number.parseInt(inventoryMaxRaw, 10)
+      : undefined,
     sellableMode:
       env.SANMAR_SELLABLE_MODE?.toUpperCase() === "ALL" ? "ALL" : "ACTIVE",
+    mediaPassword: env.SANMAR_MEDIA_PASSWORD,
+    inventoryUrl: env.SANMAR_INVENTORY_URL,
+    pricingUrl: env.SANMAR_PRICING_URL,
+    mediaUrl: env.SANMAR_MEDIA_URL,
+    bulkUrl: env.SANMAR_BULK_URL,
   });
 }

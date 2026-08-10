@@ -1,4 +1,6 @@
+import { and, eq, isNotNull } from "drizzle-orm";
 import type { CommerceDatabase } from "../../db/client.js";
+import { ssStyles } from "../../db/schema.js";
 import {
   parseInventoryCsv,
   parseSanmarEdiPair,
@@ -6,6 +8,7 @@ import {
 } from "../catalog/csv-parser.js";
 import type {
   CatalogSkuRow,
+  InventoryRow,
   SyncRunResult,
   VendorCatalogAdapter,
   VendorSyncContext,
@@ -14,6 +17,7 @@ import { BUILTIN_VENDORS } from "../catalog/types.js";
 import { CatalogWriter } from "../catalog/writer.js";
 import {
   SanmarAuthError,
+  SanmarBulkLimitError,
   SanmarClient,
   type SanmarProduct,
   type SanmarSKU,
@@ -97,8 +101,9 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       }
 
       // Live PromoStandards path:
-      // 1) Upsert ALL sellable ACTIVE parts immediately (styleId as name fallback)
-      // 2) Optionally enrich a capped set of styles via getProduct afterward
+      // 1) Upsert ALL sellable ACTIVE parts (qty 0 / no price yet)
+      // 2) Enrich a capped set of styles via getProduct + optional media
+      // 3) Refresh qty + price (Bulk Data preferred, else per-style SOAP)
       const parts = await this.client.listSellableParts();
       const activeParts = parts.filter((part) => !part.discontinued);
       console.log(
@@ -133,14 +138,22 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       );
       console.log(`[sanmar] enriched styles=${enriched}`);
 
-      const allErrors = [...errors, ...enrichErrors];
+      const stockErrors: string[] = [];
+      const stockUpdated = await this.refreshQtyAndPrice(
+        ctx.tenantId,
+        activeParts.map((p) => p.styleId),
+        stockErrors,
+      );
+      console.log(`[sanmar] stock/price rows updated=${stockUpdated}`);
+
+      const allErrors = [...errors, ...enrichErrors, ...stockErrors];
       const result: SyncRunResult = {
         id: run.id,
         vendor: VENDOR,
         type: "full",
         status: allErrors.length ? "completed_with_errors" : "completed",
         stylesProcessed,
-        skusUpserted,
+        skusUpserted: skusUpserted + stockUpdated,
         imagesDownloaded: 0,
         errors: allErrors,
         rateLimitRemaining: this.client.rateLimitRemaining,
@@ -162,21 +175,36 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     );
 
     try {
-      let items;
+      let items: InventoryRow[];
+      const errors: string[] = [];
+
       if (ctx.csvInventory?.trim()) {
         items = parseInventoryCsv(ctx.csvInventory);
       } else if (ctx.csvContent?.trim() && !ctx.csvSkus) {
         items = parseInventoryCsv(ctx.csvContent);
       } else {
-        const inventory = await this.client.listInventory();
-        items = inventory.map((row) => ({
-          skuKey: row.skuId,
-          qty: row.quantity,
-          priceDollars: row.price,
-        }));
+        const styleIds = await this.listCatalogStyleKeys(ctx.tenantId);
+        const updated = await this.refreshQtyAndPrice(
+          ctx.tenantId,
+          styleIds,
+          errors,
+        );
+        const result: SyncRunResult = {
+          id: run.id,
+          vendor: VENDOR,
+          type: "inventory",
+          status: errors.length ? "completed_with_errors" : "completed",
+          stylesProcessed: styleIds.length,
+          skusUpserted: updated,
+          imagesDownloaded: 0,
+          errors,
+          rateLimitRemaining: this.client.rateLimitRemaining,
+        };
+        await this.writer.finishRun(run.id, result);
+        return result;
       }
 
-      const { updated, errors } = await this.writer.updateInventory(
+      const { updated, errors: writeErrors } = await this.writer.updateInventory(
         ctx.tenantId,
         VENDOR,
         items,
@@ -186,11 +214,11 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         id: run.id,
         vendor: VENDOR,
         type: "inventory",
-        status: errors.length ? "completed_with_errors" : "completed",
+        status: writeErrors.length ? "completed_with_errors" : "completed",
         stylesProcessed: 0,
         skusUpserted: updated,
         imagesDownloaded: 0,
-        errors,
+        errors: writeErrors,
         rateLimitRemaining: this.client.rateLimitRemaining,
       };
       await this.writer.finishRun(run.id, result);
@@ -206,7 +234,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
   }
 
   /**
-   * Refresh one style via getProduct + getInventoryLevels.
+   * Refresh one style via getProduct + getInventoryLevels + pricing + media.
    * Preserves storefront_visible (CatalogWriter never overwrites it).
    */
   async refreshStyle(
@@ -227,17 +255,36 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         inventory = await this.client.getInventoryLevels(styleKey);
       } catch (error) {
         if (error instanceof SanmarAuthError) throw error;
-        // Inventory optional — still upsert product metadata/SKUs.
       }
+
+      let prices = new Map<string, number>();
+      try {
+        const priced = await this.client.getConfigurationAndPricing(styleKey);
+        prices = new Map(priced.map((p) => [p.partId, p.price]));
+      } catch (error) {
+        if (error instanceof SanmarAuthError) throw error;
+      }
+
+      let mediaFront: string | undefined;
+      if (this.client.hasMediaPassword) {
+        try {
+          const urls = await this.client.getMediaContent(styleKey);
+          mediaFront = urls[0];
+        } catch (error) {
+          if (error instanceof SanmarAuthError) throw error;
+        }
+      }
+
       const qtyBySku = new Map(
         inventory.map((row) => [row.skuId, row.quantity]),
       );
       const rows = this.toCatalogRows([product], skus).map((row) => ({
         ...row,
         qty: qtyBySku.get(row.skuKey) ?? row.qty ?? 0,
+        priceDollars: prices.get(row.skuKey) ?? row.priceDollars,
+        imageFront: mediaFront || row.imageFront,
       }));
       if (rows.length === 0) {
-        // getProduct returned no parts — still patch style metadata.
         await this.writer.patchStyleMetadata(ctx.tenantId, VENDOR, [
           {
             styleKey: product.productId,
@@ -246,7 +293,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
             title: product.productName,
             description: product.description,
             category: product.category,
-            imageFront: product.images?.[0],
+            imageFront: mediaFront || product.images?.[0],
           },
         ]);
       }
@@ -268,7 +315,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         status: errors.length ? "completed_with_errors" : "completed",
         stylesProcessed,
         skusUpserted,
-        imagesDownloaded: 0,
+        imagesDownloaded: mediaFront ? 1 : 0,
         errors,
         rateLimitRemaining: this.client.rateLimitRemaining,
       };
@@ -293,8 +340,136 @@ export class SanmarSyncService implements VendorCatalogAdapter {
   }
 
   /**
-   * Enrich style names/brands/images via getProduct AFTER sellable upsert.
-   * SANMAR_MAX_PRODUCTS caps enrichment only — never the sellable import.
+   * Prefer Bulk Data (1 call/day, qty+price for all parts). Fall back to
+   * concurrent per-style inventory + pricing SOAP over catalog style keys.
+   */
+  private async refreshQtyAndPrice(
+    tenantId: string,
+    preferredStyleIds: string[],
+    errors: string[],
+  ): Promise<number> {
+    // 1) Bulk Data path
+    try {
+      const bulk = await this.client.getBulkProducts();
+      console.log(`[sanmar] bulk products=${bulk.length}`);
+      const items: InventoryRow[] = bulk.map((row) => ({
+        skuKey: row.partId,
+        qty: row.quantity,
+        priceDollars: row.price,
+      }));
+      const { updated, errors: writeErrors } = await this.writer.updateInventory(
+        tenantId,
+        VENDOR,
+        items,
+      );
+      errors.push(...writeErrors);
+      return updated;
+    } catch (error) {
+      if (error instanceof SanmarAuthError) throw error;
+      const message =
+        error instanceof SanmarBulkLimitError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      console.log(`[sanmar] bulk unavailable, falling back to per-style: ${message}`);
+      errors.push(`bulk: ${message}`);
+    }
+
+    // 2) Per-style inventory + pricing
+    const fromDb = await this.listCatalogStyleKeys(tenantId);
+    const styleIds = [
+      ...new Set(
+        [...preferredStyleIds, ...fromDb].map((s) => s.trim()).filter(Boolean),
+      ),
+    ];
+    const maxRaw = process.env.SANMAR_INVENTORY_MAX?.trim();
+    const max = maxRaw ? Number.parseInt(maxRaw, 10) : 0;
+    const limited = max > 0 ? styleIds.slice(0, max) : styleIds;
+    const concurrency = Number(process.env.SANMAR_ENRICH_CONCURRENCY || "4");
+
+    console.log(
+      `[sanmar] per-style stock/price styles=${limited.length}/${styleIds.length} concurrency=${concurrency}`,
+    );
+
+    const items: InventoryRow[] = [];
+    await mapPool(limited, concurrency, async (styleId) => {
+      try {
+        const [inventory, prices] = await Promise.all([
+          this.client.getInventoryLevels(styleId).catch((error) => {
+            if (error instanceof SanmarAuthError) throw error;
+            errors.push(
+              `inventory ${styleId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return [] as Awaited<
+              ReturnType<typeof this.client.getInventoryLevels>
+            >;
+          }),
+          this.client.getConfigurationAndPricing(styleId).catch((error) => {
+            if (error instanceof SanmarAuthError) throw error;
+            errors.push(
+              `pricing ${styleId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return [] as Awaited<
+              ReturnType<typeof this.client.getConfigurationAndPricing>
+            >;
+          }),
+        ]);
+
+        const priceByPart = new Map(prices.map((p) => [p.partId, p.price]));
+
+        for (const row of inventory) {
+          items.push({
+            skuKey: row.skuId,
+            qty: row.quantity,
+            priceDollars: priceByPart.get(row.skuId) ?? row.price,
+          });
+        }
+        // Do not invent qty:0 rows for pricing-only parts — updateInventory
+        // always writes qty and would wipe unknown stock.
+      } catch (error) {
+        if (error instanceof SanmarAuthError) throw error;
+        errors.push(
+          `stock ${styleId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    });
+
+    if (items.length === 0) return 0;
+    const { updated, errors: writeErrors } = await this.writer.updateInventory(
+      tenantId,
+      VENDOR,
+      items,
+    );
+    errors.push(...writeErrors);
+    return updated;
+  }
+
+  private async listCatalogStyleKeys(tenantId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ externalKey: ssStyles.externalKey })
+      .from(ssStyles)
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.vendor, VENDOR),
+          isNotNull(ssStyles.externalKey),
+        ),
+      );
+    return rows
+      .map((r) => r.externalKey)
+      .filter((k): k is string => Boolean(k));
+  }
+
+  /**
+   * Enrich style names/brands/images via getProduct (+ optional media) AFTER
+   * sellable upsert. SANMAR_MAX_PRODUCTS caps enrichment only.
    */
   private async enrichStylesAfterUpsert(
     tenantId: string,
@@ -308,10 +483,12 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     if (toEnrich.length === 0) return 0;
 
     console.log(
-      `[sanmar] enriching ${toEnrich.length}/${styleIds.length} styles (concurrency=${concurrency})`,
+      `[sanmar] enriching ${toEnrich.length}/${styleIds.length} styles (concurrency=${concurrency}, media=${this.client.hasMediaPassword})`,
     );
 
     const products = new Map<string, SanmarProduct>();
+    const mediaByStyle = new Map<string, string>();
+
     await mapPool(toEnrich, concurrency, async (styleId) => {
       try {
         products.set(styleId, await this.client.getProduct(styleId));
@@ -319,6 +496,20 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         if (error instanceof SanmarAuthError) throw error;
         errors.push(
           `enrich ${styleId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+
+      if (!this.client.hasMediaPassword) return;
+      try {
+        const urls = await this.client.getMediaContent(styleId);
+        if (urls[0]) mediaByStyle.set(styleId, urls[0]);
+      } catch (error) {
+        if (error instanceof SanmarAuthError) throw error;
+        errors.push(
+          `media ${styleId}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
@@ -332,7 +523,8 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       title: product.productName,
       description: product.description,
       category: product.category,
-      imageFront: product.images?.[0],
+      imageFront:
+        mediaByStyle.get(product.productId) || product.images?.[0],
     }));
 
     return this.writer.patchStyleMetadata(tenantId, VENDOR, patches);
