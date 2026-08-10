@@ -42,6 +42,20 @@ export default async function AdminSyncPage() {
           Sync S&amp;S, Sanmar, or any CSV-based vendor into the shared catalog.
           Each vendor is namespaced so SKUs never collide.
         </p>
+        <ol className="text-sm text-text-secondary mt-3 mb-0 list-decimal list-inside space-y-1">
+          <li>
+            <b>Full sync</b> — import/update styles &amp; sizes, then refresh stock
+            and cost (SanMar also pulls Bulk Data / pricing when configured).
+          </li>
+          <li>
+            <b>Inventory</b> — daily stock &amp; price refresh without re-discovering
+            the whole catalog (SanMar Bulk Data is limited to about 1 call/day).
+          </li>
+          <li>
+            Then use <a href="/admin/catalog" className="text-accent font-bold">Catalog</a>{" "}
+            to hide colorways you do not want on the storefront.
+          </li>
+        </ol>
       </div>
 
       {error && (
@@ -78,6 +92,11 @@ export default async function AdminSyncPage() {
                       type="submit"
                       className="bg-accent text-white font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
                       disabled={!vendor.configured && vendor.key !== "csv"}
+                      title={
+                        vendor.key === "sanmar"
+                          ? "Import sellable catalog, enrich names/images, then refresh stock + price"
+                          : "Import / refresh full catalog"
+                      }
                     >
                       Full sync
                     </button>
@@ -93,8 +112,15 @@ export default async function AdminSyncPage() {
                     <button
                       type="submit"
                       className="border border-border font-bold px-3 py-1.5 rounded-sm text-sm"
+                      title={
+                        vendor.key === "sanmar"
+                          ? "Refresh stock + CUSTOMER price (Bulk Data preferred)"
+                          : "Refresh stock levels"
+                      }
                     >
-                      Inventory
+                      {vendor.key === "sanmar"
+                        ? "Update stock & price"
+                        : "Inventory"}
                     </button>
                   </form>
                 )}

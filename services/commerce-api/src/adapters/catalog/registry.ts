@@ -64,7 +64,7 @@ export class VendorSyncRegistry {
         },
         configured: sanmarConfigured,
         notes: sanmarConfigured
-          ? "PromoStandards (customer ID + login e-mail) and/or CSV"
+          ? "Full sync = catalog + stock/price. Use Update stock & price for daily refresh (Bulk Data ~1×/day)."
           : "Set SANMAR_ACCOUNT_ID + SANMAR_LOGIN_EMAIL (login e-mail, not website password)",
       },
       {

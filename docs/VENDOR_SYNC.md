@@ -29,15 +29,31 @@ Per `ATC_Pstd_IntegrationGuide_2025`:
 |-----|----------------------|--------|
 | `SANMAR_ACCOUNT_ID` | `id` | Customer ID (e.g. `161`) |
 | `SANMAR_LOGIN_EMAIL` | `password` | **Login e-mail** (not the website password) |
+| `SANMAR_MEDIA_PASSWORD` | Media `password` | Separate password from EDI team |
 | `SANMAR_API_BASE_URL` | host | `https://edi.atc-apparel.com` |
+
+Optional URL overrides (UAT): `SANMAR_INVENTORY_URL`, `SANMAR_PRICING_URL`, `SANMAR_MEDIA_URL`, `SANMAR_BULK_URL`.
 
 Also required by SanMar: static IP whitelist + EDI agreement (`edi@sanmarcanada.com`).
 
-Live sync uses:
+### What staff click in Admin → Catalog sync
 
-1. `getProductSellable` with `productId=ACTIVE` (or `ALL`) — upsert **all** active parts first (style code as name fallback)
-2. Optional `getProduct` enrichment for up to `SANMAR_MAX_PRODUCTS` styles (bounded concurrency) for name/brand/category/images
-3. `getInventoryLevels` per style for qty refresh (`--inventory`)
+| Button | When to use | What it does |
+|--------|-------------|--------------|
+| **Full sync** | First import, or weekly catalog refresh | 1) Import all ACTIVE sellable parts 2) Enrich names/images (capped) 3) Refresh **stock + CUSTOMER price** (Bulk Data preferred) |
+| **Inventory** | Daily stock/price update after catalog exists | Bulk Data qty+price (1 call/day), else per-style inventory + pricing SOAP |
+| **CSV import** | Offline / EDI file drop | Paste products+skus or inventory CSV |
+
+Storefront shoppers never run sync — they only see products after staff sync + soft-hide controls on Catalog.
+
+### Live API sequence (Full sync)
+
+1. `getProductSellable` (`ACTIVE` or `ALL`) — upsert **all** active parts (style code as name fallback; qty starts at 0)
+2. Optional `getProduct` + `getMediaContent` for up to `SANMAR_MAX_PRODUCTS` styles (names/brand/Primary image)
+3. Qty + price refresh:
+   - Prefer **Bulk Data** (qty + price for all parts; **1 call/day**)
+   - Else concurrent `getInventoryLevels` + `getConfigurationAndPricing` (Customer / CAD / Blank) over catalog styles
+4. Standalone **Inventory** button runs step 3 only
 
 Sellable `productId` values look like `NF0A529K(TNF Black,S,)` — parsed into style/color/size; trailing `S|M|X|C` means discontinued.
 
@@ -53,7 +69,6 @@ CLI:
 npm run sync:sanmar -w @gwg/commerce-api
 npm run sync:sanmar -w @gwg/commerce-api -- --inventory
 ```
-
 ## Canonical CSV (any vendor)
 
 Header row required. One row per size SKU:
