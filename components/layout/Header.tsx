@@ -58,8 +58,10 @@ export function Header({
   const pieceCount = mounted ? rawPieceCount : 0;
 
   const [shopOpen, setShopOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openShop = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -67,6 +69,13 @@ export function Header({
   };
   const scheduleClose = () => {
     closeTimer.current = setTimeout(() => setShopOpen(false), 120);
+  };
+  const openAccount = () => {
+    if (accountTimer.current) clearTimeout(accountTimer.current);
+    setAccountOpen(true);
+  };
+  const scheduleAccountClose = () => {
+    accountTimer.current = setTimeout(() => setAccountOpen(false), 120);
   };
 
   return (
@@ -183,18 +192,87 @@ export function Header({
         {/* Actions */}
         <div className="flex items-center gap-sp-2 shrink-0">
           <ActiveDesignBadge />
-          <Link
-            href="/admin/login"
-            className="hidden lg:inline-flex items-center px-2 text-xs font-semibold text-text-tertiary hover:text-text-primary transition-colors"
-          >
-            Staff
-          </Link>
-          <Link
-            href={customerName ? "/portal/jobs" : "/account"}
-            className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
-          >
-            {customerName ? `Hi, ${customerName.split(" ")[0]}` : "Sign In"}
-          </Link>
+          {customerName ? (
+            <Link
+              href="/portal/jobs"
+              className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
+            >
+              Hi, {customerName.split(" ")[0]}
+            </Link>
+          ) : (
+            <div
+              className="relative hidden sm:block"
+              onMouseEnter={openAccount}
+              onMouseLeave={scheduleAccountClose}
+            >
+              <button
+                type="button"
+                onClick={() => setAccountOpen((v) => !v)}
+                aria-expanded={accountOpen}
+                className="inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
+              >
+                Sign In
+              </button>
+              {accountOpen && (
+                <div
+                  onMouseEnter={openAccount}
+                  onMouseLeave={scheduleAccountClose}
+                  className="absolute right-0 top-full pt-2 w-[320px] z-50"
+                >
+                  <div className="rounded-md border border-border bg-bg-raised shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-2">
+                    <p className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-text-tertiary m-0">
+                      Sign In
+                    </p>
+                    <Link
+                      href="/account"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Personal Login</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        For individual customers and small orders.
+                      </span>
+                    </Link>
+                    <Link
+                      href="/start"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">
+                        Corporate &amp; Institutional
+                      </span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Bulk-order accounts and branded team stores.
+                      </span>
+                    </Link>
+                    <Link
+                      href="/admin/login"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Staff Login</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Internal team and production access only.
+                      </span>
+                    </Link>
+                    <div className="border-t border-border my-1" />
+                    <Link
+                      href="/contact"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">
+                        Continue via Chat
+                      </span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Quick, no password needed.
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <Link
             href="/cart"
             className="relative inline-flex items-center gap-sp-2 px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"

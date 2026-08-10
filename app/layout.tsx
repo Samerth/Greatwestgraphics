@@ -21,7 +21,7 @@ const SITE_NAME = "Great West Graphics";
 const DEFAULT_TITLE =
   "Great West Graphics · Vancouver Screen Printing & Embroidery";
 const DEFAULT_DESCRIPTION =
-  "Vancouver screen printing and embroidery studio. Ink, thread and 46 years of getting it right, proofed before a single sheet runs.";
+  "Vancouver screen printing and embroidery studio. Ink, thread and 35 years of getting it right, proofed before a single sheet runs.";
 const DEFAULT_OG_IMAGE = "/images/hero-press.jpg";
 
 export const metadata: Metadata = {
@@ -56,9 +56,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="orange"
+      data-theme="blue"
       className={`${spaceGrotesk.variable} ${ibmPlexSans.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('gwg-theme');if(t==='orange'||t==='blue'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="font-body text-body">{children}</body>
     </html>
   );

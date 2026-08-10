@@ -24,24 +24,27 @@ export function TrustStrip() {
 }
 
 const TESTIMONIALS = [
-  { text: "Good fast turnover and good quality product.", who: "Nabil Khan" },
+  { text: "Good fast turnover and good quality product", who: "Nabil Khan" },
   {
-    text: "Good quality of work, better service, and the work was done in the given time period.",
+    text: "Good quality of work, better services, and the work was done in the given time period",
     who: "Singh Saini",
   },
   {
-    text: "Great customer service, ordered custom merchandise with no hassle, and received quickly.",
+    text: "Great customer service, ordered custom merchandise with no hassle, and received quickly",
     who: "Ahuja",
   },
 ];
 
 export function Testimonials() {
   return (
-    <section className="py-sp-8">
+    <section className="py-sp-8" id="reviews">
       <div className="max-w-container mx-auto px-4 md:px-8 xl:px-24">
-        <h2 className="text-center font-display font-bold text-header mb-sp-6">
-          What our clients say
+        <h2 className="text-center font-display font-bold text-header mb-sp-2">
+          What Our Clients Say
         </h2>
+        <p className="text-center text-sm text-text-secondary mb-sp-6">
+          4.8/5 · 214 reviews
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-sp-3">
           {TESTIMONIALS.map((t) => (
             <div
@@ -80,23 +83,36 @@ const FALLBACK_GALLERY: GalleryItem[] = [
 export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] }) {
   const GALLERY = items.length > 0 ? items : FALLBACK_GALLERY;
   return (
-    <section className="py-sp-8 bg-fill-subtle-15">
+    <section className="py-sp-8 bg-fill-subtle-15" id="gallery">
       <div className="max-w-container mx-auto px-4 md:px-8 xl:px-24">
         <div className="text-center max-w-none mb-sp-6">
-          <div className="inline-flex justify-center w-full items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-            Real Work, Delivered
-          </div>
           <h2 className="font-display font-bold text-header">
-            Made in the shop. Worn on the streets.
+            Real Work, Delivered
           </h2>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-sp-3">
-          {GALLERY.map((g) => (
+          {GALLERY.slice(0, 4).map((g) => (
             <Link
               key={g.name}
               href="/quote"
-              className="relative rounded-lg overflow-hidden aspect-square group block"
+              className="relative rounded-lg overflow-hidden aspect-[308/280] group block"
+            >
+              <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-[1.06]">
+                <ArtTile artIndex={g.artIndex} imageSrc={g.imageUrl ?? undefined} alt={g.name} />
+              </div>
+              <div className="absolute left-0 right-0 bottom-0 p-sp-3 bg-[linear-gradient(0deg,rgba(0,0,0,.75),transparent)] text-white">
+                <b className="block text-[13.5px]">{g.name}</b>
+                <span className="text-xs text-white/80">{g.meta}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+        <div className="mt-sp-3 grid grid-cols-1 md:grid-cols-3 gap-sp-3">
+          {GALLERY.slice(4, 7).map((g) => (
+            <Link
+              key={g.name}
+              href="/quote"
+              className="relative rounded-lg overflow-hidden aspect-[416/280] group block"
             >
               <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-[1.06]">
                 <ArtTile artIndex={g.artIndex} imageSrc={g.imageUrl ?? undefined} alt={g.name} />
@@ -114,10 +130,10 @@ export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] })
 }
 
 const STATS = [
-  { n: "1980", l: "Founded in Vancouver", accent: false },
-  { n: "30+", l: "Years combined team experience", accent: true },
-  { n: "37", l: "Stock ink colours", accent: false },
-  { n: "CA & US", l: "Shipping coverage", accent: true },
+  { n: "35", l: "Years in Vancouver", accent: false },
+  { n: "18M+", l: "Garments printed", accent: true },
+  { n: "2,800+", l: "Businesses served", accent: false },
+  { n: "99.4%", l: "On-time delivery", accent: true },
 ];
 
 export function StatsBand() {

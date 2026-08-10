@@ -38,10 +38,10 @@ export function WalkTheFloor() {
           <div>
             <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-              Inside Our Print Shop
+              Idea to Delivery
             </div>
             <h2 className="font-display font-bold text-header leading-header max-w-[14ch] text-white">
-              Walk the floor <span className="text-accent">with us.</span>
+              Idea to <span className="text-accent">Delivery.</span>
             </h2>
           </div>
           <p className="max-w-[38ch] text-white/65 text-[14.5px]">
