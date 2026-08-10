@@ -32,7 +32,7 @@ export function Hero() {
             Bring your brand <span className="text-white">to life.</span>
           </h1>
           <p className="mt-sp-3 max-w-[46ch] text-white/85 text-[17px] leading-[1.6]">
-            Not a print website. A print studio. Ink, thread and 46 years of
+            Not a print website. A print studio. Ink, thread and 35 years of
             getting it right, proofed before a single sheet runs.
           </p>
           <div className="flex gap-sp-3 mt-sp-4 flex-wrap">

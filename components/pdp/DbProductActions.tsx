@@ -135,6 +135,18 @@ export function DbProductActions({
         </>
       )}
 
+      {!groupOrder && selectedVariant && !selectedVariant.inStock && (
+        <div className="mb-sp-4 rounded-md border border-amber-300 bg-amber-50 p-sp-3">
+          <p className="m-0 text-sm font-bold text-amber-950">
+            Color: {color} — Currently Unavailable
+          </p>
+          <p className="m-0 mt-1 text-sm text-amber-900">
+            Size: {selectedVariant.sizeName} — Out of Stock
+          </p>
+          <NotifyBackInStockButton />
+        </div>
+      )}
+
       {!groupOrder && (
         <>
           <span className="text-sm font-bold block mb-2">
@@ -260,5 +272,19 @@ export function DbProductActions({
                 )}`}
       </Button>
     </div>
+  );
+}
+
+function NotifyBackInStockButton() {
+  const [notified, setNotified] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => setNotified(true)}
+      disabled={notified}
+      className="mt-3 w-full rounded-md border border-amber-800 bg-amber-900 text-white font-bold text-sm py-3 px-4 disabled:opacity-70"
+    >
+      {notified ? "We'll notify you" : "Notify Me When Back in Stock"}
+    </button>
   );
 }

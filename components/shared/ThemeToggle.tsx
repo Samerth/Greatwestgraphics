@@ -4,17 +4,29 @@ import { useEffect, useState } from "react";
 
 type ThemeName = "orange" | "blue";
 const STORAGE_KEY = "gwg-theme";
+const DEFAULT_THEME: ThemeName = "blue";
+
+function readStoredTheme(): ThemeName {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "orange" || stored === "blue") return stored;
+  } catch {
+    // private browsing / blocked storage
+  }
+  return DEFAULT_THEME;
+}
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeName>("orange");
+  const [theme, setTheme] = useState<ThemeName>(DEFAULT_THEME);
   const [mounted, setMounted] = useState(false);
 
-  // Read the persisted choice after mount only — reading localStorage
-  // during render would mismatch the server-rendered HTML and trigger
-  // a hydration warning.
+  // Re-apply persisted theme on every mount. Without this, App Router
+  // navigations keep the server `data-theme` and the toggle appears to
+  // "reset" (handoff flag from live-site audit).
   useEffect(() => {
-    const stored = (localStorage.getItem(STORAGE_KEY) as ThemeName | null) ?? "orange";
+    const stored = readStoredTheme();
     setTheme(stored);
+    document.documentElement.setAttribute("data-theme", stored);
     setMounted(true);
   }, []);
 

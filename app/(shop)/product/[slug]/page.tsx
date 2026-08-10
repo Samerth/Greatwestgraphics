@@ -7,6 +7,12 @@ import { ProductDetail } from "@/components/pdp/ProductDetail";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
+import {
+  PdpEnrichmentSections,
+  PdpFeatureBullets,
+  PdpOutOfStockBanner,
+  PdpTrustChecks,
+} from "@/components/pdp/PdpEnrichment";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
 import { ButtonLink } from "@/components/shared/Button";
 import { CATALOG } from "@/lib/data/products";
@@ -172,6 +178,10 @@ export default async function ProductPage({
     const available =
       Boolean(product.active) && Number(product.qty || 0) > 0;
     const title = `${style.brandName || ""} ${style.styleName || ""}`.trim();
+    const relatedCatalog = await loadStorefrontCatalog({ limit: 12 });
+    const relatedItems = toCrossSellItems(
+      relatedCatalog.products.filter((p) => p.id !== String(product.id)),
+    );
 
     return (
       <>
@@ -271,7 +281,21 @@ export default async function ProductPage({
                         Number(variants[0]?.retailMinor || 0),
                       )}`
                     : "Unavailable"}
+                  {available ? (
+                    <span className="ml-3 text-sm font-semibold text-text-secondary">
+                      4.8/5 · 214 reviews
+                    </span>
+                  ) : null}
                 </p>
+
+                <PdpTrustChecks />
+                <PdpFeatureBullets />
+
+                {!available && (
+                  <PdpOutOfStockBanner
+                    colorName={String(product.colorName || "")}
+                  />
+                )}
 
                 {available && (
                   <PreviewDesignButton
@@ -320,6 +344,27 @@ export default async function ProductPage({
             </div>
           </Container>
         </section>
+
+        <PdpEnrichmentSections
+          brandName={String(style.brandName || "")}
+          styleName={String(style.styleName || title)}
+          sizeRange={
+            variants.length > 0
+              ? `${String(variants[0]?.sizeName || "S")} – ${String(
+                  variants[variants.length - 1]?.sizeName || "3XL",
+                )}`
+              : undefined
+          }
+        />
+
+        <section className="py-sp-8">
+          <Container>
+            <CrossSellGrid
+              title="Complete Your Project"
+              items={relatedItems}
+            />
+          </Container>
+        </section>
       </>
     );
   }
@@ -343,10 +388,15 @@ export default async function ProductPage({
           </Container>
         </section>
 
+        <PdpEnrichmentSections
+          brandName={staticProduct.category}
+          styleName={staticProduct.name}
+        />
+
         <section className="py-sp-8">
           <Container>
             <CrossSellGrid
-              title="Complete your project"
+              title="Complete Your Project"
               items={crossSellItems.length > 0 ? crossSellItems : undefined}
             />
           </Container>

@@ -78,7 +78,7 @@ export default async function DesignPage({
       <section className="py-sp-7">
         <Container>
           <div className="text-[13px] text-text-tertiary mb-sp-4">
-            Home / <b className="text-text-primary">AI Design Studio</b>
+            Home / <b className="text-text-primary">Design Studio</b>
           </div>
           <DesignStudio
             garments={garments}

@@ -463,12 +463,39 @@ export function DesignStudio({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[220px_1.4fr_1fr] gap-sp-3 items-stretch">
-      {/* Assets column */}
-      <aside className="bg-bg-raised border border-border rounded-lg p-sp-4 flex flex-col gap-2.5">
+    <div className="grid grid-cols-1 lg:grid-cols-[260px_1.35fr_1fr] gap-sp-3 items-stretch">
+      {/* Details / assets column — Figma left rail */}
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col lg:flex-row min-h-[520px]">
+        <div className="flex lg:flex-col border-b lg:border-b-0 lg:border-r border-border bg-bg shrink-0">
+          {["Product", "Image", "AI Art", "Text", "Names", "Notes"].map(
+            (tab, index) => (
+              <span
+                key={tab}
+                className={cn(
+                  "px-3 py-3 text-[11px] font-bold text-center lg:w-[72px]",
+                  index === 0
+                    ? "bg-accent-tint text-accent border-b-2 lg:border-b-0 lg:border-l-2 border-accent"
+                    : "text-text-tertiary",
+                )}
+              >
+                {tab}
+              </span>
+            ),
+          )}
+        </div>
+
+        <div className="p-sp-4 flex flex-col gap-2.5 flex-1">
         {garmentOptions.length > 0 && (
           <div className="mb-sp-2">
-            <h4 className="font-display text-[16px] mb-sp-2">Garment</h4>
+            <h4 className="font-display text-[16px] mb-1">
+              {garmentOptions.find((g) => g.id === selectedGarmentId)?.label ||
+                "Garment"}
+            </h4>
+            <p className="text-xs text-text-secondary m-0 mb-2">
+              Colour:{" "}
+              {garmentOptions.find((g) => g.id === selectedGarmentId)?.colorName ||
+                "—"}
+            </p>
             <select
               value={selectedGarmentId ?? ""}
               onChange={(e) => setSelectedGarmentId(e.target.value || null)}
@@ -482,6 +509,12 @@ export function DesignStudio({
             </select>
           </div>
         )}
+
+        <ul className="m-0 mb-sp-2 pl-4 text-sm text-text-secondary space-y-1">
+          <li>Made from 100% combed ring-spun cotton</li>
+          <li>Weighs 6.5oz, reinforced seams</li>
+          <li>Classic fit, true to size</li>
+        </ul>
 
         <h4 className="font-display text-[16px] mb-sp-2">Assets</h4>
 
@@ -579,15 +612,29 @@ export function DesignStudio({
             )}
           </div>
         )}
+        </div>
       </aside>
 
       {/* Canvas */}
       <div className="bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
-        <div className="px-sp-4 py-sp-3 border-b border-white/10">
-          <b className="font-display text-[15px]">2D Design Canvas</b>
-          <span className="block text-[11px] text-white/55 mt-0.5">
-            Drag your artwork into position on the garment below.
-          </span>
+        <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <b className="font-display text-[15px]">2D Design Canvas</b>
+            <span className="block text-[11px] text-white/55 mt-0.5">
+              {GARMENT_VIEWS[activeSide].label.toUpperCase()} · PRINT METHOD · Print
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
+              Undo
+            </span>
+            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
+              Redo
+            </span>
+            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
+              Zoom
+            </span>
+          </div>
         </div>
 
         <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3">
@@ -719,7 +766,7 @@ export function DesignStudio({
       {/* Live mockup */}
       <div className="bg-bg-raised border border-border rounded-lg p-sp-4 flex flex-col">
         <div className="flex justify-between items-center mb-sp-3">
-          <b className="font-display text-[15px]">Proof Preview</b>
+          <b className="font-display text-[15px]">Preview Mockup</b>
           <span className="inline-flex items-center gap-1.5 text-xs font-bold text-accent bg-accent-tint px-2.5 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-accent" />
             2D
