@@ -16,12 +16,45 @@ export type StoreContext = {
 
 const DEV_HOST_PREFIXES = ["localhost", "127.0.0.1", "[::1]"];
 
+/** Public marketing-shell identity when no store can be resolved (e.g. Vercel
+ * preview hosts without a `custom_domain` row). Catalog calls still require
+ * `COMMERCE_API_BASE_URL` + real tenant headers; loaders already degrade. */
+export const PUBLIC_STOREFRONT_FALLBACK: StoreContext = {
+  tenantId: "",
+  accountId: "",
+  storeId: "",
+  slug: "great-west-graphics",
+  name: "Great West Graphics",
+  status: "active",
+  logoUrl: null,
+  accentColor: null,
+  tagline: null,
+};
+
+function productionDefaultStore(): StoreContext | null {
+  const tenantId = process.env.COMMERCE_DEFAULT_TENANT_ID?.trim();
+  const accountId = process.env.COMMERCE_DEFAULT_ACCOUNT_ID?.trim();
+  const storeId = process.env.COMMERCE_DEFAULT_STORE_ID?.trim();
+  if (!tenantId || !accountId || !storeId) return null;
+  return {
+    tenantId,
+    accountId,
+    storeId,
+    slug: process.env.COMMERCE_DEFAULT_STORE_SLUG?.trim() || "great-west-graphics",
+    name: process.env.COMMERCE_DEFAULT_STORE_NAME?.trim() || "Great West Graphics",
+    status: "active",
+    logoUrl: null,
+    accentColor: null,
+    tagline: null,
+  };
+}
+
 /**
- * Resolves which store is being served from the inbound Host header,
- * falling back to the fixed dev identity when no host-matched store is
- * found (local dev) or the lookup itself fails. In production a failed
- * resolution throws instead of silently falling back — a real deployment
- * should never hit a host with no matching store row.
+ * Resolves which store is being served from the inbound Host header.
+ *
+ * Order: host lookup → production `COMMERCE_DEFAULT_*` → local `COMMERCE_DEV_*`
+ * → public marketing shell (never throw; a hard throw here takes down every
+ * shop page via the root layout / global-error boundary).
  */
 export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
   const baseUrl = process.env.COMMERCE_API_BASE_URL;
@@ -34,30 +67,34 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
         { cache: "no-store", signal: AbortSignal.timeout(10_000) },
       );
       if (response.ok) {
-        const data = (await response.json()) as StoreContext;
-        return data;
+        return (await response.json()) as StoreContext;
       }
     }
   } catch {
-    // Fall through to the dev-identity fallback below.
+    // Fall through to configured / public fallbacks below.
   }
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "No store could be resolved for this host and no fallback identity is available in production.",
-    );
+  const productionDefault = productionDefaultStore();
+  if (productionDefault) return productionDefault;
+
+  if (process.env.NODE_ENV !== "production") {
+    const devEnv = loadCommerceWebEnvironment();
+    return {
+      tenantId: devEnv.COMMERCE_DEV_TENANT_ID,
+      accountId: devEnv.COMMERCE_DEV_ACCOUNT_ID,
+      storeId: devEnv.COMMERCE_DEV_STORE_ID,
+      slug: "development",
+      name: "Development Storefront",
+      status: "active",
+      logoUrl: null,
+      accentColor: null,
+      tagline: null,
+    };
   }
 
-  const devEnv = loadCommerceWebEnvironment();
-  return {
-    tenantId: devEnv.COMMERCE_DEV_TENANT_ID,
-    accountId: devEnv.COMMERCE_DEV_ACCOUNT_ID,
-    storeId: devEnv.COMMERCE_DEV_STORE_ID,
-    slug: "development",
-    name: "Development Storefront",
-    status: "active",
-    logoUrl: null,
-    accentColor: null,
-    tagline: null,
-  };
+  // eslint-disable-next-line no-console
+  console.error(
+    "[resolveStoreContext] No store for this host. Set COMMERCE_API_BASE_URL + stores.custom_domain, or COMMERCE_DEFAULT_* ids. Serving public marketing shell.",
+  );
+  return PUBLIC_STOREFRONT_FALLBACK;
 });
