@@ -101,6 +101,7 @@ export function CheckoutWizard() {
         {step === 4 && (
           <PaymentStep
             onBack={() => setStep(3)}
+            delivery={data.delivery}
             error={submissionError}
             onSubmit={async (customerNote) => {
               if (!data.contact || !data.shipping) return;

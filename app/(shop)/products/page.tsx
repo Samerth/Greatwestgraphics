@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { ProductsGrid } from "@/components/products/ProductsGrid";
@@ -18,6 +19,13 @@ const CATEGORY_SLUGS: Record<string, Category> = {
   "signs-displays": "Signs",
   signs: "Signs",
 };
+
+const OVERLAY_TILES = [
+  { name: "T-Shirts", slug: "t-shirts", blurb: "Crews, V-necks & athletic" },
+  { name: "Hoodies", slug: "hoodies-and-crewnecks", blurb: "Fleece & crewnecks" },
+  { name: "Hats", slug: "hats", blurb: "Caps, beanies & truckers" },
+  { name: "Bags", slug: "bags", blurb: "Totes, backpacks & more" },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -96,11 +104,10 @@ export default async function ProductsPage({
       <section className="pt-sp-8">
         <Container>
           <div className="text-[13px] text-text-tertiary mb-sp-3">
-            Home / Shop / <b className="text-text-primary">Full Catalogue</b>
+            Home / <b className="text-text-primary">Shop All Products</b>
           </div>
-          <h1 className="font-display font-bold text-display leading-display max-w-[14ch]">
-            Everything we <span className="text-accent">print,</span> stitch &amp;
-            press.
+          <h1 className="font-display font-bold text-display leading-display max-w-[16ch]">
+            Shop All Products
           </h1>
           <p className="text-text-secondary max-w-[60ch] mt-sp-3">
             {preferDb
@@ -117,6 +124,38 @@ export default async function ProductsPage({
               .
             </p>
           )}
+        </Container>
+      </section>
+
+      <section className="pt-sp-5 pb-0">
+        <Container>
+          <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
+          <div className="mt-sp-3 grid grid-cols-2 lg:grid-cols-4 gap-sp-3">
+            {OVERLAY_TILES.map((tile) => (
+              <Link
+                key={tile.slug}
+                href={`/products?category=${encodeURIComponent(tile.slug)}`}
+                className="group relative overflow-hidden rounded-md border border-border min-h-[140px] flex items-end p-sp-3 text-white"
+                style={{
+                  background:
+                    "linear-gradient(160deg, var(--color-accent) 0%, #0b1f4a 55%, #0D0D0D 100%)",
+                }}
+              >
+                <span
+                  className="absolute inset-0 opacity-25 group-hover:opacity-40 transition-opacity"
+                  style={{
+                    backgroundImage:
+                      "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.35), transparent 50%)",
+                  }}
+                  aria-hidden
+                />
+                <span className="relative">
+                  <span className="block font-display font-bold text-base">{tile.name}</span>
+                  <span className="block text-xs text-white/80 mt-1">{tile.blurb}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
         </Container>
       </section>
 

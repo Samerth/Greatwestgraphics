@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getStaffSession } from "@/lib/admin/auth";
 
@@ -11,48 +12,113 @@ export default async function AdminLoginPage({
   if (existing) redirect(params.next || "/admin");
 
   return (
-    <div className="min-h-screen grid place-items-center bg-bg p-sp-5">
-      <form
-        action="/admin/auth"
-        method="post"
-        className="w-full max-w-md border border-border rounded-lg bg-bg-raised p-sp-5 space-y-sp-3"
-      >
-        <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
+    <div className="min-h-[calc(100vh-0px)] grid lg:grid-cols-[minmax(320px,560px)_1fr] bg-bg">
+      <div className="flex flex-col justify-center px-sp-5 sm:px-sp-7 py-sp-8">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent m-0">
           Staff access
         </p>
-        <h1 className="font-display font-bold text-2xl m-0">Admin sign in</h1>
-        {params.error && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-sm p-2">
-            Invalid username or password.
-          </p>
-        )}
-        <input type="hidden" name="next" value={params.next || "/admin"} />
-        <label className="block text-sm font-semibold">
-          Username
-          <input
-            name="username"
-            className="mt-1 w-full border border-border rounded-sm px-3 py-2"
-            autoComplete="username"
-            required
-          />
-        </label>
-        <label className="block text-sm font-semibold">
-          Password
-          <input
-            name="password"
-            type="password"
-            className="mt-1 w-full border border-border rounded-sm px-3 py-2"
-            autoComplete="current-password"
-            required
-          />
-        </label>
-        <button
-          type="submit"
-          className="w-full bg-accent text-white font-bold rounded-md py-3"
+        <h1 className="font-display font-bold text-[clamp(1.75rem,3vw,2.5rem)] leading-tight m-0 mt-2 max-w-[16ch]">
+          Sign In to Your Account
+        </h1>
+        <p className="text-sm text-text-secondary mt-sp-2 mb-sp-5 max-w-[42ch]">
+          Internal team and production access only. Customer accounts use{" "}
+          <Link href="/account" className="font-bold text-accent hover:underline">
+            Personal Login
+          </Link>
+          .
+        </p>
+
+        <form
+          action="/admin/auth"
+          method="post"
+          className="w-full max-w-[420px] space-y-sp-3"
         >
-          Sign in
-        </button>
-      </form>
+          {params.error && (
+            <p
+              role="alert"
+              className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-sm px-3 py-2.5 m-0"
+            >
+              That username or password doesn&apos;t match our records.
+            </p>
+          )}
+          <input type="hidden" name="next" value={params.next || "/admin"} />
+          <label className="block text-sm font-semibold">
+            Username
+            <input
+              name="username"
+              className="mt-1.5 w-full border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-sm outline-none focus:border-accent"
+              autoComplete="username"
+              placeholder="you@company.com"
+              required
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Password
+            <input
+              name="password"
+              type="password"
+              className="mt-1.5 w-full border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-sm outline-none focus:border-accent"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <p className="text-sm m-0">
+            <Link href="/contact" className="font-bold text-accent hover:underline">
+              Forgot Password?
+            </Link>
+          </p>
+          <button
+            type="submit"
+            className="w-full bg-accent text-white font-bold rounded-md py-3.5 hover:bg-accent-hover transition-colors"
+          >
+            Login
+          </button>
+          <p className="text-center text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
+            OR
+          </p>
+          <Link
+            href="/contact"
+            className="block w-full text-center border border-border rounded-md py-3.5 font-bold text-sm hover:border-accent hover:text-accent transition-colors"
+          >
+            Login with a One-time Code
+          </Link>
+          <p className="text-sm text-text-secondary m-0 pt-1">
+            Don&apos;t have an account?{" "}
+            <Link href="/contact" className="font-bold text-accent hover:underline">
+              Sign up!
+            </Link>
+          </p>
+        </form>
+      </div>
+
+      <aside className="relative hidden lg:block min-h-[740px] overflow-hidden bg-[linear-gradient(155deg,var(--color-accent)_0%,#0b1f4a_48%,#0D0D0D_100%)] text-white">
+        <div
+          className="absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.25), transparent 45%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.12), transparent 40%)",
+          }}
+          aria-hidden
+        />
+        <div className="absolute inset-x-0 bottom-0 p-sp-7">
+          <p className="m-0 text-xs font-bold tracking-[0.16em] uppercase text-white/75">
+            Vancouver · Est. 1980 · Screen Printing &amp; Embroidery
+          </p>
+          <h2 className="font-display font-bold text-[clamp(1.75rem,2.6vw,2.5rem)] leading-tight m-0 mt-2 max-w-[18ch]">
+            Design &amp; Print Your Custom Apparel
+          </h2>
+          <p className="m-0 mt-3 max-w-[48ch] text-white/80 text-sm leading-relaxed">
+            Upload your art or design from scratch, preview a real mockup, and
+            order — all before you talk to a rep.
+          </p>
+          <p className="m-0 mt-4 text-sm font-bold">
+            <span className="text-accent tracking-widest" aria-hidden>
+              ★★★★★
+            </span>{" "}
+            <span className="text-white/85">4.8/5 · Rated by Vancouver businesses</span>
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
