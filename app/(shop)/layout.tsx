@@ -4,7 +4,10 @@ import { Footer } from "@/components/layout/Footer";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { loadStorefrontCategories } from "@/lib/commerce/catalog";
 import { getCustomerSession } from "@/lib/auth/session";
-import { resolveStoreContext } from "@/lib/commerce/store-context";
+import {
+  PUBLIC_STOREFRONT_FALLBACK,
+  resolveStoreContext,
+} from "@/lib/commerce/store-context";
 import { brandColorVars } from "@/lib/utils/color";
 import { OrganizationJsonLd } from "@/components/shared/OrganizationJsonLd";
 
@@ -13,10 +16,12 @@ export default async function ShopLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Store resolution must never take down the whole shop shell — layout
+  // errors bubble past (shop)/error.tsx into global-error.
   const [categories, customerSession, store] = await Promise.all([
     loadStorefrontCategories(),
-    getCustomerSession(),
-    resolveStoreContext(),
+    getCustomerSession().catch(() => null),
+    resolveStoreContext().catch(() => PUBLIC_STOREFRONT_FALLBACK),
   ]);
 
   const isBranded = Boolean(store.accentColor || store.logoUrl);

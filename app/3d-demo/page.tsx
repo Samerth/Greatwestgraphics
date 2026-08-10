@@ -36,7 +36,6 @@ export default function Demo3DPage() {
               productName="Sample Hoodie (3D Model Needed)"
               modelUrl="/models/garments/hoodie-sample.glb"
               productImageUrl="/images/prod-hoodie.jpg"
-              onClose={() => console.log("Closed 3D viewer")}
             />
           </div>
 

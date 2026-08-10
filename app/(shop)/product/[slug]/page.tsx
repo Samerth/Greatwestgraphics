@@ -299,9 +299,10 @@ export default async function ProductPage({
                   />
                 </div>
 
-                {style.sizeChartPdfUrl && (
+                {typeof style.sizeChartPdfUrl === "string" &&
+                  style.sizeChartPdfUrl.length > 0 && (
                   <SizeChartPDFViewer
-                    pdfUrl={String(style.sizeChartPdfUrl)}
+                    pdfUrl={style.sizeChartPdfUrl}
                     label={`Official Size Chart — ${String(style.brandName || "")}`}
                     productName={title}
                   />
