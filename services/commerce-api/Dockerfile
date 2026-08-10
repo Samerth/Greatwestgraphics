@@ -5,10 +5,12 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/pricing/package.json packages/pricing/package.json
 COPY services/commerce-api/package.json services/commerce-api/package.json
 RUN npm ci
 
 COPY packages/contracts packages/contracts
+COPY packages/pricing packages/pricing
 COPY services/commerce-api services/commerce-api
 RUN npm run build --workspace @gwg/commerce-api
 
@@ -20,11 +22,17 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/pricing/package.json packages/pricing/package.json
 COPY services/commerce-api/package.json services/commerce-api/package.json
-RUN npm ci --omit=dev --workspace @gwg/contracts --workspace @gwg/commerce-api --include-workspace-root=false \
+RUN npm ci --omit=dev \
+      --workspace @gwg/contracts \
+      --workspace @gwg/pricing \
+      --workspace @gwg/commerce-api \
+      --include-workspace-root=false \
     && npm cache clean --force
 
 COPY --from=build --chown=node:node /app/packages/contracts/dist packages/contracts/dist
+COPY --from=build --chown=node:node /app/packages/pricing/dist packages/pricing/dist
 COPY --from=build --chown=node:node /app/services/commerce-api/dist services/commerce-api/dist
 
 USER node

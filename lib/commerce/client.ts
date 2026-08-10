@@ -533,9 +533,9 @@ export class CommerceClient {
         headers: this.headers(undefined, adminToken),
         body: JSON.stringify({
           context: {
-            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
-            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
-            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
           },
           amountMinor: input.amountMinor,
           currency: input.currency ?? "CAD",
@@ -560,9 +560,9 @@ export class CommerceClient {
         headers: this.headers(undefined, adminToken),
         body: JSON.stringify({
           context: {
-            tenantId: this.environment.COMMERCE_DEV_TENANT_ID,
-            accountId: this.environment.COMMERCE_DEV_ACCOUNT_ID,
-            storeId: this.environment.COMMERCE_DEV_STORE_ID,
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
           },
           storageKey: input.storageKey,
           note: input.note,
@@ -587,6 +587,10 @@ export class CommerceClient {
       brands?: string[];
       priceMinMinor?: number;
       priceMaxMinor?: number;
+      vendor?: string;
+      visibility?: "visible" | "hidden" | "all";
+      stock?: "in" | "oos" | "any";
+      sort?: "brand" | "style" | "stock" | "updated";
     },
     adminToken?: string,
   ): Promise<{ products: Record<string, unknown>[]; total: number }> {
@@ -598,20 +602,26 @@ export class CommerceClient {
     for (const brand of query?.brands ?? []) params.append("brand", brand);
     if (query?.priceMinMinor != null) params.set("priceMin", String(query.priceMinMinor));
     if (query?.priceMaxMinor != null) params.set("priceMax", String(query.priceMaxMinor));
+    if (query?.vendor) params.set("vendor", query.vendor);
+    if (query?.visibility) params.set("visibility", query.visibility);
+    if (query?.stock) params.set("stock", query.stock);
+    if (query?.sort) params.set("sort", query.sort);
     const qs = params.toString();
     const headers = adminToken
       ? this.headers(undefined, adminToken)
       : this.headers();
 
     if (adminToken) {
-      // /admin/catalog/products is unpaginated — used by the staff catalog
-      // page, which doesn't need a page count.
-      const products = await this.request(
+      return this.request(
         `/admin/catalog/products${qs ? `?${qs}` : ""}`,
-        z.array(z.record(z.unknown())),
+        z.object({
+          products: z.array(z.record(z.unknown())),
+          total: z.number(),
+          limit: z.number().optional(),
+          offset: z.number().optional(),
+        }),
         { headers },
       );
-      return { products, total: products.length };
     }
 
     return this.request(
@@ -634,7 +644,12 @@ export class CommerceClient {
 
   patchCatalogProduct(
     productId: string,
-    body: { active?: boolean; isDark?: boolean; categoryIds?: string[] },
+    body: {
+      storefrontVisible?: boolean;
+      active?: boolean;
+      isDark?: boolean;
+      categoryIds?: string[];
+    },
     adminToken: string,
   ) {
     return this.request(
@@ -644,6 +659,32 @@ export class CommerceClient {
         method: "PATCH",
         headers: this.headers(undefined, adminToken),
         body: JSON.stringify(body),
+      },
+    );
+  }
+
+  bulkSetCatalogVisibility(
+    body: { productIds: string[]; storefrontVisible: boolean },
+    adminToken: string,
+  ) {
+    return this.request(
+      "/admin/catalog/products/bulk",
+      z.object({ updated: z.number() }),
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  refreshCatalogProduct(productId: string, adminToken: string) {
+    return this.request(
+      `/admin/catalog/products/${encodeURIComponent(productId)}/refresh`,
+      z.record(z.unknown()),
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
       },
     );
   }
@@ -774,7 +815,38 @@ export class CommerceClient {
     });
   }
 
-  runCatalogSync(type: "full" | "inventory", adminToken: string) {
+  listCatalogVendors(adminToken: string) {
+    return this.request(
+      "/admin/catalog/vendors",
+      z.array(
+        z.object({
+          key: z.string(),
+          displayName: z.string(),
+          capabilities: z.object({
+            fullSync: z.boolean(),
+            inventorySync: z.boolean(),
+            csvImport: z.boolean(),
+          }),
+          configured: z.boolean(),
+          notes: z.string().optional(),
+        }),
+      ),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  runCatalogSync(
+    input: {
+      type: "full" | "inventory" | "csv_import";
+      vendor?: string;
+      vendorKey?: string;
+      csvContent?: string;
+      csvProducts?: string;
+      csvSkus?: string;
+      csvInventory?: string;
+    },
+    adminToken: string,
+  ) {
     return this.request("/admin/catalog/sync", z.record(z.unknown()), {
       method: "POST",
       headers: this.headers(undefined, adminToken),
@@ -784,7 +856,13 @@ export class CommerceClient {
           accountId: this.identity.accountId,
           storeId: this.identity.storeId,
         },
-        type,
+        vendor: input.vendor ?? "ss_activewear",
+        type: input.type,
+        vendorKey: input.vendorKey,
+        csvContent: input.csvContent,
+        csvProducts: input.csvProducts,
+        csvSkus: input.csvSkus,
+        csvInventory: input.csvInventory,
       }),
       signal: AbortSignal.timeout(10 * 60_000),
     });

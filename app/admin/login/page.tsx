@@ -1,9 +1,5 @@
 import { redirect } from "next/navigation";
-import {
-  createStaffSession,
-  getStaffSession,
-  staffCredentials,
-} from "@/lib/admin/auth";
+import { getStaffSession } from "@/lib/admin/auth";
 
 export default async function AdminLoginPage({
   searchParams,
@@ -14,27 +10,11 @@ export default async function AdminLoginPage({
   const existing = await getStaffSession();
   if (existing) redirect(params.next || "/admin");
 
-  async function login(formData: FormData) {
-    "use server";
-    const username = String(formData.get("username") || "");
-    const password = String(formData.get("password") || "");
-    const next = String(formData.get("next") || "/admin");
-    const expected = staffCredentials();
-    if (
-      !expected.password ||
-      username !== expected.user ||
-      password !== expected.password
-    ) {
-      redirect(`/admin/login?error=1&next=${encodeURIComponent(next)}`);
-    }
-    await createStaffSession(username);
-    redirect(next.startsWith("/admin") ? next : "/admin");
-  }
-
   return (
     <div className="min-h-screen grid place-items-center bg-bg p-sp-5">
       <form
-        action={login}
+        action="/admin/auth"
+        method="post"
         className="w-full max-w-md border border-border rounded-lg bg-bg-raised p-sp-5 space-y-sp-3"
       >
         <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">

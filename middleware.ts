@@ -9,7 +9,8 @@ export async function middleware(request: NextRequest) {
   if (!pathname.startsWith("/admin")) {
     return NextResponse.next();
   }
-  if (pathname === "/admin/login") {
+  // Login page + credential POST (must stay public; auth sets the session cookie).
+  if (pathname === "/admin/login" || pathname === "/admin/auth") {
     return NextResponse.next();
   }
 

@@ -63,7 +63,9 @@ export default async function JobsPage() {
               <article key={job.id} className="border border-border rounded-md p-sp-4">
                 <div className="flex flex-wrap items-start justify-between gap-sp-3">
                   <div>
-                    <p className="font-mono text-sm m-0">{job.id}</p>
+                    <p className="font-display font-bold text-lg m-0">
+                      {job.displayId}
+                    </p>
                     <p className="text-sm text-text-tertiary mt-1 mb-0">
                       Submitted{" "}
                       {job.submittedAt

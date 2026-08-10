@@ -402,8 +402,14 @@ export const StatusHistoryEntrySchema = z.object({
 });
 export type StatusHistoryEntry = z.infer<typeof StatusHistoryEntrySchema>;
 
+export const JobDisplayIdSchema = z
+  .string()
+  .regex(/^GWG-\d{4,}$/, "Expected a job reference like GWG-1001");
+export type JobDisplayId = z.infer<typeof JobDisplayIdSchema>;
+
 export const JobRequestResponseSchema = z.object({
   id: CanonicalIdSchema,
+  displayId: JobDisplayIdSchema,
   context: RequestContextSchema,
   customerPersonId: CanonicalIdSchema,
   status: JobRequestStatusSchema,

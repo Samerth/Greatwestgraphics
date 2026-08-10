@@ -19,11 +19,11 @@ export default async function AdminJobDetailPage({
   const { id } = await params;
   let error: string | undefined;
   let detail: Awaited<
-    ReturnType<ReturnType<typeof adminClient>["getJobRequest"]>
+    ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequest"]>
   > | null = null;
 
   try {
-    detail = await adminClient().getJobRequest(id);
+    detail = await (await adminClient()).getJobRequest(id);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -51,10 +51,10 @@ export default async function AdminJobDetailPage({
       </Link>
       <div className="flex flex-wrap justify-between gap-3">
         <div>
-          <h1 className="font-display font-bold text-3xl m-0">Job detail</h1>
-          <p className="font-mono text-sm text-text-tertiary mt-1 mb-0">
-            {detail.id}
-          </p>
+          <h1 className="font-display font-bold text-3xl m-0">
+            {detail.displayId}
+          </h1>
+          <p className="text-sm text-text-tertiary mt-1 mb-0">Job detail</p>
         </div>
         <span className="text-sm font-bold bg-accent-tint text-accent px-3 py-1 rounded-full h-fit">
           {presentation.label}
@@ -119,9 +119,15 @@ export default async function AdminJobDetailPage({
             designProofs?: { front?: string; back?: string };
             color?: string;
             size?: string;
+            storefrontProductId?: string;
+            productMetadata?: string;
           };
           const pricing = configuration?.pricing;
           const designProofs = configuration?.designProofs;
+          const catalogHint =
+            configuration?.productMetadata ||
+            configuration?.storefrontProductId ||
+            null;
           return (
             <article
               key={line.id}
@@ -139,10 +145,9 @@ export default async function AdminJobDetailPage({
                   ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
                   : ""}
               </p>
-              {(line.snapshot.productId || line.snapshot.variantId) && (
+              {catalogHint && (
                 <p className="text-xs text-text-tertiary mt-1 mb-0">
-                  Catalog: {line.snapshot.productId || "—"} /{" "}
-                  {line.snapshot.variantId || "—"}
+                  {catalogHint}
                 </p>
               )}
               {(designProofs?.front || designProofs?.back) && (

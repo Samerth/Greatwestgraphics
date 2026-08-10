@@ -45,8 +45,8 @@ import {
   InviteExpiredError,
   InviteEmailMismatchError,
 } from "./application/invite-service.js";
+import { VendorSyncRegistry } from "./adapters/catalog/registry.js";
 import { SsActivewearClient } from "./adapters/ss-activewear/client.js";
-import { SsSyncService } from "./adapters/ss-activewear/sync-service.js";
 import { AuthenticationUnavailableError } from "./auth.js";
 import type { Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
@@ -134,6 +134,8 @@ export function buildApp(input: {
       input.environment.SS_API_BASE_URL,
     );
   }
+
+  const vendorRegistry = new VendorSyncRegistry(input.db, input.environment);
 
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/ready", async (_request, reply) => {
@@ -264,6 +266,9 @@ export function buildApp(input: {
       brands,
       priceMinMinor: query.priceMin ? Number(query.priceMin) : undefined,
       priceMaxMinor: query.priceMax ? Number(query.priceMax) : undefined,
+      // Soft-hidden colorways are omitted from storefront PLP (not shown
+      // as Unavailable). Staff hide = storefront_visible, not vendor active.
+      storefrontOnly: true as const,
     };
     const limit = query.limit ? Number(query.limit) : 50;
     const offset = query.offset ? Number(query.offset) : 0;
@@ -739,12 +744,77 @@ export function buildApp(input: {
         search?: string;
         categoryId?: string;
         limit?: string;
+        offset?: string;
+        vendor?: string;
+        visibility?: string;
+        stock?: string;
+        brand?: string | string[];
+        sort?: string;
       };
-      return catalogService.listProducts(auth.tenantId, {
+      const brands = query.brand
+        ? Array.isArray(query.brand)
+          ? query.brand
+          : [query.brand]
+        : undefined;
+      const visibility = (
+        query.visibility === "visible" ||
+        query.visibility === "hidden" ||
+        query.visibility === "all"
+          ? query.visibility
+          : "all"
+      ) as "visible" | "hidden" | "all";
+      const stock = (
+        query.stock === "in" || query.stock === "oos" || query.stock === "any"
+          ? query.stock
+          : "any"
+      ) as "in" | "oos" | "any";
+      const sort = (
+        query.sort === "style" ||
+        query.sort === "stock" ||
+        query.sort === "updated" ||
+        query.sort === "brand"
+          ? query.sort
+          : "brand"
+      ) as "brand" | "style" | "stock" | "updated";
+      const filters = {
         search: query.search,
         categoryId: query.categoryId,
-        limit: query.limit ? Number(query.limit) : 100,
-      });
+        vendor: query.vendor,
+        visibility,
+        stock,
+        brands,
+        sort,
+        storefrontOnly: false as const,
+      };
+      const limit = query.limit ? Number(query.limit) : 50;
+      const offset = query.offset ? Number(query.offset) : 0;
+      const [products, total] = await Promise.all([
+        catalogService.listProducts(auth.tenantId, {
+          ...filters,
+          limit,
+          offset,
+        }),
+        catalogService.countProducts(auth.tenantId, filters),
+      ]);
+      return { products, total, limit, offset };
+    });
+
+    // Static path before :productId so "bulk" is never parsed as a UUID.
+    app.post("/admin/catalog/products/bulk", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const body = z
+        .object({
+          productIds: z.array(z.string().uuid()).min(1),
+          storefrontVisible: z.boolean(),
+        })
+        .parse(request.body);
+      return catalogService.bulkSetStorefrontVisible(
+        auth.tenantId,
+        body.productIds,
+        body.storefrontVisible,
+        staffActor(auth),
+      );
     });
 
     app.get("/admin/catalog/products/:productId", async (request) => {
@@ -753,7 +823,9 @@ export function buildApp(input: {
       const productId = CanonicalIdSchema.parse(
         (request.params as { productId?: string }).productId,
       );
-      return catalogService.getProductDetail(auth.tenantId, productId);
+      return catalogService.getProductDetail(auth.tenantId, productId, {
+        includeHiddenColorways: true,
+      });
     });
 
     app.patch("/admin/catalog/products/:productId", async (request) => {
@@ -764,6 +836,9 @@ export function buildApp(input: {
       );
       const body = z
         .object({
+          /** Prefer storefrontVisible for staff soft-hide. */
+          storefrontVisible: z.boolean().optional(),
+          /** Vendor discontinued flag — not staff soft-hide. */
           active: z.boolean().optional(),
           isDark: z.boolean().optional(),
           categoryIds: z.array(z.string().uuid()).optional(),
@@ -777,11 +852,57 @@ export function buildApp(input: {
           staffActor(auth),
         );
       }
-      return catalogService.updateProduct(auth.tenantId, productId, {
-        active: body.active,
-        isDark: body.isDark,
-      });
+      return catalogService.updateProduct(
+        auth.tenantId,
+        productId,
+        {
+          storefrontVisible: body.storefrontVisible,
+          active: body.active,
+          isDark: body.isDark,
+        },
+        staffActor(auth),
+      );
     });
+
+    app.post(
+      "/admin/catalog/products/:productId/refresh",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const productId = CanonicalIdSchema.parse(
+          (request.params as { productId?: string }).productId,
+        );
+        const detail = await catalogService.getProductDetail(
+          auth.tenantId,
+          productId,
+          { includeHiddenColorways: true },
+        );
+        const vendor = String(
+          (detail.product as { vendor?: string }).vendor || "",
+        );
+        const style = detail.style as {
+          styleId?: number;
+          externalKey?: string | null;
+        };
+        const styleKey =
+          style.externalKey ||
+          (style.styleId != null ? String(style.styleId) : "");
+        if (!styleKey) {
+          throw new DataIntegrityError("Product has no style key to refresh");
+        }
+
+        const adapter = vendorRegistry.getAdapter(vendor);
+        if (!adapter.refreshStyle) {
+          throw new DataIntegrityError(
+            `Single-style refresh is not available for vendor "${vendor}"`,
+          );
+        }
+        return adapter.refreshStyle(
+          { tenantId: auth.tenantId, actor: staffActor(auth) },
+          styleKey,
+        );
+      },
+    );
 
     app.get("/admin/categories", async (request) => {
       assertAdmin(request, input.environment);
@@ -897,21 +1018,57 @@ export function buildApp(input: {
       return catalogService.listSyncRuns(auth.tenantId);
     });
 
+    app.get("/admin/catalog/vendors", async (request) => {
+      assertAdmin(request, input.environment);
+      await input.auth.resolve(request);
+      return vendorRegistry.listVendors();
+    });
+
     app.post("/admin/catalog/sync", async (request) => {
       assertAdmin(request, input.environment);
       const auth = await input.auth.resolve(request);
       const body = z
         .object({
           context: RequestContextSchema,
-          type: z.enum(["full", "inventory"]).default("full"),
+          vendor: z.string().default("ss_activewear"),
+          type: z.enum(["full", "inventory", "csv_import"]).default("full"),
+          /** Namespace for generic CSV imports (e.g. "acme_blanks"). */
+          vendorKey: z.string().optional(),
+          csvContent: z.string().optional(),
+          csvProducts: z.string().optional(),
+          csvSkus: z.string().optional(),
+          csvInventory: z.string().optional(),
         })
         .parse(request.body);
       assertScope(auth, body.context);
-      const sync = new SsSyncService(input.db, requireSsClient());
+
+      const adapter = vendorRegistry.getAdapter(body.vendor, {
+        customVendorKey: body.vendorKey,
+      });
+      const ctx = {
+        tenantId: auth.tenantId,
+        actor: staffActor(auth),
+        csvContent: body.csvContent,
+        csvProducts: body.csvProducts,
+        csvSkus: body.csvSkus,
+        csvInventory: body.csvInventory,
+      };
+
       if (body.type === "inventory") {
-        return sync.runInventorySync(auth.tenantId, staffActor(auth));
+        return adapter.runInventorySync(ctx);
       }
-      return sync.runFullSync(auth.tenantId, staffActor(auth));
+      if (body.type === "csv_import") {
+        if (!adapter.importCsv) {
+          throw new DataIntegrityError(
+            `Vendor ${body.vendor} does not support CSV import`,
+          );
+        }
+        return adapter.importCsv(ctx);
+      }
+      // Keep requireSsClient side-effect for clearer error when SS selected
+      // without credentials (registry also checks, this preserves old message).
+      if (body.vendor === "ss_activewear") requireSsClient();
+      return adapter.runFullSync(ctx);
     });
   }
 

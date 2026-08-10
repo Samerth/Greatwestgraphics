@@ -17,6 +17,7 @@ export default async function AdminQuotesPage() {
 
   const rows: Array<{
     jobId: string;
+    displayId: string;
     lineId: string;
     description: string;
     quantity: number;
@@ -43,6 +44,7 @@ export default async function AdminQuotesPage() {
           )?.pricing;
           rows.push({
             jobId: job.id,
+            displayId: job.displayId,
             lineId: line.id,
             description: line.snapshot.description,
             quantity: line.snapshot.quantity,
@@ -93,9 +95,9 @@ export default async function AdminQuotesPage() {
                 <td className="p-3">
                   <Link
                     href={`/admin/jobs/${row.jobId}`}
-                    className="font-mono text-xs text-accent"
+                    className="font-bold text-accent"
                   >
-                    {row.jobId.slice(0, 8)}…
+                    {row.displayId}
                   </Link>
                 </td>
                 <td className="p-3">{row.description}</td>
