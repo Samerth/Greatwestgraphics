@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
   Actor,
@@ -747,7 +748,9 @@ export const stripeCheckoutSessions = pgTable(
       .references(() => tenants.id),
     jobRequestId: uuid("job_request_id")
       .notNull()
-      .references(() => jobRequests.id),
+      // Forward ref to jobRequests — AnyPgColumn breaks the circular inference
+      // with jobRequests.stripeCheckoutSessionId → stripeCheckoutSessions.
+      .references((): AnyPgColumn => jobRequests.id),
     stripeSessionId: text("stripe_session_id").notNull().unique(),
     stripeCustomerId: text("stripe_customer_id"),
     clientSecret: text("client_secret"),
@@ -876,7 +879,9 @@ export const jobRequests = pgTable(
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     // Payment columns
     paymentStatus: paymentStatusEnum("payment_status").notNull().default("not_started"),
-    stripeCheckoutSessionId: uuid("stripe_checkout_session_id").references(() => stripeCheckoutSessions.id),
+    stripeCheckoutSessionId: uuid("stripe_checkout_session_id").references(
+      (): AnyPgColumn => stripeCheckoutSessions.id,
+    ),
     finalQuoteAmountMinor: bigint("final_quote_amount_minor", { mode: "number" }), // Approved quote amount in cents
     paidAt: timestamp("paid_at", { withTimezone: true }),
     // CRM columns
