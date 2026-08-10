@@ -7,6 +7,8 @@ export interface CartItem {
   name: string;
   meta: string;
   color: string;
+  /** Selected size label when known (e.g. from catalog PDP). Size may also appear in `meta` or `roster`. */
+  size?: string;
   qty: number;
   unit: number;
   image: string;

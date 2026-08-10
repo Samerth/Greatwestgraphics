@@ -75,7 +75,10 @@ export function GarmentViewer3D({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleSceneError}
+                onClick={() => {
+                  setError(null);
+                  setIsLoading(true);
+                }}
                 className="mt-sp-3"
               >
                 Retry
