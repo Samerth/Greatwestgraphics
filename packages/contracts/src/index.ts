@@ -407,9 +407,20 @@ export const JobDisplayIdSchema = z
   .regex(/^GWG-\d{4,}$/, "Expected a job reference like GWG-1001");
 export type JobDisplayId = z.infer<typeof JobDisplayIdSchema>;
 
-export const JobRequestResponseSchema = z.object({
+function withDisplayId<T extends { id: string; displayId?: string }>(
+  row: T,
+): T & { displayId: string } {
+  const displayId =
+    row.displayId && /^GWG-\d{4,}$/.test(row.displayId)
+      ? row.displayId
+      : `GWG-${row.id.replace(/-/g, "").slice(0, 4).toUpperCase()}`;
+  return { ...row, displayId };
+}
+
+/** Wire shape before displayId normalization. Older API builds omit displayId. */
+const JobRequestResponseObjectSchema = z.object({
   id: CanonicalIdSchema,
-  displayId: JobDisplayIdSchema,
+  displayId: z.string().min(1).max(64).optional(),
   context: RequestContextSchema,
   customerPersonId: CanonicalIdSchema,
   status: JobRequestStatusSchema,
@@ -418,6 +429,9 @@ export const JobRequestResponseSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
+
+export const JobRequestResponseSchema =
+  JobRequestResponseObjectSchema.transform(withDisplayId);
 export type JobRequestResponse = z.infer<typeof JobRequestResponseSchema>;
 
 export const FinalQuoteResponseSchema = z.object({
@@ -460,7 +474,7 @@ export const CreateProofVersionSchema = z.object({
 });
 export type CreateProofVersion = z.infer<typeof CreateProofVersionSchema>;
 
-export const JobRequestDetailResponseSchema = JobRequestResponseSchema.extend({
+export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.extend({
   lines: z.array(
     z.object({
       id: CanonicalIdSchema,
@@ -471,7 +485,7 @@ export const JobRequestDetailResponseSchema = JobRequestResponseSchema.extend({
   timeline: z.array(StatusHistoryEntrySchema),
   finalQuotes: z.array(FinalQuoteResponseSchema).default([]),
   proofs: z.array(ProofVersionResponseSchema).default([]),
-});
+}).transform(withDisplayId);
 export type JobRequestDetailResponse = z.infer<
   typeof JobRequestDetailResponseSchema
 >;
