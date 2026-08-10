@@ -64,7 +64,7 @@ export class VendorSyncRegistry {
         },
         configured: sanmarConfigured,
         notes: sanmarConfigured
-          ? "Full sync = catalog + stock/price. Use Update stock & price for daily refresh (Bulk Data ~1×/day)."
+          ? "Full sync = first import / big updates. Update stock & price = daily refresh."
           : "Set SANMAR_ACCOUNT_ID + SANMAR_LOGIN_EMAIL (login e-mail, not website password)",
       },
       {
