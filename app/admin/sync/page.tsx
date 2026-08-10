@@ -27,9 +27,9 @@ function vendorGuidance(key: string): {
       fullLabel: "Full sync",
       stockLabel: "Update stock & price",
       fullWhen:
-        "Use for a full S&S catalog refresh (styles, colours, sizes). Prefer when products are missing or look stale.",
+        "Use once when first connecting S&S, or after many new styles appear. Imports styles, colours, sizes, images, stock, and CUSTOMER cost. Can take several minutes (rate-limited).",
       stockWhen:
-        "Use for a quicker stock/price pass when the catalog already looks complete.",
+        "Use daily (or when prices/stock look wrong). One Products API pull refreshes qty and CUSTOMER cost for existing SKUs — does not re-import the whole catalog.",
     };
   }
   return {
@@ -102,7 +102,7 @@ export default async function AdminSyncPage() {
           </li>
         </ol>
         <p className="text-sm text-text-secondary m-0 pt-1">
-          Quick check after sync: SanMar rows should no longer be all{" "}
+          Quick check after sync: SanMar and S&amp;S rows should not be stuck at{" "}
           <b>OOS / $0.00</b>. If they are, re-run <b>Update stock &amp; price</b>{" "}
           and check Recent runs for errors.
         </p>

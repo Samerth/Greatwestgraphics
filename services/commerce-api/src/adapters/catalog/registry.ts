@@ -51,7 +51,7 @@ export class VendorSyncRegistry {
         },
         configured: ssConfigured,
         notes: ssConfigured
-          ? undefined
+          ? "Full sync = first import / big updates. Update stock & price = daily qty + CUSTOMER cost."
           : "Set SS_ACCOUNT_NUMBER and SS_API_KEY",
       },
       {

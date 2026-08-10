@@ -21,6 +21,32 @@ To add a new vendor:
 2. Register it in `VendorSyncRegistry.getAdapter()` / `listVendors()`.
 3. Optionally seed a `vendors` row for the tenant.
 
+## S&S Activewear Canada (REST v2)
+
+| Env | Value |
+|-----|--------|
+| `SS_ACCOUNT_NUMBER` | Account number (Basic auth user) |
+| `SS_API_KEY` | API key (Basic auth password) |
+| `SS_API_BASE_URL` | Default `https://api-ca.ssactivewear.com` |
+
+Rate limit: ~60 requests/minute (`X-Rate-Limit-Remaining`).
+
+### What staff click in Admin → Catalog sync
+
+| Button | When to use | What it does |
+|--------|-------------|--------------|
+| **Full sync** | First import, or big catalog refresh | Styles → products/SKUs (qty + `customerPrice` + images) |
+| **Update stock & price** | Daily after catalog exists | One Products pull (`skuID_Master,sku,qty,customerPrice,mapPrice`); Inventory API fallback is qty-only |
+
+Inventory responses nest qty under `warehouses[]` — the client sums those when a top-level `qty` is missing. Pricing is not on Inventory; daily refresh uses Products.
+
+CLI:
+
+```bash
+npm run sync:ss -w @gwg/commerce-api
+npm run sync:ss -w @gwg/commerce-api -- --inventory
+```
+
 ## SanMar Canada (ATC PromoStandards)
 
 Per `ATC_Pstd_IntegrationGuide_2025`:
@@ -41,7 +67,7 @@ Also required by SanMar: static IP whitelist + EDI agreement (`edi@sanmarcanada.
 | Button | When to use | What it does |
 |--------|-------------|--------------|
 | **Full sync** | First import, or weekly catalog refresh | 1) Import all ACTIVE sellable parts 2) Enrich names/images (capped) 3) Refresh **stock + CUSTOMER price** (Bulk Data preferred) |
-| **Inventory** | Daily stock/price update after catalog exists | Bulk Data qty+price (1 call/day), else per-style inventory + pricing SOAP |
+| **Update stock & price** | Daily stock/price update after catalog exists | Bulk Data qty+price (1 call/day), else per-style inventory + pricing SOAP |
 | **CSV import** | Offline / EDI file drop | Paste products+skus or inventory CSV |
 
 Storefront shoppers never run sync — they only see products after staff sync + soft-hide controls on Catalog.

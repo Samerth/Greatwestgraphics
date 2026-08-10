@@ -61,10 +61,27 @@ export type SsCategory = {
   categoryName?: string;
 };
 
+export type SsWarehouseQty = {
+  warehouseAbbr?: string;
+  skuID?: number;
+  qty?: number;
+};
+
 export type SsInventoryRow = {
   skuID_Master?: number;
   sku?: string;
+  /** Combined qty when present; otherwise sum `warehouses[].qty`. */
   qty?: number;
+  warehouses?: SsWarehouseQty[];
+};
+
+/** Lightweight products payload for daily stock + cost refresh. */
+export type SsStockPriceRow = {
+  skuID_Master?: number;
+  sku?: string;
+  qty?: number;
+  customerPrice?: number;
+  mapPrice?: number;
 };
 
 type FetchResult<T> = {
@@ -76,6 +93,8 @@ const STYLE_FIELDS =
   "styleID,partNumber,brandName,styleName,title,description,baseCategory,categories,brandImage,styleImage";
 const PRODUCT_FIELDS =
   "skuID_Master,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage";
+const STOCK_PRICE_FIELDS =
+  "skuID_Master,sku,qty,customerPrice,mapPrice";
 
 export class SsActivewearClient {
   private remaining = 60;
@@ -137,7 +156,19 @@ export class SsActivewearClient {
 
   async listInventory(): Promise<SsInventoryRow[]> {
     const result = await this.getJson<SsInventoryRow[] | SsInventoryRow>(
-      `/v2/inventory/?fields=skuID_Master,sku,qty`,
+      `/v2/inventory/?fields=skuID_Master,sku,qty,warehouses`,
+    );
+    const rows = Array.isArray(result.data) ? result.data : [result.data];
+    return rows.map(normalizeInventoryRow);
+  }
+
+  /**
+   * Bulk stock + CUSTOMER cost in one Products call (Inventory has no price).
+   * Prefer this for Admin "Update stock & price".
+   */
+  async listStockAndPrice(): Promise<SsStockPriceRow[]> {
+    const result = await this.getJson<SsStockPriceRow[] | SsStockPriceRow>(
+      `/v2/products/?fields=${STOCK_PRICE_FIELDS}`,
     );
     return Array.isArray(result.data) ? result.data : [result.data];
   }
@@ -229,6 +260,29 @@ export function pathHash(path: string): string {
 export function dollarsToMinor(value: number | undefined | null): number {
   if (value == null || Number.isNaN(Number(value))) return 0;
   return Math.round(Number(value) * 100);
+}
+
+/** Prefer top-level qty; otherwise sum warehouse lines (S&S inventory shape). */
+export function sumInventoryQty(row: {
+  qty?: number | null;
+  warehouses?: Array<{ qty?: number | null; warehouseAbbr?: string }> | null;
+}): number {
+  if (row.qty != null && Number.isFinite(Number(row.qty))) {
+    return Math.max(0, Math.trunc(Number(row.qty)));
+  }
+  if (!row.warehouses?.length) return 0;
+  return row.warehouses.reduce((sum, wh) => {
+    const q = wh.qty;
+    if (q == null || !Number.isFinite(Number(q))) return sum;
+    return sum + Math.max(0, Math.trunc(Number(q)));
+  }, 0);
+}
+
+export function normalizeInventoryRow(row: SsInventoryRow): SsInventoryRow {
+  return {
+    ...row,
+    qty: sumInventoryQty(row),
+  };
 }
 
 export function retailFromCost(
