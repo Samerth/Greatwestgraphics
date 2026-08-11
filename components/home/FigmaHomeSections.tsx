@@ -7,27 +7,35 @@ const METHODS = [
     title: "Embroidery",
     body: "Stitched, durable, premium finish for logos and text.",
     href: "/quote?method=embroidery",
+    image:
+      "linear-gradient(160deg, var(--color-accent) 0%, var(--color-accent-hover) 40%, #0D0D0D 100%)",
   },
   {
     title: "Screen Printing",
     body: "Long-lasting quality, favoured for bulk apparel runs.",
     href: "/quote?method=screen",
+    image:
+      "linear-gradient(160deg, #0b1f4a 0%, var(--color-accent) 45%, #0D0D0D 100%)",
   },
   {
     title: "Direct to Film (DTF)",
     body: "Versatile, high-quality prints on nearly any fabric.",
     href: "/quote?method=dtf",
+    image:
+      "linear-gradient(160deg, #1a3a2a 0%, var(--color-accent) 50%, #0D0D0D 100%)",
   },
   {
     title: "Sublimation Printing",
     body: "All-over, full-colour prints for jerseys and uniforms.",
     href: "/quote?method=sublimation",
+    image:
+      "linear-gradient(160deg, #3a2216 0%, var(--color-accent) 45%, #0D0D0D 100%)",
   },
 ];
 
 export function PrintMethods() {
   return (
-    <section className="py-sp-8">
+    <section className="py-sp-8 bg-bg-raised border-y border-border">
       <Container>
         <h2 className="font-display font-bold text-header leading-header m-0">
           Print Methods
@@ -40,10 +48,11 @@ export function PrintMethods() {
             <Link
               key={method.title}
               href={method.href}
-              className="group block rounded-md border border-border bg-bg-raised overflow-hidden hover:border-accent transition-colors"
+              className="group block rounded-md overflow-hidden border border-border bg-bg hover:border-accent transition-colors"
             >
               <div
-                className="aspect-[260/250] bg-[linear-gradient(160deg,var(--color-accent)_0%,var(--color-accent-hover)_40%,#0D0D0D_100%)] opacity-90"
+                className="aspect-[260/250] opacity-95"
+                style={{ background: method.image }}
                 aria-hidden
               />
               <div className="p-sp-3 text-center">
@@ -87,14 +96,14 @@ const SERVICES = [
 
 export function ServicesBreakdown() {
   return (
-    <section className="py-sp-8 bg-bg-raised border-y border-border">
+    <section className="py-sp-8">
       <Container>
         <h2 className="text-center font-display font-bold text-header m-0 mb-sp-5">
           What We Do
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sp-4">
           {SERVICES.map((service) => (
-            <div key={service.title}>
+            <div key={service.title} className="text-left sm:text-center lg:text-left">
               <h3 className="font-display font-bold text-base m-0">
                 {service.title}
               </h3>

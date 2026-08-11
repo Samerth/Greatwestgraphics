@@ -1,25 +1,26 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
-const FALLBACK_CATEGORIES: Array<{ name: string; slug: string }> = [
-  { name: "T-Shirts", slug: "t-shirts" },
-  { name: "Hoodies and Crewnecks", slug: "hoodies-and-crewnecks" },
-  { name: "Hats", slug: "hats" },
-  { name: "Tote Bags", slug: "tote-bags" },
-  { name: "Jackets", slug: "jackets" },
-  { name: "Vests", slug: "vests" },
-  { name: "Jerseys", slug: "jerseys" },
-  { name: "Drinkware", slug: "drinkware" },
-  { name: "Made in Canada", slug: "made-in-canada" },
-  { name: "Swag Boxes", slug: "swag-boxes" },
-  { name: "Eco-Friendly", slug: "eco-friendly" },
-  { name: "Notebooks", slug: "notebooks" },
-  { name: "Technology", slug: "technology" },
-  { name: "Socks", slug: "socks" },
-  { name: "Patches", slug: "patches" },
-  { name: "More", slug: "all" },
+const FALLBACK_CATEGORIES: Array<{ name: string; slug: string; image?: string }> = [
+  { name: "T-Shirts", slug: "t-shirts", image: "/images/prod-tee.jpg" },
+  { name: "Hoodies and Crewnecks", slug: "hoodies-and-crewnecks", image: "/images/prod-hoodie.jpg" },
+  { name: "Hats", slug: "hats", image: "/images/caps.jpg" },
+  { name: "Tote Bags", slug: "tote-bags", image: "/images/prod-tote.jpg" },
+  { name: "Jackets", slug: "jackets", image: "/images/hoodie-blank.jpg" },
+  { name: "Vests", slug: "vests", image: "/images/prod-safety.jpg" },
+  { name: "Jerseys", slug: "jerseys", image: "/images/tshirt_2.jpg" },
+  { name: "Drinkware", slug: "drinkware", image: "/images/cups.jpg" },
+  { name: "Made in Canada", slug: "made-in-canada", image: "/images/display.jpg" },
+  { name: "Swag Boxes", slug: "swag-boxes", image: "/images/prod-promo.jpg" },
+  { name: "Eco-Friendly", slug: "eco-friendly", image: "/images/accessories.jpg" },
+  { name: "Notebooks", slug: "notebooks", image: "/images/customize_set.jpg" },
+  { name: "Technology", slug: "technology", image: "/images/printing.jpg" },
+  { name: "Socks", slug: "socks", image: "/images/customize_set-2.jpg" },
+  { name: "Patches", slug: "patches", image: "/images/cap-printing.jpg" },
+  { name: "More", slug: "all", image: "/images/caps-display.jpg" },
 ];
 
 const FILTER_PILLS = [
@@ -34,6 +35,10 @@ const FILTER_PILLS = [
   { label: "Signs", href: "/products?category=signs" },
 ];
 
+const TILE_IMAGES: Record<string, string> = Object.fromEntries(
+  FALLBACK_CATEGORIES.filter((c) => c.image).map((c) => [c.slug, c.image!]),
+);
+
 export function CategoryBrowse({
   categories = [],
 }: {
@@ -45,21 +50,22 @@ export function CategoryBrowse({
           ...categories.slice(0, 15).map((c) => ({
             name: c.name,
             slug: c.slug,
+            image: TILE_IMAGES[c.slug],
           })),
-          { name: "More", slug: "all" },
+          { name: "More", slug: "all", image: TILE_IMAGES.all },
         ]
       : FALLBACK_CATEGORIES;
 
   return (
-    <section className="py-sp-8 bg-bg-raised">
+    <section className="py-sp-8">
       <Container>
         <div className="max-w-[760px]">
-          <h2 className="font-display font-bold text-header leading-header">
+          <h2 className="font-display font-bold text-header leading-header m-0">
             Real Prints. Real Fast. Every Time.
           </h2>
-          <p className="text-text-secondary mt-sp-2">
-            Real products, real methods, real starting prices. Filter by what
-            you need (apparel, safety, promo, signage) or jump straight into a
+          <p className="text-text-secondary mt-sp-2 mb-0">
+            Real products, real methods, real starting prices. Filter by what you
+            need (apparel, safety, promo, signage) or hover and jump into a
             category below.
           </p>
         </div>
@@ -73,19 +79,16 @@ export function CategoryBrowse({
                 className={
                   index === 0
                     ? "inline-flex items-center rounded-sm bg-accent text-white text-sm font-bold px-4 py-2"
-                    : "inline-flex items-center rounded-sm border border-border bg-bg text-sm font-bold px-4 py-2 hover:border-accent hover:text-accent transition-colors"
+                    : "inline-flex items-center rounded-sm border border-border bg-bg-raised text-sm font-bold px-4 py-2 hover:border-accent hover:text-accent transition-colors"
                 }
               >
                 {pill.label}
               </Link>
             ))}
           </div>
-          <Link
-            href="/products"
-            className="text-sm font-bold text-text-secondary hover:text-accent transition-colors"
-          >
+          <span className="text-sm font-bold text-text-secondary">
             Sort: Popular ▾
-          </Link>
+          </span>
         </div>
 
         <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-sp-3">
@@ -97,22 +100,31 @@ export function CategoryBrowse({
                   ? "/products"
                   : `/products?category=${encodeURIComponent(tile.slug)}`
               }
-              className="group block rounded-md border border-border bg-bg overflow-hidden hover:border-accent transition-colors"
+              className="group relative block rounded-md overflow-hidden aspect-[282/160] border border-border"
             >
-              <div
-                className="aspect-[282/200] bg-[linear-gradient(145deg,var(--color-accent-tint),var(--color-fill-subtle-15)_55%,var(--color-bg))]"
-                aria-hidden
-              />
-              <div className="px-3 py-3 text-center">
-                <span className="font-display font-bold text-sm group-hover:text-accent transition-colors">
-                  {tile.name}
-                </span>
-              </div>
+              {tile.image ? (
+                <Image
+                  src={tile.image}
+                  alt=""
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+                  sizes="(max-width: 768px) 50vw, 25vw"
+                />
+              ) : (
+                <div
+                  className="absolute inset-0 bg-[linear-gradient(145deg,var(--color-accent),#0b1f4a_55%,#0D0D0D)]"
+                  aria-hidden
+                />
+              )}
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.55))] group-hover:bg-[linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.65))] transition-colors" />
+              <span className="absolute inset-x-0 bottom-0 p-3 text-center font-display font-bold text-sm text-white drop-shadow">
+                {tile.name}
+              </span>
             </Link>
           ))}
         </div>
 
-        <div className="mt-sp-6 rounded-md border border-border bg-bg px-sp-4 py-sp-4 flex flex-wrap items-center justify-between gap-sp-3">
+        <div className="mt-sp-6 rounded-md border border-border bg-bg-raised px-sp-4 py-sp-4 flex flex-wrap items-center justify-between gap-sp-3">
           <div>
             <p className="font-display font-bold text-lg m-0">
               Can&apos;t find it? We stock 1,000+ more items.
