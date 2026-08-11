@@ -499,7 +499,7 @@ export function DesignStudio({
             <select
               value={selectedGarmentId ?? ""}
               onChange={(e) => setSelectedGarmentId(e.target.value || null)}
-              className="w-full border border-border rounded-sm bg-bg px-2.5 py-2 text-[13px] font-semibold"
+              className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3 py-2.5 text-base font-body font-semibold text-text-primary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             >
               {garmentOptions.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -562,7 +562,7 @@ export function DesignStudio({
               value={aiPrompt}
               onChange={(event) => setAiPrompt(event.target.value)}
               placeholder="Vintage mountain badge for a staff tee"
-              className="w-full min-h-24 resize-y rounded-sm border border-border bg-bg-raised p-2.5 text-sm outline-none focus:border-accent"
+              className="w-full min-h-24 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             <button
               onClick={generateConcept}
@@ -684,7 +684,7 @@ export function DesignStudio({
                 onChange={(e) =>
                   setPlacementBySide((prev) => ({ ...prev, [activeSide]: e.target.value }))
                 }
-                className="bg-accent text-white text-[13px] font-bold pl-3.5 pr-8 py-2 rounded-md appearance-none cursor-pointer"
+                className="bg-accent text-white text-base font-bold pl-3.5 pr-8 py-2.5 min-h-11 rounded-md appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30"
               >
                 {PLACEMENT_ZONES[activeSide].map((zone) => (
                   <option key={zone} value={zone} className="text-text-primary">
@@ -705,8 +705,8 @@ export function DesignStudio({
           </label>
         </div>
 
-        <div className="p-sp-3 min-h-[340px] overflow-x-auto">
-          <div className="bg-[#141414] rounded-md flex items-center justify-center p-sp-3 min-w-[340px]">
+        <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
+          <div className="bg-[#141414] rounded-md flex items-center justify-center p-sp-3 min-w-[min(100%,340px)]">
             <div
               className="relative"
               style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
@@ -823,12 +823,12 @@ export function DesignStudio({
                   value={designName}
                   onChange={(e) => setDesignName(e.target.value)}
                   placeholder="e.g. Staff hoodie logo"
-                  className="flex-1 min-w-0 rounded-sm border border-border bg-bg-raised px-2.5 py-2 text-sm outline-none focus:border-accent"
+                  className="flex-1 min-w-0 min-h-11 rounded-sm border border-border bg-bg-raised px-3 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />
                 <button
                   onClick={handleSaveDesign}
                   disabled={saving}
-                  className="shrink-0 rounded-sm bg-text-primary px-3.5 py-2 text-xs font-bold text-white disabled:opacity-40"
+                  className="shrink-0 min-h-11 rounded-sm bg-text-primary px-3.5 py-2 text-sm font-bold text-white disabled:opacity-40"
                 >
                   {saving ? "Saving…" : savedDesignId ? "Update" : "Save"}
                 </button>

@@ -5,7 +5,7 @@ import { Container } from "@/components/shared/Container";
 import { Button } from "@/components/shared/Button";
 
 const inputClass =
-  "w-full rounded-md border border-border bg-bg-raised px-3.5 py-3 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20";
+  "w-full min-h-11 rounded-md border border-border bg-bg-raised px-3.5 py-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20";
 
 export function ContactForm() {
   const [sent, setSent] = useState(false);
@@ -104,23 +104,23 @@ export function ContactForm() {
                   }
                 }}
               >
-                <label className="text-sm font-bold">
+                <label className="text-sm font-bold text-text-primary">
                   Name
-                  <input className={`${inputClass} mt-1.5`} name="name" required />
+                  <input className={`${inputClass} mt-1.5`} name="name" required autoComplete="name" />
                 </label>
-                <label className="text-sm font-bold">
+                <label className="text-sm font-bold text-text-primary">
                   Email
-                  <input className={`${inputClass} mt-1.5`} name="email" type="email" required />
+                  <input className={`${inputClass} mt-1.5`} name="email" type="email" required autoComplete="email" />
                 </label>
-                <label className="text-sm font-bold">
+                <label className="text-sm font-bold text-text-primary">
                   Phone
-                  <input className={`${inputClass} mt-1.5`} name="phone" type="tel" />
+                  <input className={`${inputClass} mt-1.5`} name="phone" type="tel" autoComplete="tel" />
                 </label>
-                <label className="text-sm font-bold">
+                <label className="text-sm font-bold text-text-primary">
                   Company
-                  <input className={`${inputClass} mt-1.5`} name="company" />
+                  <input className={`${inputClass} mt-1.5`} name="company" autoComplete="organization" />
                 </label>
-                <label className="text-sm font-bold sm:col-span-2">
+                <label className="text-sm font-bold text-text-primary sm:col-span-2">
                   What can we help with?
                   <select className={`${inputClass} mt-1.5`} name="topic">
                     <option>Screen printing</option>
@@ -130,7 +130,7 @@ export function ContactForm() {
                     <option>Design support</option>
                   </select>
                 </label>
-                <label className="text-sm font-bold sm:col-span-2">
+                <label className="text-sm font-bold text-text-primary sm:col-span-2">
                   Project details
                   <textarea
                     className={`${inputClass} mt-1.5 min-h-32 resize-y`}
@@ -140,7 +140,7 @@ export function ContactForm() {
                   />
                 </label>
                 {error && (
-                  <p className="sm:col-span-2 text-[12.5px] text-red-600 font-semibold">
+                  <p className="sm:col-span-2 text-sm text-red-700 font-semibold" role="alert">
                     {error}
                   </p>
                 )}

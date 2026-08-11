@@ -17,17 +17,17 @@ const TRUST_LOGOS = [
 
 export function TrustStrip() {
   return (
-    <section className="py-sp-7 text-center border-y border-border bg-bg-raised">
+    <section className="section-pad text-center border-y border-border bg-bg-raised">
       <Container>
-        <p className="font-bold text-text-secondary m-0 mb-sp-5">
+        <p className="font-bold text-text-secondary m-0 mb-sp-5 text-balance">
           Trusted by enterprise, education, and hospitality brands.
         </p>
-        <div className="flex flex-wrap justify-center items-center gap-x-sp-6 gap-y-sp-4">
+        <div className="flex flex-wrap justify-center items-center gap-x-sp-5 gap-y-sp-4">
           {TRUST_LOGOS.map((logo) =>
             logo.src ? (
               <div
                 key={logo.name}
-                className="relative h-10 w-[120px] opacity-70 grayscale hover:opacity-100 hover:grayscale-0 transition-all"
+                className="relative h-9 sm:h-10 w-[100px] sm:w-[120px] opacity-70 grayscale hover:opacity-100 hover:grayscale-0 transition-all"
               >
                 <Image
                   src={logo.src}
@@ -40,7 +40,7 @@ export function TrustStrip() {
             ) : (
               <span
                 key={logo.name}
-                className="font-display font-bold text-lg text-text-secondary opacity-70"
+                className="font-display font-bold text-base sm:text-lg text-text-secondary opacity-70"
               >
                 {logo.name}
               </span>
@@ -66,12 +66,12 @@ const TESTIMONIALS = [
 
 export function Testimonials() {
   return (
-    <section className="py-sp-8" id="reviews">
+    <section className="section-pad scroll-section" id="reviews">
       <Container>
-        <h2 className="text-center font-display font-bold text-header m-0">
+        <h2 className="text-center font-display font-bold text-header m-0 text-balance">
           What Our Clients Say
         </h2>
-        <div className="mt-sp-2 mb-sp-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-text-secondary">
+        <div className="mt-sp-2 mb-sp-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm sm:text-base text-text-secondary">
           <span>4.8/5 · 214 reviews</span>
           <Link href="/#reviews" className="font-bold text-accent hover:underline">
             See all reviews
@@ -83,15 +83,17 @@ export function Testimonials() {
               key={t.who}
               initial={{ opacity: 0, y: 14 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.35 }}
+              viewport={{ once: true, amount: 0.25 }}
               transition={{ duration: 0.4, delay: index * 0.07 }}
               className="bg-bg-raised border border-border rounded-md p-sp-4"
             >
               <div className="text-accent text-sm mb-sp-2" aria-hidden>
                 ★★★★★
               </div>
-              <p className="mb-sp-3 m-0 text-[15px] leading-relaxed">{t.text}</p>
-              <div className="text-[13px] text-text-tertiary font-bold">{t.who}</div>
+              <p className="mb-sp-3 m-0 text-base leading-relaxed text-text-primary">
+                {t.text}
+              </p>
+              <div className="text-sm text-text-tertiary font-bold">{t.who}</div>
             </motion.article>
           ))}
         </div>
@@ -120,17 +122,17 @@ const FALLBACK_GALLERY: GalleryItem[] = [
 export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] }) {
   const gallery = items.length > 0 ? items : FALLBACK_GALLERY;
   return (
-    <section className="py-sp-8" id="gallery">
+    <section className="section-pad scroll-section" id="gallery">
       <Container>
-        <h2 className="text-center font-display font-bold text-header m-0 mb-sp-6">
+        <h2 className="text-center font-display font-bold text-header m-0 mb-sp-5 sm:mb-sp-6 text-balance">
           Real Work, Delivered
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-sp-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-sp-3">
           {gallery.slice(0, 4).map((g) => (
             <GalleryTile key={g.name} item={g} aspect="aspect-[308/280]" />
           ))}
         </div>
-        <div className="mt-sp-3 grid grid-cols-1 md:grid-cols-3 gap-sp-3">
+        <div className="mt-2 sm:mt-sp-3 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-sp-3">
           {gallery.slice(4, 7).map((g) => (
             <GalleryTile key={g.name} item={g} aspect="aspect-[416/280]" />
           ))}
@@ -177,19 +179,19 @@ const STATS = [
 
 export function StatsBand() {
   return (
-    <section className="pt-sp-8 pb-sp-5">
+    <section className="pt-sp-6 sm:pt-sp-8 pb-sp-4 sm:pb-sp-5">
       <Container>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-sp-3 text-center">
           {STATS.map((s) => (
-            <div key={s.l}>
+            <div key={s.l} className="px-1">
               <div
-                className={`font-display font-bold text-[clamp(28px,4vw,44px)] ${
-                  s.accent ? "text-accent" : ""
+                className={`font-display font-bold text-[clamp(26px,5vw,44px)] leading-none ${
+                  s.accent ? "text-accent" : "text-text-primary"
                 }`}
               >
                 {s.n}
               </div>
-              <div className="text-[13px] text-text-tertiary mt-1 uppercase tracking-wide">
+              <div className="text-[11px] sm:text-[13px] text-text-tertiary mt-2 uppercase tracking-wide">
                 {s.l}
               </div>
             </div>
@@ -202,30 +204,30 @@ export function StatsBand() {
 
 export function CtaBand() {
   return (
-    <section className="pb-sp-8 pt-sp-3">
+    <section className="pb-sp-6 sm:pb-sp-8 pt-sp-3">
       <Container>
-        <div className="bg-accent text-white rounded-md px-sp-5 py-sp-5 flex flex-wrap justify-between items-center gap-sp-4">
-          <div>
-            <h3 className="text-white font-display font-bold text-[clamp(20px,2.4vw,28px)] max-w-[520px] m-0">
+        <div className="bg-accent text-white rounded-md px-sp-4 sm:px-sp-5 py-sp-4 sm:py-sp-5 flex flex-col md:flex-row md:flex-wrap justify-between items-start md:items-center gap-sp-4">
+          <div className="min-w-0">
+            <h3 className="text-white font-display font-bold text-[clamp(20px,2.4vw,28px)] max-w-[520px] m-0 text-balance">
               Ready to print something real?
             </h3>
-            <p className="text-white/85 mt-1.5 mb-0 text-sm">
+            <p className="text-white/90 mt-1.5 mb-0 text-sm sm:text-base leading-relaxed max-w-[52ch]">
               Free digital proof, no setup fees on reorders, and a real person on
               every job.
             </p>
           </div>
-          <div className="flex gap-2.5 flex-wrap">
+          <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
             <ButtonLink
               href="/design"
               variant="secondary"
-              className="!bg-white !text-accent hover:!bg-white/90 border-transparent"
+              className="!bg-white !text-accent hover:!bg-white/90 border-transparent flex-1 sm:flex-none justify-center"
             >
               Start Designing
             </ButtonLink>
             <ButtonLink
               href="/quote"
               variant="secondary"
-              className="border-white/60 !text-white hover:bg-white/15 hover:!border-white"
+              className="border-white/60 !text-white hover:bg-white/15 hover:!border-white flex-1 sm:flex-none justify-center"
             >
               Get a Quote
             </ButtonLink>

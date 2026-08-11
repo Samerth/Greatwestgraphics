@@ -57,13 +57,13 @@ export function CategoryBrowse({
       : FALLBACK_CATEGORIES;
 
   return (
-    <section className="py-sp-8">
+    <section className="section-pad">
       <Container>
         <div className="max-w-[760px]">
-          <h2 className="font-display font-bold text-header leading-header m-0">
+          <h2 className="font-display font-bold text-header leading-header m-0 text-balance">
             Real Prints. Real Fast. Every Time.
           </h2>
-          <p className="text-text-secondary mt-sp-2 mb-0">
+          <p className="text-text-secondary mt-sp-2 mb-0 text-sm sm:text-base leading-relaxed">
             Real products, real methods, real starting prices. Filter by what you
             need (apparel, safety, promo, signage) or hover and jump into a
             category below.
@@ -71,27 +71,27 @@ export function CategoryBrowse({
         </div>
 
         <div className="mt-sp-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 w-full lg:w-auto">
             {FILTER_PILLS.map((pill, index) => (
               <Link
                 key={pill.label}
                 href={pill.href}
                 className={
                   index === 0
-                    ? "inline-flex items-center rounded-sm bg-accent text-white text-sm font-bold px-4 py-2"
-                    : "inline-flex items-center rounded-sm border border-border bg-bg-raised text-sm font-bold px-4 py-2 hover:border-accent hover:text-accent transition-colors"
+                    ? "inline-flex items-center rounded-sm bg-accent text-white text-sm font-bold px-3.5 py-2"
+                    : "inline-flex items-center rounded-sm border border-border bg-bg-raised text-sm font-bold px-3.5 py-2 hover:border-accent hover:text-accent transition-colors"
                 }
               >
                 {pill.label}
               </Link>
             ))}
           </div>
-          <span className="text-sm font-bold text-text-secondary">
+          <span className="text-sm font-bold text-text-secondary hidden sm:inline">
             Sort: Popular ▾
           </span>
         </div>
 
-        <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-sp-3">
+        <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-sp-3">
           {tiles.map((tile) => (
             <Link
               key={`${tile.slug}-${tile.name}`}
@@ -100,7 +100,7 @@ export function CategoryBrowse({
                   ? "/products"
                   : `/products?category=${encodeURIComponent(tile.slug)}`
               }
-              className="group relative block rounded-md overflow-hidden aspect-[282/160] border border-border"
+              className="group relative block rounded-md overflow-hidden aspect-[282/160] min-h-[112px] border border-border"
             >
               {tile.image ? (
                 <Image
@@ -116,29 +116,37 @@ export function CategoryBrowse({
                   aria-hidden
                 />
               )}
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.55))] group-hover:bg-[linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.65))] transition-colors" />
-              <span className="absolute inset-x-0 bottom-0 p-3 text-center font-display font-bold text-sm text-white drop-shadow">
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.2),rgba(0,0,0,.62))]" />
+              <span className="absolute inset-x-0 bottom-0 p-2.5 sm:p-3 text-center font-display font-bold text-xs sm:text-sm text-white drop-shadow line-clamp-2">
                 {tile.name}
               </span>
             </Link>
           ))}
         </div>
 
-        <div className="mt-sp-6 rounded-md border border-border bg-bg-raised px-sp-4 py-sp-4 flex flex-wrap items-center justify-between gap-sp-3">
-          <div>
-            <p className="font-display font-bold text-lg m-0">
+        <div className="mt-sp-5 sm:mt-sp-6 rounded-md border border-border bg-bg-raised px-sp-4 py-sp-4 flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center justify-between gap-sp-3">
+          <div className="min-w-0">
+            <p className="font-display font-bold text-lg m-0 text-balance">
               Can&apos;t find it? We stock 1,000+ more items.
             </p>
-            <p className="text-sm text-text-secondary m-0 mt-1">
+            <p className="text-sm sm:text-base text-text-secondary m-0 mt-1 leading-relaxed">
               From custom cut-and-sew to specialty finishes, if you can brand it,
               we can make it.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2.5">
-            <ButtonLink href="/products" variant="primary">
+          <div className="flex flex-wrap gap-2.5 w-full sm:w-auto">
+            <ButtonLink
+              href="/products"
+              variant="primary"
+              className="flex-1 sm:flex-none justify-center"
+            >
               Browse Full Catalogue
             </ButtonLink>
-            <ButtonLink href="/contact" variant="secondary">
+            <ButtonLink
+              href="/contact"
+              variant="secondary"
+              className="flex-1 sm:flex-none justify-center"
+            >
               Ask Codchat!
             </ButtonLink>
           </div>

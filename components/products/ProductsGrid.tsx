@@ -178,7 +178,7 @@ export function ProductsGrid({
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search within category"
-            className="w-full border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-sm outline-none focus:border-accent"
+            className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
         </form>
       )}

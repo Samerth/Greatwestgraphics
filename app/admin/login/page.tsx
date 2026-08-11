@@ -42,22 +42,22 @@ export default async function AdminLoginPage({
             </p>
           )}
           <input type="hidden" name="next" value={params.next || "/admin"} />
-          <label className="block text-sm font-semibold">
+          <label className="block text-sm font-semibold text-text-primary">
             Username
             <input
               name="username"
-              className="mt-1.5 w-full border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-sm outline-none focus:border-accent"
+              className="mt-1.5 w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-base font-body text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
               autoComplete="username"
               placeholder="you@company.com"
               required
             />
           </label>
-          <label className="block text-sm font-semibold">
+          <label className="block text-sm font-semibold text-text-primary">
             Password
             <input
               name="password"
               type="password"
-              className="mt-1.5 w-full border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-sm outline-none focus:border-accent"
+              className="mt-1.5 w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-3 text-base font-body text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
               autoComplete="current-password"
               required
             />

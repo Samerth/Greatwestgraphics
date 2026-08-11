@@ -63,6 +63,15 @@ export function Header({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileOpen]);
+
   const openShop = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setShopOpen(true);
@@ -308,7 +317,10 @@ export function Header({
       </Container>
 
       {mobileOpen && (
-        <nav className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4">
+        <nav
+          className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4 max-h-[calc(100svh-var(--header-offset))] overflow-y-auto overscroll-contain"
+          aria-label="Mobile"
+        >
           <div className="grid grid-cols-2 gap-2 mb-sp-3">
             {CATEGORIES.map((cat) => (
               <Link

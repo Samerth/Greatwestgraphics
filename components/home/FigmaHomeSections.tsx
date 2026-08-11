@@ -35,12 +35,12 @@ const METHODS = [
 
 export function PrintMethods() {
   return (
-    <section className="py-sp-8 bg-bg-raised border-y border-border">
+    <section className="section-pad bg-bg-raised border-y border-border">
       <Container>
-        <h2 className="font-display font-bold text-header leading-header m-0">
+        <h2 className="font-display font-bold text-header leading-header m-0 text-balance">
           Print Methods
         </h2>
-        <p className="text-text-secondary mt-sp-2 mb-0">
+        <p className="text-text-secondary mt-sp-2 mb-0 text-sm sm:text-base">
           Whatever the job calls for, we run it in-house.
         </p>
         <div className="mt-sp-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sp-3">
@@ -51,15 +51,15 @@ export function PrintMethods() {
               className="group block rounded-md overflow-hidden border border-border bg-bg hover:border-accent transition-colors"
             >
               <div
-                className="aspect-[260/250] opacity-95"
+                className="aspect-[260/200] sm:aspect-[260/250] opacity-95"
                 style={{ background: method.image }}
                 aria-hidden
               />
               <div className="p-sp-3 text-center">
-                <h3 className="font-display font-bold text-base m-0 group-hover:text-accent transition-colors">
+                <h3 className="font-display font-bold text-base m-0 text-text-primary group-hover:text-accent transition-colors">
                   {method.title}
                 </h3>
-                <p className="text-sm text-text-secondary mt-2 mb-0">
+                <p className="text-sm text-text-secondary mt-2 mb-0 leading-relaxed">
                   {method.body}
                 </p>
               </div>
@@ -96,18 +96,18 @@ const SERVICES = [
 
 export function ServicesBreakdown() {
   return (
-    <section className="py-sp-8">
+    <section className="section-pad">
       <Container>
-        <h2 className="text-center font-display font-bold text-header m-0 mb-sp-5">
+        <h2 className="text-center font-display font-bold text-header m-0 mb-sp-5 text-balance">
           What We Do
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sp-4">
           {SERVICES.map((service) => (
-            <div key={service.title} className="text-left sm:text-center lg:text-left">
-              <h3 className="font-display font-bold text-base m-0">
+            <div key={service.title} className="text-left">
+              <h3 className="font-display font-bold text-base m-0 text-text-primary">
                 {service.title}
               </h3>
-              <p className="text-sm text-text-secondary mt-2 mb-1">
+              <p className="text-sm sm:text-base text-text-secondary mt-2 mb-1 leading-relaxed">
                 {service.body}
               </p>
               <p className="text-sm font-bold text-accent m-0">{service.lead}</p>
@@ -122,12 +122,12 @@ export function ServicesBreakdown() {
 export function OrderNowBand() {
   const eta = nextBusinessWeekLabel();
   return (
-    <section className="py-sp-7 bg-accent text-white text-center">
+    <section className="section-pad bg-accent text-white text-center">
       <Container>
-        <h2 className="font-display font-bold text-[clamp(22px,2.6vw,32px)] text-white m-0">
+        <h2 className="font-display font-bold text-[clamp(1.35rem,4vw,2rem)] text-white m-0 text-balance px-1">
           Order Now and get it as fast as {eta}
         </h2>
-        <p className="mt-sp-2 mb-0 text-white/85">
+        <p className="mt-sp-2 mb-0 text-white/90 text-sm sm:text-base leading-relaxed">
           Need it faster? Contact us for a Quick Order!
         </p>
         <div className="mt-sp-4 flex justify-center">
@@ -139,7 +139,7 @@ export function OrderNowBand() {
             Order Now!
           </ButtonLink>
         </div>
-        <p className="mt-sp-4 mb-0 text-sm text-white/75">
+        <p className="mt-sp-4 mb-0 text-sm text-white/80">
           Free shipping for all custom product orders.
         </p>
       </Container>

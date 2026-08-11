@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Container } from "@/components/shared/Container";
 
 /**
  * Figma "Idea to Delivery" (2107:317) — large atmospheric statement on a
- * monochromatic hive/pattern field, not a multi-card station strip.
+ * monochromatic hive/pattern field.
  */
 export function IdeaToDelivery() {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <section className="relative overflow-hidden bg-[#0D0D0D] text-white py-[clamp(4.5rem,10vw,7.5rem)]">
+    <section className="relative overflow-hidden bg-[#0D0D0D] text-white py-[clamp(3.5rem,9vw,7rem)]">
       <div
-        className="absolute inset-0 opacity-[0.22]"
+        className="absolute inset-0 opacity-[0.22] pointer-events-none"
         aria-hidden
         style={{
           backgroundImage: `
@@ -35,13 +37,13 @@ export function IdeaToDelivery() {
           `,
         }}
       />
-      <Container className="relative z-[1] text-center">
+      <Container className="relative z-[1] text-center px-4">
         <motion.h2
-          initial={{ opacity: 0, y: 18 }}
+          initial={reduceMotion ? false : { opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.6 }}
+          viewport={{ once: true, amount: 0.5 }}
           transition={{ duration: 0.7, ease: [0.16, 0.8, 0.3, 1] }}
-          className="font-display font-bold text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] m-0 tracking-tight"
+          className="font-display font-bold text-[clamp(2rem,7vw,4.5rem)] leading-[1.08] m-0 tracking-tight text-balance"
         >
           Idea to <span className="text-accent">Delivery</span>
         </motion.h2>
@@ -72,37 +74,45 @@ const QUICK_PATHS = [
 ];
 
 export function QuickPaths() {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <section className="py-sp-6">
+    <section className="section-pad">
       <Container>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-sp-3">
           {QUICK_PATHS.map((path, index) => (
             <motion.div
               key={path.num}
-              initial={{ opacity: 0, y: 16 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.4 }}
-              transition={{ duration: 0.45, delay: index * 0.08, ease: [0.16, 0.8, 0.3, 1] }}
+              viewport={{ once: true, amount: 0.3 }}
+              transition={{
+                duration: 0.45,
+                delay: reduceMotion ? 0 : index * 0.08,
+                ease: [0.16, 0.8, 0.3, 1],
+              }}
             >
               <Link
                 href={path.href}
                 className="group block h-full bg-bg-raised border border-border rounded-md p-sp-4 hover:border-accent transition-colors"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex min-w-[2rem] justify-center text-xs font-bold text-accent bg-accent-tint px-2.5 py-1 rounded-sm">
                     {path.num}
                   </span>
                   <span
-                    className="text-text-tertiary group-hover:text-accent transition-colors"
+                    className="text-text-tertiary group-hover:text-accent transition-colors shrink-0"
                     aria-hidden
                   >
                     →
                   </span>
                 </div>
-                <h3 className="mt-sp-3 mb-1.5 text-lg font-display font-bold m-0">
+                <h3 className="mt-sp-3 mb-1.5 text-lg font-display font-bold m-0 text-text-primary">
                   {path.title}
                 </h3>
-                <p className="text-sm text-text-secondary m-0">{path.body}</p>
+                <p className="text-sm sm:text-base text-text-secondary m-0 leading-relaxed">
+                  {path.body}
+                </p>
               </Link>
             </motion.div>
           ))}
