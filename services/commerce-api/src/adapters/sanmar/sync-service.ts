@@ -26,6 +26,26 @@ import {
 
 const VENDOR = BUILTIN_VENDORS.sanmar;
 
+/** Prefer distinct front / side / back URLs when a vendor returns a list. */
+function pickImageViews(urls: Array<string | null | undefined> | undefined): {
+  imageFront?: string;
+  imageSide?: string;
+  imageBack?: string;
+} {
+  const unique = [
+    ...new Set(
+      (urls ?? [])
+        .map((url) => (typeof url === "string" ? url.trim() : ""))
+        .filter((url) => /^https?:\/\//i.test(url)),
+    ),
+  ];
+  return {
+    imageFront: unique[0],
+    imageSide: unique[1],
+    imageBack: unique[2],
+  };
+}
+
 async function mapPool<T, R>(
   items: T[],
   concurrency: number,
@@ -265,15 +285,18 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         if (error instanceof SanmarAuthError) throw error;
       }
 
-      let mediaFront: string | undefined;
+      let mediaUrls: string[] = [];
       if (this.client.hasMediaPassword) {
         try {
-          const urls = await this.client.getMediaContent(styleKey);
-          mediaFront = urls[0];
+          mediaUrls = await this.client.getMediaContent(styleKey);
         } catch (error) {
           if (error instanceof SanmarAuthError) throw error;
         }
       }
+      const mediaViews = pickImageViews([
+        ...mediaUrls,
+        ...(product.images ?? []),
+      ]);
 
       const qtyBySku = new Map(
         inventory.map((row) => [row.skuId, row.quantity]),
@@ -282,7 +305,9 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         ...row,
         qty: qtyBySku.get(row.skuKey) ?? row.qty ?? 0,
         priceDollars: prices.get(row.skuKey) ?? row.priceDollars,
-        imageFront: mediaFront || row.imageFront,
+        imageFront: mediaViews.imageFront || row.imageFront,
+        imageSide: mediaViews.imageSide || row.imageSide,
+        imageBack: mediaViews.imageBack || row.imageBack,
       }));
       if (rows.length === 0) {
         await this.writer.patchStyleMetadata(ctx.tenantId, VENDOR, [
@@ -293,7 +318,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
             title: product.productName,
             description: product.description,
             category: product.category,
-            imageFront: mediaFront || product.images?.[0],
+            imageFront: mediaViews.imageFront || product.images?.[0],
           },
         ]);
       }
@@ -315,7 +340,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         status: errors.length ? "completed_with_errors" : "completed",
         stylesProcessed,
         skusUpserted,
-        imagesDownloaded: mediaFront ? 1 : 0,
+        imagesDownloaded: mediaUrls.length,
         errors,
         rateLimitRemaining: this.client.rateLimitRemaining,
       };
@@ -536,6 +561,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
   ): CatalogSkuRow[] {
     return parts.map((part) => {
       const product = products.get(part.styleId);
+      const views = pickImageViews(product?.images);
       return {
         styleKey: part.styleId,
         brandName: product?.brandName || "SanMar Canada",
@@ -548,7 +574,9 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         skuKey: part.partId,
         sku: part.partId,
         qty: 0,
-        imageFront: product?.images?.[0],
+        imageFront: views.imageFront,
+        imageSide: views.imageSide,
+        imageBack: views.imageBack,
       };
     });
   }
@@ -561,6 +589,10 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     const byId = new Map(products.map((p) => [p.productId, p]));
     return skus.map((sku) => {
       const product = byId.get(sku.productId);
+      const views = pickImageViews([
+        sku.imageUrl,
+        ...(product?.images ?? []),
+      ]);
       return {
         styleKey: sku.productId,
         brandName: product?.brandName || "SanMar Canada",
@@ -579,7 +611,9 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         qty: sku.quantity,
         priceDollars: sku.price ?? product?.basePrice,
         mapPriceDollars: sku.mapPrice,
-        imageFront: sku.imageUrl ?? product?.images?.[0],
+        imageFront: views.imageFront,
+        imageSide: views.imageSide,
+        imageBack: views.imageBack,
       };
     });
   }

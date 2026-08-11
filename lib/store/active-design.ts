@@ -5,9 +5,10 @@ import type { PlacedArtwork } from "@/components/design/ArtworkLayer";
 export type ActiveDesignArtworks = {
   front: PlacedArtwork[];
   back: PlacedArtwork[];
+  side?: PlacedArtwork[];
 };
 
-const EMPTY_ARTWORKS: ActiveDesignArtworks = { front: [], back: [] };
+const EMPTY_ARTWORKS: ActiveDesignArtworks = { front: [], back: [], side: [] };
 
 interface ActiveDesignState {
   name: string;
@@ -59,5 +60,9 @@ export const useActiveDesignStore = create<ActiveDesignState>()(
 );
 
 export function hasActiveArtwork(artworksBySide: ActiveDesignArtworks): boolean {
-  return artworksBySide.front.length > 0 || artworksBySide.back.length > 0;
+  return (
+    artworksBySide.front.length > 0 ||
+    artworksBySide.back.length > 0 ||
+    (artworksBySide.side?.length ?? 0) > 0
+  );
 }

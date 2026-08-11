@@ -32,6 +32,7 @@ type ProductDetail = {
     id: string;
     colorName: string;
     colorFrontImageUrl: string | null;
+    colorSideImageUrl: string | null;
     colorBackImageUrl: string | null;
   };
   style: {
@@ -57,6 +58,7 @@ const DesignCanvas = dynamic(() => import("@/components/design/DesignCanvas"), {
 
 const GARMENT_VIEWS = {
   front: { label: "Front", color: "#3a2216" },
+  side: { label: "Side", color: "#3a2216" },
   back: { label: "Back", color: "#3a2216" },
 } as const;
 
@@ -68,6 +70,7 @@ type GarmentSide = keyof typeof GARMENT_VIEWS;
 // side is active, same as a real screen printer would mark it up.
 const PLACEMENT_ZONES: Record<GarmentSide, string[]> = {
   front: ["Left Chest", "Center Chest", "Full Front", "Left Sleeve", "Right Sleeve"],
+  side: ["Left Sleeve", "Right Sleeve", "Side Panel"],
   back: ["Upper Back", "Full Back", "Left Sleeve", "Right Sleeve"],
 };
 type ArtworkBySide = Record<GarmentSide, PlacedArtwork[]>;
@@ -96,14 +99,18 @@ export function DesignStudio({
   const addItem = useCartStore((s) => s.addItem);
   const [activeSide, setActiveSide] = useState<GarmentSide>("front");
   const [artworksBySide, setArtworksBySide] = useState<ArtworkBySide>(
-    initialDesign?.artworksBySide ?? { front: [], back: [] },
+    normalizeArtworksBySide(initialDesign?.artworksBySide),
   );
   const [selectedBySide, setSelectedBySide] = useState<
     Record<GarmentSide, string | null>
-  >({ front: null, back: null });
+  >({ front: null, side: null, back: null });
   const [placementBySide, setPlacementBySide] = useState<
     Record<GarmentSide, string>
-  >({ front: PLACEMENT_ZONES.front[0]!, back: PLACEMENT_ZONES.back[0]! });
+  >({
+    front: PLACEMENT_ZONES.front[0]!,
+    side: PLACEMENT_ZONES.side[0]!,
+    back: PLACEMENT_ZONES.back[0]!,
+  });
   const [approved, setApproved] = useState(false);
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
   const [showAiPrompt, setShowAiPrompt] = useState(false);
@@ -170,7 +177,7 @@ export function DesignStudio({
     if (initialDesign) return;
     const stored = useActiveDesignStore.getState();
     if (hasActiveArtwork(stored.artworksBySide)) {
-      setArtworksBySide(stored.artworksBySide);
+      setArtworksBySide(normalizeArtworksBySide(stored.artworksBySide));
       if (stored.name) setDesignName(stored.name);
       if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
       if (!garmentIdOverride && stored.garmentProductId) {
@@ -227,11 +234,22 @@ export function DesignStudio({
   const photoBySide: Record<GarmentSide, string | null> = {
     front:
       productDetail?.product.colorFrontImageUrl || productDetail?.style.styleImageUrl || null,
+    side: productDetail?.product.colorSideImageUrl || null,
     back:
       productDetail?.product.colorBackImageUrl || productDetail?.style.styleImageUrl || null,
   };
   const currentPhoto = productDetail ? photoBySide[activeSide] : null;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
+
+  useEffect(() => {
+    if (activeSide === "side" && !photoBySide.side) {
+      setActiveSide("front");
+    }
+  }, [activeSide, photoBySide.side]);
+
+  const availableViews = (
+    Object.keys(GARMENT_VIEWS) as GarmentSide[]
+  ).filter((side) => side !== "side" || Boolean(photoBySide.side));
 
   function setSelectedId(id: string | null) {
     setSelectedBySide((prev) => ({ ...prev, [activeSide]: id }));
@@ -354,7 +372,8 @@ export function DesignStudio({
 
   function addDesignToCart() {
     if (!productDetail) return;
-    const otherSide: GarmentSide = activeSide === "front" ? "back" : "front";
+    const otherSide: GarmentSide =
+      activeSide === "front" ? "back" : activeSide === "back" ? "front" : "front";
     const hasOtherSideArt = artworksBySide[otherSide].length > 0;
     const artworkProofUrl = stageRef.current?.toDataURL({ pixelRatio: 2 });
     const printLabel = `${placementBySide[activeSide]} (${GARMENT_VIEWS[activeSide].label.toLowerCase()})${
@@ -643,7 +662,9 @@ export function DesignStudio({
               Which side are you designing?
             </span>
             <div className="flex gap-2">
-              {(Object.entries(GARMENT_VIEWS) as [GarmentSide, (typeof GARMENT_VIEWS)[GarmentSide]][]).map(([side, view]) => (
+              {availableViews.map((side) => {
+                const view = GARMENT_VIEWS[side];
+                return (
                 <button
                   key={side}
                   onClick={() => {
@@ -670,7 +691,8 @@ export function DesignStudio({
                     </span>
                   )}
                 </button>
-              ))}
+              );
+              })}
             </div>
           </div>
 
@@ -810,6 +832,21 @@ export function DesignStudio({
               </span>
             )}
           </div>
+        </div>
+
+        <div className="mb-sp-3 rounded-md overflow-hidden border border-border bg-text-primary">
+          <video
+            src="/images/design-studio-3d-mockup.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full aspect-video object-cover"
+          />
+          <p className="m-0 px-3 py-2 text-[11px] text-white/70">
+            3D reference footage — not artwork-accurate. Use the 2D canvas above for placement.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -996,9 +1033,19 @@ export function DesignStudio({
       </div>
       <p className="lg:col-span-3 text-xs text-text-tertiary">
         3D artwork preview is unavailable because no UV-mapped garment model is
-        included. Existing 3D media is reference footage, not an artwork-accurate
-        interactive preview.
+        included. The reference footage above is not an artwork-accurate interactive
+        preview. Side photos appear when the vendor supplies a colour side image.
       </p>
     </div>
   );
+}
+
+function normalizeArtworksBySide(
+  input?: Partial<ArtworkBySide> | null,
+): ArtworkBySide {
+  return {
+    front: input?.front ?? [],
+    side: input?.side ?? [],
+    back: input?.back ?? [],
+  };
 }

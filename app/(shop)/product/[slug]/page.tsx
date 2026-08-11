@@ -13,6 +13,7 @@ import {
   PdpOutOfStockBanner,
   PdpTrustChecks,
 } from "@/components/pdp/PdpEnrichment";
+import { PdpImageGallery } from "@/components/pdp/PdpImageGallery";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
 import { ButtonLink } from "@/components/shared/Button";
 import { CATALOG } from "@/lib/data/products";
@@ -175,6 +176,8 @@ export default async function ProductPage({
     const imageUrl =
       (product.colorFrontImageUrl as string | null) ||
       (style.styleImageUrl as string | null);
+    const sideImageUrl = (product.colorSideImageUrl as string | null) || null;
+    const backImageUrl = (product.colorBackImageUrl as string | null) || null;
     const available =
       Boolean(product.active) && Number(product.qty || 0) > 0;
     const title = `${style.brandName || ""} ${style.styleName || ""}`.trim();
@@ -182,6 +185,11 @@ export default async function ProductPage({
     const relatedItems = toCrossSellItems(
       relatedCatalog.products.filter((p) => p.id !== String(product.id)),
     );
+    const gallery = [
+      { label: "Front", url: imageUrl },
+      { label: "Side", url: sideImageUrl },
+      { label: "Back", url: backImageUrl },
+    ].filter((item): item is { label: string; url: string } => Boolean(item.url));
 
     return (
       <>
@@ -206,22 +214,7 @@ export default async function ProductPage({
               </b>
             </div>
             <div className="grid lg:grid-cols-2 gap-sp-5">
-              <div className="relative aspect-square rounded-lg overflow-hidden border border-border bg-bg-raised">
-                {imageUrl ? (
-                  <div className="absolute inset-6 sm:inset-10">
-                    <Image
-                      src={imageUrl}
-                      alt={title}
-                      fill
-                      className="object-contain"
-                      sizes="(max-width: 1024px) 100vw, 50vw"
-                      priority
-                    />
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 bg-fill-subtle-15" />
-                )}
-              </div>
+              <PdpImageGallery images={gallery} alt={title} />
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
                   {String(style.brandName || "")}
