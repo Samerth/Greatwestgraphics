@@ -381,11 +381,11 @@ export function QuoteBuilder({
                 if (customError) setCustomError(null);
               }}
               placeholder="e.g. 340"
-              className="flex-1 min-w-0 border border-border rounded-sm bg-bg px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              className="flex-1 min-w-0 min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-base font-body font-semibold text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
             />
             <button
               type="submit"
-              className="px-4 py-2.5 rounded-sm border border-accent bg-accent text-white text-sm font-bold hover:bg-accent/90 transition-colors shrink-0"
+              className="px-4 py-2.5 min-h-11 rounded-sm border border-accent bg-accent text-white text-base font-bold hover:bg-accent/90 transition-colors shrink-0"
             >
               Apply
             </button>
@@ -513,7 +513,7 @@ export function QuoteBuilder({
         )}
       </div>
 
-      <div className="bg-text-primary text-white rounded-lg overflow-hidden sticky top-sp-5 lg:top-sp-2">
+      <div className="bg-text-primary text-white rounded-lg overflow-hidden sticky top-[calc(var(--header-offset)+12px)]">
         <div className="h-[140px] relative bg-[linear-gradient(135deg,#2a2a28,#0d0d0d)]">
           <OptionalImage
             src="/images/prod-hoodie.jpg"
