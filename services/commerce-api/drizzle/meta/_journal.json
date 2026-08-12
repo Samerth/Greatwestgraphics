@@ -71,6 +71,13 @@
       "when": 1786300000000,
       "tag": "0011_storefront_visible",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786600000000,
+      "tag": "0012_pricing_config_schema_version",
+      "breakpoints": true
     }
   ]
 }

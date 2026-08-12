@@ -18,6 +18,7 @@ import type {
   CommerceEventEnvelope,
   JobRequestLineInput,
   PricingConfig,
+  PricingConfigV2,
   SourceMetadata,
 } from "@gwg/contracts";
 
@@ -1088,18 +1089,25 @@ export const pricingConfigs = pgTable(
       .references(() => tenants.id),
     version: integer("version").notNull(),
     status: text("status").notNull(),
-    config: jsonb("config").$type<PricingConfig>().notNull(),
+    // 1 = legacy fixed-method config, 2 = configurable decoration methods.
+    // Both live here so the customer quote path can migrate independently.
+    schemaVersion: integer("schema_version").notNull().default(1),
+    config: jsonb("config").$type<PricingConfig | PricingConfigV2>().notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     ...auditColumns,
   },
   (table) => [
-    uniqueIndex("pricing_configs_tenant_version_uq").on(
+    uniqueIndex("pricing_configs_tenant_schema_version_uq").on(
       table.tenantId,
+      table.schemaVersion,
       table.version,
     ),
-    uniqueIndex("pricing_configs_tenant_published_uq")
-      .on(table.tenantId)
+    uniqueIndex("pricing_configs_tenant_schema_published_uq")
+      .on(table.tenantId, table.schemaVersion)
       .where(sql`${table.status} = 'published'`),
+    uniqueIndex("pricing_configs_tenant_schema_draft_uq")
+      .on(table.tenantId, table.schemaVersion)
+      .where(sql`${table.status} = 'draft'`),
   ],
 );
 

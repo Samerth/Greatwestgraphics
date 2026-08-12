@@ -6,12 +6,20 @@ import {
   CreateProofVersionSchema,
   FinalQuoteResponseSchema,
   IdempotencyKeySchema,
+  PreviewQuoteV2ResponseSchema,
+  PreviewQuoteV2Schema,
   PricingConfigDraftResponseSchema,
+  PricingConfigV2DraftResponseSchema,
+  PricingConfigV2VersionSummarySchema,
   PricingConfigVersionSummarySchema,
   ProofVersionResponseSchema,
+  PublishedPricingConfigV2ResponseSchema,
   PublishPricingConfigSchema,
+  PublishPricingConfigV2Schema,
   PublishedPricingConfigResponseSchema,
   RestorePricingConfigDraftSchema,
+  RestorePricingConfigV2DraftSchema,
+  UpsertPricingConfigV2DraftSchema,
   SubmitJobRequestSchema,
   TransitionJobRequestSchema,
   UpsertPricingConfigDraftSchema,
@@ -33,6 +41,7 @@ import {
   applyStorePricingAdjustment,
   PricingConfigService,
 } from "./application/pricing-config-service.js";
+import { PricingConfigV2Service } from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
 import { DesignProjectService } from "./application/design-project-service.js";
 import { StoreService } from "./application/store-service.js";
@@ -73,6 +82,21 @@ function assertScope(
   }
 }
 
+/**
+ * Pricing v2 admin contexts carry an optional storeId — pricing is configured
+ * per tenant, not per store — so only the tenant and account are checked.
+ */
+function assertTenantScope(
+  auth: AuthContext,
+  context: { tenantId: string; accountId: string },
+): void {
+  if (auth.tenantId !== context.tenantId || auth.accountId !== context.accountId) {
+    throw new ScopeMismatchError(
+      "Request context does not match the authenticated scope",
+    );
+  }
+}
+
 function assertAdmin(request: FastifyRequest, environment: Environment): void {
   const suppliedToken = request.headers["x-dev-admin-token"];
   if (
@@ -104,6 +128,7 @@ export function buildApp(input: {
   });
   const service = new JobRequestService(input.db);
   const pricingService = new PricingConfigService(input.db);
+  const pricingV2Service = new PricingConfigV2Service(input.db);
   const catalogService = new CatalogService(input.db);
   const designProjectService = new DesignProjectService(input.db);
   const storeService = new StoreService(input.db);
@@ -637,6 +662,73 @@ export function buildApp(input: {
       assertScope(auth, command.context);
       return PricingConfigDraftResponseSchema.parse(
         await pricingService.restoreAsDraft(command, staffActor(auth)),
+      );
+    });
+
+    app.get("/admin/pricing/v2/draft", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return PricingConfigV2DraftResponseSchema.parse(
+        await pricingV2Service.getDraft(auth.tenantId),
+      );
+    });
+
+    app.put("/admin/pricing/v2/draft", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const command = UpsertPricingConfigV2DraftSchema.parse(request.body);
+      assertTenantScope(auth, command.context);
+      return PricingConfigV2DraftResponseSchema.parse(
+        await pricingV2Service.upsertDraft(command, staffActor(auth)),
+      );
+    });
+
+    app.get("/admin/pricing/v2/published", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return PublishedPricingConfigV2ResponseSchema.parse(
+        await pricingV2Service.getPublished(auth.tenantId),
+      );
+    });
+
+    app.post("/admin/pricing/v2/publish", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const command = PublishPricingConfigV2Schema.parse(request.body);
+      assertTenantScope(auth, command.context);
+      const key = IdempotencyKeySchema.parse(
+        request.headers[CommerceHeaders.idempotencyKey],
+      );
+      return PublishedPricingConfigV2ResponseSchema.parse(
+        await pricingV2Service.publish(command, key, staffActor(auth)),
+      );
+    });
+
+    app.get("/admin/pricing/v2/versions", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return z
+        .array(PricingConfigV2VersionSummarySchema)
+        .parse(await pricingV2Service.listVersions(auth.tenantId));
+    });
+
+    app.post("/admin/pricing/v2/restore", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const command = RestorePricingConfigV2DraftSchema.parse(request.body);
+      assertTenantScope(auth, command.context);
+      return PricingConfigV2DraftResponseSchema.parse(
+        await pricingV2Service.restoreAsDraft(command, staffActor(auth)),
+      );
+    });
+
+    app.post("/admin/pricing/v2/preview", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const command = PreviewQuoteV2Schema.parse(request.body);
+      assertTenantScope(auth, command.context);
+      return PreviewQuoteV2ResponseSchema.parse(
+        await pricingV2Service.preview(command),
       );
     });
 

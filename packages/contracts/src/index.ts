@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./pricing-v2.js";
+
 export const CanonicalIdSchema = z.string().uuid();
 export type CanonicalId = z.infer<typeof CanonicalIdSchema>;
 

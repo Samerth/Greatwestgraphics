@@ -9,7 +9,8 @@ const NAV = [
   { href: "/admin/accounts", label: "Accounts" },
   { href: "/admin/catalog", label: "Catalog" },
   { href: "/admin/categories", label: "Categories" },
-  { href: "/admin/pricing", label: "Pricing" },
+  { href: "/admin/pricing/v2", label: "Pricing" },
+  { href: "/admin/pricing", label: "Pricing (legacy)" },
   { href: "/admin/quotes", label: "Quotes" },
   { href: "/admin/sync", label: "Sync" },
   { href: "/admin/settings", label: "Settings" },
@@ -27,6 +28,14 @@ export function AdminShell({
     return <>{children}</>;
   }
 
+  // Longest match wins, so /admin/pricing/v2 doesn't also light up /admin/pricing.
+  const activeHref = NAV.reduce<string | null>((best, item) => {
+    const matches =
+      pathname === item.href || pathname.startsWith(`${item.href}/`);
+    if (!matches) return best;
+    return best && best.length >= item.href.length ? best : item.href;
+  }, null);
+
   return (
     <div className="min-h-screen bg-bg text-text-primary flex">
       <aside className="w-60 shrink-0 border-r border-border bg-bg-raised p-sp-4 flex flex-col gap-sp-4">
@@ -43,10 +52,7 @@ export function AdminShell({
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => {
-            const active =
-              item.href === "/admin"
-                ? pathname === "/admin"
-                : pathname.startsWith(item.href);
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}
