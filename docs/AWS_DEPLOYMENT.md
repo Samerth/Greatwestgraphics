@@ -1,22 +1,46 @@
 # AWS deployment guide (Great West Graphics)
 
 Practical steps to run the storefront (Next.js) and `commerce-api` on AWS.
-This repository does **not** provision cloud resources. Pair with
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) for provider cost notes and the full
+**Infrastructure as code** lives in [`infra/aws`](../infra/aws) (Terraform).
+Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) for provider cost notes and the full
 credential checklist.
+
+## Cutover overview (Vercel/Render → AWS)
+
+| Today | AWS target |
+| --- | --- |
+| Next.js on Vercel | ECS Fargate web service behind ALB |
+| commerce-api on Render (optional) | ECS Fargate API service behind ALB + Cloud Map |
+| Neon/Supabase / other hosted Postgres | Private RDS PostgreSQL 16 |
+| Local `.data/uploads` or ad-hoc storage | Private S3 bucket |
+| Env vars in Vercel/Render dashboards | Secrets Manager → ECS task secrets |
+| Customer auth Cognito (already in app) | Cognito pool provisioned by Terraform |
+
+Recommended bring-up:
+
+1. `cd infra/aws && cp terraform.tfvars.example terraform.tfvars` (edit region/domains).
+2. Run [`scripts/aws-bootstrap.sh`](../scripts/aws-bootstrap.sh) — creates VPC/ECR/RDS/S3/ALB/Cognito/secrets, pushes images, enables ECS.
+3. Run `npm run db:migrate` against the Secrets Manager `DATABASE_URL`.
+4. Fill `RESEND_*` / `SS_*` / `SANMAR_*` in Secrets Manager; force new ECS deployment.
+5. Configure GitHub Actions variables from Terraform outputs; merges to `main` deploy via [`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml).
+6. Attach custom domains (`enable_https`, Route 53) and cut DNS from Vercel.
+7. Decommission Vercel/Render after smoke checks pass.
+
+Details for each resource: [`infra/aws/README.md`](../infra/aws/README.md).
 
 ## Target architecture (typical)
 
 | Piece | AWS service | Notes |
 | --- | --- | --- |
 | Web (Next.js) | ECS Fargate behind ALB | Root `Dockerfile` (`output: "standalone"`). Amplify Hosting is an alternative if you want managed SSR without containers. |
-| Commerce API | ECS Fargate behind ALB (same or separate service) | `services/commerce-api/Dockerfile`, port **4000**. |
+| Commerce API | ECS Fargate behind ALB (same or separate service) | `services/commerce-api/Dockerfile`, port **4000**. Private Cloud Map name for web→API. |
 | Database | RDS PostgreSQL (private subnets) | Or keep Neon/Supabase temporarily for staging; production should be private RDS. |
 | Uploads / artwork | S3 (+ optional CloudFront) | Set `AWS_S3_BUCKET`, `AWS_REGION`, optional `AWS_S3_PUBLIC_BASE_URL`. |
 | Secrets | Secrets Manager or SSM Parameter Store | Inject into task definitions; never bake secrets into images. |
-| Identity | Cognito (wired in app) | Pool + confidential app client; see env checklist. |
+| Identity | Cognito (wired in app) | Pool + confidential app client; Terraform creates these. |
 | Email | Resend (current) or SES later | `RESEND_*` today; SES is the AWS-native path when you cut over. |
 | DNS / TLS | Route 53 + ACM | Certificates in the ALB region (usually `us-east-1` only for CloudFront). |
+| CI/CD | GitHub Actions OIDC → ECR/ECS | No long-lived AWS access keys in the repo. |
 
 App Runner remains a lighter alternative for the API (see `DEPLOYMENT.md`). Prefer
 **ECS Fargate + ALB** when you want one VPC, private RDS, and shared networking
@@ -24,15 +48,16 @@ for web + API.
 
 ```text
 Internet → ALB (HTTPS)
-            ├─ /          → ECS service: web   :3000
-            └─ /api-proxy → (optional) or separate host api.* → ECS: api :4000
+            ├─ www.example.com → ECS service: web   :3000
+            └─ api.example.com → ECS service: api   :4000
 
-Web tasks call commerce-api over the private service URL
-(COMMERCE_API_BASE_URL=http://api.internal:4000 or the public API hostname).
+Web tasks call commerce-api over Cloud Map
+(COMMERCE_API_BASE_URL=http://api.gwg-prod.local:4000).
 ```
 
 Use **two hostnames** (recommended): `www.example.com` → web, `api.example.com` → API.
-Point the Next.js server at the API with `COMMERCE_API_BASE_URL` (server-only).
+The Next.js server uses the private Cloud Map URL by default (Terraform); override
+only if you intentionally want the public API hostname.
 
 ## Build images
 
@@ -70,13 +95,16 @@ HTTP 200, interval ~30s. Container `HEALTHCHECK` instructions match these paths.
 
 ## ECS Fargate sketch
 
+Implemented in [`infra/aws`](../infra/aws). Conceptually:
+
 1. VPC with public + private subnets, NAT for private egress (vendor APIs, Cognito, S3).
 2. Security groups: ALB → web:3000 / api:4000; web → api:4000; api → RDS:5432.
 3. RDS PostgreSQL in private subnets; encryption, backups, deletion protection.
 4. Two ECR repos; two task definitions; two ECS services (desired count ≥ 2 in prod).
-5. One ALB (or two) with HTTPS listeners and path/host rules.
+5. One ALB with HTTPS listeners and host rules (`www` / `api`).
 6. Task roles: S3 object access for uploads; execution role: pull from ECR + read secrets.
 7. CloudWatch log groups for each service.
+8. GitHub OIDC deploy role for ECR push + ECS rolling deploy.
 
 ### Task definition env (non-secret)
 

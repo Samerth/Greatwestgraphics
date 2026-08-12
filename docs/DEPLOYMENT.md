@@ -2,14 +2,16 @@
 
 This document reflects provider information checked on July 26, 2026. Provider
 offers and prices change; verify the linked official pages before provisioning.
-No cloud resource is created by this repository.
+Terraform under [`infra/aws`](../infra/aws) provisions the AWS stack; it does not
+create cloud resources until you run `terraform apply` with credentials.
 
 **Hands-on AWS cutover (ECS/ALB/RDS/S3/secrets/health checks):** see
 [`AWS_DEPLOYMENT.md`](./AWS_DEPLOYMENT.md).
 
 ## Recommended path
 
-Use one AWS region and keep the existing boundaries:
+Use one AWS region and keep the existing boundaries. **Hands-on cutover:**
+[`AWS_DEPLOYMENT.md`](./AWS_DEPLOYMENT.md) + Terraform in [`infra/aws`](../infra/aws).
 
 - Next.js storefront: **ECS Fargate + ALB** using the root `Dockerfile` is the
   primary path for a full AWS migration (see `AWS_DEPLOYMENT.md`). AWS Amplify
@@ -24,12 +26,11 @@ Use one AWS region and keep the existing boundaries:
   but is not automatically cheaper. Use Neon Free only for development or
   disposable staging.
 - Artwork/proofs: a private, versioned S3 bucket with encryption, lifecycle
-  rules, narrowly scoped presigned URLs, and explicit browser CORS origins.
+  rules, narrowly scoped IAM on the ECS task role, and explicit browser CORS origins.
 - Email: SES after domain verification, DKIM, sandbox-exit approval, bounce and
-  complaint handling, and sender-template decisions.
-- Identity: Cognito is a reasonable AWS-native candidate, but it is not wired
-  in. Decide the tenant/account claims and session contract before implementing
-  it. Production commerce endpoints intentionally fail closed today.
+  complaint handling, and sender-template decisions — or keep Resend during cutover.
+- Identity: Cognito is wired in the Next.js app (`lib/auth/cognito.ts`); Terraform
+  provisions the pool + confidential client.
 
 RDS should not be publicly reachable. An App Runner VPC connector can reach a
 private database, but internet-bound calls through that VPC may require NAT,

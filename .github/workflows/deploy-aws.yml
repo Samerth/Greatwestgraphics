@@ -1,0 +1,156 @@
+name: Deploy AWS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "infra/aws/*.md"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aws-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, push ECR, deploy ECS
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ca-central-1' }}
+      ECR_WEB: ${{ vars.ECR_WEB_REPOSITORY }}
+      ECR_API: ${{ vars.ECR_API_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER_NAME }}
+      ECS_WEB_SERVICE: ${{ vars.ECS_WEB_SERVICE_NAME }}
+      ECS_API_SERVICE: ${{ vars.ECS_API_SERVICE_NAME }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require AWS deploy configuration
+        env:
+          ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN || secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          missing=0
+          if [ -z "$ROLE_ARN" ]; then
+            echo "Set AWS_DEPLOY_ROLE_ARN (Terraform output github_deploy_role_arn)."
+            missing=1
+          fi
+          for name in ECR_WEB ECR_API ECS_CLUSTER ECS_WEB_SERVICE ECS_API_SERVICE; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "Missing GitHub Actions variable: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "See infra/aws/README.md and docs/AWS_DEPLOYMENT.md."
+            exit 1
+          fi
+          echo "ROLE_ARN=$ROLE_ARN" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: meta
+        run: |
+          SHA_TAG="${GITHUB_SHA::12}"
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "web_image=${ECR_WEB}:${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          echo "api_image=${ECR_API}:${SHA_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push web image
+        run: |
+          docker build -t "${{ steps.meta.outputs.web_image }}" -t "${ECR_WEB}:latest" .
+          docker push "${{ steps.meta.outputs.web_image }}"
+          docker push "${ECR_WEB}:latest"
+
+      - name: Build and push commerce-api image
+        run: |
+          docker build -f services/commerce-api/Dockerfile \
+            -t "${{ steps.meta.outputs.api_image }}" -t "${ECR_API}:latest" .
+          docker push "${{ steps.meta.outputs.api_image }}"
+          docker push "${ECR_API}:latest"
+
+      - name: Render and deploy API task definition
+        run: |
+          TASK_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_API_SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_ARN" \
+            --query 'taskDefinition' > /tmp/api-td.json
+          python3 - <<'PY'
+          import json, os
+          td = json.load(open("/tmp/api-td.json"))
+          for key in ["taskDefinitionArn", "revision", "status", "requiresAttributes",
+                      "compatibilities", "registeredAt", "registeredBy"]:
+              td.pop(key, None)
+          image = os.environ["API_IMAGE"]
+          for c in td["containerDefinitions"]:
+              if c["name"] == "commerce-api":
+                  c["image"] = image
+          json.dump(td, open("/tmp/api-td-new.json", "w"))
+          PY
+          NEW_TD=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/api-td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_API_SERVICE" \
+            --task-definition "$NEW_TD" \
+            --force-new-deployment
+        env:
+          API_IMAGE: ${{ steps.meta.outputs.api_image }}
+
+      - name: Render and deploy web task definition
+        run: |
+          TASK_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_WEB_SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_ARN" \
+            --query 'taskDefinition' > /tmp/web-td.json
+          python3 - <<'PY'
+          import json, os
+          td = json.load(open("/tmp/web-td.json"))
+          for key in ["taskDefinitionArn", "revision", "status", "requiresAttributes",
+                      "compatibilities", "registeredAt", "registeredBy"]:
+              td.pop(key, None)
+          image = os.environ["WEB_IMAGE"]
+          for c in td["containerDefinitions"]:
+              if c["name"] == "web":
+                  c["image"] = image
+          json.dump(td, open("/tmp/web-td-new.json", "w"))
+          PY
+          NEW_TD=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/web-td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_WEB_SERVICE" \
+            --task-definition "$NEW_TD" \
+            --force-new-deployment
+        env:
+          WEB_IMAGE: ${{ steps.meta.outputs.web_image }}
+
+      - name: Wait for services stable
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_API_SERVICE" "$ECS_WEB_SERVICE"

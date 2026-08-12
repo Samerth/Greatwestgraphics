@@ -1,0 +1,31 @@
+# Copy to terraform.tfvars (never commit real secrets beyond placeholders).
+
+project_name = "gwg"
+environment  = "prod"
+aws_region   = "ca-central-1"
+
+# First apply tip: set false until images exist in ECR, then flip to true.
+create_ecs_services = false
+
+# Domains (optional for first bring-up — use ALB DNS from outputs).
+# web_domain       = "www.greatwestgraphics.com"
+# api_domain       = "api.greatwestgraphics.com"
+# route53_zone_id  = "Zxxxxxxxx"
+# enable_https     = true
+
+github_org_repo = "Samerth/Greatwestgraphics"
+github_branch   = "main"
+
+# If this AWS account already has a GitHub OIDC provider:
+# create_github_oidc_provider = false
+# github_oidc_provider_arn    = "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+
+web_desired_count = 2
+api_desired_count = 2
+
+db_instance_class = "db.t4g.micro"
+db_multi_az       = false
+
+staff_admin_user  = "admin"
+contact_from_email = "Great West Graphics <noreply@greatwestgraphics.com>"
+contact_to_email   = "info@greatwestgraphics.com"
