@@ -1,21 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { DecorationMethod, PricingConfig, QuoteInput } from "@gwg/contracts";
+import type {
+  DecorationMethodConfig,
+  PricingConfigV2,
+  QuoteInputV2,
+} from "@gwg/contracts";
+import { calculateQuoteV2 } from "@gwg/pricing";
 import { OptionalImage } from "@/components/shared/OptionalImage";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { AnimatedNumber } from "@/components/shared/AnimatedNumber";
 import { useCartStore } from "@/lib/store/cart";
 import {
-  QB_METHODS,
   QB_METHOD_DAYS,
   QB_PRODUCT_COST_MINOR,
   QB_PRODUCT_IS_DARK,
   QB_PRODUCTS,
   QB_QTY_OPTIONS,
-  calculateQuote,
   moneyFromMinor,
   type QbProduct,
 } from "@/lib/utils/quote-pricing";
@@ -27,18 +30,49 @@ const LOCATIONS = [
   { id: "sleeve", label: "Sleeve" },
 ] as const;
 
-const COLOUR_OPTIONS = [1, 2, 3, 4] as const;
 const STITCH_PRESETS = [
   { id: "small", stitches: 5000, label: "Small logo" },
   { id: "medium", stitches: 8000, label: "Medium logo" },
   { id: "large", stitches: 12000, label: "Large logo" },
 ] as const;
-const DTF_SIZES = [
-  { id: "small", label: "Small", hint: "Up to 4\"" },
-  { id: "medium", label: "Medium", hint: "Up to 8\"" },
-  { id: "large", label: "Large", hint: "Up to 12\"" },
-  { id: "oversize", label: "Oversize", hint: "12\"+" },
-] as const;
+
+/** Colour counts the picker offers, capped so the row stays readable. */
+const MAX_COLOUR_PILLS = 6;
+
+const METHOD_BLURBS: Record<string, string> = {
+  screenPrint: "Best value for bulk",
+  embroidery: "Stitched, premium look",
+  dtf: "Full-colour photos & gradients",
+};
+
+/** Which extra question to ask, decided by the method's rate model. */
+function variableInputFor(method: DecorationMethodConfig | undefined) {
+  return {
+    colours: method?.rateModel.kind === "matrixByColour",
+    stitches: method?.rateModel.kind === "baseWithVariable",
+    option: method?.rateModel.kind === "matrixByOption",
+  };
+}
+
+function defaultOptionKey(method: DecorationMethodConfig | undefined): string {
+  if (method?.rateModel.kind !== "matrixByOption") return "";
+  const options = method.rateModel.options;
+  return (options[Math.min(1, options.length - 1)] ?? options[0])?.key ?? "";
+}
+
+function colourOptions(method: DecorationMethodConfig | undefined): number[] {
+  if (method?.rateModel.kind !== "matrixByColour") return [];
+  const { minColours, maxColours } = method.rateModel;
+  const options: number[] = [];
+  for (
+    let count = minColours;
+    count <= Math.min(maxColours, minColours + MAX_COLOUR_PILLS - 1);
+    count += 1
+  ) {
+    options.push(count);
+  }
+  return options;
+}
 
 type CatalogOption = {
   id: string;
@@ -56,22 +90,33 @@ type CatalogOption = {
 };
 
 type Props = {
-  pricingConfig: PricingConfig;
+  pricingConfig: PricingConfigV2;
   catalogProducts?: CatalogOption[];
-  initialMethod?: DecorationMethod;
+  initialMethod?: string;
   initialQty?: number;
 };
 
 export function QuoteBuilder({
   pricingConfig,
   catalogProducts = [],
-  initialMethod = "screenPrint",
+  initialMethod,
   initialQty = 48,
 }: Props) {
   const router = useRouter();
   const addItem = useCartStore((s) => s.addItem);
   const [addedToCart, setAddedToCart] = useState(false);
   const useCatalog = catalogProducts.length > 0;
+
+  // Methods, their rates and their options all come from the published
+  // pricing config, so adding a method in the admin panel offers it here
+  // without a code change.
+  const methods = useMemo(
+    () =>
+      [...pricingConfig.methods]
+        .filter((entry) => entry.enabled)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [pricingConfig],
+  );
 
   // Group colourways of the same garment under one style, so "Pick your
   // product" offers one button per garment instead of one per colour.
@@ -108,14 +153,17 @@ export function QuoteBuilder({
   const [product, setProduct] = useState<QbProduct>("T-Shirts");
   const [qty, setQty] = useState(initialQty);
   const [locations, setLocations] = useState<string[]>(["front"]);
-  const [method, setMethod] = useState<DecorationMethod>(initialMethod);
+  const [methodKey, setMethodKey] = useState<string>(
+    () =>
+      methods.find((entry) => entry.key === initialMethod)?.key ??
+      methods[0]?.key ??
+      "",
+  );
   const [colours, setColours] = useState<number | "unsure">(1);
   const [stitchPreset, setStitchPreset] = useState<"small" | "medium" | "large">(
     "medium",
   );
-  const [dtfSize, setDtfSize] = useState<"small" | "medium" | "large" | "oversize">(
-    "medium",
-  );
+  const [optionKey, setOptionKey] = useState<string>("");
   const [showMore, setShowMore] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [rush, setRush] = useState(false);
@@ -127,32 +175,49 @@ export function QuoteBuilder({
   const needsArtworkReview = colours === "unsure";
   const effectiveColours = colours === "unsure" ? 1 : colours;
 
+  const selectedMethod = useMemo(
+    () => methods.find((entry) => entry.key === methodKey) ?? methods[0],
+    [methods, methodKey],
+  );
+
   const selectedCatalog = useCatalog
     ? catalogProducts.find((p) => p.id === catalogProductId) ?? catalogProducts[0]
     : null;
 
-  const quoteInput: QuoteInput = useMemo(
-    () => ({
-      quantity: qty,
-      garment: {
-        unitCostMinor: selectedCatalog
-          ? selectedCatalog.unitCostMinor
-          : QB_PRODUCT_COST_MINOR[product],
-        isDark: selectedCatalog
-          ? selectedCatalog.isDark
-          : QB_PRODUCT_IS_DARK[product],
-      },
+  const buildQuote = useCallback(
+    (quantity: number): QuoteInputV2 => ({
+      garments: [
+        {
+          id: "garment",
+          description: selectedCatalog?.label ?? product,
+          unitCostMinor: selectedCatalog
+            ? selectedCatalog.unitCostMinor
+            : QB_PRODUCT_COST_MINOR[product],
+          quantity,
+          colourName: selectedCatalog?.colorName ?? "",
+          isDark: selectedCatalog
+            ? selectedCatalog.isDark
+            : QB_PRODUCT_IS_DARK[product],
+        },
+      ],
       decorations: locations.map((location) => ({
-        method,
+        id: `decoration-${location}`,
+        garmentId: "garment",
+        methodKey: selectedMethod?.key ?? "",
         location,
-        colours: method === "screenPrint" ? effectiveColours : undefined,
-        stitchCount:
-          method === "embroidery"
-            ? STITCH_PRESETS.find((p) => p.id === stitchPreset)?.stitches
-            : undefined,
-        size: method === "dtf" ? dtfSize : undefined,
+        // One design across every placement, so the setup fee is charged once.
+        logoGroup: "primary",
+        colours: variableInputFor(selectedMethod).colours
+          ? effectiveColours
+          : undefined,
+        variableValue: variableInputFor(selectedMethod).stitches
+          ? STITCH_PRESETS.find((p) => p.id === stitchPreset)?.stitches
+          : undefined,
+        optionKey: variableInputFor(selectedMethod).option
+          ? optionKey || defaultOptionKey(selectedMethod)
+          : undefined,
         isOversized: false,
-        isRepeatArtwork: false,
+        artwork: { isRepeat: false, verifiedByStaff: false },
       })),
       options: {
         rush,
@@ -160,50 +225,51 @@ export function QuoteBuilder({
         includePacking,
         shippingCostMinor: 0,
       },
-      needsArtworkReview,
     }),
     [
-      qty,
       product,
       selectedCatalog,
       locations,
-      method,
+      selectedMethod,
       effectiveColours,
       stitchPreset,
-      dtfSize,
+      optionKey,
       rush,
       includePacking,
-      needsArtworkReview,
     ],
   );
 
+  const quoteInput = useMemo(() => buildQuote(qty), [buildQuote, qty]);
+
   const breakdown = useMemo(
-    () => calculateQuote(quoteInput, pricingConfig),
+    () => calculateQuoteV2(quoteInput, pricingConfig),
     [quoteInput, pricingConfig],
   );
 
+  const perPieceMinor = breakdown.garments[0]?.unitPriceMinor ?? 0;
+
+  /**
+   * Prices the same order at the next quantity break using the engine itself,
+   * so the saving quoted here is the saving the customer actually gets.
+   */
   const tierNudge = useMemo(() => {
-    const tiers = pricingConfig.screenPrintMatrix.qtyTiers;
-    const next = tiers.find((tier) => tier.min > qty);
-    if (!next || method !== "screenPrint") return null;
-    const currentIdx = tiers.findIndex(
-      (tier) => qty >= tier.min && (tier.max === null || qty <= tier.max),
+    const nextBreak = selectedMethod?.rateModel.qtyAnchors.find(
+      (anchor) => anchor > qty,
     );
-    const nextIdx = tiers.findIndex((tier) => tier.min === next.min);
-    const colourKey = String(effectiveColours);
-    const currentPrice =
-      pricingConfig.screenPrintMatrix.pricesByColour[colourKey]?.[currentIdx];
-    const nextPrice =
-      pricingConfig.screenPrintMatrix.pricesByColour[colourKey]?.[nextIdx];
-    if (currentPrice == null || nextPrice == null || nextPrice >= currentPrice) {
-      return null;
-    }
-    const save = (currentPrice - nextPrice) / 100;
-    return `Order ${next.min}+ and save ${moneyFromMinor(currentPrice - nextPrice)} per shirt on print.`;
-  }, [qty, method, effectiveColours, pricingConfig]);
+    if (!nextBreak) return null;
+    const atNextBreak = calculateQuoteV2(buildQuote(nextBreak), pricingConfig);
+    const nextPerPiece = atNextBreak.garments[0]?.unitPriceMinor ?? 0;
+    const saving = perPieceMinor - nextPerPiece;
+    if (saving <= 0) return null;
+    return `Order ${nextBreak}+ and save ${moneyFromMinor(saving)} per piece.`;
+  }, [selectedMethod, qty, buildQuote, pricingConfig, perPieceMinor]);
 
   const oneTimeLines = breakdown.lines.filter((line) =>
-    ["setup", "digitizing", "artwork_minimum", "design"].includes(line.kind),
+    ["setup", "design", "artworkMinimum"].includes(line.kind),
+  );
+  const oneTimeFeesMinor = oneTimeLines.reduce(
+    (sum, line) => sum + line.extendedAmountMinor,
+    0,
   );
 
   function toggleLocation(id: string) {
@@ -222,17 +288,18 @@ export function QuoteBuilder({
       id:
         useCatalog && selectedCatalog
           ? selectedCatalog.id
-          : `custom-quote-${product}-${method}-${Date.now()}`,
+          : `custom-quote-${product}-${methodKey}-${Date.now()}`,
       productId: useCatalog && selectedCatalog ? selectedCatalog.id : undefined,
       name: label,
-      meta: `${QB_METHODS.find((m) => m.id === method)?.label ?? method} · ${locations
+      meta: `${selectedMethod?.label ?? methodKey} · ${locations
         .map((l) => LOCATIONS.find((loc) => loc.id === l)?.label ?? l)
         .join(", ")}${needsArtworkReview ? " · Artwork review needed" : ""}`,
       color: "As quoted",
       qty,
-      unit: breakdown.perPieceMinor / 100,
+      unit: perPieceMinor / 100,
       image: "",
       pricingSnapshot: {
+        schemaVersion: 2,
         input: quoteInput,
         breakdown,
         pricingConfigVersion: pricingConfig.version,
@@ -422,35 +489,40 @@ export function QuoteBuilder({
                 Printing method
               </label>
               <div className="space-y-2">
-                {QB_METHODS.map((m) => (
+                {methods.map((m) => (
                   <button
-                    key={m.id}
+                    key={m.key}
                     type="button"
-                    onClick={() => setMethod(m.id)}
+                    onClick={() => {
+                      setMethodKey(m.key);
+                      setOptionKey(defaultOptionKey(m));
+                    }}
                     className={cn(
                       "w-full text-left px-4 py-3 rounded-sm border transition-colors",
-                      method === m.id
+                      methodKey === m.key
                         ? "bg-accent border-accent text-white"
                         : "bg-bg-raised border-border text-text-primary hover:border-text-tertiary",
                     )}
                   >
                     <div className="font-semibold text-sm">{m.label}</div>
-                    <div className="text-[12px] opacity-70 mt-0.5">{m.blurb}</div>
+                    <div className="text-[12px] opacity-70 mt-0.5">
+                      {m.description || METHOD_BLURBS[m.key] || ""}
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {method === "screenPrint" && (
+            {variableInputFor(selectedMethod).colours && (
               <QbRow label="How many colours in your design?">
-                {COLOUR_OPTIONS.map((c) => (
+                {colourOptions(selectedMethod).map((c) => (
                   <Pill
                     key={c}
                     round
                     active={colours === c}
                     onClick={() => setColours(c)}
                   >
-                    {c === 4 ? "4+" : c}
+                    {c}
                   </Pill>
                 ))}
                 <Pill
@@ -462,7 +534,7 @@ export function QuoteBuilder({
               </QbRow>
             )}
 
-            {method === "embroidery" && (
+            {variableInputFor(selectedMethod).stitches && (
               <QbRow label="Logo size">
                 {STITCH_PRESETS.map((p) => (
                   <Pill
@@ -476,16 +548,18 @@ export function QuoteBuilder({
               </QbRow>
             )}
 
-            {method === "dtf" && (
+            {selectedMethod?.rateModel.kind === "matrixByOption" && (
               <QbRow label="Transfer size">
-                {DTF_SIZES.map((s) => (
+                {selectedMethod.rateModel.options.map((option) => (
                   <Pill
-                    key={s.id}
-                    active={dtfSize === s.id}
-                    onClick={() => setDtfSize(s.id)}
+                    key={option.key}
+                    active={
+                      (optionKey || defaultOptionKey(selectedMethod)) ===
+                      option.key
+                    }
+                    onClick={() => setOptionKey(option.key)}
                   >
-                    <span className="block">{s.label}</span>
-                    <span className="block text-[11px] opacity-80">{s.hint}</span>
+                    {option.label}
                   </Pill>
                 ))}
               </QbRow>
@@ -526,7 +600,7 @@ export function QuoteBuilder({
           <div className="absolute left-sp-4 bottom-sp-3">
             <div className="font-display text-sm font-bold opacity-90">{product.toUpperCase()}</div>
             <div className="text-[11px] text-white/70 mt-1">
-              {locations.join(" · ")} · {method}
+              {locations.join(" · ")} · {selectedMethod?.label ?? methodKey}
             </div>
           </div>
         </div>
@@ -540,7 +614,7 @@ export function QuoteBuilder({
           <div>
             <div className="text-[13px] text-white/75 mb-1">Per shirt</div>
             <div className="text-[28px] font-display font-bold text-white">
-              $<AnimatedNumber value={breakdown.perPieceMinor / 100} />
+              <AnimatedNumber value={perPieceMinor / 100} />
             </div>
           </div>
 
@@ -548,7 +622,7 @@ export function QuoteBuilder({
             <div className="text-[12px] text-white/70 mb-2">Order total</div>
             <div className="flex items-baseline gap-2">
               <span className="text-[24px] font-display font-bold text-accent">
-                $<AnimatedNumber value={breakdown.totalMinor / 100} />
+                <AnimatedNumber value={breakdown.totals.totalMinor / 100} />
               </span>
               <span className="text-[12px] text-white/60">
                 for {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}
@@ -564,7 +638,7 @@ export function QuoteBuilder({
                 onClick={() => setSetupOpen((v) => !v)}
               >
                 <span>
-                  One-time setup: ${moneyFromMinor(breakdown.oneTimeFeesMinor)}
+                  One-time setup: {moneyFromMinor(oneTimeFeesMinor)}
                 </span>
                 <span className="text-[12px]">{setupOpen ? "▲" : "▼"}</span>
               </button>
@@ -574,7 +648,7 @@ export function QuoteBuilder({
                     <li key={line.label} className="flex justify-between gap-3">
                       <span>{line.label}</span>
                       <span className="font-semibold text-white">
-                        ${moneyFromMinor(line.extendedAmountMinor)}
+                        {moneyFromMinor(line.extendedAmountMinor)}
                       </span>
                     </li>
                   ))}
@@ -584,7 +658,11 @@ export function QuoteBuilder({
           )}
 
           <div className="text-[12px] text-white/70 space-y-1">
-            <div>⏱️ {QB_METHOD_DAYS[method]}</div>
+            <div>
+              ⏱️{" "}
+              {QB_METHOD_DAYS[methodKey as keyof typeof QB_METHOD_DAYS] ??
+                "Lead time confirmed with your quote"}
+            </div>
             <div>📦 {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}</div>
           </div>
 

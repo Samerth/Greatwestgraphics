@@ -6,20 +6,31 @@ import {
   JobRequestDetailResponseSchema,
   JobRequestListResponseSchema,
   JobRequestResponseSchema,
+  PreviewQuoteV2ResponseSchema,
   PricingConfigDraftResponseSchema,
+  PricingConfigV2DraftResponseSchema,
+  PricingConfigV2VersionSummarySchema,
   PricingConfigVersionSummarySchema,
   ProofVersionResponseSchema,
   PublishedPricingConfigResponseSchema,
+  PublishedPricingConfigV2ResponseSchema,
   SubmitJobRequestSchema,
   type FinalQuoteResponse,
   type JobRequestDetailResponse,
   type JobRequestListResponse,
   type JobRequestResponse,
+  type PreviewQuoteV2Response,
   type PricingConfig,
   type PricingConfigDraftResponse,
+  type PricingConfigSelector,
+  type PricingConfigV2,
+  type PricingConfigV2DraftResponse,
+  type PricingConfigV2VersionSummary,
   type PricingConfigVersionSummary,
   type ProofVersionResponse,
   type PublishedPricingConfigResponse,
+  type PublishedPricingConfigV2Response,
+  type QuoteInputV2,
   type StorefrontJobSubmission,
   type UpsertPricingConfigDraft,
 } from "@gwg/contracts";
@@ -428,6 +439,124 @@ export class CommerceClient {
       z.array(PricingConfigVersionSummarySchema),
       { headers: this.headers(undefined, adminToken) },
     );
+  }
+
+  getPricingV2Draft(adminToken: string): Promise<PricingConfigV2DraftResponse> {
+    return this.request(
+      "/admin/pricing/v2/draft",
+      PricingConfigV2DraftResponseSchema,
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  /** Storefront-facing published v2 config; no admin token required. */
+  getPublishedPricingV2Config(): Promise<PublishedPricingConfigV2Response> {
+    return this.request(
+      "/pricing/v2/published",
+      PublishedPricingConfigV2ResponseSchema,
+    );
+  }
+
+  getPricingV2Published(
+    adminToken: string,
+  ): Promise<PublishedPricingConfigV2Response> {
+    return this.request(
+      "/admin/pricing/v2/published",
+      PublishedPricingConfigV2ResponseSchema,
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  savePricingV2Draft(
+    config: PricingConfigV2,
+    adminToken: string,
+  ): Promise<PricingConfigV2DraftResponse> {
+    return this.request(
+      "/admin/pricing/v2/draft",
+      PricingConfigV2DraftResponseSchema,
+      {
+        method: "PUT",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({ context: this.pricingContext(), config }),
+      },
+    );
+  }
+
+  publishPricingV2Draft(
+    adminToken: string,
+    idempotencyKey: string,
+    notes = "",
+  ): Promise<PublishedPricingConfigV2Response> {
+    return this.request(
+      "/admin/pricing/v2/publish",
+      PublishedPricingConfigV2ResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(idempotencyKey, adminToken),
+        body: JSON.stringify({
+          context: this.pricingContext(),
+          notes,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  listPricingV2Versions(
+    adminToken: string,
+  ): Promise<PricingConfigV2VersionSummary[]> {
+    return this.request(
+      "/admin/pricing/v2/versions",
+      z.array(PricingConfigV2VersionSummarySchema),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  restorePricingV2Version(
+    version: number,
+    adminToken: string,
+  ): Promise<PricingConfigV2DraftResponse> {
+    return this.request(
+      "/admin/pricing/v2/restore",
+      PricingConfigV2DraftResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({ context: this.pricingContext(), version }),
+      },
+    );
+  }
+
+  previewPricingV2Quote(
+    quote: QuoteInputV2,
+    adminToken: string,
+    options: {
+      using?: PricingConfigSelector;
+      compareWith?: PricingConfigSelector;
+    } = {},
+  ): Promise<PreviewQuoteV2Response> {
+    return this.request(
+      "/admin/pricing/v2/preview",
+      PreviewQuoteV2ResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: this.pricingContext(),
+          using: options.using ?? { kind: "draft" },
+          ...(options.compareWith ? { compareWith: options.compareWith } : {}),
+          quote,
+        }),
+      },
+    );
+  }
+
+  private pricingContext() {
+    return {
+      tenantId: this.identity.tenantId,
+      accountId: this.identity.accountId,
+      storeId: this.identity.storeId,
+    };
   }
 
   async submitJobRequest(

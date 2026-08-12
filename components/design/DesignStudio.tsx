@@ -9,6 +9,7 @@ import type { PlacedArtwork } from "@/components/design/ArtworkLayer";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 
 export type DesignGarmentOption = {
@@ -25,7 +26,29 @@ type ProductDetailVariant = {
   qty: number;
   active: boolean;
   retailMinor: number;
+  customerPriceMinor?: number;
+  mapPriceMinor?: number | null;
+  priceCurve?: GarmentPriceCurve | null;
 };
+
+/**
+ * Blanks get cheaper per piece as the order grows, matching what the quote
+ * builder would say. Without a curve the catalog price stands.
+ */
+function unitPriceMinor(
+  variant: ProductDetailVariant | undefined,
+  quantity: number,
+): number {
+  if (!variant) return 0;
+  if (!variant.priceCurve || !variant.customerPriceMinor) {
+    return variant.retailMinor;
+  }
+  return priceGarmentFromCurve(variant.priceCurve, {
+    unitCostMinor: variant.customerPriceMinor,
+    quantity: Math.max(1, quantity),
+    mapPriceMinor: variant.mapPriceMinor ?? null,
+  }).sellPerPieceMinor;
+}
 
 type ProductDetail = {
   product: {
@@ -407,7 +430,7 @@ export function DesignStudio({
         meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
         color: productDetail.product.colorName,
         qty: roster.length,
-        unit: priceVariant.retailMinor / 100,
+        unit: unitPriceMinor(priceVariant, roster.length) / 100,
         image: currentPhoto || "",
         artworkProofUrl,
         roster: roster.map((r) => ({
@@ -431,7 +454,7 @@ export function DesignStudio({
       meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
       color: productDetail.product.colorName,
       qty: designQty,
-      unit: selectedVariant.retailMinor / 100,
+      unit: unitPriceMinor(selectedVariant, designQty) / 100,
       image: currentPhoto || "",
       artworkProofUrl,
     });
@@ -1024,7 +1047,7 @@ export function DesignStudio({
                     : addedToCart
                       ? "Added ✓"
                       : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
-                          selectedVariant.retailMinor * designQty,
+                          unitPriceMinor(selectedVariant, designQty) * designQty,
                         )}`}
               </Button>
             </div>
