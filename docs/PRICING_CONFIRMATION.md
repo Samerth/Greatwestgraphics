@@ -256,6 +256,20 @@ Staff pricing lives at **/admin/pricing/v2**. Nothing entered there reaches a cu
 | Order rules | Minimum order, quote validity, rush percentage and what it applies to, packing, shipping markup, artwork minimum, design rate, the dark garment rule, and the margin warning threshold. |
 | History | Every published version with its note, and a one-click copy of any version back into the draft. |
 
+### What the customer sees
+
+The storefront reads the same published config, so a change in the admin panel moves customer prices as soon as it is published — there are no separate storefront numbers to maintain.
+
+| Customer surface | How it prices |
+|---|---|
+| Instant quote builder (/quote) | The full engine. Methods, colour counts, transfer sizes and quantity breaks are read from the published config, so a method added in the admin panel appears here on its own. The "order N+ and save" prompt is produced by pricing the same order at the next quantity break, so the saving quoted is the saving given. |
+| Catalog tiles and "from" prices | The garment markup grid, read at the quantity set in Garments → catalog display quantity (currently 24). |
+| Product page and design studio, ordering blanks | The same grid, read at the quantity the customer has selected, so the per-piece price improves with the order size exactly as a quote would. |
+| Cart and checkout | The price each line was quoted at. The cart no longer applies a volume discount of its own: the quantity break is already in the line price, and discounting it again silently undercut every large order. |
+| Submitted orders | Quote-builder lines carry their inputs with them and are re-priced by the API against the config published at the moment of submission, so a cart left open for a week cannot lock in an old price. |
+
+Until a v2 config is published, the storefront falls back to the bundled master rates, and catalog prices fall back to the flat catalog markup. **Publishing changes catalog prices**: the grid marks expensive garments up far less than the flat 2.0x it replaces — a $65 garment moves from $130.00 to $84.50 at 24 pieces — which is the intent of a cost-banded grid, but it is a large and immediate change to advertised prices.
+
 ---
 
 ## 7. Open questions

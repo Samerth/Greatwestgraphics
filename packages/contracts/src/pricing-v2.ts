@@ -468,6 +468,20 @@ export const QuoteBreakdownV2Schema = z.object({
 });
 export type QuoteBreakdownV2 = z.infer<typeof QuoteBreakdownV2Schema>;
 
+/**
+ * Travels with a cart line so the server can re-price it against the config
+ * that is live at submission time, rather than trusting a price the browser
+ * calculated minutes or days earlier. `schemaVersion` is what distinguishes
+ * it from a v1 snapshot on the same field.
+ */
+export const LinePricingSnapshotV2Schema = z.object({
+  schemaVersion: z.literal(2),
+  input: QuoteInputV2Schema,
+  breakdown: QuoteBreakdownV2Schema,
+  pricingConfigVersion: z.number().int().positive(),
+});
+export type LinePricingSnapshotV2 = z.infer<typeof LinePricingSnapshotV2Schema>;
+
 /* ------------------------------------------------------------------ */
 /* Admin calculator                                                    */
 /* ------------------------------------------------------------------ */

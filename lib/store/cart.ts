@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { LinePricingSnapshot } from "@gwg/contracts";
+import type {
+  LinePricingSnapshot,
+  LinePricingSnapshotV2,
+} from "@gwg/contracts";
 
 export interface CartItem {
   id: string;
@@ -22,8 +25,12 @@ export interface CartItem {
   artworkProofUrl?: string;
   /** Team/group order: one row per piece with its own size, name and number. When present, `qty` equals `roster.length`. */
   roster?: { size: string; name: string; number?: string }[];
-  /** Full quote breakdown, present when added from the Quote Builder. */
-  pricingSnapshot?: LinePricingSnapshot;
+  /**
+   * Full quote breakdown, present when added from the Quote Builder. Carts
+   * persisted before the v2 migration still hold a v1 snapshot, so both
+   * shapes have to be readable.
+   */
+  pricingSnapshot?: LinePricingSnapshotV2 | LinePricingSnapshot;
 }
 
 interface CartState {
@@ -35,13 +42,16 @@ interface CartState {
   pieceCount: () => number;
 }
 
-// Pricing math ported 1:1 from computeCartTotals() in the original script.js.
+/**
+ * Line prices already come from the pricing engine, which builds the volume
+ * break into the per-piece price. The cart therefore adds no discount of its
+ * own — the flat 8%/12% tiers it used to apply would discount an
+ * already-discounted price and quietly undercut every large order.
+ */
 export function computeCartTotals(items: CartItem[], deliveryFee = 0) {
   const pieces = items.reduce((s, i) => s + i.qty, 0);
   const subtotal = items.reduce((s, i) => s + i.qty * i.unit, 0);
-  let discountRate = 0;
-  if (pieces >= 75) discountRate = 0.12;
-  else if (pieces >= 50) discountRate = 0.08;
+  const discountRate = 0;
   const discount = subtotal * discountRate;
   const netSubtotal = subtotal - discount;
   const gst = netSubtotal * 0.05;

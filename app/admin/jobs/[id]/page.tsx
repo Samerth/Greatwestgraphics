@@ -115,14 +115,23 @@ export default async function AdminJobDetailPage({
         <h2 className="font-display font-bold text-xl m-0">Lines</h2>
         {detail.lines.map((line) => {
           const configuration = line.snapshot.configuration as {
-            pricing?: { breakdown?: { totalMinor?: number } };
+            pricing?: {
+              // v1 keeps the total at the top of the breakdown, v2 nests it
+              // under totals.
+              breakdown?: {
+                totalMinor?: number;
+                totals?: { totalMinor?: number };
+              };
+            };
             designProofs?: { front?: string; back?: string };
             color?: string;
             size?: string;
             storefrontProductId?: string;
             productMetadata?: string;
           };
-          const pricing = configuration?.pricing;
+          const snapshotTotalMinor =
+            configuration?.pricing?.breakdown?.totals?.totalMinor ??
+            configuration?.pricing?.breakdown?.totalMinor;
           const designProofs = configuration?.designProofs;
           const catalogHint =
             configuration?.productMetadata ||
@@ -141,8 +150,8 @@ export default async function AdminJobDetailPage({
                 {line.snapshot.unitPriceEstimateMinor != null
                   ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
                   : ""}
-                {pricing?.breakdown?.totalMinor != null
-                  ? ` · snapshot total ${moneyFromMinor(pricing.breakdown.totalMinor)}`
+                {snapshotTotalMinor != null
+                  ? ` · snapshot total ${moneyFromMinor(snapshotTotalMinor)}`
                   : ""}
               </p>
               {catalogHint && (

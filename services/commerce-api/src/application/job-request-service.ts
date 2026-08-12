@@ -13,8 +13,12 @@ import type {
   SubmitJobRequest,
   TransitionJobRequest,
 } from "@gwg/contracts";
-import { QuoteInputSchema } from "@gwg/contracts";
-import { calculateQuote } from "@gwg/pricing";
+import {
+  PricingConfigV2Schema,
+  QuoteInputSchema,
+  QuoteInputV2Schema,
+} from "@gwg/contracts";
+import { calculateQuote, calculateQuoteV2 } from "@gwg/pricing";
 import type { CommerceDatabase } from "../db/client.js";
 import {
   accountPeople,
@@ -55,15 +59,49 @@ function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+type PublishedConfigRow = { version: number; config: unknown };
+
+/**
+ * Re-prices a submitted line against whatever is published now, so a stale
+ * cart can never lock in an old price. A line is priced with the engine that
+ * matches its own snapshot: v2 lines need a published v2 config, v1 lines a
+ * v1 one. Without a matching config the line is left as the customer saw it.
+ */
 function repriceLine(
   line: JobRequestLineInput,
-  published: { version: number; config: unknown },
+  published: { v1: PublishedConfigRow | null; v2: PublishedConfigRow | null },
 ): JobRequestLineInput {
-  const pricingInput = line.configuration?.pricing?.input;
-  if (!pricingInput) return line;
+  const snapshot = line.configuration?.pricing;
+  if (!snapshot) return line;
 
-  const config = PricingConfigSchema.parse(published.config);
-  const input = QuoteInputSchema.parse(pricingInput);
+  if ("schemaVersion" in snapshot && snapshot.schemaVersion === 2) {
+    if (!published.v2) return line;
+    const config = PricingConfigV2Schema.parse(published.v2.config);
+    const input = QuoteInputV2Schema.parse(snapshot.input);
+    const breakdown = calculateQuoteV2(input, config);
+    const quantity = breakdown.totalQuantity;
+    return {
+      ...line,
+      quantity,
+      unitPriceEstimateMinor: Math.round(
+        breakdown.totals.totalMinor / Math.max(1, quantity),
+      ),
+      currency: "CAD",
+      configuration: {
+        ...line.configuration,
+        pricing: {
+          schemaVersion: 2,
+          input,
+          breakdown,
+          pricingConfigVersion: published.v2.version,
+        },
+      },
+    };
+  }
+
+  if (!published.v1) return line;
+  const config = PricingConfigSchema.parse(published.v1.config);
+  const input = QuoteInputSchema.parse(snapshot.input);
   const breakdown = calculateQuote(input, config);
   return {
     ...line,
@@ -75,7 +113,7 @@ function repriceLine(
       pricing: {
         input,
         breakdown,
-        pricingConfigVersion: published.version,
+        pricingConfigVersion: published.v1.version,
       },
     },
   };
@@ -228,7 +266,9 @@ export class JobRequestService {
         );
       }
 
-      const [publishedPricing] = await transaction
+      // Both schema versions can be published at once during the migration,
+      // so fetch each and let every line pick the one its snapshot needs.
+      const publishedPricing = await transaction
         .select()
         .from(pricingConfigs)
         .where(
@@ -236,12 +276,16 @@ export class JobRequestService {
             eq(pricingConfigs.tenantId, tenantId),
             eq(pricingConfigs.status, "published"),
           ),
-        )
-        .limit(1);
+        );
 
-      const pricedLines = publishedPricing
-        ? command.lines.map((line) => repriceLine(line, publishedPricing))
-        : command.lines;
+      const published = {
+        v1: publishedPricing.find((row) => row.schemaVersion === 1) ?? null,
+        v2: publishedPricing.find((row) => row.schemaVersion === 2) ?? null,
+      };
+
+      const pricedLines = command.lines.map((line) =>
+        repriceLine(line, published),
+      );
 
       const displayId = await nextDisplayId(transaction, tenantId);
       const [created] = await transaction

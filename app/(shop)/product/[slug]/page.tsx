@@ -23,6 +23,7 @@ import {
   toCrossSellItems,
 } from "@/lib/commerce/catalog";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import type { GarmentPriceCurve } from "@gwg/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -311,6 +312,13 @@ export default async function ProductPage({
                       id: String(v.id),
                       sizeName: String(v.sizeName || ""),
                       retailMinor: Number(v.retailMinor || 0),
+                      costMinor: Number(v.customerPriceMinor || 0),
+                      mapPriceMinor:
+                        v.mapPriceMinor == null
+                          ? null
+                          : Number(v.mapPriceMinor),
+                      priceCurve:
+                        (v.priceCurve as GarmentPriceCurve | null) ?? null,
                       inStock: Number(v.qty || 0) > 0 && v.active !== false,
                     }))}
                   />

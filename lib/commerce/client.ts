@@ -449,6 +449,14 @@ export class CommerceClient {
     );
   }
 
+  /** Storefront-facing published v2 config; no admin token required. */
+  getPublishedPricingV2Config(): Promise<PublishedPricingConfigV2Response> {
+    return this.request(
+      "/pricing/v2/published",
+      PublishedPricingConfigV2ResponseSchema,
+    );
+  }
+
   getPricingV2Published(
     adminToken: string,
   ): Promise<PublishedPricingConfigV2Response> {

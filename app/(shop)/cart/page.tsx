@@ -418,7 +418,7 @@ export default function CartPage() {
               🔒 Secure checkout · Visa · Mastercard · Amex
             </p>
             <p className="text-[12px] text-text-tertiary text-center m-0">
-              Prices drop automatically at 50, 100 and 250+ units.
+              Per-piece pricing improves as your quantity goes up.
             </p>
           </div>
         </div>

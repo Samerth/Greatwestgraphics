@@ -3,8 +3,11 @@ import type { PricingConfigV2, QuoteInputV2 } from "@gwg/contracts";
 import { PricingConfigV2Schema } from "@gwg/contracts";
 import {
   calculateQuoteV2,
+  garmentPriceCurve,
+  garmentSellPerPieceMinor,
   interpolateByAnchor,
   PRICING_MASTER_V2,
+  priceGarmentFromCurve,
   resolveIsDark,
 } from "../src/index.js";
 
@@ -31,6 +34,76 @@ function quote(overrides: Partial<QuoteInputV2> = {}): QuoteInputV2 {
     ...overrides,
   } as QuoteInputV2;
 }
+
+describe("storefront garment pricing", () => {
+  // The catalog, the product page and the quote builder each price blanks
+  // through a different entry point. If these ever disagree, a customer sees
+  // one price while browsing and another when quoting.
+  const cases = [
+    { costMinor: 800, quantity: 24 },
+    { costMinor: 800, quantity: 137 },
+    { costMinor: 2000, quantity: 48 },
+    { costMinor: 1350, quantity: 500 },
+    { costMinor: 550, quantity: 1 },
+  ];
+
+  it.each(cases)(
+    "prices a $costMinor garment at $quantity the same everywhere",
+    ({ costMinor, quantity }) => {
+      const fromQuote = calculateQuoteV2(
+        quote({
+          garments: [
+            {
+              id: "g1",
+              description: "Tee",
+              unitCostMinor: costMinor,
+              quantity,
+              colourName: "White",
+            },
+          ],
+        }),
+        config,
+      ).garments[0]!.sellPerPieceMinor;
+
+      const fromHelper = garmentSellPerPieceMinor(config, {
+        unitCostMinor: costMinor,
+        quantity,
+      });
+
+      const fromCurve = priceGarmentFromCurve(
+        garmentPriceCurve(config, costMinor),
+        { unitCostMinor: costMinor, quantity },
+      ).sellPerPieceMinor;
+
+      expect(fromHelper).toBe(fromQuote);
+      expect(fromCurve).toBe(fromQuote);
+    },
+  );
+
+  it("charges less per piece as the quantity grows", () => {
+    const at24 = garmentSellPerPieceMinor(config, {
+      unitCostMinor: 800,
+      quantity: 24,
+    });
+    const at500 = garmentSellPerPieceMinor(config, {
+      unitCostMinor: 800,
+      quantity: 500,
+    });
+    expect(at500).toBeLessThan(at24);
+  });
+
+  it("honours a MAP floor above the calculated price", () => {
+    const floored = priceGarmentFromCurve(garmentPriceCurve(config, 800), {
+      unitCostMinor: 800,
+      quantity: 500,
+      mapPriceMinor: 9_00,
+    });
+    expect(floored.mapFloorApplied).toBe(config.garment.mapPolicy === "floor");
+    if (config.garment.mapPolicy === "floor") {
+      expect(floored.sellPerPieceMinor).toBe(9_00);
+    }
+  });
+});
 
 describe("imported config", () => {
   it("matches the contract schema", () => {

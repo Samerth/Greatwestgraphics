@@ -19,6 +19,11 @@ import {
   interpolateByAnchor,
   roundMinor,
 } from "./interpolate.js";
+import {
+  garmentPriceCurve,
+  priceGarmentFromCurve,
+  round2,
+} from "./garment-price.js";
 
 export class PricingValidationError extends Error {
   readonly code = "PRICING_VALIDATION_ERROR";
@@ -27,10 +32,6 @@ export class PricingValidationError extends Error {
 type ParsedInput = ReturnType<typeof QuoteInputV2Schema.parse>;
 type ParsedGarment = ParsedInput["garments"][number];
 type ParsedDecoration = ParsedInput["decorations"][number];
-
-function round2(value: number): number {
-  return Math.round(value * 100 + 1e-9) / 100;
-}
 
 function money(minor: number): string {
   return formatMinor(roundMinor(minor));
@@ -79,33 +80,25 @@ function priceGarment(
   garment: ParsedGarment,
   config: PricingConfigV2,
 ): GarmentPricingResult {
-  const { markupGrid, multiplier, roundCostUpToWholeDollar, costCapForMarkupMinor } =
-    config.garment;
+  const { multiplier } = config.garment;
   const warnings: string[] = [];
 
-  const costDollars = garment.unitCostMinor / 100;
-  const capDollars = costCapForMarkupMinor / 100;
-  const rounded = roundCostUpToWholeDollar ? Math.ceil(costDollars) : costDollars;
-  const lookupCost = Math.min(Math.max(rounded, markupGrid.costAnchors[0]!), capDollars);
-
-  const costRow = interpolateByAnchor(
-    markupGrid.costAnchors,
-    markupGrid.costAnchors.map((_, index) => index),
-    lookupCost,
-  );
-  // Cost rows are whole dollars, so a rounded-up cost lands on an exact row.
-  const rowIndex = Math.round(costRow.value);
-  const row = markupGrid.grid[rowIndex];
-  if (!row) {
+  let curve;
+  try {
+    curve = garmentPriceCurve(config, garment.unitCostMinor);
+  } catch (caught) {
     throw new PricingValidationError(
-      `Garment markup grid has no row for a $${lookupCost} garment`,
+      caught instanceof Error ? caught.message : String(caught),
     );
   }
 
-  const qtyInterp = interpolateByAnchor(markupGrid.qtyAnchors, row, garment.quantity);
-  const baseMarkup = round2(qtyInterp.value);
-  const markup = round2(baseMarkup * multiplier);
-  const calculated = roundMinor(garment.unitCostMinor * markup);
+  const lookupCost = curve.lookupCostDollars;
+  const roundCostUpToWholeDollar = curve.roundedUpToWholeDollar;
+  const priced = priceGarmentFromCurve(curve, garment);
+  const qtyInterp = priced.quantityInterpolation;
+  const baseMarkup = priced.baseMarkup;
+  const markup = priced.markup;
+  const calculated = priced.calculatedMinor;
 
   const steps: ExplainStep[] = [
     {
@@ -143,21 +136,18 @@ function priceGarment(
     result: money(calculated),
   });
 
-  let sellPerPieceMinor = calculated;
+  let sellPerPieceMinor = priced.sellPerPieceMinor;
 
-  if (garment.mapPriceMinor != null && garment.mapPriceMinor > calculated) {
-    if (config.garment.mapPolicy === "floor") {
-      sellPerPieceMinor = garment.mapPriceMinor;
-      steps.push({
-        label: "MAP floor",
-        detail: `The manufacturer's minimum advertised price of ${money(garment.mapPriceMinor)} is higher than our calculated price, so it is used instead`,
-        result: money(sellPerPieceMinor),
-      });
-    } else if (config.garment.mapPolicy === "warnOnly") {
-      warnings.push(
-        `Garment "${garment.description || garment.id}" prices below its MAP of ${money(garment.mapPriceMinor)} (calculated ${money(calculated)}).`,
-      );
-    }
+  if (priced.mapFloorApplied) {
+    steps.push({
+      label: "MAP floor",
+      detail: `The manufacturer's minimum advertised price of ${money(garment.mapPriceMinor!)} is higher than our calculated price, so it is used instead`,
+      result: money(sellPerPieceMinor),
+    });
+  } else if (priced.mapUndercut) {
+    warnings.push(
+      `Garment "${garment.description || garment.id}" prices below its MAP of ${money(garment.mapPriceMinor!)} (calculated ${money(calculated)}).`,
+    );
   }
 
   if (garment.overrideSellPerPieceMinor != null) {
@@ -193,6 +183,36 @@ function priceGarment(
       sources,
     },
   };
+}
+
+/**
+ * The blank-garment price on its own, for surfaces that show a garment
+ * without decoration — catalog tiles, product pages, the design studio.
+ * Uses exactly the same grid and multiplier as a full quote, so a browsing
+ * price and a quoted price can never disagree.
+ */
+export function garmentSellPerPieceMinor(
+  config: PricingConfigV2,
+  garment: {
+    unitCostMinor: number;
+    quantity: number;
+    mapPriceMinor?: number | null;
+  },
+): number {
+  return priceGarment(
+    {
+      id: "catalog",
+      description: "",
+      unitCostMinor: garment.unitCostMinor,
+      quantity: Math.max(1, Math.round(garment.quantity)),
+      colourName: "",
+      mapPriceMinor: garment.mapPriceMinor ?? undefined,
+      isDark: undefined,
+      overrideSellPerPieceMinor: undefined,
+      overrideReason: undefined,
+    },
+    config,
+  ).sellPerPieceMinor;
 }
 
 /* ------------------------------------------------------------------ */

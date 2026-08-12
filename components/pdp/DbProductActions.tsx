@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 
 const QTY_OPTIONS = [24, 48, 96, 250, 500];
@@ -12,9 +13,31 @@ const QTY_OPTIONS = [24, 48, 96, 250, 500];
 export type DbVariantOption = {
   id: string;
   sizeName: string;
+  /** Price at the catalog's advertised quantity, used as the fallback. */
   retailMinor: number;
+  costMinor?: number;
+  mapPriceMinor?: number | null;
+  /** Markup row for this garment; lets price follow the quantity picker. */
+  priceCurve?: GarmentPriceCurve | null;
   inStock: boolean;
 };
+
+/**
+ * Blanks get cheaper per piece as the order grows, exactly as they do in a
+ * quote. Without the curve (no published v2 config) the catalog price stands.
+ */
+function unitPriceMinor(
+  variant: DbVariantOption | undefined,
+  quantity: number,
+): number {
+  if (!variant) return 0;
+  if (!variant.priceCurve || !variant.costMinor) return variant.retailMinor;
+  return priceGarmentFromCurve(variant.priceCurve, {
+    unitCostMinor: variant.costMinor,
+    quantity: Math.max(1, quantity),
+    mapPriceMinor: variant.mapPriceMinor ?? null,
+  }).sellPerPieceMinor;
+}
 
 export function DbProductActions({
   productId,
@@ -175,6 +198,14 @@ export function DbProductActions({
             ))}
           </div>
 
+          {selectedVariant?.priceCurve && (
+            <p className="text-[12.5px] text-text-secondary mb-sp-2.5 mt-0">
+              {moneyFromMinor(unitPriceMinor(selectedVariant, qty))} per piece
+              at {qty.toLocaleString()} — the per-piece price drops as the
+              quantity goes up.
+            </p>
+          )}
+
           <form onSubmit={handleCustomQtySubmit} className="flex gap-2 mb-sp-4">
             <input
               type="number"
@@ -230,7 +261,7 @@ export function DbProductActions({
               meta: `Team order · ${roster.length} pieces, mixed sizes`,
               color,
               qty: roster.length,
-              unit: priceVariant.retailMinor / 100,
+              unit: unitPriceMinor(priceVariant, roster.length) / 100,
               image: image ?? "",
               roster: roster.map((r) => ({
                 size: r.size,
@@ -252,7 +283,7 @@ export function DbProductActions({
             meta: `Size ${selectedVariant.sizeName}`,
             color,
             qty,
-            unit: selectedVariant.retailMinor / 100,
+            unit: unitPriceMinor(selectedVariant, qty) / 100,
             image: image ?? "",
           });
           setJustAdded(true);
@@ -268,7 +299,7 @@ export function DbProductActions({
             : justAdded
               ? "Added ✓"
               : `Add ${qty.toLocaleString()} Piece${qty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
-                  selectedVariant.retailMinor * qty,
+                  unitPriceMinor(selectedVariant, qty) * qty,
                 )}`}
       </Button>
     </div>

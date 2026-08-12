@@ -1,10 +1,17 @@
 import { and, asc, desc, eq, exists, gt, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
+import { PricingConfigV2Schema } from "@gwg/contracts";
+import {
+  garmentPriceCurve,
+  garmentSellPerPieceMinor,
+  type GarmentPriceCurve,
+} from "@gwg/pricing";
 import type { CommerceDatabase } from "../db/client.js";
 import {
   catalogSettings,
   categories,
   categoryOverrides,
+  pricingConfigs,
   ssCategoryMap,
   ssProductCategories,
   ssProducts,
@@ -45,6 +52,69 @@ type ProductFilterQuery = {
 
 export class CatalogService {
   constructor(private readonly db: CommerceDatabase) {}
+
+  /**
+   * Prices blanks the way a quote would: through the published garment
+   * markup grid, read at the quantity the catalog is meant to advertise.
+   * Falls back to the flat catalog markup only while no v2 config is
+   * published, so tiles never disagree with the quote builder once it is.
+   */
+  private async garmentPricer(tenantId: string): Promise<{
+    /** Price shown on a tile: the advertised catalog quantity. */
+    price: (costMinor: number, mapPriceMinor: number | null) => number;
+    /** Quantity the tile price advertises, or null on the flat fallback. */
+    displayQty: number | null;
+    /**
+     * The garment's markup row, so a page with its own quantity picker can
+     * re-price without another round trip. Null on the flat fallback.
+     */
+    curveFor: (costMinor: number) => GarmentPriceCurve | null;
+  }> {
+    const [row] = await this.db
+      .select()
+      .from(pricingConfigs)
+      .where(
+        and(
+          eq(pricingConfigs.tenantId, tenantId),
+          eq(pricingConfigs.status, "published"),
+          eq(pricingConfigs.schemaVersion, 2),
+        ),
+      )
+      .limit(1);
+
+    if (row) {
+      const parsed = PricingConfigV2Schema.safeParse(row.config);
+      if (parsed.success) {
+        const config = parsed.data;
+        const displayQty = config.garment.catalogDisplayQty;
+        return {
+          displayQty,
+          price: (costMinor, mapPriceMinor) =>
+            garmentSellPerPieceMinor(config, {
+              unitCostMinor: costMinor,
+              quantity: displayQty,
+              mapPriceMinor,
+            }),
+          curveFor: (costMinor) => {
+            try {
+              return garmentPriceCurve(config, costMinor);
+            } catch {
+              return null;
+            }
+          },
+        };
+      }
+    }
+
+    const settings = await this.getSettings(tenantId);
+    const markup = Number(settings.retailMarkup) || 2;
+    return {
+      displayQty: null,
+      price: (costMinor, mapPriceMinor) =>
+        retailFromCost(costMinor, mapPriceMinor, markup),
+      curveFor: () => null,
+    };
+  }
 
   async getSettings(tenantId: string) {
     const [row] = await this.db
@@ -481,8 +551,7 @@ export class CatalogService {
 
     let priceFilteredIds: string[] | null = null;
     if (query?.priceMinMinor != null || query?.priceMaxMinor != null) {
-      const settings = await this.getSettings(tenantId);
-      const markup = Number(settings.retailMarkup) || 2;
+      const { price: priceGarment } = await this.garmentPricer(tenantId);
       const min = query.priceMinMinor ?? 0;
       const max = query.priceMaxMinor ?? Number.MAX_SAFE_INTEGER;
       // Filter on the same "from" price shown on the tile (cheapest
@@ -501,7 +570,7 @@ export class CatalogService {
         .orderBy(asc(ssVariants.productUuid), asc(ssVariants.customerPriceMinor));
       priceFilteredIds = cheapestPerProduct
         .filter((v) => {
-          const retail = retailFromCost(v.customerPriceMinor, v.mapPriceMinor, markup);
+          const retail = priceGarment(v.customerPriceMinor, v.mapPriceMinor);
           return retail >= min && retail <= max;
         })
         .map((v) => v.productUuid);
@@ -625,8 +694,7 @@ export class CatalogService {
   ) {
     const limit = query?.limit ?? 50;
     const offset = query?.offset ?? 0;
-    const settings = await this.getSettings(tenantId);
-    const markup = Number(settings.retailMarkup) || 2;
+    const { price: priceGarment } = await this.garmentPricer(tenantId);
 
     const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
     if (empty) return [];
@@ -697,7 +765,7 @@ export class CatalogService {
         // card with no image at all, even though a usable photo existed.
         styleImageUrl: row.style.styleImageUrl,
         costMinor: cost,
-        retailMinor: retailFromCost(cost, map, markup),
+        retailMinor: priceGarment(cost, map),
         mapPriceMinor: map,
         available:
           (row.product.qty ?? 0) > 0 &&
@@ -744,6 +812,7 @@ export class CatalogService {
       .where(eq(ssProductCategories.productUuid, productUuid));
     const settings = await this.getSettings(tenantId);
     const markup = Number(settings.retailMarkup) || 2;
+    const garmentPricing = await this.garmentPricer(tenantId);
 
     // Other colorways of the same style, so the PDP can offer a real
     // colour switcher instead of showing one fixed photo with no way to
@@ -778,15 +847,17 @@ export class CatalogService {
       style: row.style,
       variants: variants.map((variant) => ({
         ...variant,
-        retailMinor: retailFromCost(
+        retailMinor: garmentPricing.price(
           variant.customerPriceMinor,
           variant.mapPriceMinor,
-          markup,
         ),
+        priceCurve: garmentPricing.curveFor(variant.customerPriceMinor),
       })),
       categories: cats,
       colorways,
       retailMarkup: markup,
+      /** Quantity the `retailMinor` prices above are quoted at. */
+      priceDisplayQty: garmentPricing.displayQty,
     };
   }
 

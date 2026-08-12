@@ -135,6 +135,10 @@ export function CheckoutWizard() {
                       size: item.size,
                       image: item.image,
                       designProofs,
+                      // Sending the snapshot lets the API re-price the line
+                      // against the config that is live right now, so a cart
+                      // left open for a week can't lock in stale pricing.
+                      pricing: item.pricingSnapshot,
                     },
                   };
                 }),

@@ -26,6 +26,28 @@ import {
 
 const SCHEMA_VERSION = 2;
 
+/**
+ * Applies a store's negotiated storewide adjustment (-0.1 for 10% off, 0.05
+ * for 5% up) to a published config. Only the margin dials move: flat fees
+ * like setup, digitizing and packing recover cost, so scaling them would
+ * either eat the cost or overcharge for it.
+ */
+export function applyStorePricingAdjustmentV2(
+  config: PricingConfigV2,
+  percent: number | null,
+): PricingConfigV2 {
+  if (!percent) return config;
+  const scale = 1 + percent;
+  return {
+    ...config,
+    garment: { ...config.garment, multiplier: config.garment.multiplier * scale },
+    methods: config.methods.map((method) => ({
+      ...method,
+      multiplier: method.multiplier * scale,
+    })),
+  };
+}
+
 function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }

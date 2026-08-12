@@ -41,7 +41,10 @@ import {
   applyStorePricingAdjustment,
   PricingConfigService,
 } from "./application/pricing-config-service.js";
-import { PricingConfigV2Service } from "./application/pricing-config-v2-service.js";
+import {
+  applyStorePricingAdjustmentV2,
+  PricingConfigV2Service,
+} from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
 import { DesignProjectService } from "./application/design-project-service.js";
 import { StoreService } from "./application/store-service.js";
@@ -228,6 +231,26 @@ export function buildApp(input: {
     return PublishedPricingConfigResponseSchema.parse({
       ...published,
       config,
+    });
+  });
+
+  // Storefront-facing: the quote builder needs live prices without an admin
+  // token. Read-only, and the store adjustment is applied server-side so a
+  // negotiated rate can't be tampered with in the browser.
+  app.get("/pricing/v2/published", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const published = await pricingV2Service.getPublished(auth.tenantId);
+    const store = await storeService
+      .getById(auth.tenantId, auth.storeId)
+      .catch(() => null);
+    return PublishedPricingConfigV2ResponseSchema.parse({
+      ...published,
+      config: store
+        ? applyStorePricingAdjustmentV2(
+            published.config,
+            store.pricingAdjustmentPercent,
+          )
+        : published.config,
     });
   });
 

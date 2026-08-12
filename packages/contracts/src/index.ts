@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LinePricingSnapshotV2Schema } from "./pricing-v2.js";
 
 export * from "./pricing-v2.js";
 
@@ -337,7 +338,11 @@ export const JobRequestLineInputSchema = z.object({
   currency: z.string().length(3).toUpperCase().default("CAD"),
   configuration: z
     .object({
-      pricing: LinePricingSnapshotSchema.optional(),
+      // v2 first: it is the discriminating shape, and v1 lines still parse
+      // so carts saved before the migration keep working.
+      pricing: z
+        .union([LinePricingSnapshotV2Schema, LinePricingSnapshotSchema])
+        .optional(),
     })
     .passthrough()
     .default({}),

@@ -24,6 +24,12 @@ function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+/**
+ * v1 and v2 configs share this table, so every v1 lookup must say so —
+ * otherwise a published v2 row can be returned here and fail to parse.
+ */
+const isV1 = eq(pricingConfigs.schemaVersion, 1);
+
 function toPublished(
   row: typeof pricingConfigs.$inferSelect,
 ): PublishedPricingConfigResponse {
@@ -94,6 +100,7 @@ export class PricingConfigService {
         and(
           eq(pricingConfigs.tenantId, tenantId),
           eq(pricingConfigs.status, "published"),
+          isV1,
         ),
       )
       .limit(1);
@@ -114,6 +121,7 @@ export class PricingConfigService {
         and(
           eq(pricingConfigs.tenantId, tenantId),
           eq(pricingConfigs.status, "draft"),
+          isV1,
         ),
       )
       .limit(1);
@@ -165,6 +173,7 @@ export class PricingConfigService {
           and(
             eq(pricingConfigs.tenantId, tenantId),
             eq(pricingConfigs.status, "draft"),
+            isV1,
           ),
         )
         .limit(1);
@@ -193,6 +202,7 @@ export class PricingConfigService {
           and(
             eq(pricingConfigs.tenantId, tenantId),
             eq(pricingConfigs.status, "published"),
+            isV1,
           ),
         )
         .limit(1);
@@ -268,6 +278,7 @@ export class PricingConfigService {
           and(
             eq(pricingConfigs.tenantId, tenantId),
             eq(pricingConfigs.status, "draft"),
+            isV1,
           ),
         )
         .limit(1);
@@ -286,6 +297,7 @@ export class PricingConfigService {
           and(
             eq(pricingConfigs.tenantId, tenantId),
             eq(pricingConfigs.status, "published"),
+            isV1,
           ),
         );
 
@@ -331,7 +343,7 @@ export class PricingConfigService {
     const rows = await this.db
       .select()
       .from(pricingConfigs)
-      .where(eq(pricingConfigs.tenantId, tenantId))
+      .where(and(eq(pricingConfigs.tenantId, tenantId), isV1))
       .orderBy(desc(pricingConfigs.version), asc(pricingConfigs.createdAt));
 
     return rows.map((row) => ({
@@ -355,6 +367,7 @@ export class PricingConfigService {
         and(
           eq(pricingConfigs.tenantId, tenantId),
           eq(pricingConfigs.version, version),
+          isV1,
         ),
       )
       .limit(1);

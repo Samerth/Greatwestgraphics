@@ -6,8 +6,8 @@ import {
   createCommerceClient,
 } from "@/lib/commerce/client";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
-import { DEFAULT_PRICING_CONFIG_V1 } from "@/lib/utils/quote-pricing";
-import type { DecorationMethod, PricingConfig } from "@gwg/contracts";
+import { PRICING_MASTER_V2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +18,26 @@ export const metadata: Metadata = {
   alternates: { canonical: "/quote" },
 };
 
-function parseMethod(raw?: string): DecorationMethod | undefined {
+/**
+ * Marketing links use friendly names ("?method=screen"), while the config
+ * keys them however the admin named them, so match on both.
+ */
+function parseMethod(
+  raw: string | undefined,
+  config: PricingConfigV2,
+): string | undefined {
   if (!raw) return undefined;
-  const key = raw.toLowerCase();
-  if (key === "screen" || key === "screenprint") return "screenPrint";
-  if (key === "embroidery") return "embroidery";
-  if (key === "dtf") return "dtf";
-  return undefined;
+  const wanted = raw.toLowerCase().replace(/[^a-z]/g, "");
+  const aliases: Record<string, string> = {
+    screen: "screenprint",
+    screenprinting: "screenprint",
+    stitching: "embroidery",
+    transfer: "dtf",
+  };
+  const target = aliases[wanted] ?? wanted;
+  return config.methods.find(
+    (method) => method.key.toLowerCase().replace(/[^a-z]/g, "") === target,
+  )?.key;
 }
 
 export default async function QuotePage({
@@ -33,11 +46,13 @@ export default async function QuotePage({
   searchParams: Promise<{ method?: string; type?: string }>;
 }) {
   const params = await searchParams;
-  let pricingConfig: PricingConfig = DEFAULT_PRICING_CONFIG_V1;
+  let pricingConfig: PricingConfigV2 = PRICING_MASTER_V2;
   let pricingNote: string | undefined;
 
   try {
-    const published = await (await createCommerceClient()).getPublishedPricingConfig();
+    const published = await (
+      await createCommerceClient()
+    ).getPublishedPricingV2Config();
     pricingConfig = published.config;
   } catch (caught) {
     pricingNote =
@@ -62,7 +77,7 @@ export default async function QuotePage({
     available: p.available,
   }));
 
-  const initialMethod = parseMethod(params.method);
+  const initialMethod = parseMethod(params.method, pricingConfig);
   const initialQty =
     params.type?.toLowerCase() === "bulk" ? 250 : undefined;
 
