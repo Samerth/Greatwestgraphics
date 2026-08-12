@@ -6,11 +6,13 @@ test.describe("storefront smoke", () => {
     await expect(page.getByAltText(/great west graphics/i).first()).toBeVisible();
   });
 
-  test("quote page exposes builder CTA", async ({ page }) => {
+  test("quote page prices an order and offers the cart", async ({ page }) => {
     await page.goto("/quote");
     await expect(
-      page.getByRole("button", { name: /get exact quote/i }),
+      page.getByRole("button", { name: /add to cart & continue/i }),
     ).toBeVisible();
+    // A price proves the engine ran, not just that the page rendered.
+    await expect(page.getByText(/^\$[\d,]+\.\d{2}$/).first()).toBeVisible();
   });
 
   test("cart empty state is reachable", async ({ page }) => {

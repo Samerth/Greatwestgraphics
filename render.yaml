@@ -4,7 +4,12 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install && npm run build --workspace @gwg/commerce-api
+    # Migrations run last, so a failed compile aborts the deploy before touching
+    # the database. They belong in preDeployCommand, but that needs a paid plan:
+    #   preDeployCommand: npm run db:migrate --workspace @gwg/commerce-api
+    # Until then they run here, against the schema the old version is still
+    # serving, so every migration must be backward compatible with it.
+    buildCommand: npm install && npm run build --workspace @gwg/commerce-api && npm run db:migrate --workspace @gwg/commerce-api
     startCommand: npm run start --workspace @gwg/commerce-api
     healthCheckPath: /health
     envVars:
