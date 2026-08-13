@@ -4,7 +4,8 @@ This document reflects provider information checked on July 26, 2026. Provider
 offers and prices change; verify the linked official pages before provisioning.
 No cloud resource is created by this repository.
 
-**Hands-on AWS cutover (ECS/ALB/RDS/S3/secrets/health checks):** see
+**Hands-on AWS cutover:** run [`infra/cloudshell/README.md`](../infra/cloudshell/README.md)
+in AWS CloudShell (`ca-central-1`). Architecture notes:
 [`AWS_DEPLOYMENT.md`](./AWS_DEPLOYMENT.md).
 
 ## Recommended path

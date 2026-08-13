@@ -14,3 +14,6 @@ public/vendor/
 .env*
 !.env.example
 .cursor/
+
+# CloudShell local state (resource IDs; still should not be committed)
+infra/cloudshell/.gwg-rds-state/
