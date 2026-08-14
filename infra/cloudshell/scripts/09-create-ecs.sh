@@ -9,6 +9,12 @@ require_state ACCOUNT_ID VPC_ID PUBLIC_SUBNET_1_ID PUBLIC_SUBNET_2_ID DB_SG_ID \
 require_command aws
 require_command jq
 
+if ! aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
+  echo "Creating ECS service-linked role (required once per account)..."
+  aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
+  sleep 10
+fi
+
 LOG_WEB="/ecs/$NAME_PREFIX-web"
 LOG_API="/ecs/$NAME_PREFIX-api"
 aws logs create-log-group --log-group-name "$LOG_WEB" >/dev/null 2>&1 || true
