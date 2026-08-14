@@ -9,8 +9,31 @@ STATE_DIR="$BUNDLE_DIR/.gwg-rds-state"
 STATE_FILE="$STATE_DIR/outputs.env"
 
 [[ -f "$CONFIG_FILE" ]] || { echo "Missing $CONFIG_FILE" >&2; exit 1; }
-# shellcheck disable=SC1090
-source "$CONFIG_FILE"
+
+# Parse KEY=VALUE lines without executing the file as bash. Angle brackets in
+# CONTACT_FROM_EMAIL would otherwise be treated as redirects.
+load_config_file() {
+  local file="$1" line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ "$value" == \"*\" ]]; then
+      value="${value#\"}"
+      value="${value%\"}"
+    elif [[ "$value" == \'*\' ]]; then
+      value="${value#\'}"
+      value="${value%\'}"
+    fi
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  done < "$file"
+}
+
+load_config_file "$CONFIG_FILE"
 mkdir -p "$STATE_DIR"
 touch "$STATE_FILE"
 chmod 700 "$STATE_DIR"
