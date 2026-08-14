@@ -55,13 +55,21 @@ require_command() {
   }
 }
 
+# Bash rejects ${!name:-}. Use -v + ${!name} instead.
+get_state() {
+  local name="$1"
+  if [[ -v "$name" ]]; then
+    printf '%s' "${!name}"
+  fi
+}
+
 require_state() {
   local key
   for key in "$@"; do
-    [[ -n "${!key:-}" ]] || {
+    if ! [[ -v "$key" ]] || [[ -z "$(get_state "$key")" ]]; then
       echo "Missing $key. Run the earlier CloudShell steps first." >&2
       exit 1
-    }
+    fi
   done
 }
 

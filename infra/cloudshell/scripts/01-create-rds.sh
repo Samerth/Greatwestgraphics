@@ -18,7 +18,9 @@ if [[ -z "${VPC_ID:-}" ]]; then
 fi
 
 create_subnet() {
-  local state_key="$1" cidr="$2" az="$3" label="$4" subnet_id="${!state_key:-}"
+  local state_key="$1" cidr="$2" az="$3" label="$4"
+  local subnet_id
+  subnet_id="$(get_state "$state_key")"
   if [[ -z "$subnet_id" ]]; then
     subnet_id="$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block "$cidr" --availability-zone "$az" \
       --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=$NAME_PREFIX-$label},{Key=Project,Value=$PROJECT},{Key=Environment,Value=$ENVIRONMENT}]" \

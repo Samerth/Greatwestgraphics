@@ -89,7 +89,9 @@ save_state SITE_URL "$SITE_URL"
 save_state API_URL "$API_URL"
 
 create_tg() {
-  local state_key="$1" name="$2" port="$3" path="$4" tg="${!state_key:-}"
+  local state_key="$1" name="$2" port="$3" path="$4"
+  local tg
+  tg="$(get_state "$state_key")"
   if [[ -z "$tg" ]]; then
     tg="$(aws elbv2 create-target-group --name "$name" --protocol HTTP --port "$port" --vpc-id "$VPC_ID" \
       --target-type ip --health-check-path "$path" --health-check-interval-seconds 30 \
