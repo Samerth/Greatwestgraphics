@@ -28,7 +28,10 @@ WORK_DIR="$(mktemp -d)"
 
 cleanup() {
   unset DATABASE_URL TARGET_DATABASE_URL
-  rm -rf "$WORK_DIR"
+  if [[ -n "${WORK_DIR:-}" && -d "$WORK_DIR" ]]; then
+    docker run --rm -v "$WORK_DIR:/work" alpine:3.20 rm -rf /work >/dev/null 2>&1 || true
+    rm -rf "$WORK_DIR" >/dev/null 2>&1 || true
+  fi
   if [[ "$TEMP_RULE_ADDED" == "true" ]]; then
     aws ec2 revoke-security-group-ingress --group-id "$DB_SG_ID" --protocol tcp \
       --port 5432 --cidr "$CLOUDSHELL_CIDR" >/dev/null 2>&1 || true
@@ -53,12 +56,17 @@ EOF
 
 echo "Applying Drizzle migrations (journal only — this is what npm run db:migrate uses)..."
 docker pull node:22-alpine >/dev/null
+docker pull alpine:3.20 >/dev/null
+# Install npm packages inside the container filesystem so root-owned
+# node_modules are not left on the CloudShell host.
 docker run --rm \
   --env DATABASE_URL \
-  -v "$WORK_DIR:/app" \
-  -w /app \
+  -v "$WORK_DIR/drizzle:/src/drizzle:ro" \
+  -v "$WORK_DIR/drizzle.config.js:/src/drizzle.config.js:ro" \
+  -v "$WORK_DIR/package.json:/src/package.json:ro" \
+  -w /tmp/migrate \
   node:22-alpine \
-  sh -c 'npm install --silent --no-save drizzle-kit@0.30.1 drizzle-orm@0.38.2 postgres@3.4.5 && npx drizzle-kit migrate'
+  sh -c 'cp /src/package.json /src/drizzle.config.js . && cp -a /src/drizzle ./drizzle && npm install --silent --no-save drizzle-kit@0.30.1 drizzle-orm@0.38.2 postgres@3.4.5 && npx drizzle-kit migrate'
 
 TABLE_COUNT="$(docker run --rm --env TARGET_DATABASE_URL postgres:16-alpine \
   sh -c 'psql "$TARGET_DATABASE_URL" -Atc "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname=\$\$public\$\$;"')"
