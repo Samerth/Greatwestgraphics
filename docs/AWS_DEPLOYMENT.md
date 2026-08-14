@@ -1,9 +1,11 @@
 # AWS deployment guide (Great West Graphics)
 
 Practical steps to run the storefront (Next.js) and `commerce-api` on AWS.
-This repository does **not** provision cloud resources. Pair with
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) for provider cost notes and the full
-credential checklist.
+Hands-on provisioning is the CloudShell pack in
+[`infra/cloudshell/README.md`](../infra/cloudshell/README.md) — run those
+scripts in **AWS CloudShell** in `ca-central-1` while logged into the target
+account. Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) for provider cost notes
+and the full credential checklist.
 
 ## Target architecture (typical)
 

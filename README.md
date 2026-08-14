@@ -30,7 +30,9 @@ of install, build, or application startup. Point `DATABASE_URL` at a local
 PostgreSQL 15+ database or a development provider, then run the migration and
 idempotent development seed commands above. Local Compose and provider notes:
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). ECS/ALB/RDS/S3 cutover steps:
-[`docs/AWS_DEPLOYMENT.md`](docs/AWS_DEPLOYMENT.md).
+[`docs/AWS_DEPLOYMENT.md`](docs/AWS_DEPLOYMENT.md). To create the AWS account
+resources, run [`infra/cloudshell/README.md`](infra/cloudshell/README.md) in
+AWS CloudShell (this repo cannot log into your AWS account).
 
 ## Commands
 
