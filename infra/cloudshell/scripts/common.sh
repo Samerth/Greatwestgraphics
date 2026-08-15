@@ -6,7 +6,6 @@ BUNDLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$BUNDLE_DIR/../.." && pwd)"
 CONFIG_FILE="$BUNDLE_DIR/config.env"
 STATE_DIR="$BUNDLE_DIR/.gwg-rds-state"
-STATE_FILE="$STATE_DIR/outputs.env"
 
 [[ -f "$CONFIG_FILE" ]] || { echo "Missing $CONFIG_FILE" >&2; exit 1; }
 
@@ -34,13 +33,33 @@ load_config_file() {
 }
 
 load_config_file "$CONFIG_FILE"
-mkdir -p "$STATE_DIR"
-touch "$STATE_FILE"
-chmod 700 "$STATE_DIR"
-chmod 600 "$STATE_FILE"
 
 export AWS_REGION AWS_PAGER=""
 NAME_PREFIX="${PROJECT}-${ENVIRONMENT}"
+
+# State is per environment. A single shared file was safe while only one
+# environment existed, but a second one would read the first's VPC, database and
+# load balancer IDs out of it and adopt those resources instead of creating its
+# own.
+STATE_FILE="$STATE_DIR/$NAME_PREFIX.env"
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+
+# Move the old shared file under the name of the environment that wrote it. The
+# match on NAME_PREFIX is what makes this safe: running as a new environment
+# leaves the old file untouched rather than inheriting another stack.
+LEGACY_STATE_FILE="$STATE_DIR/outputs.env"
+if [[ -f "$LEGACY_STATE_FILE" && ! -f "$STATE_FILE" ]]; then
+  if grep -q "$NAME_PREFIX" "$LEGACY_STATE_FILE" 2>/dev/null; then
+    mv "$LEGACY_STATE_FILE" "$STATE_FILE"
+    echo "Moved existing state to $(basename "$STATE_FILE")" >&2
+  else
+    echo "Note: $LEGACY_STATE_FILE belongs to another environment; starting $NAME_PREFIX empty." >&2
+  fi
+fi
+
+touch "$STATE_FILE"
+chmod 600 "$STATE_FILE"
 
 if [[ -s "$STATE_FILE" ]]; then
   # This file contains resource identifiers and CIDRs, but no credentials.

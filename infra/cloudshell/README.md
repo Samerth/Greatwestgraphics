@@ -31,6 +31,40 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 
+## Running more than one environment
+
+`ENVIRONMENT` in `config.env` names every resource, so switching it to
+`staging` and re-running the scripts builds a second, fully separate stack:
+its own VPC, database, load balancer and ECS cluster.
+
+State is kept per environment in `.gwg-rds-state/<project>-<environment>.env`.
+That matters: a single shared state file would hand the new environment the
+existing VPC and database IDs, and the scripts would adopt those resources
+instead of creating their own.
+
+The container registry is deliberately *not* environment-scoped. `gwg-web` and
+`gwg-commerce-api` are shared so the image tested in staging is the exact image
+promoted to production, rather than a rebuild that might differ.
+
+To add an environment, set `ENVIRONMENT` and run:
+
+```bash
+./scripts/00-preflight.sh
+./scripts/01-create-rds.sh
+./scripts/05-create-s3.sh
+./scripts/06-create-cognito.sh
+./scripts/08-create-app-secrets.sh
+./scripts/09-create-ecs.sh
+./scripts/14-create-cloudfront.sh
+```
+
+Skip `07-create-ecr.sh`; the repositories already exist and are shared. Run
+`02-migrate-*.sh` only when seeding the new database from an existing one.
+
+Each environment carries its own RDS instance, load balancer and Fargate tasks,
+so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`
+for non-production stacks.
+
 ## HTTPS without a domain (script 14)
 
 An ACM certificate cannot be issued for the ALB's own `*.elb.amazonaws.com`
