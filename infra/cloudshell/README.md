@@ -62,14 +62,23 @@ export CONFIG_FILE=config.staging.env
 ./scripts/02-migrate-drizzle.sh   # creates the schema in the new database
 ./scripts/05-create-s3.sh
 ./scripts/06-create-cognito.sh
+./scripts/07-create-ecr.sh
 ./scripts/08-create-app-secrets.sh
 ./scripts/09-create-ecs.sh
 ./scripts/14-create-cloudfront.sh
 unset CONFIG_FILE                 # back to production
 ```
 
-Skip `07-create-ecr.sh`; the repositories already exist and are shared.
+Run `07-create-ecr.sh` for every environment even though the repositories are
+shared: it records their URIs in that environment's state, and `09-create-ecs.sh`
+reads them from there. It creates nothing new on a second run beyond that
+environment's own deploy role.
+
 `config.*.env` is gitignored because it carries a trusted IP range.
+
+CloudFront hands out the site's hostname, so it comes last. Once it prints one,
+set `SITE_HOSTNAME` to it and re-run `05-create-s3.sh` and `09-create-ecs.sh` so
+the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost.
 
 Each environment carries its own RDS instance, load balancer and Fargate tasks,
 so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`
