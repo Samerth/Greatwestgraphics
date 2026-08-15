@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, IBM_Plex_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// Self-hosted rather than next/font/google: fetching these at build time made
+// `docker build` depend on fonts.gstatic.com, which already failed a CI image
+// build. Both are variable fonts, so one latin file covers weights 400-700.
+const spaceGrotesk = localFont({
+  src: "./fonts/space-grotesk-latin-variable.woff2",
+  weight: "400 700",
   variable: "--font-display",
   display: "swap",
 });
 
-const ibmPlexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const ibmPlexSans = localFont({
+  src: "./fonts/ibm-plex-sans-latin-variable.woff2",
+  weight: "400 700",
   variable: "--font-body",
   display: "swap",
 });
