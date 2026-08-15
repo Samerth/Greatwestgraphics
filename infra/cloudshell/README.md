@@ -27,6 +27,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 9 | `09-create-ecs.sh` | ALB, Fargate services, security groups, task roles |
 | 10 | `10-print-outputs.sh` | Non-secret summary |
 | 11 | `11-verify-github-oidc.sh` | Nothing. Diagnoses why the ECR workflow cannot assume the deploy role. |
+| 12 | `12-trace-oidc-denial.sh` | Nothing. Reads CloudTrail for the request STS actually rejected. |
 
 RDS is **publicly addressable but not open**. Port 5432 is limited to
 `PUBLIC_DB_ALLOWED_CIDR` plus the commerce-api security group after step 9.
@@ -98,6 +99,14 @@ mismatched trust policy. Run this to find out which:
 
 ```bash
 ./scripts/11-verify-github-oidc.sh
+```
+
+If that reports all checks passed and the workflow still fails, the role we
+inspected is not the one GitHub asked for. CloudTrail records the rejected
+request, including the role ARN it named:
+
+```bash
+./scripts/12-trace-oidc-denial.sh
 ```
 
 ## Smoke checklist
