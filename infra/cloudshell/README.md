@@ -28,6 +28,32 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 10 | `10-print-outputs.sh` | Non-secret summary |
 | 11 | `11-verify-github-oidc.sh` | Nothing. Diagnoses why the ECR workflow cannot assume the deploy role. |
 | 12 | `12-trace-oidc-denial.sh` | Nothing. Reads CloudTrail for the request STS actually rejected. |
+| 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
+
+## HTTPS
+
+DNS for `greatwestgraphics.com` is hosted at Microsoft and carries both the
+current live site and Microsoft 365 mail, so the domain is **not** moved into
+Route 53. ACM validates over DNS and an ALB answers to a CNAME, so a subdomain
+is delegated by adding records at the existing host and the rest of the zone,
+including MX and SPF, is left untouched.
+
+Set the two names in `config.env`, then run the script twice — once to get the
+records, once more after they resolve:
+
+```bash
+SITE_HOSTNAME=staging.greatwestgraphics.com
+API_HOSTNAME=api.staging.greatwestgraphics.com
+```
+
+```bash
+./scripts/13-create-https.sh   # prints the CNAMEs to add
+./scripts/13-create-https.sh   # attaches the listener once ACM has issued
+```
+
+It refuses to issue for the apex or `www`. Port 4000 stays open in plaintext
+until you confirm sign-in works and then run it with
+`CLOSE_LEGACY_API_PORT=true`.
 
 RDS is **publicly addressable but not open**. Port 5432 is limited to
 `PUBLIC_DB_ALLOWED_CIDR` plus the commerce-api security group after step 9.
