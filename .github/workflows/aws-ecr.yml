@@ -49,6 +49,14 @@ jobs:
               exit 1
               ;;
           esac
+          # The value is masked in logs, so compare its length instead. A padded
+          # or stale ARN passes the shape check but is still rejected by STS.
+          echo "AWS_ROLE_TO_ASSUME length: ${#ROLE_ARN} (expected 50 for arn:aws:iam::<12-digit-account>:role/gwg-prod-github-ecr)"
+          trimmed="$(printf '%s' "$ROLE_ARN" | tr -d '[:space:]')"
+          if [ "${#trimmed}" -ne "${#ROLE_ARN}" ]; then
+            echo "::error::AWS_ROLE_TO_ASSUME contains whitespace. Re-paste it with no leading/trailing spaces or newline."
+            exit 1
+          fi
 
       - uses: aws-actions/configure-aws-credentials@v4
         id: creds
