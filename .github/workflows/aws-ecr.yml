@@ -29,11 +29,57 @@ jobs:
       AWS_REGION: ca-central-1
     steps:
       - uses: actions/checkout@v4
+
+      # Static keys were tried here and failed: CloudShell hands out temporary
+      # credentials that expire and need a session token. OIDC is what
+      # 07-create-ecr.sh provisions, and it keeps long-lived keys out of GitHub.
+      - name: Check deploy role secret
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::AWS_ROLE_TO_ASSUME is not set. Run infra/cloudshell/scripts/07-create-ecr.sh, then copy the printed role ARN into Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          case "$ROLE_ARN" in
+            arn:aws:iam::*:role/*) ;;
+            *)
+              echo "::error::AWS_ROLE_TO_ASSUME is not a role ARN. Expected arn:aws:iam::<account-id>:role/<role-name>."
+              exit 1
+              ;;
+          esac
+
       - uses: aws-actions/configure-aws-credentials@v4
+        id: creds
+        continue-on-error: true
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # AWS returns one generic denial for three different causes, so spell them out.
+      - name: Explain OIDC failure
+        if: steps.creds.outcome == 'failure'
+        run: |
+          cat <<'EOF'
+          Could not assume the deploy role through OIDC.
+
+          "Not authorized to perform sts:AssumeRoleWithWebIdentity" is returned
+          identically whether the OIDC provider is missing, the role is missing,
+          or the trust policy does not match this workflow. Check both in AWS
+          CloudShell:
+
+            aws iam list-open-id-connect-providers
+            aws iam get-role --role-name gwg-prod-github-ecr \
+              --query 'Role.AssumeRolePolicyDocument'
+
+          The role must trust audience sts.amazonaws.com and subject
+          repo:Samerth/Greatwestgraphics:ref:refs/heads/main, so this workflow
+          only pushes from main. Re-running infra/cloudshell/scripts/07-create-ecr.sh
+          creates or repairs the provider, the role and its trust policy.
+          EOF
+          exit 1
+
       - uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push
         run: |

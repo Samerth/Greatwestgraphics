@@ -26,6 +26,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 8 | `08-create-app-secrets.sh` | `gwg-prod/web` and `gwg-prod/api` secrets |
 | 9 | `09-create-ecs.sh` | ALB, Fargate services, security groups, task roles |
 | 10 | `10-print-outputs.sh` | Non-secret summary |
+| 11 | `11-verify-github-oidc.sh` | Nothing. Diagnoses why the ECR workflow cannot assume the deploy role. |
 
 RDS is **publicly addressable but not open**. Port 5432 is limited to
 `PUBLIC_DB_ALLOWED_CIDR` plus the commerce-api security group after step 9.
@@ -85,6 +86,19 @@ step 7:
 2. Add `AWS_ROLE_TO_ASSUME` = the OIDC role ARN printed by `07-create-ecr.sh`
 3. Run **Actions → AWS ECR → Run workflow** from `main` (the OIDC role only trusts `main`)
 4. Re-run `./scripts/09-create-ecs.sh` so desired count becomes 1
+
+Use the workflow's OIDC role, not an access key. CloudShell credentials are
+temporary: they expire and need a session token, so pasting them into
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` fails with "The security token
+included in the request is invalid".
+
+If the workflow reports `Not authorized to perform sts:AssumeRoleWithWebIdentity`,
+AWS gives that same message for a missing provider, a missing role and a
+mismatched trust policy. Run this to find out which:
+
+```bash
+./scripts/11-verify-github-oidc.sh
+```
 
 ## Smoke checklist
 
