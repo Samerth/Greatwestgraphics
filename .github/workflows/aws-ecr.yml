@@ -81,10 +81,17 @@ jobs:
             aws iam get-role --role-name gwg-prod-github-ecr \
               --query 'Role.AssumeRolePolicyDocument'
 
-          The role must trust audience sts.amazonaws.com and subject
-          repo:Samerth/Greatwestgraphics:ref:refs/heads/main, so this workflow
-          only pushes from main. Re-running infra/cloudshell/scripts/07-create-ecr.sh
-          creates or repairs the provider, the role and its trust policy.
+          The role must trust audience sts.amazonaws.com and this workflow's
+          subject, so it only pushes from main. Note GitHub sends one of two
+          subject shapes and the trust policy has to accept the one in use:
+
+            repo:OWNER/REPO:ref:refs/heads/main
+            repo:OWNER@<owner-id>/REPO@<repo-id>:ref:refs/heads/main
+
+          Re-running infra/cloudshell/scripts/07-create-ecr.sh creates or repairs
+          the provider, the role and a trust policy covering both. To see which
+          subject was actually presented and rejected, run
+          infra/cloudshell/scripts/12-trace-oidc-denial.sh.
           EOF
           exit 1
 

@@ -16,7 +16,21 @@ require_command jq
 
 PROVIDER_HOST="token.actions.githubusercontent.com"
 ROLE_NAME="$NAME_PREFIX-github-ecr"
-EXPECTED_SUB="repo:$GITHUB_ORG/$GITHUB_REPO:ref:refs/heads/main"
+# GitHub sends one of two subject shapes and does not announce which. The plain
+# form names the repo; the immutable form appends numeric owner and repo IDs so
+# a rename cannot carry access to a different repo. Checking only the plain form
+# is what let this script report success while STS was rejecting the immutable
+# one, so require the policy to accept both shapes.
+#
+# The real IDs are not known here, and they do not need to be: these probes use
+# stand-in digits to prove the policy matches the shape. Override them with the
+# true values to check a policy that pins exact IDs instead of wildcarding them.
+OWNER_ID_PROBE="${GITHUB_OWNER_ID:-1}"
+REPO_ID_PROBE="${GITHUB_REPO_ID:-2}"
+EXPECTED_SUBS=(
+  "repo:$GITHUB_ORG/$GITHUB_REPO:ref:refs/heads/main"
+  "repo:$GITHUB_ORG@$OWNER_ID_PROBE/$GITHUB_REPO@$REPO_ID_PROBE:ref:refs/heads/main"
+)
 
 problems=()
 note() { printf '  %s\n' "$1"; }
@@ -70,16 +84,22 @@ if role="$(aws iam get-role --role-name "$ROLE_NAME" 2>/dev/null)"; then
   # enough to tell whether this workflow's subject would be accepted.
   subs="$(jq -r '[.Statement[].Condition.StringLike?."token.actions.githubusercontent.com:sub"]
                  | flatten | .[]? // empty' <<<"$trust")"
-  matched=false
-  while IFS= read -r pattern; do
-    [[ -z "$pattern" ]] && continue
-    # shellcheck disable=SC2053
-    if [[ "$EXPECTED_SUB" == $pattern ]]; then matched=true; fi
-  done <<<"$subs"
-  if [[ "$matched" == true ]]; then
-    pass "accepts subject $EXPECTED_SUB"
-  else
-    fail "no subject pattern matches $EXPECTED_SUB"
+  unmatched=false
+  for expected in "${EXPECTED_SUBS[@]}"; do
+    matched=false
+    while IFS= read -r pattern; do
+      [[ -z "$pattern" ]] && continue
+      # shellcheck disable=SC2053
+      if [[ "$expected" == $pattern ]]; then matched=true; fi
+    done <<<"$subs"
+    if [[ "$matched" == true ]]; then
+      pass "accepts subject $expected"
+    else
+      fail "no subject pattern matches $expected (re-run 07-create-ecr.sh)"
+      unmatched=true
+    fi
+  done
+  if [[ "$unmatched" == true ]]; then
     while IFS= read -r pattern; do
       [[ -n "$pattern" ]] && note "configured: $pattern"
     done <<<"$subs"
