@@ -44,8 +44,11 @@ if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn \
 fi
 
 ROLE_NAME="$NAME_PREFIX-github-ecr"
+# sts:TagSession is required as well as AssumeRoleWithWebIdentity: some versions
+# of configure-aws-credentials tag the session, and a trust policy that omits it
+# denies the whole call with the same generic "not authorized" message.
 TRUST="$(jq -nc --arg account "$ACCOUNT_ID" --arg org "$GITHUB_ORG" --arg repo "$GITHUB_REPO" \
-  '{Version:"2012-10-17",Statement:[{Effect:"Allow",Principal:{Federated:"arn:aws:iam::\($account):oidc-provider/token.actions.githubusercontent.com"},Action:"sts:AssumeRoleWithWebIdentity",Condition:{StringEquals:{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},StringLike:{"token.actions.githubusercontent.com:sub":["repo:\($org)/\($repo):ref:refs/heads/main","repo:\($org)/\($repo):environment:aws"]}}}]}')"
+  '{Version:"2012-10-17",Statement:[{Effect:"Allow",Principal:{Federated:"arn:aws:iam::\($account):oidc-provider/token.actions.githubusercontent.com"},Action:["sts:AssumeRoleWithWebIdentity","sts:TagSession"],Condition:{StringEquals:{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},StringLike:{"token.actions.githubusercontent.com:sub":["repo:\($org)/\($repo):ref:refs/heads/main","repo:\($org)/\($repo):environment:aws"]}}}]}')"
 POLICY="$(jq -nc --arg account "$ACCOUNT_ID" --arg region "$AWS_REGION" \
   '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["ecr:GetAuthorizationToken"],Resource:"*"},{Effect:"Allow",Action:["ecr:BatchCheckLayerAvailability","ecr:CompleteLayerUpload","ecr:InitiateLayerUpload","ecr:PutImage","ecr:UploadLayerPart","ecr:BatchGetImage","ecr:DescribeRepositories"],Resource:["arn:aws:ecr:\($region):\($account):repository/gwg-web","arn:aws:ecr:\($region):\($account):repository/gwg-commerce-api"]}]}')"
 

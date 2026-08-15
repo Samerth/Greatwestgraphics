@@ -85,11 +85,30 @@ if role="$(aws iam get-role --role-name "$ROLE_NAME" 2>/dev/null)"; then
     done <<<"$subs"
   fi
 
+  if jq -e '[.Statement[].Action] | flatten | index("sts:AssumeRoleWithWebIdentity")' \
+    <<<"$trust" >/dev/null; then
+    pass "allows sts:AssumeRoleWithWebIdentity"
+  else
+    fail "trust policy does not allow sts:AssumeRoleWithWebIdentity"
+  fi
+
+  # Some configure-aws-credentials versions tag the session. When they do and the
+  # trust policy omits sts:TagSession, the call is denied with the same message.
+  if jq -e '[.Statement[].Action] | flatten | index("sts:TagSession")' <<<"$trust" >/dev/null; then
+    pass "allows sts:TagSession"
+  else
+    fail "trust policy does not allow sts:TagSession (re-run 07-create-ecr.sh)"
+  fi
+
   if aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name ecr-push >/dev/null 2>&1; then
     pass "inline policy ecr-push attached"
   else
     fail "inline policy ecr-push missing (re-run 07-create-ecr.sh)"
   fi
+
+  echo
+  echo "  trust policy as AWS currently has it:"
+  jq . <<<"$trust" | sed 's/^/    /'
 else
   ROLE_ARN=""
   fail "no role named $ROLE_NAME (re-run 07-create-ecr.sh)"
