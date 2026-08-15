@@ -46,20 +46,30 @@ The container registry is deliberately *not* environment-scoped. `gwg-web` and
 `gwg-commerce-api` are shared so the image tested in staging is the exact image
 promoted to production, rather than a rebuild that might differ.
 
-To add an environment, set `ENVIRONMENT` and run:
+Give each environment its own config file rather than editing `ENVIRONMENT`
+back and forth — forgetting to change it back aims the next command at the
+wrong stack, and the scripts cannot tell that was unintended. Select one with
+`CONFIG_FILE`; every script prints the stack and config it is using.
 
 ```bash
+cp config.env config.staging.env
+sed -i 's/^ENVIRONMENT=.*/ENVIRONMENT=staging/'            config.staging.env
+sed -i 's/^RDS_INSTANCE_CLASS=.*/RDS_INSTANCE_CLASS=db.t4g.micro/' config.staging.env
+
+export CONFIG_FILE=config.staging.env
 ./scripts/00-preflight.sh
 ./scripts/01-create-rds.sh
+./scripts/02-migrate-drizzle.sh   # creates the schema in the new database
 ./scripts/05-create-s3.sh
 ./scripts/06-create-cognito.sh
 ./scripts/08-create-app-secrets.sh
 ./scripts/09-create-ecs.sh
 ./scripts/14-create-cloudfront.sh
+unset CONFIG_FILE                 # back to production
 ```
 
-Skip `07-create-ecr.sh`; the repositories already exist and are shared. Run
-`02-migrate-*.sh` only when seeding the new database from an existing one.
+Skip `07-create-ecr.sh`; the repositories already exist and are shared.
+`config.*.env` is gitignored because it carries a trusted IP range.
 
 Each environment carries its own RDS instance, load balancer and Fargate tasks,
 so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`

@@ -4,7 +4,11 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$BUNDLE_DIR/../.." && pwd)"
-CONFIG_FILE="$BUNDLE_DIR/config.env"
+# Each environment keeps its own config file. Editing ENVIRONMENT in a single
+# shared file works, but forgetting to change it back points the next command at
+# the wrong stack, and the scripts cannot tell the difference.
+CONFIG_FILE="${CONFIG_FILE:-$BUNDLE_DIR/config.env}"
+[[ "$CONFIG_FILE" == /* ]] || CONFIG_FILE="$BUNDLE_DIR/$CONFIG_FILE"
 STATE_DIR="$BUNDLE_DIR/.gwg-rds-state"
 
 [[ -f "$CONFIG_FILE" ]] || { echo "Missing $CONFIG_FILE" >&2; exit 1; }
@@ -36,6 +40,11 @@ load_config_file "$CONFIG_FILE"
 
 export AWS_REGION AWS_PAGER=""
 NAME_PREFIX="${PROJECT}-${ENVIRONMENT}"
+
+# Say which stack is about to be touched. These scripts create and delete real
+# infrastructure, and the only thing distinguishing one environment's run from
+# another's is a value in a file the operator cannot see from the command line.
+echo "[$NAME_PREFIX] $(basename "${BASH_SOURCE[1]:-shell}") using $(basename "$CONFIG_FILE")" >&2
 
 # State is per environment. A single shared file was safe while only one
 # environment existed, but a second one would read the first's VPC, database and

@@ -17,3 +17,6 @@ public/vendor/
 
 # CloudShell local state (resource IDs; still should not be committed)
 infra/cloudshell/.gwg-rds-state/
+
+# Per-environment CloudShell configs may contain a trusted office IP.
+infra/cloudshell/config.*.env
