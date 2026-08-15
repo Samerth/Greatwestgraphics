@@ -123,7 +123,7 @@ if ! aws sns list-subscriptions-by-topic --region us-east-1 --topic-arn "$BILLIN
     --protocol email --notification-endpoint "$BUDGET_EMAIL" >/dev/null
 fi
 aws cloudwatch put-metric-alarm --region us-east-1 --alarm-name "$NAME_PREFIX-estimated-charges-usd" \
-  --alarm-description "Approximate companion to the CAD $BUDGET_AMOUNT AWS Budget" \
+  --alarm-description "Approximate companion to the USD $BUDGET_AMOUNT AWS Budget" \
   --namespace AWS/Billing --metric-name EstimatedCharges --dimensions Name=Currency,Value=USD \
   --statistic Maximum --period 21600 --evaluation-periods 1 --threshold "$BILLING_ALARM_USD" \
   --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching \

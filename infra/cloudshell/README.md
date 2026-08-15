@@ -15,7 +15,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | Step | Script | Creates |
 | --- | --- | --- |
 | 0 | `00-preflight.sh` | Nothing. Checks region, CIDR, identity. |
-| 1 | `01-create-rds.sh` | VPC, public subnets, IGW, RDS PostgreSQL 16, Secrets Manager master password, CAD 250 budget + USD billing alarm |
+| 1 | `01-create-rds.sh` | VPC, public subnets, IGW, RDS PostgreSQL 16, Secrets Manager master password, USD 250 budget + USD billing alarm |
 | 2 | `02-migrate-drizzle.sh` **(preferred)** | Applies this repo’s Drizzle migrations |
 | 2 alt | `02-migrate-supabase.sh` | Optional `pg_dump` of a Supabase `public` schema. Skip unless GWG data already lives in Supabase. |
 | 3 | `03-verify.sh` | RDS checks (TLS, encryption, no `0.0.0.0/0`) |
@@ -127,7 +127,7 @@ Never use `0.0.0.0/0`.
 This first ECS pass is **HTTP on the ALB DNS name** (port 80 → web, port 4000 →
 API) so you can smoke-test without a domain. Add ACM + Route 53 before a public
 launch. There is no NAT gateway (Fargate tasks use `assignPublicIp=ENABLED`) to
-keep the CAD 250 budget realistic.
+keep the USD 250 budget realistic.
 
 ## Before running
 
