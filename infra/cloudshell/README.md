@@ -29,8 +29,29 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 11 | `11-verify-github-oidc.sh` | Nothing. Diagnoses why the ECR workflow cannot assume the deploy role. |
 | 12 | `12-trace-oidc-denial.sh` | Nothing. Reads CloudTrail for the request STS actually rejected. |
 | 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
+| 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 
-## HTTPS
+## HTTPS without a domain (script 14)
+
+An ACM certificate cannot be issued for the ALB's own `*.elb.amazonaws.com`
+name, so TLS there needs a domain — and this domain's DNS is managed outside
+AWS. CloudFront avoids the problem: every distribution comes with a
+`*.cloudfront.net` certificate, so HTTPS works with no DNS records and nothing
+to renew.
+
+```bash
+./scripts/14-create-cloudfront.sh
+```
+
+One distribution covers the whole site because the browser only talks to the
+Next.js container; commerce API calls go through `/api/commerce/*` server-side.
+The script prints the follow-up commands that repoint `SITE_HOSTNAME` at the
+CloudFront name.
+
+CloudFront reaches the ALB over plain HTTP, and the ALB is still reachable
+directly. That is acceptable for staging, not for card or credential data.
+
+## HTTPS on your own domain (script 13)
 
 DNS for `greatwestgraphics.com` is hosted at Microsoft and carries both the
 current live site and Microsoft 365 mail, so the domain is **not** moved into
