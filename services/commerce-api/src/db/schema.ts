@@ -679,7 +679,7 @@ export const product3dModels = pgTable(
     s3Url: text("s3_url").notNull(),
     version: integer("version").notNull().default(1),
     /** How the model was produced (distinct from audit `source` jsonb). */
-    origin: text("source").notNull(), // "vendor_upload", "ai_generated", "manual"
+    origin: text("origin").notNull(), // "vendor_upload", "ai_generated", "manual"
     aiModel: text("ai_model"), // "meshy_v2", "tripo", etc.
     isActive: boolean("is_active").notNull().default(true),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),

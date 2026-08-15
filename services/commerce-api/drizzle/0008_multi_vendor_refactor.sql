@@ -78,7 +78,7 @@ CREATE TABLE product_3d_models (
   model_format text NOT NULL,
   s3_url text NOT NULL,
   version integer NOT NULL DEFAULT 1,
-  source text NOT NULL,
+  origin text NOT NULL,
   ai_model text,
   is_active boolean NOT NULL DEFAULT true,
   metadata jsonb DEFAULT '{}',
@@ -88,7 +88,7 @@ CREATE TABLE product_3d_models (
   source jsonb,
   CONSTRAINT product_3d_models_uq UNIQUE (tenant_id, product_id, version)
 );
-CREATE INDEX product_3d_models_source_idx ON product_3d_models(source);
+CREATE INDEX product_3d_models_source_idx ON product_3d_models(origin);
 
 -- 6. Create vendor_field_mappings table
 CREATE TABLE vendor_field_mappings (

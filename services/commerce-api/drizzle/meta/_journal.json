@@ -54,26 +54,40 @@
     {
       "idx": 7,
       "version": "7",
+      "when": 1785500000000,
+      "tag": "0007_add_size_chart_pdf",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0008_multi_vendor_refactor",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
       "when": 1786152600000,
       "tag": "0009_job_display_id",
       "breakpoints": true
     },
     {
-      "idx": 8,
+      "idx": 10,
       "version": "7",
       "when": 1786220000000,
       "tag": "0010_vendor_catalog_namespace",
       "breakpoints": true
     },
     {
-      "idx": 9,
+      "idx": 11,
       "version": "7",
       "when": 1786300000000,
       "tag": "0011_storefront_visible",
       "breakpoints": true
     },
     {
-      "idx": 10,
+      "idx": 12,
       "version": "7",
       "when": 1786600000000,
       "tag": "0012_pricing_config_schema_version",
