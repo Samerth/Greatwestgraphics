@@ -23,11 +23,43 @@ require_state ALB_DNS
 # AWS-managed policies. CachingDisabled keeps CloudFront from caching the app's
 # authenticated HTML, and AllViewer passes cookies and headers through so
 # sign-in and server actions behave exactly as they do against the ALB.
-CACHE_DISABLED=4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-CACHE_OPTIMIZED=658327ea-f89d-4fab-a63d-7e88639e58f6
-ORIGIN_ALL_VIEWER=216adef6-5c7f-47e4-b989-5492eafe7d7d
+#
+# These are looked up by name rather than by their well-known UUIDs: the IDs are
+# not contractual and hardcoding them fails with an unhelpful "policy does not
+# exist" that says nothing about which one was wrong.
+managed_cache_policy() {
+  aws cloudfront list-cache-policies --type managed \
+    --query "CachePolicyList.Items[?CachePolicy.CachePolicyConfig.Name=='$1'].CachePolicy.Id | [0]" \
+    --output text 2>/dev/null
+}
+managed_origin_request_policy() {
+  aws cloudfront list-origin-request-policies --type managed \
+    --query "OriginRequestPolicyList.Items[?OriginRequestPolicy.OriginRequestPolicyConfig.Name=='$1'].OriginRequestPolicy.Id | [0]" \
+    --output text 2>/dev/null
+}
+
+require_policy() {
+  local label="$1" value="$2"
+  if [[ -z "$value" || "$value" == "None" || "$value" == "null" ]]; then
+    echo "Could not find the managed policy named $label." >&2
+    echo "List what this account offers with:" >&2
+    echo "  aws cloudfront list-cache-policies --type managed \\" >&2
+    echo "    --query 'CachePolicyList.Items[].CachePolicy.CachePolicyConfig.Name'" >&2
+    echo "  aws cloudfront list-origin-request-policies --type managed \\" >&2
+    echo "    --query 'OriginRequestPolicyList.Items[].OriginRequestPolicy.OriginRequestPolicyConfig.Name'" >&2
+    exit 1
+  fi
+}
+
+CACHE_DISABLED="$(managed_cache_policy CachingDisabled)"
+CACHE_OPTIMIZED="$(managed_cache_policy CachingOptimized)"
+ORIGIN_ALL_VIEWER="$(managed_origin_request_policy AllViewer)"
+require_policy CachingDisabled "$CACHE_DISABLED"
+require_policy CachingOptimized "$CACHE_OPTIMIZED"
+require_policy AllViewer "$ORIGIN_ALL_VIEWER"
 
 echo "Origin: $ALB_DNS"
+echo "Policies: CachingDisabled=$CACHE_DISABLED CachingOptimized=$CACHE_OPTIMIZED AllViewer=$ORIGIN_ALL_VIEWER"
 
 if [[ -z "${CF_DISTRIBUTION_ID:-}" ]]; then
   CONFIG="$(jq -nc \
