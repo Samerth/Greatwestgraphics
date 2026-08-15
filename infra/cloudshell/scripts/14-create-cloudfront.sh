@@ -20,55 +20,22 @@ require_command jq
 
 require_state ALB_DNS
 
-# AWS-managed policies. CachingDisabled keeps CloudFront from caching the app's
-# authenticated HTML, and AllViewer passes cookies and headers through so
-# sign-in and server actions behave exactly as they do against the ALB.
+# Caching is described inline rather than through AWS's managed policies. Those
+# are referenced by ID, the IDs are not contractual, and looking them up by name
+# returned nothing here, so two attempts failed on a dependency that buys
+# nothing: the behaviour below is the same one the managed policies express.
 #
-# These are looked up by name rather than by their well-known UUIDs: the IDs are
-# not contractual and hardcoding them fails with an unhelpful "policy does not
-# exist" that says nothing about which one was wrong.
-managed_cache_policy() {
-  aws cloudfront list-cache-policies --type managed \
-    --query "CachePolicyList.Items[?CachePolicy.CachePolicyConfig.Name=='$1'].CachePolicy.Id | [0]" \
-    --output text 2>/dev/null
-}
-managed_origin_request_policy() {
-  aws cloudfront list-origin-request-policies --type managed \
-    --query "OriginRequestPolicyList.Items[?OriginRequestPolicy.OriginRequestPolicyConfig.Name=='$1'].OriginRequestPolicy.Id | [0]" \
-    --output text 2>/dev/null
-}
-
-require_policy() {
-  local label="$1" value="$2"
-  if [[ -z "$value" || "$value" == "None" || "$value" == "null" ]]; then
-    echo "Could not find the managed policy named $label." >&2
-    echo "List what this account offers with:" >&2
-    echo "  aws cloudfront list-cache-policies --type managed \\" >&2
-    echo "    --query 'CachePolicyList.Items[].CachePolicy.CachePolicyConfig.Name'" >&2
-    echo "  aws cloudfront list-origin-request-policies --type managed \\" >&2
-    echo "    --query 'OriginRequestPolicyList.Items[].OriginRequestPolicy.OriginRequestPolicyConfig.Name'" >&2
-    exit 1
-  fi
-}
-
-CACHE_DISABLED="$(managed_cache_policy CachingDisabled)"
-CACHE_OPTIMIZED="$(managed_cache_policy CachingOptimized)"
-ORIGIN_ALL_VIEWER="$(managed_origin_request_policy AllViewer)"
-require_policy CachingDisabled "$CACHE_DISABLED"
-require_policy CachingOptimized "$CACHE_OPTIMIZED"
-require_policy AllViewer "$ORIGIN_ALL_VIEWER"
-
+# Forwarding every header, cookie and query string with zero TTLs disables
+# caching for application responses, which is required for sign-in and server
+# actions to work. Static assets are handled by a separate behaviour further
+# down, since those are safe to cache and are the bulk of the bytes.
 echo "Origin: $ALB_DNS"
-echo "Policies: CachingDisabled=$CACHE_DISABLED CachingOptimized=$CACHE_OPTIMIZED AllViewer=$ORIGIN_ALL_VIEWER"
 
 if [[ -z "${CF_DISTRIBUTION_ID:-}" ]]; then
   CONFIG="$(jq -nc \
     --arg ref "gwg-$(date +%s)" \
     --arg origin "$ALB_DNS" \
     --arg comment "$NAME_PREFIX storefront" \
-    --arg cacheDisabled "$CACHE_DISABLED" \
-    --arg cacheOptimized "$CACHE_OPTIMIZED" \
-    --arg originPolicy "$ORIGIN_ALL_VIEWER" \
     '{
       CallerReference: $ref,
       Comment: $comment,
@@ -95,8 +62,15 @@ if [[ -z "${CF_DISTRIBUTION_ID:-}" ]]; then
           CachedMethods: {Quantity: 2, Items: ["GET","HEAD"]}
         },
         Compress: true,
-        CachePolicyId: $cacheDisabled,
-        OriginRequestPolicyId: $originPolicy
+        ForwardedValues: {
+          QueryString: true,
+          Cookies: {Forward: "all"},
+          Headers: {Quantity: 1, Items: ["*"]}
+        },
+        MinTTL: 0,
+        DefaultTTL: 0,
+        MaxTTL: 0,
+        TrustedSigners: {Enabled: false, Quantity: 0}
       },
       CacheBehaviors: {Quantity: 1, Items: [{
         PathPattern: "/_next/static/*",
@@ -108,7 +82,15 @@ if [[ -z "${CF_DISTRIBUTION_ID:-}" ]]; then
           CachedMethods: {Quantity: 2, Items: ["GET","HEAD"]}
         },
         Compress: true,
-        CachePolicyId: $cacheOptimized
+        ForwardedValues: {
+          QueryString: false,
+          Cookies: {Forward: "none"},
+          Headers: {Quantity: 0}
+        },
+        MinTTL: 0,
+        DefaultTTL: 86400,
+        MaxTTL: 31536000,
+        TrustedSigners: {Enabled: false, Quantity: 0}
       }]},
       ViewerCertificate: {CloudFrontDefaultCertificate: true}
     }')"
