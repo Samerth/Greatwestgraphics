@@ -13,13 +13,13 @@ import type {
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
-const FEATURE_FILTERS = [
-  "Reinforced Seams",
-  "Eco-Friendly Materials",
-  "Made in Canada",
-  "Fade-Resistant Print",
-  "Quick Order Ready",
-];
+// A "Highlighted Features" facet used to sit below Brand with five checkboxes
+// — Reinforced Seams, Eco-Friendly Materials, Made in Canada, Fade-Resistant
+// Print, Quick Order Ready. They looked identical to the Brand checkboxes
+// beside them, but their state never reached `navigate()`, the URL or the
+// grid, and the catalogue carries no attribute to filter them on. Ticking
+// "Made in Canada" returned the whole catalogue and implied every result
+// qualified. Reinstate this only alongside real per-product attribute data.
 
 const COLOUR_SWATCHES = [
   "#0D0D0D",
@@ -69,7 +69,6 @@ export function ProductsGrid({
   );
   const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [featureFilters, setFeatureFilters] = useState<string[]>([]);
 
   function navigate(next: {
     category?: string;
@@ -227,23 +226,6 @@ export function ProductsGrid({
         </div>
       </FacetGroup>
 
-      <FacetGroup title="Highlighted Features">
-        {FEATURE_FILTERS.map((feature) => (
-          <FacetCheck
-            key={feature}
-            label={feature}
-            checked={featureFilters.includes(feature)}
-            onChange={() =>
-              setFeatureFilters((prev) =>
-                prev.includes(feature)
-                  ? prev.filter((f) => f !== feature)
-                  : [...prev, feature],
-              )
-            }
-          />
-        ))}
-      </FacetGroup>
-
       <div className="flex gap-2">
         <button
           type="button"
@@ -251,7 +233,6 @@ export function ProductsGrid({
             setSelectedBrands([]);
             setPriceMinInput("");
             setPriceMaxInput("");
-            setFeatureFilters([]);
             navigate({ brands: [], priceMin: "", priceMax: "" });
           }}
           className="flex-1 rounded-sm border border-border py-2 text-xs font-bold hover:border-text-tertiary transition-colors"

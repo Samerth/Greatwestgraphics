@@ -113,16 +113,37 @@ export default async function ProductsPage({
     .filter((c) => TILE_META[c.slug])
     .slice(0, 4)
     .map((c) => ({ name: c.name, slug: c.slug, ...TILE_META[c.slug] }));
+  // The heading was hardcoded to "Shop All Products" whatever the filter was,
+  // so every category link in the footer, the header menu and the tiles below
+  // landed on a page that announced itself as the whole catalogue. Only the
+  // <title> knew which category had been asked for. The full category list is
+  // used rather than `catalog.categories`, which only carries the ones that
+  // currently have stock — an empty category still deserves its real name.
+  const allCategories = category ? await loadStorefrontCategories(false) : [];
+  const heading = category
+    ? (allCategories.find((c) => c.slug === category.toLowerCase())?.name ??
+      category.slice(0, 48))
+    : "Shop All Products";
 
   return (
     <>
       <section className="pt-sp-8">
         <Container>
           <div className="text-[13px] text-text-tertiary mb-sp-3">
-            Home / <b className="text-text-primary">Shop All Products</b>
+            Home /{" "}
+            {category ? (
+              <>
+                <Link href="/products" className="hover:text-accent">
+                  Shop All Products
+                </Link>{" "}
+                / <b className="text-text-primary">{heading}</b>
+              </>
+            ) : (
+              <b className="text-text-primary">Shop All Products</b>
+            )}
           </div>
           <h1 className="font-display font-bold text-display leading-display max-w-[16ch]">
-            Shop All Products
+            {heading}
           </h1>
           {!catalogFailed && (
             <p className="text-text-secondary max-w-[60ch] mt-sp-3">

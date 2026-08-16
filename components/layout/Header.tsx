@@ -263,16 +263,21 @@ export function Header({
                       </span>
                     </Link>
                     <div className="border-t border-border my-1" />
+                    {/* Read "Continue via Chat — Quick, no password needed",
+                        sitting under a Sign In heading beside three real
+                        sign-in routes. There is no chat anywhere in the
+                        product and this signs nobody in; it opens the contact
+                        form, which genuinely does not need an account. */}
                     <Link
                       href="/contact"
                       onClick={() => setAccountOpen(false)}
                       className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
                     >
                       <span className="block font-bold text-sm">
-                        Continue via Chat
+                        No account? Send us your project
                       </span>
                       <span className="block text-xs text-text-secondary mt-1">
-                        Quick, no password needed.
+                        Email the team — no sign-in needed.
                       </span>
                     </Link>
                   </div>

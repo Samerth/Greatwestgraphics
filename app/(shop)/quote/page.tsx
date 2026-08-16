@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
 import {
@@ -40,6 +41,19 @@ function parseMethod(
   )?.key;
 }
 
+/**
+ * Echoes back the method the visitor asked for when we could not match it.
+ *
+ * The value comes straight off the query string, so it is clamped to letters
+ * and a sane length before it is shown — a link is allowed to name a method,
+ * not to write a sentence on the page.
+ */
+function describeRequestedMethod(raw: string): string | undefined {
+  const cleaned = raw.trim().replace(/[^A-Za-z ]/g, "");
+  if (!cleaned || cleaned.length > 24) return undefined;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+}
+
 export default async function QuotePage({
   searchParams,
 }: {
@@ -78,6 +92,13 @@ export default async function QuotePage({
   }));
 
   const initialMethod = parseMethod(params.method, pricingConfig);
+  // A "?method=" the published config has no rates for used to be dropped in
+  // silence, so the "Sublimation Printing" tiles on the homepage and in the
+  // footer landed on a screen-print estimate that never said so. Say it.
+  const unpricedMethod =
+    params.method && !initialMethod
+      ? describeRequestedMethod(params.method)
+      : undefined;
   const initialQty =
     params.type?.toLowerCase() === "bulk" ? 250 : undefined;
 
@@ -97,6 +118,21 @@ export default async function QuotePage({
           </p>
           {pricingNote && (
             <p className="text-xs text-text-tertiary mt-sp-2">{pricingNote}</p>
+          )}
+          {unpricedMethod && (
+            <p
+              role="status"
+              className="mt-sp-3 max-w-[64ch] rounded-md border border-amber-300 bg-amber-50 p-sp-3 text-sm text-amber-950"
+            >
+              <b>{unpricedMethod} isn&apos;t on the instant calculator yet.</b>{" "}
+              The estimate below is priced with a different method. Tell us what
+              you need and we&apos;ll quote {unpricedMethod.toLowerCase()} by
+              hand —{" "}
+              <Link href="/contact" className="font-bold underline">
+                send us the details
+              </Link>
+              .
+            </p>
           )}
         </Container>
       </section>

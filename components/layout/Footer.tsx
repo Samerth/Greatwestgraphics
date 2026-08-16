@@ -65,7 +65,10 @@ export function Footer({
   // not exist on that page, and "Sitemap" pointed at /products — neither went
   // where its label promised.
   const importantLinks = [
-    { label: "How to Order", href: "/quote" },
+    // Was "How to Order", which reads as a page explaining the process. There
+    // is no such page — /quote is the price calculator — and the closest thing
+    // to ordering instructions lives in the FAQ, which is linked right below.
+    { label: "Start an Order", href: "/quote" },
     { label: "FAQ", href: "/faq" },
     { label: "Shipping Policy", href: "/shipping" },
     { label: "Privacy Policy", href: "/privacy" },

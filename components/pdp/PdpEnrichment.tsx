@@ -40,8 +40,10 @@ const ARTWORK_FAQ = [
     body: "Send Pantone or CMYK values and we match every run.",
   },
   {
+    // "Ask CodChat" named the web agency's own product, which this site does
+    // not implement and no visitor can reach, as the way to get artwork help.
     title: "No print-ready file?",
-    body: "Ask CodChat — our team turns rough ideas into proof-ready art before anything goes to press.",
+    body: "Send us what you have — our team turns rough ideas into proof-ready art before anything goes to press.",
   },
 ];
 
