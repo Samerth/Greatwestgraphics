@@ -376,6 +376,51 @@ export class CommerceClient {
     );
   }
 
+  listAdminDesignProjects(
+    adminToken: string,
+    params?: { limit?: number; offset?: number },
+  ) {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined)
+      search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return this.request(
+      `/admin/design-projects${qs ? `?${qs}` : ""}`,
+      z.array(z.record(z.unknown())),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  getAdminDesignProject(adminToken: string, id: string) {
+    return this.request(
+      `/admin/design-projects/${encodeURIComponent(id)}`,
+      z.record(z.unknown()),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  updateAdminDesignProject(
+    adminToken: string,
+    id: string,
+    body: {
+      name?: string;
+      garmentProductId?: string | null;
+      design?: unknown;
+      proofImageUrl?: string | null;
+    },
+  ) {
+    return this.request(
+      `/admin/design-projects/${encodeURIComponent(id)}`,
+      z.record(z.unknown()),
+      {
+        method: "PUT",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
   getPublishedPricingConfig(): Promise<PublishedPricingConfigResponse> {
     return this.request(
       "/pricing-config/published",
