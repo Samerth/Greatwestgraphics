@@ -10,12 +10,13 @@ const SOCIAL_LINKS = [
     Icon: Instagram,
   },
   {
-    // Plain http:// and LinkedIn's long-dead /profile/view?id= form, which
-    // now dumps logged-out visitors onto a login wall. https at least avoids
-    // the insecure hop; the URL still needs replacing with the real company
-    // page, which we don't have.
+    // Was plain http:// and LinkedIn's long-dead /profile/view?id=31370827
+    // form, which redirects logged-out visitors to a login wall rather than
+    // to anything about the company. The company page it should have pointed
+    // at lists this exact street address, both of our phone numbers and
+    // info@greatwestgraphics.com, and it loads without signing in.
     label: "LinkedIn",
-    href: "https://www.linkedin.com/profile/view?id=31370827",
+    href: "https://www.linkedin.com/company/great-west-graphics",
     Icon: Linkedin,
   },
   {

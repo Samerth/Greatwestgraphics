@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LinePricingSnapshotV2Schema } from "./pricing-v2.js";
 
 export * from "./pricing-v2.js";
+export * from "./design-document.js";
 
 export const CanonicalIdSchema = z.string().uuid();
 export type CanonicalId = z.infer<typeof CanonicalIdSchema>;

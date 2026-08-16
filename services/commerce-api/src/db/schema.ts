@@ -1074,7 +1074,15 @@ export const designProjects = pgTable(
     name: text("name").notNull(),
     garmentProductId: uuid("garment_product_id").references(() => ssProducts.id),
     artworksBySide: jsonb("artworks_by_side").notNull(),
+    // Nullable rather than defaulted: rows saved before placements were
+    // persisted genuinely have no recorded print zone, and inventing one for
+    // them would tell a press operator something the customer never said.
+    placementBySide: jsonb("placement_by_side"),
     proofImageUrl: text("proof_image_url"),
+    // Staff can now edit a customer's artwork, so the row has to say who
+    // touched it last. Only this table carries it; widening `auditColumns`
+    // would drag every other table into the migration.
+    updatedBy: jsonb("updated_by").$type<Actor>(),
     ...auditColumns,
   },
   (table) => [

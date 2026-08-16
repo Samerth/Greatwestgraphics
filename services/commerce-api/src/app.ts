@@ -5,7 +5,10 @@ import {
   CreateJobRequestSchema,
   CreateProofVersionSchema,
   DecideProofSchema,
+  DesignProjectWriteSchema,
+  EphemeralArtworkError,
   FinalQuoteResponseSchema,
+  normalizeDesignDocument,
   IdempotencyKeySchema,
   PreviewQuoteV2ResponseSchema,
   PreviewQuoteV2Schema,
@@ -48,7 +51,10 @@ import {
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
-import { DesignProjectService } from "./application/design-project-service.js";
+import {
+  designProjectPatch,
+  DesignProjectService,
+} from "./application/design-project-service.js";
 import { StoreService } from "./application/store-service.js";
 import { PersonService } from "./application/person-service.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
@@ -195,6 +201,27 @@ export function buildApp(input: {
     return auth.actor.id;
   }
 
+  /**
+   * Ties a person id taken from a request body or path to the caller who
+   * actually authenticated.
+   *
+   * Several routes were written to read the acting person out of the payload.
+   * The web tier always fills that in from the session, so the storefront
+   * behaves correctly, but the payload is not a credential: every caller shares
+   * one service token, so a claimed id was accepted as proof of being that
+   * person. That let a request invite teammates as an account owner, accept an
+   * invite on somebody else's behalf, or read another person's memberships.
+   * `/v1` actors are always customers (see `readTenantScope`), so there is no
+   * staff path through here to accommodate.
+   */
+  function assertActorIsPerson(auth: AuthContext, personId: string): void {
+    if (requirePersonId(auth) !== personId) {
+      throw new UnauthorizedError(
+        "Request acts on behalf of a different person than the signed-in one",
+      );
+    }
+  }
+
   function requireSsClient() {
     if (
       !input.environment.SS_ACCOUNT_NUMBER ||
@@ -306,6 +333,7 @@ export function buildApp(input: {
     const auth = await input.auth.resolve(request);
     const command = CreateJobRequestSchema.parse(request.body);
     assertScope(auth, command.context);
+    assertActorIsPerson(auth, command.customerPersonId);
     const key = IdempotencyKeySchema.parse(
       request.headers[CommerceHeaders.idempotencyKey],
     );
@@ -447,18 +475,16 @@ export function buildApp(input: {
   app.post("/v1/design-projects", async (request) => {
     const auth = await input.auth.resolve(request);
     const personId = requirePersonId(auth);
-    const body = z
-      .object({
-        name: z.string().min(1).max(120),
-        garmentProductId: z.string().uuid().nullable(),
-        artworksBySide: z.unknown(),
-        proofImageUrl: z.string().nullable(),
-      })
-      .parse(request.body);
+    const body = DesignProjectWriteSchema.parse(request.body);
     return designProjectService.save(
       auth.tenantId,
       personId,
-      body,
+      {
+        name: body.name ?? "Untitled design",
+        garmentProductId: body.garmentProductId ?? null,
+        design: normalizeDesignDocument(body.design ?? body.artworksBySide),
+        proofImageUrl: body.proofImageUrl ?? null,
+      },
       { type: "customer", id: personId, displayName: "Customer" },
     );
   });
@@ -469,15 +495,13 @@ export function buildApp(input: {
     const id = CanonicalIdSchema.parse(
       (request.params as { id?: string }).id,
     );
-    const body = z
-      .object({
-        name: z.string().min(1).max(120).optional(),
-        garmentProductId: z.string().uuid().nullable().optional(),
-        artworksBySide: z.unknown().optional(),
-        proofImageUrl: z.string().nullable().optional(),
-      })
-      .parse(request.body);
-    return designProjectService.update(auth.tenantId, personId, id, body);
+    const body = DesignProjectWriteSchema.parse(request.body);
+    return designProjectService.update(
+      auth.tenantId,
+      personId,
+      id,
+      designProjectPatch(body),
+    );
   });
 
   app.delete("/v1/design-projects/:id", async (request) => {
@@ -550,6 +574,7 @@ export function buildApp(input: {
         tagline: z.string().max(200).optional(),
       })
       .parse(request.body);
+    assertActorIsPerson(auth, body.personId);
     try {
       const result = await accountService.createAccountWithStore(
         auth.tenantId,
@@ -573,6 +598,7 @@ export function buildApp(input: {
     const personId = CanonicalIdSchema.parse(
       (request.params as { personId?: string }).personId,
     );
+    assertActorIsPerson(auth, personId);
     return accountService.listMembershipsForPerson(auth.tenantId, personId);
   });
 
@@ -584,6 +610,7 @@ export function buildApp(input: {
     const body = z
       .object({ inviterPersonId: CanonicalIdSchema, email: z.string().email() })
       .parse(request.body);
+    assertActorIsPerson(auth, body.inviterPersonId);
     try {
       const result = await inviteService.createInvite(
         auth.tenantId,
@@ -627,7 +654,7 @@ export function buildApp(input: {
   });
 
   app.post("/v1/accounts/invites/:token/accept", async (request, reply) => {
-    await input.auth.resolve(request);
+    const auth = await input.auth.resolve(request);
     const token = z
       .string()
       .min(1)
@@ -635,6 +662,7 @@ export function buildApp(input: {
     const body = z
       .object({ personId: CanonicalIdSchema, personEmail: z.string().email() })
       .parse(request.body);
+    assertActorIsPerson(auth, body.personId);
     try {
       const result = await inviteService.acceptInvite(
         token,
@@ -862,6 +890,40 @@ export function buildApp(input: {
       const dash = await catalogService.dashboard(auth.tenantId);
       const jobs = await service.list(auth.tenantId, auth.accountId);
       return { ...dash, openJobs: jobs.length };
+    });
+
+    // Staff browse and repair customer artwork before it reaches the press.
+    // Tenant-scoped only — reaching across customers is the point of these
+    // three routes, which is exactly why they sit behind `assertAdmin`
+    // instead of alongside the customer's own `/v1/design-projects`.
+    app.get("/admin/design-projects", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const query = request.query as { limit?: string; offset?: string };
+      return designProjectService.listForStaff(auth.tenantId, {
+        limit: parsePageSize(query.limit, 50),
+        offset: parseOffset(query.offset),
+      });
+    });
+
+    app.get("/admin/design-projects/:id", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const id = CanonicalIdSchema.parse((request.params as { id?: string }).id);
+      return designProjectService.getForStaff(auth.tenantId, id);
+    });
+
+    app.put("/admin/design-projects/:id", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const id = CanonicalIdSchema.parse((request.params as { id?: string }).id);
+      const body = DesignProjectWriteSchema.parse(request.body);
+      return designProjectService.updateForStaff(
+        auth.tenantId,
+        id,
+        designProjectPatch(body),
+        staffActor(auth),
+      );
     });
 
     app.get("/admin/accounts/pending", async (request) => {
@@ -1305,6 +1367,7 @@ export function buildApp(input: {
       error instanceof InvalidJobRequestTransitionError ||
       error instanceof IdempotencyConflictError ||
       error instanceof ProofDecisionError ||
+      error instanceof EphemeralArtworkError ||
       error instanceof DataIntegrityError
     ) {
       statusCode = 409;
