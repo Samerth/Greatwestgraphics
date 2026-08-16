@@ -158,6 +158,16 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       );
       console.log(`[sanmar] enriched styles=${enriched}`);
 
+      // Only now do the rows carry real product names, so this is the first
+      // point at which the keyword rules have anything to read.
+      const categorised = await this.writer.assignFallbackCategories(
+        ctx.tenantId,
+        VENDOR,
+      );
+      console.log(
+        `[sanmar] categorised products=${categorised.assigned} stillUncategorised=${categorised.unmatched}`,
+      );
+
       const stockErrors: string[] = [];
       const stockUpdated = await this.refreshQtyAndPrice(
         ctx.tenantId,

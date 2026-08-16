@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../../db/client.js";
 import {
@@ -624,6 +624,104 @@ export class CatalogWriter {
       if (result.length) updated += 1;
     }
     return updated;
+  }
+
+  /**
+   * File a vendor's still-uncategorised products using the keyword fallbacks.
+   *
+   * The fast upsert path skips category assignment on purpose — it exists to
+   * land tens of thousands of sellable rows quickly, and per-product category
+   * queries are exactly what makes the slow path slow. That was survivable
+   * while the fast path was only used for interim rows, but Sanmar's whole
+   * catalogue goes through it, so every one of its products stayed
+   * uncategorised no matter how good the keyword rules got.
+   *
+   * It runs as a separate pass rather than inside the upsert because a
+   * sellable feed carries no product names: until enrichment has replaced the
+   * placeholder style name with the real one there is no text to match on, and
+   * matching too early would file everything under nothing and then leave it
+   * there.
+   *
+   * Only products with no category at all are touched. A product that already
+   * has a row was categorised by a vendor mapping or by staff, and guessing
+   * over top of either would be worse than leaving it alone.
+   */
+  async assignFallbackCategories(
+    tenantId: string,
+    vendor: string,
+  ): Promise<{ assigned: number; unmatched: number }> {
+    const tenantCategories = await this.db
+      .select({ id: categories.id, slug: categories.slug })
+      .from(categories)
+      .where(eq(categories.tenantId, tenantId));
+    const categoryIdBySlug = new Map(
+      tenantCategories.map((row) => [row.slug, row.id]),
+    );
+    if (categoryIdBySlug.size === 0) return { assigned: 0, unmatched: 0 };
+
+    const uncategorised = await this.db
+      .select({
+        productUuid: ssProducts.id,
+        styleName: ssStyles.styleName,
+        title: ssStyles.title,
+        baseCategory: ssStyles.baseCategory,
+      })
+      .from(ssProducts)
+      .innerJoin(ssStyles, eq(ssStyles.id, ssProducts.styleUuid))
+      .leftJoin(
+        ssProductCategories,
+        eq(ssProductCategories.productUuid, ssProducts.id),
+      )
+      .where(
+        and(
+          eq(ssProducts.tenantId, tenantId),
+          eq(ssProducts.vendor, vendor),
+          isNull(ssProductCategories.id),
+        ),
+      );
+    if (uncategorised.length === 0) return { assigned: 0, unmatched: 0 };
+
+    // A staff override means the product is deliberately filed somewhere, even
+    // if the join above found no row yet to prove it.
+    const overrides = await this.db
+      .select({ productUuid: categoryOverrides.productUuid })
+      .from(categoryOverrides)
+      .where(eq(categoryOverrides.tenantId, tenantId));
+    const overridden = new Set(overrides.map((row) => row.productUuid));
+
+    const values: Array<{
+      tenantId: string;
+      productUuid: string;
+      categoryId: string;
+      assignmentSource: string;
+    }> = [];
+    let unmatched = 0;
+
+    for (const row of uncategorised) {
+      if (overridden.has(row.productUuid)) continue;
+      const searchText = [row.styleName, row.title, row.baseCategory]
+        .filter(Boolean)
+        .join(" ");
+      const categoryId = fallbackCategorySlugs(searchText)
+        .map((slug) => categoryIdBySlug.get(slug))
+        .find(Boolean);
+      if (!categoryId) {
+        unmatched += 1;
+        continue;
+      }
+      values.push({
+        tenantId,
+        productUuid: row.productUuid,
+        categoryId,
+        assignmentSource: "map",
+      });
+    }
+
+    for (let i = 0; i < values.length; i += 500) {
+      await this.db.insert(ssProductCategories).values(values.slice(i, i + 500));
+    }
+
+    return { assigned: values.length, unmatched };
   }
 
   async updateInventory(

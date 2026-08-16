@@ -24,20 +24,10 @@ import {
   type SsProductSku,
   type SsStyle,
 } from "./client.js";
+import { fallbackCategorySlugs } from "../catalog/writer.js";
 import { LocalSsImageStore } from "./image-store.js";
 
 const VENDOR = "ss_activewear";
-
-const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
-  { pattern: /hoodie|crewneck|sweatshirt/i, categorySlug: "hoodies-and-crewnecks" },
-  { pattern: /\btee\b|t-shirt|tshirt/i, categorySlug: "t-shirts" },
-  { pattern: /hat|cap|beanie/i, categorySlug: "hats" },
-  { pattern: /tote|bag/i, categorySlug: "tote-bags" },
-  { pattern: /jacket/i, categorySlug: "jackets" },
-  { pattern: /vest/i, categorySlug: "vests" },
-  { pattern: /jersey/i, categorySlug: "jerseys" },
-  { pattern: /\bpolo\b/i, categorySlug: "polos" },
-];
 
 function normalizeCategories(
   value: SsStyle["categories"] | string | undefined,
@@ -692,20 +682,21 @@ export class SsSyncService {
 
     if (mappedIds.size === 0) {
       const text = `${style.styleName} ${style.title ?? ""} ${style.baseCategory ?? ""}`;
-      const { categories } = await import("../../db/schema.js");
-      for (const rule of KEYWORD_FALLBACKS) {
-        if (!rule.pattern.test(text)) continue;
-        const [cat] = await this.db
-          .select()
+      const candidates = fallbackCategorySlugs(text);
+      if (candidates.length > 0) {
+        const { categories } = await import("../../db/schema.js");
+        const found = await this.db
+          .select({ id: categories.id, slug: categories.slug })
           .from(categories)
           .where(
             and(
               eq(categories.tenantId, tenantId),
-              eq(categories.slug, rule.categorySlug),
+              inArray(categories.slug, candidates),
             ),
-          )
-          .limit(1);
-        if (cat) mappedIds.add(cat.id);
+          );
+        const bySlug = new Map(found.map((row) => [row.slug, row.id]));
+        const best = candidates.map((slug) => bySlug.get(slug)).find(Boolean);
+        if (best) mappedIds.add(best);
       }
     }
 

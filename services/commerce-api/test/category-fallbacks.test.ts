@@ -52,6 +52,19 @@ describe("fallbackCategorySlugs", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
+  it("covers the names S&S's own copy of these rules used to miss", () => {
+    // The S&S sync carried a private, older copy of this list until it was
+    // pointed at the shared one. These are the cases that differed.
+    expect(best("Independent Trading Quarter Zip Pullover")).toBe(
+      "hoodies-and-crewnecks",
+    );
+    expect(best("ANSI Class 3 Hi-Vis Vest")).toBe("safety");
+    expect(best("Ribbed Crew Socks")).toBe("socks");
+    expect(best("Stainless Steel Tumbler")).toBe("drinkware");
+    expect(best("Hardcover Journal")).toBe("notebooks");
+    expect(best("Embroidered Patch")).toBe("patches");
+  });
+
   it("uses stateless patterns, so repeated calls agree", () => {
     // A stray /g flag would make .test() advance lastIndex and alternate.
     for (const rule of KEYWORD_FALLBACKS) {
