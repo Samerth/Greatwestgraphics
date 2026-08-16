@@ -29,9 +29,17 @@ const EnvironmentSchema = z
      * still delivers the backlog instead of silently dropping it.
      */
     RESEND_API_KEY: z.string().optional(),
+    /**
+     * Must be on a domain verified in Resend. The previous default was Resend's
+     * shared `onboarding@resend.dev`, which only delivers to the Resend account
+     * owner — so proof notifications to customers were rejected outright while
+     * the dispatcher looked healthy. Defaulting to the real sending identity
+     * means a missing variable degrades to "verify the domain" rather than to
+     * "silently reach nobody".
+     */
     NOTIFICATIONS_FROM_EMAIL: z
       .string()
-      .default("Great West Graphics <onboarding@resend.dev>"),
+      .default("Great West Graphics <noreply@greatwestgraphics.com>"),
     /** Where customer-side activity is announced. Unset means staff get no mail. */
     STAFF_NOTIFICATION_EMAIL: z.string().email().optional(),
     /** Used to build the portal and admin links inside notification emails. */

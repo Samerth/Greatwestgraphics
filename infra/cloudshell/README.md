@@ -92,9 +92,9 @@ the environment's config, or in its state file for the ARNs.
 | --- | --- |
 | `IMAGE_TAG` | Defaults to `latest`, which only moves on a push to `main`. Set it to a commit SHA to run that exact build — this is how a branch is tried on staging before it is merged |
 | `CONTACT_TO_EMAIL` | Defaults to `info@greatwestgraphics.com` |
-| `EMAIL_SECRET_ARN` | Contact form logs submissions instead of emailing them and still reports success to the customer; proof notifications stay queued in `outbox_events` |
+| `EMAIL_SECRET_ARN` | Contact form returns 503 instead of confirming a message it cannot send; proof notifications stay queued in `outbox_events` |
 | `STAFF_NOTIFICATION_EMAIL` | Customers approving or rejecting proofs is announced to nobody |
-| `NOTIFICATIONS_FROM_EMAIL` | Falls back to Resend's shared `onboarding@resend.dev`, which only delivers to the Resend account owner until a domain is verified |
+| `NOTIFICATIONS_FROM_EMAIL` | Falls back to `noreply@greatwestgraphics.com`, which delivers only once that domain is verified in Resend — sends fail loudly until it is, rather than reaching nobody quietly |
 | `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
 | `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
 | `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |

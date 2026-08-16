@@ -216,6 +216,61 @@ describe("dispatchOutboxBatch", () => {
     expect(written).not.toContain("published_at");
   });
 
+  it("parks an event that has exhausted its attempts, keeping the error", async () => {
+    // attempts is the post-claim value, so 8 is the row that just used its last
+    // attempt. The claim query filters on `attempts < MAX_ATTEMPTS`, so this row
+    // will never be picked up again — which is only safe because it stays
+    // unpublished and carries the reason it gave up.
+    const { db, statements } = fakeDb([{ ...row, attempts: 8 }]);
+    const sender = {
+      send: vi.fn().mockRejectedValue(new Error("Resend rejected the message (403): not verified")),
+    };
+
+    const result = await dispatchOutboxBatch({
+      db: db as never,
+      sender,
+      siteBaseUrl: "https://shop.example.test",
+      staffEmail: "art@example.test",
+    });
+
+    expect(result).toMatchObject({ claimed: 1, sent: 0, failed: 1 });
+    const written = statements.join(" ");
+    expect(written).toContain("last_error");
+    expect(written).toContain("Parked after 8 attempts");
+    expect(written).toContain("not verified");
+    // Parking is not delivery. Marking it published here would lose the
+    // notification and hide the misconfiguration that caused it.
+    expect(written).not.toContain("published_at");
+  });
+
+  it("records a rejected recipient rather than dropping the notification", async () => {
+    // The shape Resend returns while a sending domain is unverified: the
+    // request succeeds at the transport level and the recipient is refused.
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: async () =>
+        '{"statusCode":403,"message":"You can only send testing emails to your own email address"}',
+    });
+    const { db, statements } = fakeDb([row]);
+
+    const result = await dispatchOutboxBatch({
+      db: db as never,
+      sender: new ResendEmailSender(
+        "key",
+        "noreply@greatwestgraphics.com",
+        fetchImpl as unknown as typeof fetch,
+      ),
+      siteBaseUrl: "https://shop.example.test",
+      staffEmail: "art@example.test",
+    });
+
+    expect(result).toMatchObject({ claimed: 1, sent: 0, failed: 1 });
+    const written = statements.join(" ");
+    expect(written).toContain("only send testing emails");
+    expect(written).not.toContain("published_at");
+  });
+
   it("retires an event nothing wants to send", async () => {
     // Otherwise the dispatcher re-reads it on every poll forever.
     const { db } = fakeDb([
