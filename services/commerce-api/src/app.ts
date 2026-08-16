@@ -59,8 +59,12 @@ import {
 } from "./application/invite-service.js";
 import { VendorSyncRegistry } from "./adapters/catalog/registry.js";
 import { SsActivewearClient } from "./adapters/ss-activewear/client.js";
-import { AuthenticationUnavailableError } from "./auth.js";
-import type { Environment } from "./config.js";
+import {
+  AuthenticationUnavailableError,
+  InvalidServiceTokenError,
+  secretsMatch,
+} from "./auth.js";
+import { adminRoutesEnabled, type Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
@@ -102,11 +106,13 @@ function assertTenantScope(
 
 function assertAdmin(request: FastifyRequest, environment: Environment): void {
   const suppliedToken = request.headers["x-dev-admin-token"];
+  const expectedToken = environment.ADMIN_API_TOKEN ?? environment.DEV_ADMIN_TOKEN;
   if (
     typeof suppliedToken !== "string" ||
-    suppliedToken !== environment.DEV_ADMIN_TOKEN
+    !expectedToken ||
+    !secretsMatch(suppliedToken, expectedToken)
   ) {
-    throw new UnauthorizedError("Invalid development admin token");
+    throw new UnauthorizedError("Invalid admin token");
   }
 }
 
@@ -582,7 +588,7 @@ export function buildApp(input: {
     }
   });
 
-  if (input.environment.ENABLE_DEV_ADMIN_ROUTES) {
+  if (adminRoutesEnabled(input.environment)) {
     app.post(
       "/internal/dev/job-requests/:jobRequestId/transition",
       async (request) => {
@@ -1214,6 +1220,10 @@ export function buildApp(input: {
       message = error.message;
     } else if (error instanceof AuthenticationUnavailableError) {
       statusCode = 503;
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof InvalidServiceTokenError) {
+      statusCode = 401;
       code = error.code;
       message = error.message;
     } else if (error instanceof UnauthorizedError) {

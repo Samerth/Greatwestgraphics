@@ -30,6 +30,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 12 | `12-trace-oidc-denial.sh` | Nothing. Reads CloudTrail for the request STS actually rejected. |
 | 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
+| 15 | `15-copy-database.sh` | Nothing. Copies catalogue and pricing rows from one environment into another. |
 
 ## Running more than one environment
 
@@ -83,6 +84,31 @@ the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost.
 Each environment carries its own RDS instance, load balancer and Fargate tasks,
 so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`
 for non-production stacks.
+
+## Giving a new environment something to show (script 15)
+
+`02-migrate-drizzle.sh` builds the schema but leaves every table empty, so a
+fresh stack serves an empty catalogue and cannot demonstrate real pricing.
+Script 15 copies the catalogue, category, vendor and pricing rows across:
+
+```bash
+./scripts/15-copy-database.sh --from prod --to staging
+```
+
+Customer records are deliberately excluded. Names, email addresses, orders,
+quotes, payment rows and uploaded artwork stay in production rather than being
+duplicated into an environment with weaker access controls to make a test site
+look busy. `--include-customer-data` overrides this and should be a considered
+decision, not a default.
+
+The target's copied tables are emptied first, and the load runs as one
+transaction with foreign keys deferred, so it either lands completely or not at
+all. The source is only ever read. The script refuses outright to write into
+`prod` or `production`, which is the failure that matters if the two arguments
+are ever transposed.
+
+It needs Docker and database reachability, so run it from CloudShell rather
+than a workstation.
 
 ## HTTPS without a domain (script 14)
 

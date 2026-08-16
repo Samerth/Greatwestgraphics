@@ -35,7 +35,11 @@ export async function getStaffSession(): Promise<{ username: string } | null> {
 }
 
 export function adminToken() {
-  const token = process.env.DEV_ADMIN_TOKEN;
-  if (!token) throw new Error("DEV_ADMIN_TOKEN is not configured");
+  const token = process.env.ADMIN_API_TOKEN || process.env.DEV_ADMIN_TOKEN;
+  if (!token) {
+    throw new Error(
+      "Neither ADMIN_API_TOKEN nor DEV_ADMIN_TOKEN is configured; the admin API cannot be reached",
+    );
+  }
   return token;
 }

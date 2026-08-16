@@ -63,12 +63,17 @@ export class CommerceClient {
   ) {}
 
   private headers(idempotencyKey?: string, adminToken?: string): HeadersInit {
+    // The commerce API trusts the tenant scope headers below only when the
+    // caller proves it is this server. Absent in development, where the API
+    // accepts the headers on their own.
+    const serviceToken = process.env.COMMERCE_SERVICE_TOKEN;
     return {
       "content-type": "application/json",
       [CommerceHeaders.tenantId]: this.identity.tenantId,
       [CommerceHeaders.accountId]: this.identity.accountId,
       [CommerceHeaders.storeId]: this.identity.storeId,
       [CommerceHeaders.actorId]: this.identity.customerPersonId,
+      ...(serviceToken ? { authorization: `Bearer ${serviceToken}` } : {}),
       ...(idempotencyKey
         ? { [CommerceHeaders.idempotencyKey]: idempotencyKey }
         : {}),
