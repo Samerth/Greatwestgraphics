@@ -37,7 +37,15 @@ function toResolvedStore(row: typeof stores.$inferSelect): ResolvedStore {
 }
 
 export class StoreService {
-  constructor(private readonly db: CommerceDatabase) {}
+  constructor(
+    private readonly db: CommerceDatabase,
+    /**
+     * Domain under which a store's slug doubles as its subdomain, e.g.
+     * `stores.example.com` lets `acme.stores.example.com` resolve the store
+     * with slug `acme`. Unset means only an exact `custom_domain` resolves.
+     */
+    private readonly storefrontBaseDomain?: string,
+  ) {}
 
   /**
    * Resolves a store from an inbound Host header. Unlike every other
@@ -56,15 +64,36 @@ export class StoreService {
       .limit(1);
     if (byDomain) return toResolvedStore(byDomain);
 
-    const subdomain = normalizedHost.split(".")[0];
-    if (!subdomain) return null;
+    const slug = this.subdomainSlug(normalizedHost);
+    if (!slug) return null;
 
     const [bySlug] = await this.db
       .select()
       .from(stores)
-      .where(eq(stores.slug, subdomain))
+      .where(eq(stores.slug, slug))
       .limit(1);
     return bySlug ? toResolvedStore(bySlug) : null;
+  }
+
+  /**
+   * The first label of `host`, but only when everything after it is exactly
+   * the configured base domain.
+   *
+   * This used to take the first label of any host at all, which made the
+   * slug lookup — the one query here that no tenant scopes — reachable from
+   * a hostname nobody had registered: point `acme.anything.test` at this API
+   * and it answers with Acme's tenant, account and store ids, from whichever
+   * tenant happens to own that slug. Requiring the base domain means an
+   * unrecognised host resolves to nothing and the caller has to fall back
+   * deliberately, rather than being handed a stranger's store.
+   */
+  private subdomainSlug(host: string): string | null {
+    const base = this.storefrontBaseDomain?.trim().toLowerCase().replace(/^\.+/, "");
+    if (!base) return null;
+    const suffix = `.${base}`;
+    if (!host.endsWith(suffix)) return null;
+    const label = host.slice(0, -suffix.length);
+    return label && !label.includes(".") ? label : null;
   }
 
   async getById(tenantId: string, storeId: string): Promise<ResolvedStore> {

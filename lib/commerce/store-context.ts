@@ -31,7 +31,10 @@ export const PUBLIC_STOREFRONT_FALLBACK: StoreContext = {
   tagline: null,
 };
 
-function productionDefaultStore(): StoreContext | null {
+/** The one store this deployment serves, when its identity is pinned in the
+ * environment rather than discovered per request. A deployment that wants
+ * per-host branding out of the `stores` row leaves these unset. */
+function pinnedStore(): StoreContext | null {
   const tenantId = process.env.COMMERCE_DEFAULT_TENANT_ID?.trim();
   const accountId = process.env.COMMERCE_DEFAULT_ACCOUNT_ID?.trim();
   const storeId = process.env.COMMERCE_DEFAULT_STORE_ID?.trim();
@@ -50,13 +53,25 @@ function productionDefaultStore(): StoreContext | null {
 }
 
 /**
- * Resolves which store is being served from the inbound Host header.
+ * Resolves which store is being served.
  *
- * Order: host lookup → production `COMMERCE_DEFAULT_*` → local `COMMERCE_DEV_*`
- * → public marketing shell (never throw; a hard throw here takes down every
- * shop page via the root layout / global-error boundary).
+ * Order: pinned `COMMERCE_DEFAULT_*` → host lookup → local `COMMERCE_DEV_*` →
+ * public marketing shell (never throw; a hard throw here takes down every shop
+ * page via the root layout / global-error boundary).
+ *
+ * The pin comes first because a deployment that sets it serves exactly one
+ * store: its identity is a deployment decision, not something to rediscover on
+ * every render. Asking the API to resolve the Host header first meant the
+ * single-store deployments spent a round trip per render on a question they had
+ * already answered, and the 404 that came back read as a fault rather than as
+ * "this environment does not resolve stores by host". Host resolution is still
+ * the mechanism for a deployment that serves several stores, which is precisely
+ * the one that leaves the pin unset.
  */
 export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
+  const pinned = pinnedStore();
+  if (pinned) return pinned;
+
   const baseUrl = process.env.COMMERCE_API_BASE_URL;
   try {
     const requestHeaders = await headers();
@@ -71,11 +86,8 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
       }
     }
   } catch {
-    // Fall through to configured / public fallbacks below.
+    // Fall through to the development / public fallbacks below.
   }
-
-  const productionDefault = productionDefaultStore();
-  if (productionDefault) return productionDefault;
 
   if (process.env.NODE_ENV !== "production") {
     const devEnv = loadCommerceWebEnvironment();
@@ -94,7 +106,7 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
 
   // eslint-disable-next-line no-console
   console.error(
-    "[resolveStoreContext] No store for this host. Set COMMERCE_API_BASE_URL + stores.custom_domain, or COMMERCE_DEFAULT_* ids. Serving public marketing shell.",
+    "[resolveStoreContext] No store for this deployment. Set COMMERCE_DEFAULT_TENANT_ID/_ACCOUNT_ID/_STORE_ID, or register this host as a stores.custom_domain. Serving public marketing shell with an empty catalogue.",
   );
   return PUBLIC_STOREFRONT_FALLBACK;
 });

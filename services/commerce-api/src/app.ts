@@ -176,7 +176,10 @@ export function buildApp(input: {
   const pricingV2Service = new PricingConfigV2Service(input.db);
   const catalogService = new CatalogService(input.db);
   const designProjectService = new DesignProjectService(input.db);
-  const storeService = new StoreService(input.db);
+  const storeService = new StoreService(
+    input.db,
+    input.environment.COMMERCE_STOREFRONT_BASE_DOMAIN,
+  );
   const personService = new PersonService(input.db);
   const accountService = new AccountService(input.db);
   const inviteService = new InviteService(input.db);

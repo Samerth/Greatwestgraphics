@@ -231,6 +231,8 @@ WEB_TASK="$(jq -nc \
   --arg tenant "${COMMERCE_DEFAULT_TENANT_ID:-}" \
   --arg account "${COMMERCE_DEFAULT_ACCOUNT_ID:-}" \
   --arg store "${COMMERCE_DEFAULT_STORE_ID:-}" \
+  --arg store_slug "${COMMERCE_DEFAULT_STORE_SLUG:-}" \
+  --arg store_name "${COMMERCE_DEFAULT_STORE_NAME:-}" \
   --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
   --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
   --arg email_secret "${EMAIL_SECRET_ARN:-}" \
@@ -256,11 +258,15 @@ WEB_TASK="$(jq -nc \
         {name:"COGNITO_REGION",value:$region},
         {name:"CONTACT_TO_EMAIL",value:$contact_to}
       ]
-      # Without these the storefront cannot resolve a store and falls back to a
-      # marketing shell with an empty catalogue.
-      + (if $tenant  != "" then [{name:"COMMERCE_DEFAULT_TENANT_ID",value:$tenant}]   else [] end)
-      + (if $account != "" then [{name:"COMMERCE_DEFAULT_ACCOUNT_ID",value:$account}] else [] end)
-      + (if $store   != "" then [{name:"COMMERCE_DEFAULT_STORE_ID",value:$store}]     else [] end)),
+      # Which store this environment serves. Without these the storefront has no
+      # store to be and falls back to a marketing shell with an empty tenant id,
+      # which renders a healthy-looking page with no catalogue behind it.
+      # 16-create-store.sh writes them into state; it has to have been run.
+      + (if $tenant     != "" then [{name:"COMMERCE_DEFAULT_TENANT_ID",value:$tenant}]      else [] end)
+      + (if $account    != "" then [{name:"COMMERCE_DEFAULT_ACCOUNT_ID",value:$account}]    else [] end)
+      + (if $store      != "" then [{name:"COMMERCE_DEFAULT_STORE_ID",value:$store}]        else [] end)
+      + (if $store_slug != "" then [{name:"COMMERCE_DEFAULT_STORE_SLUG",value:$store_slug}] else [] end)
+      + (if $store_name != "" then [{name:"COMMERCE_DEFAULT_STORE_NAME",value:$store_name}] else [] end)),
       secrets:([
         {name:"STAFF_ADMIN_USER",valueFrom:($web_secret+":STAFF_ADMIN_USER::")},
         {name:"STAFF_ADMIN_PASSWORD",valueFrom:($web_secret+":STAFF_ADMIN_PASSWORD::")},
@@ -301,6 +307,7 @@ API_TASK="$(jq -nc \
   --arg site "$SITE_URL" \
   --arg staff_email "${STAFF_NOTIFICATION_EMAIL:-}" \
   --arg from_email "${NOTIFICATIONS_FROM_EMAIL:-}" \
+  --arg store_base_domain "${COMMERCE_STOREFRONT_BASE_DOMAIN:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -329,7 +336,10 @@ API_TASK="$(jq -nc \
       + (if $ss_base     != "" then [{name:"SS_API_BASE_URL",value:$ss_base}]         else [] end)
       # Without a staff address, customer proof activity is delivered nowhere.
       + (if $staff_email != "" then [{name:"STAFF_NOTIFICATION_EMAIL",value:$staff_email}] else [] end)
-      + (if $from_email  != "" then [{name:"NOTIFICATIONS_FROM_EMAIL",value:$from_email}]   else [] end)),
+      + (if $from_email  != "" then [{name:"NOTIFICATIONS_FROM_EMAIL",value:$from_email}]   else [] end)
+      # Only set on a stack that serves several stores off one wildcard domain.
+      # Absent, a host resolves only against a registered stores.custom_domain.
+      + (if $store_base_domain != "" then [{name:"COMMERCE_STOREFRONT_BASE_DOMAIN",value:$store_base_domain}] else [] end)),
       secrets:([
         {name:"DATABASE_URL",valueFrom:($api_secret+":DATABASE_URL::")}
       ]
@@ -412,3 +422,13 @@ else
 fi
 echo "This first pass is HTTP on the ALB DNS. Add ACM + Route 53 before production HTTPS."
 echo "ENABLE_DEV_ADMIN_ROUTES is false. COMMERCE_DEV_* IDs are not set."
+# Said out loud because the storefront will not say it. With no store to be, it
+# renders a marketing shell and returns 200 for every page, so an environment
+# missing this looks deployed and sells nothing.
+if [[ -z "${COMMERCE_DEFAULT_STORE_ID:-}" ]]; then
+  echo
+  echo "WARNING: no store identity for this environment, so the storefront will" >&2
+  echo "serve a marketing shell with an empty catalogue. Run:" >&2
+  echo "  ./scripts/16-create-store.sh" >&2
+  echo "then run this script again." >&2
+fi

@@ -44,6 +44,15 @@ const EnvironmentSchema = z
     STAFF_NOTIFICATION_EMAIL: z.string().email().optional(),
     /** Used to build the portal and admin links inside notification emails. */
     SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+    /**
+     * Domain under which a store's slug doubles as its subdomain, so that
+     * `acme.stores.example.com` resolves the store with slug `acme`. Leaving
+     * it unset — the case for every environment that serves a single store —
+     * means `/v1/stores/by-host` only answers for a registered custom domain,
+     * and an unknown host resolves to nothing rather than to whichever store
+     * shares its first label.
+     */
+    COMMERCE_STOREFRONT_BASE_DOMAIN: z.string().min(1).optional(),
     OUTBOX_DISPATCH_ENABLED: z
       .enum(["true", "false"])
       .default("true")

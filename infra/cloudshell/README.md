@@ -31,6 +31,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 | 15 | `15-copy-database.sh` | Nothing. Copies catalogue and pricing rows from one environment into another. |
+| 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
 
 ## Running more than one environment
 
@@ -65,6 +66,7 @@ export CONFIG_FILE=config.staging.env
 ./scripts/06-create-cognito.sh
 ./scripts/07-create-ecr.sh
 ./scripts/08-create-app-secrets.sh
+./scripts/16-create-store.sh      # the store this stack serves; without it, no catalogue
 ./scripts/09-create-ecs.sh
 ./scripts/14-create-cloudfront.sh
 unset CONFIG_FILE                 # back to production
@@ -79,7 +81,36 @@ environment's own deploy role.
 
 CloudFront hands out the site's hostname, so it comes last. Once it prints one,
 set `SITE_HOSTNAME` to it and re-run `05-create-s3.sh` and `09-create-ecs.sh` so
-the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost.
+the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost. Run
+`16-create-store.sh` again afterwards so the store row carries the final
+hostname too.
+
+## Which store an environment serves (script 16)
+
+`02-migrate-drizzle.sh` creates the schema and no rows, and `npm run db:seed` is
+fixture data that does not belong in a real environment — so a freshly
+provisioned stack has no tenant, account or store at all. The storefront does not
+fail on that. It falls back to a marketing shell with an empty tenant id and
+returns 200 for every page, which is why an environment can sit in this state
+indefinitely looking deployed.
+
+```bash
+./scripts/16-create-store.sh
+./scripts/09-create-ecs.sh   # picks the recorded ids up out of state
+```
+
+Script 16 creates the three rows (or adopts the ones already there), registers
+the site's hostname on the store as its `custom_domain`, and writes
+`COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` / `_STORE_SLUG` /
+`_STORE_NAME` into the environment's state file. `09-create-ecs.sh` reads state,
+so the values reach the web task without anyone copying UUIDs by hand, and it
+warns when they are missing rather than quietly shipping the brochure.
+
+Those variables pin the store: the storefront serves exactly the one they name
+and does not ask the API to resolve the inbound `Host` header at all. The
+hostname on the store row is what a deployment serving several stores from one
+web tier would resolve against instead, and registering it keeps the two answers
+in agreement.
 
 ### Optional settings that `09-create-ecs.sh` reads
 
@@ -98,7 +129,9 @@ the environment's config, or in its state file for the ARNs.
 | `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
 | `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
 | `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |
-| `COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` | Store resolution falls back to a marketing shell with no products |
+| `COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` | The storefront has no store to be and serves a marketing shell with no products. Written into state by `16-create-store.sh` rather than set by hand |
+| `COMMERCE_DEFAULT_STORE_SLUG` / `_STORE_NAME` | The pinned store shows the built-in `great-west-graphics` / `Great West Graphics` labels rather than the row's own |
+| `COMMERCE_STOREFRONT_BASE_DOMAIN` | The commerce API resolves a host only against a registered `stores.custom_domain`. Only a stack serving several stores off one wildcard domain needs it |
 | `SANMAR_API_BASE_URL`, `SS_API_BASE_URL` | Vendor adapters fall back to their built-in defaults |
 
 Each secret ARN that is set is also added to the task execution role. That role
