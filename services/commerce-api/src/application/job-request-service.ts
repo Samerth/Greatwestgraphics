@@ -433,8 +433,15 @@ export class JobRequestService {
     tenantId: string,
     accountId: string,
     jobRequestId: string,
+    customerPersonId?: string,
   ): Promise<JobRequestDetailResponse> {
-    const row = await this.findScoped(this.db, tenantId, accountId, jobRequestId);
+    const row = await this.findScoped(
+      this.db,
+      tenantId,
+      accountId,
+      jobRequestId,
+      customerPersonId,
+    );
     const [lines, history, quotes, proofs] = await Promise.all([
       this.db
         .select()
@@ -718,12 +725,21 @@ export class JobRequestService {
     actor: Actor,
   ): Promise<ProofVersionResponse> {
     const { tenantId, accountId } = command.context;
+    // A customer may only decide proofs on their own job. Staff decide through
+    // the admin router and are deliberately not narrowed to one customer.
+    if (actor.type === "customer" && !actor.id) {
+      throw new ScopeMismatchError(
+        "A customer proof decision requires an identified customer",
+      );
+    }
+    const customerPersonId = actor.type === "customer" ? actor.id : undefined;
     return this.db.transaction(async (transaction) => {
       const current = await this.findScoped(
         transaction,
         tenantId,
         accountId,
         jobRequestId,
+        customerPersonId,
       );
 
       const [proof] = await transaction
@@ -813,9 +829,14 @@ export class JobRequestService {
     });
   }
 
+  /**
+   * Lists job requests in an account, optionally narrowed to one customer's
+   * own. See `findScoped` for why customer-facing callers must always narrow.
+   */
   async list(
     tenantId: string,
     accountId: string,
+    customerPersonId?: string,
   ): Promise<JobRequestResponse[]> {
     const rows = await this.db
       .select()
@@ -824,6 +845,9 @@ export class JobRequestService {
         and(
           eq(jobRequests.tenantId, tenantId),
           eq(jobRequests.accountId, accountId),
+          ...(customerPersonId
+            ? [eq(jobRequests.customerPersonId, customerPersonId)]
+            : []),
         ),
       )
       .orderBy(desc(jobRequests.createdAt));
@@ -1011,11 +1035,23 @@ export class JobRequestService {
     return toResponse(updated);
   }
 
+  /**
+   * Loads a job request inside a tenant/account scope.
+   *
+   * `customerPersonId` narrows the lookup to a single customer's own job and
+   * must be supplied on every customer-initiated path. Account scope alone is
+   * not an authorization boundary for retail customers: an unbranded public
+   * storefront enrols every shopper who signs in into one shared account, so
+   * without the person filter one customer's id would match another's job.
+   * Staff paths intentionally pass nothing, because reviewing any job in the
+   * account is the entire point of the admin router.
+   */
   private async findScoped(
     executor: Pick<CommerceDatabase, "select">,
     tenantId: string,
     accountId: string,
     jobRequestId: string,
+    customerPersonId?: string,
   ): Promise<typeof jobRequests.$inferSelect> {
     const [row] = await executor
       .select()
@@ -1025,6 +1061,9 @@ export class JobRequestService {
           eq(jobRequests.tenantId, tenantId),
           eq(jobRequests.accountId, accountId),
           eq(jobRequests.id, jobRequestId),
+          ...(customerPersonId
+            ? [eq(jobRequests.customerPersonId, customerPersonId)]
+            : []),
         ),
       )
       .limit(1);

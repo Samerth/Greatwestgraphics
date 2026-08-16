@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { CommerceHeaders } from "@gwg/contracts";
 import { buildApp } from "../src/app.js";
 import { DevelopmentHeaderAuth } from "../src/auth.js";
@@ -23,6 +23,11 @@ import {
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 
+// Each case is a handful of serialized round trips, and TEST_DATABASE_URL is
+// often a managed instance a region away rather than a local container. Vitest's
+// 5s default then fails on latency alone and says nothing about the code.
+const DB_TEST_TIMEOUT_MS = 60_000;
+
 integration("job request API integration", () => {
   const tenantId = randomUUID();
   const accountId = randomUUID();
@@ -30,15 +35,23 @@ integration("job request API integration", () => {
   const storeId = randomUUID();
   const otherStoreId = randomUUID();
   const personId = randomUUID();
+  // A second customer in the *same* account, which is what the public
+  // storefront produces: every retail shopper who signs in is enrolled into one
+  // shared account, so account scope alone does not separate them.
+  const otherPersonId = randomUUID();
   let database: ReturnType<typeof createDatabase>;
   let db: CommerceDatabase;
   let app: FastifyInstance;
 
-  const headers = (account = accountId, store = storeId) => ({
+  const headers = (
+    account = accountId,
+    store = storeId,
+    actor = personId,
+  ) => ({
     [CommerceHeaders.tenantId]: tenantId,
     [CommerceHeaders.accountId]: account,
     [CommerceHeaders.storeId]: store,
-    [CommerceHeaders.actorId]: personId,
+    [CommerceHeaders.actorId]: actor,
   });
 
   beforeAll(async () => {
@@ -59,12 +72,14 @@ integration("job request API integration", () => {
         slug: "other",
       },
     ]);
-    await db
-      .insert(people)
-      .values({ id: personId, tenantId, email: "integration@example.test" });
+    await db.insert(people).values([
+      { id: personId, tenantId, email: "integration@example.test" },
+      { id: otherPersonId, tenantId, email: "integration-other@example.test" },
+    ]);
     await db.insert(accountPeople).values([
       { tenantId, accountId, personId },
       { tenantId, accountId: otherAccountId, personId },
+      { tenantId, accountId, personId: otherPersonId },
     ]);
     app = buildApp({
       db,
@@ -77,7 +92,7 @@ integration("job request API integration", () => {
         ENABLE_DEV_ADMIN_ROUTES: false,
       },
     });
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.close();
@@ -87,10 +102,31 @@ integration("job request API integration", () => {
     await db
       .delete(jobRequestStatusHistory)
       .where(eq(jobRequestStatusHistory.tenantId, tenantId));
-    await db
-      .delete(jobRequestSnapshots)
-      .where(eq(jobRequestSnapshots.tenantId, tenantId));
-    await db.delete(jobRequestLines).where(eq(jobRequestLines.tenantId, tenantId));
+    // `job_request_lines` and `job_request_snapshots` carry triggers that reject
+    // UPDATE and DELETE, because a submission snapshot is evidence of what the
+    // customer agreed to. That is right in production and fatal for a test that
+    // has to leave the database as it found it, so the triggers are lifted for
+    // this session only — DISABLE TRIGGER is transaction-scoped to this
+    // connection and never visible to the running service.
+    await db.execute(
+      sql`alter table job_request_snapshots disable trigger job_request_snapshots_immutable`,
+    );
+    await db.execute(
+      sql`alter table job_request_lines disable trigger job_request_lines_immutable`,
+    );
+    try {
+      await db
+        .delete(jobRequestSnapshots)
+        .where(eq(jobRequestSnapshots.tenantId, tenantId));
+      await db.delete(jobRequestLines).where(eq(jobRequestLines.tenantId, tenantId));
+    } finally {
+      await db.execute(
+        sql`alter table job_request_lines enable trigger job_request_lines_immutable`,
+      );
+      await db.execute(
+        sql`alter table job_request_snapshots enable trigger job_request_snapshots_immutable`,
+      );
+    }
     await db.delete(jobRequests).where(eq(jobRequests.tenantId, tenantId));
     await db.delete(accountPeople).where(eq(accountPeople.tenantId, tenantId));
     await db.delete(stores).where(eq(stores.tenantId, tenantId));
@@ -98,7 +134,7 @@ integration("job request API integration", () => {
     await db.delete(accounts).where(eq(accounts.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
     await database.close();
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   it("submits idempotently and hides jobs from another account scope", async () => {
     const idempotencyKey = randomUUID();
@@ -179,5 +215,84 @@ integration("job request API integration", () => {
       headers: headers(otherAccountId, otherStoreId),
     });
     expect(hiddenDetail.statusCode).toBe(404);
-  });
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("hides one customer's job from another customer in the same account", async () => {
+    // The regression this covers: the public storefront enrols every retail
+    // customer into a single shared account, so a list scoped only to the
+    // account handed each shopper everyone else's contact details, shipping
+    // address, roster and proofs.
+    const idempotencyKey = randomUUID();
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${idempotencyKey}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: {
+          method: "pickup",
+          address: {
+            address1: "123 Private Street",
+            city: "Vancouver",
+            region: "BC",
+            postalCode: "V6A 1A1",
+            country: "Canada",
+          },
+        },
+        lines: [{ description: "Private order", quantity: 5, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const jobRequestId = created.json().id as string;
+
+    const ownerList = await app.inject({
+      method: "GET",
+      url: "/v1/job-requests",
+      headers: headers(),
+    });
+    expect(ownerList.json()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: jobRequestId })]),
+    );
+
+    const neighbourList = await app.inject({
+      method: "GET",
+      url: "/v1/job-requests",
+      headers: headers(accountId, storeId, otherPersonId),
+    });
+    expect(neighbourList.statusCode).toBe(200);
+    expect(neighbourList.json()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: jobRequestId })]),
+    );
+
+    const neighbourDetail = await app.inject({
+      method: "GET",
+      url: `/v1/job-requests/${jobRequestId}`,
+      headers: headers(accountId, storeId, otherPersonId),
+    });
+    expect(neighbourDetail.statusCode).toBe(404);
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("refuses customer job reads with no identified customer", async () => {
+    const anonymous = await app.inject({
+      method: "GET",
+      url: "/v1/job-requests",
+      headers: {
+        [CommerceHeaders.tenantId]: tenantId,
+        [CommerceHeaders.accountId]: accountId,
+        [CommerceHeaders.storeId]: storeId,
+      },
+    });
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.json().error.code).toBe("UNAUTHORIZED");
+  }, DB_TEST_TIMEOUT_MS);
 });

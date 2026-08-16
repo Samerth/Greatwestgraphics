@@ -183,6 +183,18 @@ export function buildApp(input: {
     };
   }
 
+  /**
+   * The signed-in customer behind this request. Every route that returns or
+   * mutates one customer's own records must go through this rather than
+   * settling for the account scope, which is shared across retail shoppers.
+   */
+  function requirePersonId(auth: AuthContext): string {
+    if (!auth.actor.id) {
+      throw new UnauthorizedError("Sign in to view your account");
+    }
+    return auth.actor.id;
+  }
+
   function requireSsClient() {
     if (
       !input.environment.SS_ACCOUNT_NUMBER ||
@@ -314,9 +326,13 @@ export function buildApp(input: {
     return service.submit(jobRequestId, command, key, auth.actor);
   });
 
+  // Customer-facing job reads are scoped to the signed-in person, not just to
+  // the account. The public storefront puts every retail shopper into one
+  // shared account, so account scope alone would show each customer everyone
+  // else's jobs — contact details, addresses, rosters and proofs included.
   app.get("/v1/job-requests", async (request) => {
     const auth = await input.auth.resolve(request);
-    return service.list(auth.tenantId, auth.accountId);
+    return service.list(auth.tenantId, auth.accountId, requirePersonId(auth));
   });
 
   app.get("/v1/job-requests/:jobRequestId", async (request) => {
@@ -324,7 +340,12 @@ export function buildApp(input: {
     const jobRequestId = CanonicalIdSchema.parse(
       (request.params as { jobRequestId?: string }).jobRequestId,
     );
-    return service.get(auth.tenantId, auth.accountId, jobRequestId);
+    return service.get(
+      auth.tenantId,
+      auth.accountId,
+      jobRequestId,
+      requirePersonId(auth),
+    );
   });
 
   // The customer half of the proof round trip. The service refuses a decision
@@ -407,13 +428,6 @@ export function buildApp(input: {
       .onlyWithProducts === "true";
     return catalogService.listCategories(auth.tenantId, auth.storeId, onlyWithProducts);
   });
-
-  function requirePersonId(auth: AuthContext): string {
-    if (!auth.actor.id) {
-      throw new UnauthorizedError("Sign in to manage saved designs");
-    }
-    return auth.actor.id;
-  }
 
   app.get("/v1/design-projects", async (request) => {
     const auth = await input.auth.resolve(request);
