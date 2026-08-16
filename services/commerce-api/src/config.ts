@@ -23,6 +23,24 @@ const EnvironmentSchema = z
      * over pricing publication and catalogue editing.
      */
     ADMIN_API_TOKEN: z.string().min(32).optional(),
+    /**
+     * Notification delivery. Without RESEND_API_KEY the dispatcher leaves
+     * events queued rather than marking them sent, so wiring the key up later
+     * still delivers the backlog instead of silently dropping it.
+     */
+    RESEND_API_KEY: z.string().optional(),
+    NOTIFICATIONS_FROM_EMAIL: z
+      .string()
+      .default("Great West Graphics <onboarding@resend.dev>"),
+    /** Where customer-side activity is announced. Unset means staff get no mail. */
+    STAFF_NOTIFICATION_EMAIL: z.string().email().optional(),
+    /** Used to build the portal and admin links inside notification emails. */
+    SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+    OUTBOX_DISPATCH_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+    OUTBOX_POLL_MS: z.coerce.number().int().min(1_000).default(30_000),
     SS_ACCOUNT_NUMBER: z.string().optional(),
     SS_API_KEY: z.string().optional(),
     SS_API_BASE_URL: z

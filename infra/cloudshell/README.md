@@ -91,7 +91,9 @@ the environment's config, or in its state file for the ARNs.
 | Setting | Effect when absent |
 | --- | --- |
 | `CONTACT_TO_EMAIL` | Defaults to `info@greatwestgraphics.com` |
-| `EMAIL_SECRET_ARN` | Contact form logs submissions instead of emailing them, and still reports success to the customer |
+| `EMAIL_SECRET_ARN` | Contact form logs submissions instead of emailing them and still reports success to the customer; proof notifications stay queued in `outbox_events` |
+| `STAFF_NOTIFICATION_EMAIL` | Customers approving or rejecting proofs is announced to nobody |
+| `NOTIFICATIONS_FROM_EMAIL` | Falls back to Resend's shared `onboarding@resend.dev`, which only delivers to the Resend account owner until a domain is verified |
 | `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
 | `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
 | `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |

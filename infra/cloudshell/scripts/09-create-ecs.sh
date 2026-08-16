@@ -224,6 +224,10 @@ API_TASK="$(jq -nc \
   --arg vendor_secret "${VENDOR_SECRET_ARN:-}" \
   --arg sanmar_base "${SANMAR_API_BASE_URL:-}" \
   --arg ss_base "${SS_API_BASE_URL:-}" \
+  --arg email_secret "${EMAIL_SECRET_ARN:-}" \
+  --arg site "$SITE_URL" \
+  --arg staff_email "${STAFF_NOTIFICATION_EMAIL:-}" \
+  --arg from_email "${NOTIFICATIONS_FROM_EMAIL:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -244,10 +248,15 @@ API_TASK="$(jq -nc \
         {name:"ENABLE_DEV_ADMIN_ROUTES",value:"false"},
         # Fargate has no writable public directory, so S&S images are kept as
         # CDN URLs rather than downloaded during a sync.
-        {name:"SS_IMAGE_STORAGE",value:"remote"}
+        {name:"SS_IMAGE_STORAGE",value:"remote"},
+        # Links inside notification emails point back at the storefront.
+        {name:"SITE_BASE_URL",value:$site}
       ]
       + (if $sanmar_base != "" then [{name:"SANMAR_API_BASE_URL",value:$sanmar_base}] else [] end)
-      + (if $ss_base     != "" then [{name:"SS_API_BASE_URL",value:$ss_base}]         else [] end)),
+      + (if $ss_base     != "" then [{name:"SS_API_BASE_URL",value:$ss_base}]         else [] end)
+      # Without a staff address, customer proof activity is delivered nowhere.
+      + (if $staff_email != "" then [{name:"STAFF_NOTIFICATION_EMAIL",value:$staff_email}] else [] end)
+      + (if $from_email  != "" then [{name:"NOTIFICATIONS_FROM_EMAIL",value:$from_email}]   else [] end)),
       secrets:([
         {name:"DATABASE_URL",valueFrom:($api_secret+":DATABASE_URL::")}
       ]
@@ -255,6 +264,9 @@ API_TASK="$(jq -nc \
       # what replaces the development-only flag in production.
       + (if $service_token  != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
       + (if $admin_token    != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
+      # The API drains the outbox, so the mail key belongs here as well as on
+      # the web tier. Without it proof notifications stay queued.
+      + (if $email_secret   != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}] else [] end)
       # Vendor credentials drive catalogue sync; without them the storefront
       # has no products at all.
       + (if $vendor_secret  != "" then [
