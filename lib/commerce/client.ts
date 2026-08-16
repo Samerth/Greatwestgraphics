@@ -722,15 +722,18 @@ export class CommerceClient {
     id: string,
     proofId: string,
     input: { decision: "approved" | "changes_requested"; note?: string },
-    options?: { adminToken?: string; actorId?: string },
+    options?: { adminToken?: string },
   ): Promise<ProofVersionResponse> {
     const adminToken = options?.adminToken;
     const path = adminToken
       ? `/internal/dev/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`
       : `/v1/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`;
+    // The customer actor travels in the standard actor header that every
+    // request carries, taken from the session. It used to be passed here as
+    // well, in the idempotency-key slot, which sent a nonsense key.
     return this.request(path, ProofVersionResponseSchema, {
       method: "POST",
-      headers: this.headers(options?.actorId, adminToken),
+      headers: this.headers(undefined, adminToken),
       body: JSON.stringify({
         context: {
           tenantId: this.identity.tenantId,

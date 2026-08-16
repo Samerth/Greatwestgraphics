@@ -39,12 +39,10 @@ export async function decideProofAction(
   }
 
   try {
-    await (await createCommerceClient()).decideProof(
-      jobId,
-      proofId,
-      { decision, note: note || undefined },
-      { actorId: session.personId },
-    );
+    await (await createCommerceClient()).decideProof(jobId, proofId, {
+      decision,
+      note: note || undefined,
+    });
   } catch (caught) {
     return {
       error:
