@@ -116,6 +116,22 @@ export type DesignStudioEndpoints = {
   upload?: string;
 };
 
+/**
+ * Resolves once the browser has fetched `src` under the same anonymous
+ * cross-origin mode the Konva canvas uses, so a URL that will not render on
+ * the canvas — a private bucket, a missing CORS header — fails here instead
+ * of silently at draw time.
+ */
+function canLoadImage(src: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = new window.Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => resolve(true);
+    probe.onerror = () => resolve(false);
+    probe.src = src;
+  });
+}
+
 const CUSTOMER_ENDPOINTS: Required<DesignStudioEndpoints> = {
   create: "/api/designs",
   update: "/api/designs",
@@ -353,6 +369,16 @@ export function DesignStudio({
           throw new Error(body?.error?.message || "Upload failed.");
         }
         const hostedUrl = String(body.url);
+        // Prove the hosted copy is actually readable back — under the same
+        // anonymous CORS mode the canvas loads it with — before the layer
+        // starts pointing at it. Storing a URL we have never successfully
+        // fetched is how a design ends up saved but blank for staff, and the
+        // preload doubles as a warm cache so the swap does not flicker.
+        if (!(await canLoadImage(hostedUrl))) {
+          throw new Error(
+            "The upload saved but could not be read back, so it has not been attached.",
+          );
+        }
         updateArtworks(side, (artworks) =>
           artworks.map((a) => (a.id === artworkId ? { ...a, src: hostedUrl } : a)),
         );
@@ -414,6 +440,9 @@ export function DesignStudio({
     }
 
     const hostedUrl = await uploadArtwork(side, id, blob, filename);
+    // Only safe to release once the hosted copy has been loaded, which
+    // uploadArtwork has already confirmed; releasing earlier would blank the
+    // layer for as long as the swap took.
     if (hostedUrl) URL.revokeObjectURL(objectUrl);
     return hostedUrl;
   }
