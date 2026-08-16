@@ -64,31 +64,24 @@ export default async function AdminLoginPage({
               required
             />
           </label>
-          <p className="text-sm m-0">
-            <Link href="/contact" className="font-bold text-accent hover:underline">
-              Forgot Password?
-            </Link>
-          </p>
           <button
             type="submit"
             className="w-full bg-accent text-white font-bold rounded-md py-3.5 hover:bg-accent-hover transition-colors"
           >
             Login
           </button>
-          <p className="text-center text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
-            OR
-          </p>
-          <Link
-            href="/contact"
-            className="block w-full text-center border border-border rounded-md py-3.5 font-bold text-sm hover:border-accent hover:text-accent transition-colors"
-          >
-            Login with a One-time Code
-          </Link>
+          {/* A "Login with a One-time Code" button, "Forgot Password?" and
+              "Sign up!" all linked to /contact. Staff sign-in is a single
+              credential issued internally: there is no one-time code, no self
+              service reset and no self registration, so all three advertised
+              journeys that end nowhere. One-time codes are a customer feature,
+              which is why the pointer to the customer login stays. */}
           <p className="text-sm text-text-secondary m-0 pt-1">
-            Don&apos;t have an account?{" "}
+            Lost your access?{" "}
             <Link href="/contact" className="font-bold text-accent hover:underline">
-              Sign up!
-            </Link>
+              Ask an administrator
+            </Link>{" "}
+            to reissue it.
           </p>
         </form>
       </div>
