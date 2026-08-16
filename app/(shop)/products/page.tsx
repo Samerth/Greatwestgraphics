@@ -122,7 +122,16 @@ export default async function ProductsPage({
   const allCategories = category ? await loadStorefrontCategories(false) : [];
   const heading = category
     ? (allCategories.find((c) => c.slug === category.toLowerCase())?.name ??
-      category.slice(0, 48))
+      // Unknown slug, or the category list itself is unreachable. The listing
+      // below is empty or unavailable either way, so show the slug readably
+      // rather than pretending the filter was the whole catalogue.
+      category
+        .slice(0, 48)
+        .replace(/[^a-zA-Z0-9-]/g, "")
+        .split("-")
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" "))
     : "Shop All Products";
 
   return (
