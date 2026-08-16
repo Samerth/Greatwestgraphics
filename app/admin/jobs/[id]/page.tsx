@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   createFinalQuoteAction,
   createProofAction,
+  decideProofAction,
   transitionJobAction,
 } from "@/app/admin/actions";
 import { adminClient } from "@/lib/admin/api";
@@ -233,15 +234,85 @@ export default async function AdminJobDetailPage({
         </div>
 
         <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
-          <h2 className="font-display font-bold text-xl m-0">Staff proofs</h2>
+          <h2 className="font-display font-bold text-xl m-0">Proofs</h2>
           {(detail.proofs ?? []).length > 0 ? (
-            <ul className="m-0 p-0 list-none space-y-1 text-sm">
-              {(detail.proofs ?? []).map((proof) => (
-                <li key={proof.id} className="break-all">
-                  v{proof.version}: {proof.storageKey}
-                  {proof.decision ? ` · ${proof.decision}` : ""}
-                </li>
-              ))}
+            <ul className="m-0 p-0 list-none space-y-3 text-sm">
+              {[...(detail.proofs ?? [])]
+                .sort((a, b) => b.version - a.version)
+                .map((proof) => {
+                  const undecided =
+                    !proof.decision || proof.decision === "pending";
+                  const oursToDecide =
+                    undecided && proof.awaitingDecisionFrom === "staff";
+                  return (
+                    <li
+                      key={proof.id}
+                      className="border border-border rounded-sm p-2"
+                    >
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <b>v{proof.version}</b>
+                        <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">
+                          {undecided
+                            ? oursToDecide
+                              ? "Needs your review"
+                              : "With the customer"
+                            : proof.decision === "approved"
+                              ? "Approved"
+                              : "Changes requested"}
+                        </span>
+                      </div>
+                      <p className="break-all text-xs text-text-secondary mt-1 mb-0">
+                        {proof.storageKey}
+                      </p>
+                      {proof.note && (
+                        <p className="text-xs text-text-secondary mt-1 mb-0">
+                          Note: {proof.note}
+                        </p>
+                      )}
+                      {proof.decisionNote && (
+                        <p className="text-xs text-text-secondary mt-1 mb-0">
+                          Response: “{proof.decisionNote}”
+                        </p>
+                      )}
+                      {oursToDecide && (
+                        <form
+                          action={decideProofAction}
+                          className="mt-2 space-y-2"
+                        >
+                          <input type="hidden" name="jobId" value={detail.id} />
+                          <input
+                            type="hidden"
+                            name="proofId"
+                            value={proof.id}
+                          />
+                          <input
+                            name="note"
+                            placeholder="Note (required to request changes)"
+                            className="block w-full border border-border rounded-sm px-2 py-1"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="submit"
+                              name="decision"
+                              value="approved"
+                              className="bg-accent text-white font-bold px-3 py-1 rounded-sm"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="submit"
+                              name="decision"
+                              value="changes_requested"
+                              className="border border-border font-bold px-3 py-1 rounded-sm"
+                            >
+                              Request changes
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </li>
+                  );
+                })}
             </ul>
           ) : (
             <p className="text-sm text-text-secondary m-0">No proofs yet.</p>
