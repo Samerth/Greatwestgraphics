@@ -11,6 +11,18 @@ const EnvironmentSchema = z
       .default("false")
       .transform((value) => value === "true"),
     DEV_ADMIN_TOKEN: z.string().min(16).optional(),
+    /**
+     * Shared secret proving a caller is the web tier. Without it the service
+     * cannot authenticate anyone in production and every tenant-scoped route
+     * refuses to answer.
+     */
+    COMMERCE_SERVICE_TOKEN: z.string().min(32).optional(),
+    /**
+     * Enables the admin API outside development. Separate from the service
+     * token so that leaking the storefront's credential does not also hand
+     * over pricing publication and catalogue editing.
+     */
+    ADMIN_API_TOKEN: z.string().min(32).optional(),
     SS_ACCOUNT_NUMBER: z.string().optional(),
     SS_API_KEY: z.string().optional(),
     SS_API_BASE_URL: z
@@ -62,9 +74,25 @@ const EnvironmentSchema = z
         message: "DEV_ADMIN_TOKEN is required when admin routes are enabled",
       });
     }
+    if (
+      environment.ADMIN_API_TOKEN &&
+      environment.ADMIN_API_TOKEN === environment.COMMERCE_SERVICE_TOKEN
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ADMIN_API_TOKEN"],
+        message:
+          "ADMIN_API_TOKEN must differ from COMMERCE_SERVICE_TOKEN, or storefront credentials would grant admin access",
+      });
+    }
   });
 
 export type Environment = z.infer<typeof EnvironmentSchema>;
+
+/** Whether the admin API is served: development flag, or a production token. */
+export function adminRoutesEnabled(environment: Environment): boolean {
+  return environment.ENABLE_DEV_ADMIN_ROUTES || Boolean(environment.ADMIN_API_TOKEN);
+}
 
 export function loadEnvironment(
   input: NodeJS.ProcessEnv = process.env,
