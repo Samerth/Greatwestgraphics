@@ -96,6 +96,29 @@ export class StoreService {
     return label && !label.includes(".") ? label : null;
   }
 
+  /**
+   * Resolves a store from a slug in the URL path, within one tenant.
+   *
+   * The tenant scope is not optional. `stores.slug` is unique per tenant, not
+   * globally, so an unscoped slug lookup would answer `/s/acme` with whichever
+   * tenant happened to own that slug — the same hole the host resolver had.
+   * A path-based storefront always knows its tenant: it is the one the
+   * deployment serves.
+   */
+  async resolveBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<ResolvedStore | null> {
+    const normalized = slug.trim().toLowerCase();
+    if (!normalized) return null;
+    const [row] = await this.db
+      .select()
+      .from(stores)
+      .where(and(eq(stores.tenantId, tenantId), eq(stores.slug, normalized)))
+      .limit(1);
+    return row ? toResolvedStore(row) : null;
+  }
+
   async getById(tenantId: string, storeId: string): Promise<ResolvedStore> {
     const [row] = await this.db
       .select()

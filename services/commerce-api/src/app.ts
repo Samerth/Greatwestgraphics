@@ -530,6 +530,21 @@ export function buildApp(input: {
     return resolved;
   });
 
+  // Path-based branded storefronts: /s/<slug> on the main domain. Scoped to a
+  // tenant the caller names, because a slug is only unique inside one.
+  app.get("/v1/stores/by-slug", async (request, reply) => {
+    const query = request.query as { tenantId?: string; slug?: string };
+    const tenantId = CanonicalIdSchema.parse(query.tenantId);
+    const slug = z.string().min(1).max(63).parse(query.slug);
+    const resolved = await storeService.resolveBySlug(tenantId, slug);
+    if (!resolved) {
+      return reply.code(404).send({
+        error: { code: "STORE_NOT_FOUND", message: "No store with this slug" },
+      });
+    }
+    return resolved;
+  });
+
   app.post("/v1/auth/link-person", async (request) => {
     const auth = await input.auth.resolve(request);
     const body = z

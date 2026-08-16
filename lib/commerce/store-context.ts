@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { headers } from "next/headers";
 import { loadCommerceWebEnvironment } from "./config";
+import { STORE_SLUG_HEADER } from "./store-cookie";
 
 export type StoreContext = {
   tenantId: string;
@@ -53,6 +54,33 @@ function pinnedStore(): StoreContext | null {
 }
 
 /**
+ * The branded store the visitor selected via `/s/<slug>`, if it exists.
+ *
+ * A store awaiting approval is returned as itself rather than skipped: the
+ * shop layout already refuses to serve a store that is not active and says so
+ * by name, which is a better answer to an early-shared link than silently
+ * showing the main site instead.
+ */
+async function selectedStore(tenantId?: string): Promise<StoreContext | null> {
+  const baseUrl = process.env.COMMERCE_API_BASE_URL;
+  if (!tenantId || !baseUrl) return null;
+  try {
+    const requestHeaders = await headers();
+    const slug = requestHeaders.get(STORE_SLUG_HEADER);
+    if (!slug) return null;
+
+    const response = await fetch(
+      `${baseUrl}/v1/stores/by-slug?tenantId=${encodeURIComponent(tenantId)}&slug=${encodeURIComponent(slug)}`,
+      { cache: "no-store", signal: AbortSignal.timeout(10_000) },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as StoreContext;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolves which store is being served.
  *
  * Order: pinned `COMMERCE_DEFAULT_*` → host lookup → local `COMMERCE_DEV_*` →
@@ -70,6 +98,14 @@ function pinnedStore(): StoreContext | null {
  */
 export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
   const pinned = pinnedStore();
+
+  // A branded store chosen through /s/<slug> outranks the pin: the pin says
+  // which store this deployment serves by default, not which one this visitor
+  // asked for. Scoped to the pinned tenant because a slug is only unique
+  // inside one.
+  const selected = await selectedStore(pinned?.tenantId);
+  if (selected) return selected;
+
   if (pinned) return pinned;
 
   const baseUrl = process.env.COMMERCE_API_BASE_URL;
