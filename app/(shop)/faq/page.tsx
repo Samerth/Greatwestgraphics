@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 const FAQ_CATEGORIES: Array<{
   title: string;
-  items: Array<{ q: string; a: string; dummy?: boolean }>;
+  items: Array<{ q: string; a: string }>;
 }> = [
   {
     title: "Ordering & Pricing",
@@ -98,9 +98,13 @@ const FAQ_CATEGORIES: Array<{
         a: "Yes — we keep your artwork and specs on file, so reorders are quick with no new setup fee.",
       },
       {
+        // Restates the reprint guarantee the rest of the site already makes
+        // ("We reprint our mistakes, free"), so it is publishable as-is. It
+        // previously rendered under a visible "Policy language pending GWG
+        // confirmation" note, which told every visitor the shop had not
+        // settled its own returns policy.
         q: "What if my order arrives misprinted or damaged?",
         a: "If your order arrives misprinted, mismatched, or damaged, contact our team with photos and your order number. Once reviewed, we’ll arrange a reprint or refund per our quality guarantee.",
-        dummy: true,
       },
     ],
   },
@@ -148,11 +152,6 @@ export default function FaqPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-sp-4 gap-y-sp-4">
                 {category.items.map((item) => (
                   <div key={item.q}>
-                    {item.dummy ? (
-                      <p className="text-[11px] uppercase tracking-wide text-text-tertiary m-0 mb-1">
-                        Policy language pending GWG confirmation
-                      </p>
-                    ) : null}
                     <h3 className="font-bold text-[15px] m-0">{item.q}</h3>
                     <p className="text-sm text-text-secondary mt-2 mb-0">
                       {item.a}

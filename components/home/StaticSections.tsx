@@ -71,11 +71,12 @@ export function Testimonials() {
         <h2 className="text-center font-display font-bold text-header m-0 text-balance">
           What Our Clients Say
         </h2>
-        <div className="mt-sp-2 mb-sp-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm sm:text-base text-text-secondary">
-          <span>4.8/5 · 214 reviews</span>
-          <Link href="/#reviews" className="font-bold text-accent hover:underline">
-            See all reviews
-          </Link>
+        {/* The "4.8/5 · 214 reviews" strip that used to sit here, and its "See
+            all reviews" link back to this same section, were both invented —
+            there is no review store behind them. The three quotes below are
+            real and are all we can substantiate today. */}
+        <div className="mt-sp-2 mb-sp-6 text-center text-sm sm:text-base text-text-secondary">
+          Reviews left by Vancouver businesses we print for.
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-sp-3">
           {TESTIMONIALS.map((t, index) => (
@@ -171,7 +172,13 @@ function GalleryTile({
 }
 
 const STATS = [
-  { n: "35", l: "Years in Vancouver", accent: false },
+  // Founded 1980 (see /about), so this has to track the founding year rather
+  // than sit at a number that was already stale when it was written.
+  {
+    n: String(new Date().getFullYear() - 1980),
+    l: "Years in Vancouver",
+    accent: false,
+  },
   { n: "18M+", l: "Garments printed", accent: true },
   { n: "2,800+", l: "Businesses served", accent: false },
   { n: "99.4%", l: "On-time delivery", accent: true },

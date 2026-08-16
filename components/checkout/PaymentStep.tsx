@@ -4,19 +4,26 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Field, Input, Textarea } from "./FormField";
+import { Field, Textarea } from "./FormField";
 import { Button } from "@/components/shared/Button";
 import { cn } from "@/lib/utils/cn";
 import { useCartStore } from "@/lib/store/cart";
 import { DELIVERY_FEES, type DeliveryKey } from "@/lib/schemas/checkout";
 import { money } from "@/lib/utils/quote-pricing";
 
+/**
+ * No card fields here on purpose. This step used to render Card Number,
+ * Expiry, CVC and Name on Card with `autocomplete="cc-number"`/`cc-csc`, on a
+ * page whose own banner says no payment is collected. Nothing was ever sent
+ * anywhere — `onSubmit` only forwards `studioNotes` — so the fields did
+ * nothing except invite browsers and password managers to autofill and store
+ * a real card, and put the storefront in PCI scope for data it had no
+ * processor to hand off to. Payment lands via Stripe on the payment-ready
+ * invoice; until then this step captures a *preference* only, exactly as the
+ * Apple Pay, Interac and Net-30 tabs already did.
+ */
 const reviewSchema = z.object({
   studioNotes: z.string().max(4_000, "Keep notes under 4,000 characters").optional(),
-  cardNumber: z.string().optional(),
-  expiry: z.string().optional(),
-  cvc: z.string().optional(),
-  nameOnCard: z.string().optional(),
   depositNow: z.boolean().optional(),
 });
 type ReviewValues = z.infer<typeof reviewSchema>;
@@ -102,43 +109,16 @@ export function PaymentStep({
 
       {tab === "card" && (
         <div className="space-y-sp-3 mb-sp-4">
-          <Field label="Card Number">
-            <Input
-              placeholder="1234 5678 9012 3456"
-              inputMode="numeric"
-              autoComplete="cc-number"
-              {...register("cardNumber")}
-            />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-sp-3">
-            <Field label="Expiry">
-              <Input
-                placeholder="MM / YY"
-                autoComplete="cc-exp"
-                {...register("expiry")}
-              />
-            </Field>
-            <Field label="CVC">
-              <Input
-                placeholder="123"
-                inputMode="numeric"
-                autoComplete="cc-csc"
-                {...register("cvc")}
-              />
-            </Field>
+          <div className="rounded-md border border-border bg-bg-raised p-sp-4 text-sm text-text-secondary">
+            Card details are entered on the secure invoice we send once final
+            pricing is confirmed — never here. Choosing Card now just tells the
+            studio how you plan to settle.
           </div>
-          <Field label="Name on Card">
-            <Input
-              placeholder="As it appears on the card"
-              autoComplete="cc-name"
-              {...register("nameOnCard")}
-            />
-          </Field>
           <label className="flex items-start gap-3 text-sm cursor-pointer rounded-md border border-border bg-bg-raised p-sp-3">
             <input type="checkbox" className="mt-1" {...register("depositNow")} />
             <span>
-              Pay 50% deposit now ({money(deposit)}) — balance due on proof
-              approval
+              Pay 50% deposit on the invoice ({money(deposit)}) — balance due on
+              proof approval
               {!depositNow ? (
                 <span className="block text-text-tertiary mt-1">
                   Optional preference noted; still no charge until payment-ready.

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ProductDetail } from "@/components/pdp/ProductDetail";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
@@ -275,15 +275,12 @@ export default async function ProductPage({
                         Number(variants[0]?.retailMinor || 0),
                       )}`
                     : "Unavailable"}
-                  {available ? (
-                    <span className="ml-3 text-sm font-semibold text-text-secondary">
-                      4.8/5 · 214 reviews
-                    </span>
-                  ) : null}
                 </p>
 
                 <PdpTrustChecks />
-                <PdpFeatureBullets />
+                <PdpFeatureBullets
+                  description={(style.description as string | null) || null}
+                />
 
                 {!available && (
                   <PdpOutOfStockBanner
@@ -349,13 +346,19 @@ export default async function ProductPage({
         <PdpEnrichmentSections
           brandName={String(style.brandName || "")}
           styleName={String(style.styleName || title)}
+          styleTitle={(style.title as string | null) || null}
+          partNumber={(style.partNumber as string | null) || null}
           sizeRange={
-            variants.length > 0
-              ? `${String(variants[0]?.sizeName || "S")} – ${String(
-                  variants[variants.length - 1]?.sizeName || "3XL",
+            variants.length > 1
+              ? `${String(variants[0]?.sizeName || "")} – ${String(
+                  variants[variants.length - 1]?.sizeName || "",
                 )}`
-              : undefined
+              : variants.length === 1
+                ? String(variants[0]?.sizeName || "")
+                : undefined
           }
+          colourCount={colorways.length}
+          description={(style.description as string | null) || null}
         />
 
         <section className="py-sp-8">
@@ -370,7 +373,7 @@ export default async function ProductPage({
     );
   }
 
-  const catalog = await loadStorefrontCatalog({ limit: 200 });
+  const catalog = await loadStorefrontCatalog({ limit: 12 });
   const crossSellItems = toCrossSellItems(
     catalog.products.filter((p) => p.slug !== slug),
   );
@@ -390,8 +393,8 @@ export default async function ProductPage({
         </section>
 
         <PdpEnrichmentSections
-          brandName={staticProduct.category}
           styleName={staticProduct.name}
+          description={staticProduct.sub ?? null}
         />
 
         <section className="py-sp-8">
@@ -406,24 +409,17 @@ export default async function ProductPage({
     );
   }
 
-  // Fallback: resolve DB product by slug when no id query
-  const match = catalog.products.find((p) => p.slug === slug);
+  // A bare /product/<slug> with no ?id — an old bookmark, a shared link with
+  // the query string stripped, or a crawler. Resolve the slug against the
+  // catalog and send the visitor to the canonical URL. This used to render an
+  // "Opening catalog product…" page with a manual "Continue" link, which is a
+  // dead end for anyone who doesn't notice the link and for every crawler.
+  // The lookup is a targeted search rather than a scan of the first N
+  // products, so it resolves slugs from anywhere in a five-figure catalog.
+  const bySlug = await loadStorefrontCatalog({ search: slug, limit: 60 });
+  const match = bySlug.products.find((p) => p.slug === slug);
   if (match) {
-    return (
-      <section className="py-sp-8">
-        <Container>
-          <p className="text-text-secondary">
-            Opening catalog product…
-          </p>
-          <Link
-            href={`/product/${encodeURIComponent(match.slug)}?id=${match.id}`}
-            className="text-accent font-bold"
-          >
-            Continue to {match.name}
-          </Link>
-        </Container>
-      </section>
-    );
+    redirect(`/product/${encodeURIComponent(match.slug)}?id=${match.id}`);
   }
 
   notFound();

@@ -11,8 +11,18 @@ const STATIC_ROUTES = [
   { path: "/about", priority: 0.5, frequency: "monthly" as const },
   { path: "/faq", priority: 0.5, frequency: "monthly" as const },
   { path: "/shipping", priority: 0.4, frequency: "monthly" as const },
+  { path: "/privacy", priority: 0.3, frequency: "yearly" as const },
   { path: "/start", priority: 0.6, frequency: "monthly" as const },
 ];
+
+/**
+ * Building this walks the entire catalogue, which at the API's 500-row page
+ * cap is around twenty sequential round trips for a 10,100-product catalogue.
+ * That is fine hourly and not fine per request: crawlers and uptime checks hit
+ * /sitemap.xml often enough that recomputing it each time would spend real
+ * database capacity on a document that changes only when the vendor sync runs.
+ */
+export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";

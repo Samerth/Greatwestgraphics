@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
@@ -166,7 +167,16 @@ export function DbProductActions({
           <p className="m-0 mt-1 text-sm text-amber-900">
             Size: {selectedVariant.sizeName} — Out of Stock
           </p>
-          <NotifyBackInStockButton />
+          <p className="m-0 mt-1 text-sm text-amber-900">
+            We can often source this size directly, or suggest the closest
+            equivalent that is in stock.
+          </p>
+          <Link
+            href="/quote"
+            className="mt-3 inline-flex rounded-md border border-amber-800 bg-amber-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-950 transition-colors"
+          >
+            Ask us to source it
+          </Link>
         </div>
       )}
 
@@ -306,16 +316,3 @@ export function DbProductActions({
   );
 }
 
-function NotifyBackInStockButton() {
-  const [notified, setNotified] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => setNotified(true)}
-      disabled={notified}
-      className="mt-3 w-full rounded-md border border-amber-800 bg-amber-900 text-white font-bold text-sm py-3 px-4 disabled:opacity-70"
-    >
-      {notified ? "We'll notify you" : "Notify Me When Back in Stock"}
-    </button>
-  );
-}
