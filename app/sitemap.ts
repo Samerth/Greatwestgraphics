@@ -68,16 +68,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const MAX_PRODUCT_URLS = 50_000;
 
     for (let page = 1; entries.length < MAX_PRODUCT_URLS; page += 1) {
-      // loadStorefrontCatalog uses storefront-only listing (omits soft-hidden
-      // colorways). Also skip OOS / vendor-inactive SKUs from the sitemap.
+      // loadStorefrontCatalog uses the storefront-only listing, so rows a
+      // staff member has hidden never arrive here and cannot leak into the
+      // sitemap. Everything that does arrive is browsable on /products.
+      //
+      // Out-of-stock colourways used to be skipped, and that is what left the
+      // sitemap listing 4,895 URLs against a 10,100-product catalogue. They
+      // are not hidden from shoppers: the listing shows them behind an "Out
+      // of Stock" badge, and their detail pages render in full with
+      // schema.org/OutOfStock in the product markup. Google's guidance is to
+      // submit those and let availability markup speak for itself, which is
+      // also the only stable option here — stock counts move with every
+      // vendor sync, so filtering on them would add and drop thousands of
+      // URLs an hour and teach crawlers that this document is noise.
       const catalog = await loadStorefrontCatalog({ limit: PAGE_SIZE, page });
       for (const product of catalog.products) {
-        if (!product.available) continue;
         entries.push({
           url: `${siteUrl}/product/${encodeURIComponent(product.slug)}?id=${product.id}`,
           lastModified: now,
           changeFrequency: "weekly",
-          priority: 0.6,
+          // In-stock lines are the ones worth crawling first. Priority is a
+          // hint rather than a filter, which is the right strength for a
+          // signal that flips on the next inventory sync.
+          priority: product.available ? 0.6 : 0.4,
         });
       }
       // A short page means the catalogue is exhausted. Checking the returned
