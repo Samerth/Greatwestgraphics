@@ -30,7 +30,13 @@ export async function POST(request: Request) {
       email,
     );
 
-    const origin = new URL(request.url).origin;
+    // Behind a CDN the request origin is whatever reached the container, which
+    // can be the load balancer's own address and is plain http. An invite is a
+    // link somebody clicks days later out of an inbox, so it has to be the
+    // address the site is actually published on.
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ||
+      new URL(request.url).origin;
     const link = `${origin}/invite/${token}`;
     await sendEmail({
       to: email,
