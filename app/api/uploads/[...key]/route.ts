@@ -17,7 +17,10 @@ export async function GET(
   const { key } = await params;
   const relative = key.join("/");
   const filePath = path.join(ROOT, relative);
-  if (!filePath.startsWith(ROOT)) {
+  // A bare startsWith(ROOT) also accepts siblings whose name merely begins with
+  // the root's, so `../uploads-private/secret.png` would have escaped. Compare
+  // against the root plus its separator instead.
+  if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
     return NextResponse.json({ error: { message: "Invalid key" } }, { status: 400 });
   }
 
