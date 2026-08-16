@@ -1,4 +1,10 @@
 import { redirect } from "next/navigation";
+import {
+  DESIGN_SIDE_LABELS,
+  DesignSides,
+  normalizeDesignDocument,
+} from "@gwg/contracts";
+import { DesignSidePreview } from "@/components/design/DesignSidePreview";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { getCustomerSession } from "@/lib/auth/session";
@@ -57,12 +63,16 @@ export default async function MyDesignsPage() {
             const proofImageUrl = design.proofImageUrl
               ? String(design.proofImageUrl)
               : null;
+            const document = normalizeDesignDocument(design.design ?? design);
+            const decorated = DesignSides.filter(
+              (side) => document.artworksBySide[side].length > 0,
+            );
             return (
               <article
                 key={id}
                 className="border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col"
               >
-                <div className="aspect-square bg-fill-subtle-15 flex items-center justify-center">
+                <div className="aspect-square bg-fill-subtle-15 flex items-center justify-center overflow-hidden">
                   {proofImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -71,7 +81,14 @@ export default async function MyDesignsPage() {
                       className="w-full h-full object-contain"
                     />
                   ) : (
-                    <span className="text-text-tertiary text-sm">No preview</span>
+                    // A design saved before proofs were uploaded, or one whose
+                    // proof upload failed, still redraws exactly from the
+                    // document — so it never reads as "No preview".
+                    <DesignSidePreview
+                      side={decorated[0] ?? "front"}
+                      design={document}
+                      size={240}
+                    />
                   )}
                 </div>
                 <div className="p-sp-3 flex flex-col gap-2 flex-1">
@@ -81,6 +98,16 @@ export default async function MyDesignsPage() {
                     {design.updatedAt
                       ? new Date(String(design.updatedAt)).toLocaleDateString("en-CA")
                       : ""}
+                  </p>
+                  <p className="text-xs text-text-secondary m-0">
+                    {decorated.length > 0
+                      ? decorated
+                          .map(
+                            (side) =>
+                              `${DESIGN_SIDE_LABELS[side]}: ${document.placementBySide[side]}`,
+                          )
+                          .join(" · ")
+                      : "No artwork placed yet"}
                   </p>
                   <div className="mt-auto flex gap-2 pt-sp-2">
                     <ButtonLink

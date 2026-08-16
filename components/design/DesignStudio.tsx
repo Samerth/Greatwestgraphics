@@ -1,11 +1,22 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
+import {
+  DESIGN_CANVAS_SIZE,
+  DESIGN_PLACEMENT_ZONES,
+  DESIGN_SIDE_LABELS,
+  DesignSides,
+  emptyDesignDocument,
+  ephemeralArtworkSides,
+  normalizeDesignDocument,
+  type DesignDocument,
+  type DesignSide,
+  type PlacedArtwork,
+} from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { RecolorGarment } from "@/components/pdp/RecolorGarment";
-import type { PlacedArtwork } from "@/components/design/ArtworkLayer";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -79,32 +90,36 @@ const DesignCanvas = dynamic(() => import("@/components/design/DesignCanvas"), {
   ssr: false,
 });
 
-const GARMENT_VIEWS = {
-  front: { label: "Front", color: "#3a2216" },
-  side: { label: "Side", color: "#3a2216" },
-  back: { label: "Back", color: "#3a2216" },
-} as const;
+const GARMENT_SILHOUETTE_COLOR = "#3a2216";
 
-type GarmentSide = keyof typeof GARMENT_VIEWS;
-
-// Both sleeves are visible in a standard front- or back-facing product
-// photo, so a sleeve placement doesn't need its own canvas view — just an
-// artist manually dragging the layer onto the sleeve area on whichever
-// side is active, same as a real screen printer would mark it up.
-const PLACEMENT_ZONES: Record<GarmentSide, string[]> = {
-  front: ["Left Chest", "Center Chest", "Full Front", "Left Sleeve", "Right Sleeve"],
-  side: ["Left Sleeve", "Right Sleeve", "Side Panel"],
-  back: ["Upper Back", "Full Back", "Left Sleeve", "Right Sleeve"],
-};
-type ArtworkBySide = Record<GarmentSide, PlacedArtwork[]>;
-
-const CANVAS_SIZE = 340;
+const CANVAS_SIZE = DESIGN_CANVAS_SIZE;
 
 export type SavedDesignProject = {
   id: string;
   name: string;
   garmentProductId: string | null;
-  artworksBySide: ArtworkBySide;
+  design: DesignDocument;
+};
+
+/**
+ * Where this studio saves to and uploads through. Staff edit a customer's
+ * design from the admin side, which is the same tool pointed at admin-
+ * authenticated routes — the customer's own routes are person-scoped and
+ * would refuse a staff session, correctly.
+ */
+export type DesignStudioEndpoints = {
+  /** POST target for a new design. Omit where saving new work is not allowed. */
+  create?: string;
+  /** Collection base for updates; the design id is appended. */
+  update?: string;
+  /** POST multipart target for artwork and proof uploads. */
+  upload?: string;
+};
+
+const CUSTOMER_ENDPOINTS: Required<DesignStudioEndpoints> = {
+  create: "/api/designs",
+  update: "/api/designs",
+  upload: "/api/uploads",
 };
 
 export function DesignStudio({
@@ -112,28 +127,35 @@ export function DesignStudio({
   signedIn = false,
   initialDesign = null,
   garmentIdOverride = null,
+  mode = "customer",
+  endpoints,
 }: {
   garments?: DesignGarmentOption[];
   signedIn?: boolean;
   initialDesign?: SavedDesignProject | null;
   /** Set when arriving via "Preview my design on this" from a product card/PDP. */
   garmentIdOverride?: string | null;
+  /** Staff mode drops the buying controls: nobody checks out from the admin. */
+  mode?: "customer" | "staff";
+  endpoints?: DesignStudioEndpoints;
 }) {
+  const isStaff = mode === "staff";
+  const createUrl = endpoints?.create ?? (isStaff ? undefined : CUSTOMER_ENDPOINTS.create);
+  const updateUrl = endpoints?.update ?? CUSTOMER_ENDPOINTS.update;
+  const uploadUrl = endpoints?.upload ?? CUSTOMER_ENDPOINTS.upload;
+
   const addItem = useCartStore((s) => s.addItem);
-  const [activeSide, setActiveSide] = useState<GarmentSide>("front");
-  const [artworksBySide, setArtworksBySide] = useState<ArtworkBySide>(
-    normalizeArtworksBySide(initialDesign?.artworksBySide),
+  const [activeSide, setActiveSide] = useState<DesignSide>("front");
+  const [design, setDesign] = useState<DesignDocument>(() =>
+    initialDesign ? normalizeDesignDocument(initialDesign.design) : emptyDesignDocument(),
   );
+  const artworksBySide = design.artworksBySide;
+  const placementBySide = design.placementBySide;
   const [selectedBySide, setSelectedBySide] = useState<
-    Record<GarmentSide, string | null>
-  >({ front: null, side: null, back: null });
-  const [placementBySide, setPlacementBySide] = useState<
-    Record<GarmentSide, string>
-  >({
-    front: PLACEMENT_ZONES.front[0]!,
-    side: PLACEMENT_ZONES.side[0]!,
-    back: PLACEMENT_ZONES.back[0]!,
-  });
+    Record<DesignSide, string | null>
+  >({ front: null, back: null, left: null, right: null });
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
   const [showAiPrompt, setShowAiPrompt] = useState(false);
@@ -197,10 +219,13 @@ export function DesignStudio({
   // `garmentIdOverride` from a "Preview my design on this" click always
   // wins for the garment, while the artwork itself carries over.
   useEffect(() => {
-    if (initialDesign) return;
+    // Staff are editing one specific customer's design; the browser-local
+    // "design in progress" belongs to whoever last used this machine and
+    // must never bleed into it.
+    if (initialDesign || isStaff) return;
     const stored = useActiveDesignStore.getState();
-    if (hasActiveArtwork(stored.artworksBySide)) {
-      setArtworksBySide(normalizeArtworksBySide(stored.artworksBySide));
+    if (hasActiveArtwork(stored.design)) {
+      setDesign(normalizeDesignDocument(stored.design));
       if (stored.name) setDesignName(stored.name);
       if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
       if (!garmentIdOverride && stored.garmentProductId) {
@@ -218,14 +243,15 @@ export function DesignStudio({
   // Mirror the working design into the persistent store as it changes so
   // it's there when the customer clicks through to another product.
   useEffect(() => {
-    if (!hasActiveArtwork(artworksBySide)) return;
+    if (isStaff) return;
+    if (!hasActiveArtwork(design)) return;
     useActiveDesignStore.getState().setDesign({
       name: designName,
       garmentProductId: selectedGarmentId,
-      artworksBySide,
+      design,
       savedDesignId,
     });
-  }, [artworksBySide, selectedGarmentId, designName, savedDesignId]);
+  }, [design, selectedGarmentId, designName, savedDesignId, isStaff]);
 
   // If a "Preview my design on this" click brought in a garment outside
   // this page's catalog slice, synthesize a dropdown entry for it from the
@@ -254,85 +280,142 @@ export function DesignStudio({
   // front/back photo of its own — otherwise the canvas showed a blank
   // silhouette even though a usable photo existed (same gap as the
   // catalog grid had before its listProducts fix).
-  const photoBySide: Record<GarmentSide, string | null> = {
+  // Vendors supply at most one side photo and never say which sleeve it is.
+  // Rather than hide the sleeves behind that gap, both sleeve views reuse it
+  // and the right one is mirrored, so a customer can always place a sleeve
+  // print and the mockup at least faces the right way.
+  const photoBySide: Record<DesignSide, string | null> = {
     front:
       productDetail?.product.colorFrontImageUrl || productDetail?.style.styleImageUrl || null,
-    side: productDetail?.product.colorSideImageUrl || null,
     back:
       productDetail?.product.colorBackImageUrl || productDetail?.style.styleImageUrl || null,
+    left: productDetail?.product.colorSideImageUrl || null,
+    right: productDetail?.product.colorSideImageUrl || null,
   };
   const currentPhoto = productDetail ? photoBySide[activeSide] : null;
+  const mirrorPhoto = activeSide === "right";
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
 
-  useEffect(() => {
-    if (activeSide === "side" && !photoBySide.side) {
-      setActiveSide("front");
-    }
-  }, [activeSide, photoBySide.side]);
-
-  const availableViews = (
-    Object.keys(GARMENT_VIEWS) as GarmentSide[]
-  ).filter((side) => side !== "side" || Boolean(photoBySide.side));
+  // All four views are always offered. A sleeve print is a real thing a
+  // customer orders whether or not the vendor photographed that angle, and
+  // the artwork is stored per view either way.
+  const availableViews = DesignSides;
 
   function setSelectedId(id: string | null) {
     setSelectedBySide((prev) => ({ ...prev, [activeSide]: id }));
   }
 
+  const updateArtworks = useCallback(
+    (side: DesignSide, update: (artworks: PlacedArtwork[]) => PlacedArtwork[]) => {
+      setDesign((prev) => ({
+        ...prev,
+        artworksBySide: {
+          ...prev.artworksBySide,
+          [side]: update(prev.artworksBySide[side]),
+        },
+      }));
+    },
+    [],
+  );
+
   function setActiveArtworks(
     update: (artworks: PlacedArtwork[]) => PlacedArtwork[]
   ) {
-    setArtworksBySide((prev) => ({
-      ...prev,
-      [activeSide]: update(prev[activeSide]),
-    }));
+    updateArtworks(activeSide, update);
     setExportedUrl(null);
   }
+
+  function setPlacement(side: DesignSide, zone: string) {
+    setDesign((prev) => ({
+      ...prev,
+      placementBySide: { ...prev.placementBySide, [side]: zone },
+    }));
+  }
+
+  /**
+   * Puts a file somewhere durable and swaps the layer's temporary object URL
+   * for the hosted one. Failures are surfaced rather than swallowed: the
+   * local preview keeps working, but the customer needs to know the design
+   * cannot be saved until the upload lands.
+   */
+  const uploadArtwork = useCallback(
+    async (side: DesignSide, artworkId: string, file: Blob, filename: string) => {
+      setPendingUploads((count) => count + 1);
+      try {
+        const form = new FormData();
+        form.append(
+          "file",
+          file instanceof File ? file : new File([file], filename, { type: file.type }),
+        );
+        const response = await fetch(uploadUrl, { method: "POST", body: form });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !body?.url) {
+          throw new Error(body?.error?.message || "Upload failed.");
+        }
+        const hostedUrl = String(body.url);
+        updateArtworks(side, (artworks) =>
+          artworks.map((a) => (a.id === artworkId ? { ...a, src: hostedUrl } : a)),
+        );
+        return hostedUrl;
+      } catch (caught) {
+        setUploadError(
+          caught instanceof Error
+            ? caught.message
+            : "That artwork could not be uploaded.",
+        );
+        return null;
+      } finally {
+        setPendingUploads((count) => count - 1);
+      }
+    },
+    [updateArtworks, uploadUrl],
+  );
 
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = ""; // allow re-selecting the same file later
+    setUploadError(null);
+    void addArtworkFromBlob(file, file.name);
+  }
 
-    // Instant local preview via an object URL, then swap to a durable
-    // hosted URL in the background once the upload completes — saved
-    // designs need a real URL since object URLs die when the tab closes.
-    const url = URL.createObjectURL(file);
+  /**
+   * Shows the layer immediately from a local object URL, then replaces that
+   * URL with a hosted one. Both steps matter: the object URL is what makes
+   * placement feel instant, and the hosted URL is the only part that still
+   * exists after the tab closes.
+   */
+  async function addArtworkFromBlob(
+    blob: Blob,
+    filename: string,
+    scale = 0.4,
+  ): Promise<string | null> {
+    const objectUrl = URL.createObjectURL(blob);
     const id = crypto.randomUUID();
     const side = activeSide;
 
     const newArtwork: PlacedArtwork = {
       id,
-      src: url,
+      src: objectUrl,
       x: CANVAS_SIZE / 2,
       y: CANVAS_SIZE / 2,
-      scaleX: 0.4,
-      scaleY: 0.4,
+      scaleX: scale,
+      scaleY: scale,
       rotation: 0,
     };
 
     setActiveArtworks((prev) => [...prev, newArtwork]);
     setSelectedId(id);
-    e.target.value = ""; // allow re-selecting the same file later
 
-    if (signedIn) {
-      const form = new FormData();
-      form.append("file", file);
-      fetch("/api/uploads", { method: "POST", body: form })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data: { url?: string } | null) => {
-          if (!data?.url) return;
-          setArtworksBySide((prev) => ({
-            ...prev,
-            [side]: prev[side].map((a) =>
-              a.id === id ? { ...a, src: data.url! } : a,
-            ),
-          }));
-          URL.revokeObjectURL(url);
-        })
-        .catch(() => {
-          // Upload failed — the local object-URL preview still works for
-          // this session, it just won't survive a saved design or refresh.
-        });
+    if (!signedIn) {
+      // Nothing to upload to — anonymous visitors get a working preview and
+      // the sign-in nudge next to the save box tells them why it stops there.
+      return null;
     }
+
+    const hostedUrl = await uploadArtwork(side, id, blob, filename);
+    if (hostedUrl) URL.revokeObjectURL(objectUrl);
+    return hostedUrl;
   }
 
   function removeSelected() {
@@ -359,21 +442,11 @@ export function DesignStudio({
       const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
       if (!res.ok) throw new Error(`Generation failed (${res.status})`);
       const blob = await res.blob();
-      const src = URL.createObjectURL(blob);
-      const id = crypto.randomUUID();
-      setActiveArtworks((prev) => [
-        ...prev,
-        {
-          id,
-          src,
-          x: CANVAS_SIZE / 2,
-          y: CANVAS_SIZE / 2,
-          scaleX: 0.45,
-          scaleY: 0.45,
-          rotation: 0,
-        },
-      ]);
-      setSelectedId(id);
+      // Generated art goes through the same upload as an uploaded logo. It
+      // used to live only as an object URL, so a design built entirely from
+      // an AI concept saved as an empty design — the worst version of the
+      // bug, because the customer had nothing on disk to re-upload.
+      await addArtworkFromBlob(blob, "ai-concept.png", 0.45);
       setShowAiPrompt(false);
       setAiPrompt("");
     } catch {
@@ -385,9 +458,24 @@ export function DesignStudio({
     }
   }
 
+  /**
+   * Reading pixels back off the stage throws once any layer is a cross-origin
+   * image the host did not send CORS headers for. That became a live risk the
+   * moment artwork started being uploaded to S3 instead of living in a
+   * same-origin object URL, and a failed export must not take the export
+   * button, the cart or the save with it — the design itself is unaffected.
+   */
+  function exportStageDataUrl(): string | null {
+    try {
+      return stageRef.current?.toDataURL({ pixelRatio: 2 }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   function handleApprove() {
     // Export the selected side locally. Persistence is intentionally deferred.
-    const dataUrl = stageRef.current?.toDataURL({ pixelRatio: 2 });
+    const dataUrl = exportStageDataUrl();
     if (dataUrl) setExportedUrl(dataUrl);
     setApproved(true);
     setTimeout(() => setApproved(false), 2000);
@@ -395,15 +483,19 @@ export function DesignStudio({
 
   function addDesignToCart() {
     if (!productDetail) return;
-    const otherSide: GarmentSide =
-      activeSide === "front" ? "back" : activeSide === "back" ? "front" : "front";
-    const hasOtherSideArt = artworksBySide[otherSide].length > 0;
-    const artworkProofUrl = stageRef.current?.toDataURL({ pixelRatio: 2 });
-    const printLabel = `${placementBySide[activeSide]} (${GARMENT_VIEWS[activeSide].label.toLowerCase()})${
-      hasOtherSideArt
-        ? ` + ${placementBySide[otherSide]} (${GARMENT_VIEWS[otherSide].label.toLowerCase()})`
-        : ""
-    }`;
+    const artworkProofUrl = exportStageDataUrl() ?? undefined;
+    // Every decorated view earns a line on the order. The old label only
+    // ever mentioned two of them, so a sleeve print reached production
+    // undescribed even when the customer had placed one.
+    const decorated = DesignSides.filter(
+      (side) => artworksBySide[side].length > 0,
+    );
+    const printLabel = (decorated.length > 0 ? decorated : [activeSide])
+      .map(
+        (side) =>
+          `${placementBySide[side]} (${DESIGN_SIDE_LABELS[side].toLowerCase()})`,
+      )
+      .join(" + ");
     const productName =
       `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
 
@@ -462,30 +554,69 @@ export function DesignStudio({
     setTimeout(() => setAddedToCart(false), 2000);
   }
 
+  /**
+   * Renders the active view and puts it somewhere staff can open. Failing to
+   * upload the proof is not worth failing the save over — every reader can
+   * redraw the design from the document — so it degrades to no proof rather
+   * than to a data: URL inlined into the row, which is what it used to do.
+   */
+  async function uploadProofImage(): Promise<string | null> {
+    const dataUrl = exportStageDataUrl();
+    if (!dataUrl) return null;
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const form = new FormData();
+      form.append("file", new File([blob], "proof.png", { type: "image/png" }));
+      const response = await fetch(uploadUrl, { method: "POST", body: form });
+      const body = await response.json().catch(() => null);
+      return response.ok && body?.url ? String(body.url) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleSaveDesign() {
     if (!designName.trim()) {
       setSaveError("Give this design a name first.");
+      return;
+    }
+    if (pendingUploads > 0) {
+      setSaveError("Hold on — artwork is still uploading.");
+      return;
+    }
+    // The guard that makes a save honest. Without it the design persists
+    // object URLs, reports success, and reloads blank.
+    const unsafeSides = ephemeralArtworkSides(design);
+    if (unsafeSides.length > 0) {
+      setSaveError(
+        `Artwork on the ${unsafeSides
+          .map((side) => DESIGN_SIDE_LABELS[side].toLowerCase())
+          .join(" and ")} has not been uploaded yet, so it would not survive a reload. ${
+          signedIn
+            ? "Remove and re-add it, then save again."
+            : "Sign in and re-add it to keep it."
+        }`,
+      );
       return;
     }
     setSaving(true);
     setSaveError(null);
     setSaveMessage(null);
     try {
-      const proofImageUrl = stageRef.current?.toDataURL({ pixelRatio: 2 }) ?? null;
+      const proofImageUrl = await uploadProofImage();
       const payload = {
         name: designName.trim(),
         garmentProductId: selectedGarmentId,
-        artworksBySide,
+        design,
         proofImageUrl,
       };
-      const response = await fetch(
-        savedDesignId ? `/api/designs/${savedDesignId}` : "/api/designs",
-        {
-          method: savedDesignId ? "PUT" : "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      const target = savedDesignId ? `${updateUrl}/${savedDesignId}` : createUrl;
+      if (!target) throw new Error("This design cannot be saved from here.");
+      const response = await fetch(target, {
+        method: savedDesignId ? "PUT" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(body?.error?.message || "Could not save the design.");
@@ -626,7 +757,7 @@ export function DesignStudio({
         {artworks.length > 0 && (
           <div className="mt-sp-3">
             <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
-              {GARMENT_VIEWS[activeSide].label} layers
+              {DESIGN_SIDE_LABELS[activeSide]} layers
             </span>
             <div className="flex flex-col gap-1.5">
               {artworks.map((a, i) => (
@@ -663,7 +794,7 @@ export function DesignStudio({
           <div>
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
-              {GARMENT_VIEWS[activeSide].label.toUpperCase()} · PRINT METHOD · Print
+              {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · Print
             </span>
           </div>
           <div className="flex gap-2">
@@ -685,9 +816,7 @@ export function DesignStudio({
               Which side are you designing?
             </span>
             <div className="flex gap-2">
-              {availableViews.map((side) => {
-                const view = GARMENT_VIEWS[side];
-                return (
+              {availableViews.map((side) => (
                 <button
                   key={side}
                   onClick={() => {
@@ -702,7 +831,7 @@ export function DesignStudio({
                       : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
                   )}
                 >
-                  {view.label}
+                  {DESIGN_SIDE_LABELS[side]}
                   {artworksBySide[side].length > 0 && (
                     <span
                       className={cn(
@@ -714,8 +843,7 @@ export function DesignStudio({
                     </span>
                   )}
                 </button>
-              );
-              })}
+              ))}
             </div>
           </div>
 
@@ -726,12 +854,10 @@ export function DesignStudio({
             <div className="relative">
               <select
                 value={placementBySide[activeSide]}
-                onChange={(e) =>
-                  setPlacementBySide((prev) => ({ ...prev, [activeSide]: e.target.value }))
-                }
+                onChange={(e) => setPlacement(activeSide, e.target.value)}
                 className="bg-accent text-white text-base font-bold pl-3.5 pr-8 py-2.5 min-h-11 rounded-md appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30"
               >
-                {PLACEMENT_ZONES[activeSide].map((zone) => (
+                {DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => (
                   <option key={zone} value={zone} className="text-text-primary">
                     {zone}
                   </option>
@@ -774,13 +900,19 @@ export function DesignStudio({
                 <img
                   src={currentPhoto}
                   alt=""
-                  className="absolute inset-0 w-full h-full object-contain"
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-contain",
+                    mirrorPhoto && "-scale-x-100",
+                  )}
                 />
               ) : (
                 <RecolorGarment
                   maskSrc="/images/t-shirt.png"
-                  color={GARMENT_VIEWS[activeSide].color}
-                  className={cn("absolute inset-0", activeSide === "back" && "-scale-x-100")}
+                  color={GARMENT_SILHOUETTE_COLOR}
+                  className={cn(
+                    "absolute inset-0",
+                    (activeSide === "back" || mirrorPhoto) && "-scale-x-100",
+                  )}
                 />
               )}
 
@@ -829,15 +961,18 @@ export function DesignStudio({
               <img
                 src={currentPhoto}
                 alt=""
-                className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,.18)]"
+                className={cn(
+                  "absolute inset-0 w-full h-full object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,.18)]",
+                  mirrorPhoto && "-scale-x-100",
+                )}
               />
             ) : (
               <RecolorGarment
                 maskSrc="/images/t-shirt.png"
-                color={GARMENT_VIEWS[activeSide].color}
+                color={GARMENT_SILHOUETTE_COLOR}
                 className={cn(
                   "absolute inset-0 drop-shadow-[0_24px_30px_rgba(0,0,0,.18)]",
-                  activeSide === "back" && "-scale-x-100"
+                  (activeSide === "back" || mirrorPhoto) && "-scale-x-100"
                 )}
               />
             )}
@@ -845,13 +980,13 @@ export function DesignStudio({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={exportedUrl}
-                alt={`${GARMENT_VIEWS[activeSide].label} artwork preview`}
+                alt={`${DESIGN_SIDE_LABELS[activeSide]} artwork preview`}
                 className="absolute inset-0 w-full h-full object-contain"
               />
             )}
             {!currentPhoto && (
               <span className="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-text-tertiary">
-                Representative {GARMENT_VIEWS[activeSide].label.toLowerCase()} silhouette
+                Representative {DESIGN_SIDE_LABELS[activeSide].toLowerCase()} silhouette
               </span>
             )}
           </div>
@@ -887,12 +1022,26 @@ export function DesignStudio({
                 />
                 <button
                   onClick={handleSaveDesign}
-                  disabled={saving}
+                  disabled={saving || pendingUploads > 0}
                   className="shrink-0 min-h-11 rounded-sm bg-text-primary px-3.5 py-2 text-sm font-bold text-white disabled:opacity-40"
                 >
-                  {saving ? "Saving…" : savedDesignId ? "Update" : "Save"}
+                  {saving
+                    ? "Saving…"
+                    : pendingUploads > 0
+                      ? "Uploading…"
+                      : savedDesignId
+                        ? "Update"
+                        : "Save"}
                 </button>
               </div>
+              {pendingUploads > 0 && (
+                <p className="text-[12px] text-text-tertiary mt-1.5 mb-0">
+                  Uploading artwork so it survives a reload…
+                </p>
+              )}
+              {uploadError && (
+                <p className="text-[12px] text-red-600 mt-1.5 mb-0">{uploadError}</p>
+              )}
               {saveMessage && (
                 <p className="text-[12px] text-green-700 mt-1.5 mb-0">{saveMessage}</p>
               )}
@@ -906,6 +1055,7 @@ export function DesignStudio({
                 Sign in
               </a>{" "}
               to save this design to your profile and reuse it on other products.
+              Artwork is only stored once you do.
             </p>
           )}
 
@@ -917,8 +1067,8 @@ export function DesignStudio({
             {approved
               ? "Artwork export ready ✓"
               : artworks.length === 0
-                ? `Add artwork to the ${GARMENT_VIEWS[activeSide].label.toLowerCase()} first`
-                : `Export ${GARMENT_VIEWS[activeSide].label} Artwork`}
+                ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
+                : `Export ${DESIGN_SIDE_LABELS[activeSide]} Artwork`}
           </Button>
           {exportedUrl && (
             <>
@@ -936,7 +1086,7 @@ export function DesignStudio({
             </>
           )}
 
-          {productDetail && (
+          {productDetail && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
               <label className="flex items-center gap-2 text-xs font-bold mb-sp-3 cursor-pointer">
                 <input
@@ -1057,18 +1207,10 @@ export function DesignStudio({
       <p className="lg:col-span-3 text-xs text-text-tertiary">
         3D artwork preview is unavailable because no UV-mapped garment model is
         included. The reference footage above is not an artwork-accurate interactive
-        preview. Side photos appear when the vendor supplies a colour side image.
+        preview. Sleeve views reuse the vendor&apos;s side photo where one exists and
+        a representative silhouette where it does not — your artwork and its
+        placement are saved per view either way.
       </p>
     </div>
   );
-}
-
-function normalizeArtworksBySide(
-  input?: Partial<ArtworkBySide> | null,
-): ArtworkBySide {
-  return {
-    front: input?.front ?? [],
-    side: input?.side ?? [],
-    back: input?.back ?? [],
-  };
 }
