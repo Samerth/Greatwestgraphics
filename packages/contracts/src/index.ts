@@ -512,6 +512,12 @@ export const CreateProofVersionSchema = z.object({
 export type CreateProofVersion = z.infer<typeof CreateProofVersionSchema>;
 
 export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.extend({
+  /** What the customer typed at checkout, plus how they said they intend to
+   * pay. It was accepted on `CreateJobRequest`, written to the row and then
+   * dropped from every read, so the only place it surfaced was the CRM push —
+   * meaning staff working a job in the admin never saw the deadline, PO number
+   * or payment preference the checkout copy promised to pass along. */
+  customerNote: z.string().max(4_000).nullable().default(null),
   lines: z.array(
     z.object({
       id: CanonicalIdSchema,

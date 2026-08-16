@@ -509,6 +509,7 @@ export class JobRequestService {
 
     return {
       ...toResponse(row),
+      customerNote: row.customerNote ?? null,
       lines: lines.map((line) => ({
         id: line.id,
         position: line.position,

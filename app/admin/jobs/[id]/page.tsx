@@ -112,6 +112,20 @@ export default async function AdminJobDetailPage({
         </p>
       )}
 
+      {/* Checkout tells the customer their notes and payment preference reach
+          the studio. The note was stored on the job row and then dropped from
+          every read, so nobody working the job here could see it. */}
+      {detail.customerNote ? (
+        <section className="border border-border rounded-md p-sp-3 bg-bg-raised">
+          <h2 className="font-display font-bold text-xl m-0 mb-2">
+            Customer note
+          </h2>
+          <p className="text-sm whitespace-pre-wrap m-0">
+            {detail.customerNote}
+          </p>
+        </section>
+      ) : null}
+
       <section className="space-y-sp-3">
         <h2 className="font-display font-bold text-xl m-0">Lines</h2>
         {detail.lines.map((line) => {

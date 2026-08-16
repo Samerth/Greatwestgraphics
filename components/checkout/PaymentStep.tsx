@@ -23,19 +23,52 @@ import { money } from "@/lib/utils/quote-pricing";
  * Apple Pay, Interac and Net-30 tabs already did.
  */
 const reviewSchema = z.object({
-  studioNotes: z.string().max(4_000, "Keep notes under 4,000 characters").optional(),
+  // The API caps `customerNote` at 4,000 and the payment-preference line is
+  // prepended to whatever is typed here, so leave it room rather than let the
+  // submission fail validation after the wizard is complete.
+  studioNotes: z.string().max(3_800, "Keep notes under 3,800 characters").optional(),
   depositNow: z.boolean().optional(),
 });
 type ReviewValues = z.infer<typeof reviewSchema>;
 
 type PayTab = "card" | "apple" | "interac" | "net30";
 
-const TABS: Array<{ id: PayTab; label: string }> = [
-  { id: "card", label: "Card" },
-  { id: "apple", label: "Apple Pay" },
-  { id: "interac", label: "Interac" },
-  { id: "net30", label: "Net-30" },
+const TABS: Array<{ id: PayTab; label: string; note: string }> = [
+  { id: "card", label: "Card", note: "Card" },
+  { id: "apple", label: "Apple Pay", note: "Apple Pay" },
+  { id: "interac", label: "Interac", note: "Interac e-Transfer" },
+  { id: "net30", label: "Net-30", note: "Net-30 terms" },
 ];
+
+/**
+ * Folds the payment preference into the note that actually travels with the
+ * job request.
+ *
+ * Every panel in this step promises the choice "tells the studio how you plan
+ * to settle", and the deposit checkbox reads as a commitment. Neither `tab`
+ * nor `depositNow` left the component: `onSubmit` was called with the free
+ * text alone, so the studio saw a job request that never mentioned Net-30 or
+ * the deposit. There is no field on the request contract for a payment
+ * preference and inventing one would mean a schema, a migration and an admin
+ * surface for something no processor reads yet, so it rides along in the
+ * customer note the studio already reads.
+ */
+function buildCustomerNote(
+  tab: PayTab,
+  depositNow: boolean,
+  studioNotes: string | undefined,
+): string | undefined {
+  const preference = TABS.find((item) => item.id === tab)?.note ?? tab;
+  const deposit =
+    tab === "card"
+      ? depositNow
+        ? " · 50% deposit on invoice"
+        : " · prefers to pay in full on invoice"
+      : "";
+  const line = `Payment preference: ${preference}${deposit}`;
+  const typed = studioNotes?.trim();
+  return typed ? `${line}\n\n${typed}` : line;
+}
 
 export function PaymentStep({
   onBack,
@@ -70,7 +103,11 @@ export function PaymentStep({
   const depositNow = watch("depositNow");
 
   return (
-    <form onSubmit={handleSubmit(({ studioNotes }) => onSubmit(studioNotes))}>
+    <form
+      onSubmit={handleSubmit(({ studioNotes, depositNow: wantsDeposit }) =>
+        onSubmit(buildCustomerNote(tab, wantsDeposit ?? false, studioNotes)),
+      )}
+    >
       <h2 className="font-display font-bold text-header mb-sp-2">Payment</h2>
       <p className="text-sm text-text-secondary mt-0 mb-sp-4">
         Choose how you&apos;d like to pay when the job is ready. Today we still
