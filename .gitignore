@@ -21,4 +21,9 @@ infra/cloudshell/.gwg-rds-state/
 # Per-environment CloudShell configs may contain a trusted office IP.
 infra/cloudshell/config.*.env
 
+# Scratch files from operational work. A `.tmp-cognito-mfa.json` holding MFA
+# material was sitting untracked at the root, one `git add -A` away from being
+# committed. Anything named this way is working state, never source.
+.tmp-*
+
 .DS_Store

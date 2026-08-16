@@ -53,10 +53,17 @@ export async function requireStaff(): Promise<{ username: string }> {
 }
 
 export function adminToken() {
-  const token = process.env.ADMIN_API_TOKEN || process.env.DEV_ADMIN_TOKEN;
+  // DEV_ADMIN_TOKEN is a local convenience and is only honoured outside
+  // production. Falling back to it everywhere meant a development credential
+  // could quietly become the production one the moment ADMIN_API_TOKEN was
+  // missing, and the failure would be invisible: the admin pages would work.
+  // Refusing is louder and safer than reaching for the weaker secret.
+  const token =
+    process.env.ADMIN_API_TOKEN ||
+    (process.env.NODE_ENV === "production" ? undefined : process.env.DEV_ADMIN_TOKEN);
   if (!token) {
     throw new Error(
-      "Neither ADMIN_API_TOKEN nor DEV_ADMIN_TOKEN is configured; the admin API cannot be reached",
+      "ADMIN_API_TOKEN is not configured; the admin API cannot be reached",
     );
   }
   return token;
