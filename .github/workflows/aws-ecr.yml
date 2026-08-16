@@ -96,16 +96,31 @@ jobs:
           exit 1
 
       - uses: aws-actions/amazon-ecr-login@v2
+      # Only main moves :latest. Running services follow that tag, so a branch
+      # build that moved it would ship unreviewed code the next time any
+      # service was redeployed. Branch builds publish the commit tag alone,
+      # which is what a staging deploy should be pinned to anyway.
       - name: Build and push
         run: |
           set -euo pipefail
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
           registry="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          docker build -t "$registry/gwg-web:${GITHUB_SHA}" -t "$registry/gwg-web:latest" .
-          docker build -f services/commerce-api/Dockerfile \
-            -t "$registry/gwg-commerce-api:${GITHUB_SHA}" \
-            -t "$registry/gwg-commerce-api:latest" .
+
+          web_tags=(-t "$registry/gwg-web:${GITHUB_SHA}")
+          api_tags=(-t "$registry/gwg-commerce-api:${GITHUB_SHA}")
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            web_tags+=(-t "$registry/gwg-web:latest")
+            api_tags+=(-t "$registry/gwg-commerce-api:latest")
+          else
+            echo "Not on main: publishing ${GITHUB_SHA} only, leaving :latest where it is."
+          fi
+
+          docker build "${web_tags[@]}" .
+          docker build -f services/commerce-api/Dockerfile "${api_tags[@]}" .
+
           docker push "$registry/gwg-web:${GITHUB_SHA}"
-          docker push "$registry/gwg-web:latest"
           docker push "$registry/gwg-commerce-api:${GITHUB_SHA}"
-          docker push "$registry/gwg-commerce-api:latest"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            docker push "$registry/gwg-web:latest"
+            docker push "$registry/gwg-commerce-api:latest"
+          fi
