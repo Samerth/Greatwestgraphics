@@ -9,16 +9,14 @@ import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
-const FALLBACK_CATEGORIES = [
-  { label: "Apparel", href: "/products?category=apparel" },
-  { label: "Bags", href: "/products?category=bags" },
-  { label: "Hats & Beanies", href: "/products?category=hats-beanies" },
-  { label: "Outerwear", href: "/products?category=outerwear" },
-  { label: "Polos", href: "/products?category=polos" },
-  { label: "Promo", href: "/products?category=promo" },
-  { label: "Safety", href: "/products?category=safety" },
-  { label: "Signs & Displays", href: "/products?category=signs-displays" },
-];
+// Used only when the commerce API returned no categories. This was a list of
+// eight hand-written slugs, seven of which ("apparel", "bags", "outerwear",
+// "promo", "safety", "signs-displays", "hats-beanies") do not exist in the
+// catalogue — the real ones are "tote-bags", "hats" and so on. Every one of
+// them resolved to a 200 page with an empty grid. When we genuinely do not
+// know the catalogue's categories, send people to the unfiltered listing
+// rather than guessing at slugs.
+const FALLBACK_CATEGORIES = [{ label: "All Products", href: "/products" }];
 
 const PRIMARY_LINKS = [
   { label: "AI Design Studio", href: "/design" },

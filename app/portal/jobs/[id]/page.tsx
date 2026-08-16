@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
-import { Button, ButtonLink } from "@/components/shared/Button";
+import { ButtonLink } from "@/components/shared/Button";
 import {
   CommerceApiError,
   createCommerceClient,
@@ -148,12 +148,22 @@ export default async function JobDetailPage({
             <p className="text-text-secondary">{presentation.nextAction}</p>
             <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
               {presentation.paymentReady
-                ? "The job is approved and payment-ready, but online payment is not connected yet."
+                ? "This job is approved and ready to invoice. Online card payment is not connected yet, so we will send an invoice you can pay by e-transfer, cheque or card over the phone."
                 : "Payment stays locked until design approval and final pricing are complete."}
             </div>
-            <Button disabled className="w-full" title="Stripe is not connected">
-              Pay approved amount (coming soon)
-            </Button>
+            {/* This was a permanently disabled "Pay approved amount (coming
+                soon)" button. Honest about Stripe, but it left a customer with
+                an approved job and nothing to click. Until online payment is
+                connected, point at the humans who can actually take it. */}
+            {presentation.paymentReady ? (
+              <ButtonLink
+                href="/contact"
+                variant="primary"
+                className="w-full text-center"
+              >
+                Request an invoice
+              </ButtonLink>
+            ) : null}
           </aside>
         </div>
       </Container>

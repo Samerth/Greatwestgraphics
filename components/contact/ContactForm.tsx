@@ -128,6 +128,7 @@ export function ContactForm() {
                     <option>Promotional products</option>
                     <option>Signs and displays</option>
                     <option>Design support</option>
+                    <option>An existing order or invoice</option>
                   </select>
                 </label>
                 <label className="text-sm font-bold text-text-primary sm:col-span-2">

@@ -111,11 +111,10 @@ export default async function AdminLoginPage({
             Upload your art or design from scratch, preview a real mockup, and
             order — all before you talk to a rep.
           </p>
-          <p className="m-0 mt-4 text-sm font-bold">
-            <span className="text-accent tracking-widest" aria-hidden>
-              ★★★★★
-            </span>{" "}
-            <span className="text-white/85">4.8/5 · Rated by Vancouver businesses</span>
+          {/* Was a five-star glyph and an invented "4.8/5" rating. No review
+              data exists behind it, so it said nothing true. */}
+          <p className="m-0 mt-4 text-sm font-bold text-white/85">
+            Proofed before every print run, since 1980.
           </p>
         </div>
       </aside>

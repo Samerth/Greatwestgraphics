@@ -35,7 +35,7 @@ export function Hero() {
             Bring your brand <span className="text-white">to life.</span>
           </h1>
           <p className="mt-sp-3 mb-0 max-w-[46ch] text-white/90 text-base sm:text-[17px] leading-relaxed">
-            Not a print website. A print studio. Ink, thread and 35 years of
+            Not a print website. A print studio. Ink, thread and four decades of
             getting it right, proofed before a single sheet runs.
           </p>
           <div className="flex gap-3 mt-sp-4 flex-wrap">
@@ -50,11 +50,16 @@ export function Hero() {
               Start Designing
             </ButtonLink>
           </div>
+          {/* This used to be a five-star glyph and "4.8/5 · Rated by Vancouver
+              businesses". There is no reviews table and no review provider
+              wired up, so the score and the stars were both invented. Until a
+              real rating source exists, state the thing we can actually
+              stand behind. */}
           <div className="mt-sp-4 text-sm text-white/80 flex flex-wrap items-center gap-2">
-            <span className="text-accent tracking-widest" aria-hidden>
-              ★★★★★
+            <span>
+              Vancouver&rsquo;s print studio since 1980 &middot; proofed before
+              every run
             </span>
-            <span>4.8/5 · Rated by Vancouver businesses</span>
           </div>
         </motion.div>
       </Container>
