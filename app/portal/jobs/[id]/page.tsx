@@ -9,6 +9,7 @@ import { jobStatusPresentation } from "@/lib/commerce/status";
 import { money } from "@/lib/utils/quote-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
+import { ProofReview } from "@/components/portal/ProofReview";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,13 @@ export default async function JobDetailPage({
                 These are immutable submission snapshots. Final pricing follows
                 design and availability review.
               </p>
+            </section>
+
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">
+                Proofs &amp; approvals
+              </h2>
+              <ProofReview jobId={job.id} proofs={job.proofs} />
             </section>
 
             <section className="border border-border rounded-md p-sp-4">

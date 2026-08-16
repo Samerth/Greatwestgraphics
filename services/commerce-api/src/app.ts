@@ -4,6 +4,7 @@ import {
   CreateFinalQuoteSchema,
   CreateJobRequestSchema,
   CreateProofVersionSchema,
+  DecideProofSchema,
   FinalQuoteResponseSchema,
   IdempotencyKeySchema,
   PreviewQuoteV2ResponseSchema,
@@ -37,6 +38,7 @@ import {
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
+import { ProofDecisionError } from "./domain/proof-decision.js";
 import {
   applyStorePricingAdjustment,
   PricingConfigService,
@@ -296,6 +298,31 @@ export function buildApp(input: {
     );
     return service.get(auth.tenantId, auth.accountId, jobRequestId);
   });
+
+  // The customer half of the proof round trip. The service refuses a decision
+  // from the side that raised the proof, so this cannot be used to self-approve
+  // artwork that staff have not looked at yet.
+  app.post(
+    "/v1/job-requests/:jobRequestId/proofs/:proofId/decision",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const proofId = CanonicalIdSchema.parse(
+        (request.params as { proofId?: string }).proofId,
+      );
+      const command = DecideProofSchema.parse(request.body);
+      assertScope(auth, command.context);
+      const decided = await service.decideProof(
+        jobRequestId,
+        proofId,
+        command,
+        { ...auth.actor, type: "customer" as const },
+      );
+      return ProofVersionResponseSchema.parse(decided);
+    },
+  );
 
   app.get("/v1/catalog/products", async (request) => {
     const auth = await input.auth.resolve(request);
@@ -642,6 +669,32 @@ export function buildApp(input: {
         return reply
           .code(201)
           .send(ProofVersionResponseSchema.parse(created));
+      },
+    );
+
+    // Staff side of the round trip: sign off on, or push back, artwork the
+    // customer submitted. The customer's half lives on the public router below,
+    // because it must be reachable with only a customer session.
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/proofs/:proofId/decision",
+      async (request, reply) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const proofId = CanonicalIdSchema.parse(
+          (request.params as { proofId?: string }).proofId,
+        );
+        const command = DecideProofSchema.parse(request.body);
+        assertScope(auth, command.context);
+        const decided = await service.decideProof(
+          jobRequestId,
+          proofId,
+          command,
+          staffActor(auth),
+        );
+        return reply.code(200).send(ProofVersionResponseSchema.parse(decided));
       },
     );
 
@@ -1209,6 +1262,7 @@ export function buildApp(input: {
     } else if (
       error instanceof InvalidJobRequestTransitionError ||
       error instanceof IdempotencyConflictError ||
+      error instanceof ProofDecisionError ||
       error instanceof DataIntegrityError
     ) {
       statusCode = 409;

@@ -683,7 +683,11 @@ export class CommerceClient {
 
   createProof(
     id: string,
-    input: { storageKey: string; note?: string },
+    input: {
+      storageKey: string;
+      note?: string;
+      awaitingDecisionFrom?: "customer" | "staff";
+    },
     adminToken: string,
   ): Promise<ProofVersionResponse> {
     return this.request(
@@ -700,10 +704,44 @@ export class CommerceClient {
           },
           storageKey: input.storageKey,
           note: input.note,
+          awaitingDecisionFrom: input.awaitingDecisionFrom,
           source: { system: "commerce_api" },
         }),
       },
     );
+  }
+
+  /**
+   * Records a verdict on a proof.
+   *
+   * The two sides of the round trip hit different routes: staff go through the
+   * admin router with an admin token, customers through the public one with
+   * their session actor. Passing `adminToken` is what selects the staff path.
+   */
+  decideProof(
+    id: string,
+    proofId: string,
+    input: { decision: "approved" | "changes_requested"; note?: string },
+    options?: { adminToken?: string; actorId?: string },
+  ): Promise<ProofVersionResponse> {
+    const adminToken = options?.adminToken;
+    const path = adminToken
+      ? `/internal/dev/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`
+      : `/v1/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`;
+    return this.request(path, ProofVersionResponseSchema, {
+      method: "POST",
+      headers: this.headers(options?.actorId, adminToken),
+      body: JSON.stringify({
+        context: {
+          tenantId: this.identity.tenantId,
+          accountId: this.identity.accountId,
+          storeId: this.identity.storeId,
+        },
+        decision: input.decision,
+        note: input.note,
+        source: { system: "commerce_api" },
+      }),
+    });
   }
 
   getAdminDashboard(adminToken: string) {

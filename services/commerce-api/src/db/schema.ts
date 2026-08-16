@@ -995,8 +995,13 @@ export const proofVersions = pgTable(
     artworkVersionId: uuid("artwork_version_id").references(() => artworkVersions.id),
     version: integer("version").notNull(),
     storageKey: text("storage_key").notNull(),
+    note: text("note"),
     decision: text("decision"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: jsonb("decided_by").$type<Actor>(),
+    decisionNote: text("decision_note"),
+    /** "customer" | "staff" — the party this round trip is waiting on. */
+    awaitingDecisionFrom: text("awaiting_decision_from"),
     ...auditColumns,
   },
   (table) => [

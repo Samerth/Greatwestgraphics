@@ -92,6 +92,13 @@
       "when": 1786600000000,
       "tag": "0012_pricing_config_schema_version",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786873572054,
+      "tag": "0013_proof_decisions",
+      "breakpoints": true
     }
   ]
 }

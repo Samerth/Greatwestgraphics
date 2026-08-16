@@ -3,6 +3,7 @@ import type {
   CreateFinalQuote,
   CreateJobRequest,
   CreateProofVersion,
+  DecideProof,
   FinalQuoteResponse,
   JobRequestDetailResponse,
   JobRequestLineInput,
@@ -35,6 +36,12 @@ import {
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
+import {
+  assertProofDecidable,
+  audienceForActor,
+  defaultAudienceForAuthor,
+  statusForProofDecision,
+} from "../domain/proof-decision.js";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { PricingConfigSchema } from "@gwg/contracts";
@@ -181,6 +188,10 @@ function toProofResponse(
     row.decision === "pending"
       ? row.decision
       : null;
+  const awaiting =
+    row.awaitingDecisionFrom === "customer" || row.awaitingDecisionFrom === "staff"
+      ? row.awaitingDecisionFrom
+      : null;
   return {
     id: row.id,
     jobRequestId: row.jobRequestId,
@@ -188,6 +199,11 @@ function toProofResponse(
     storageKey: row.storageKey,
     decision,
     decidedAt: row.decidedAt?.toISOString() ?? null,
+    decidedBy: row.decidedBy ?? null,
+    decisionNote: row.decisionNote ?? null,
+    awaitingDecisionFrom: awaiting,
+    note: row.note ?? null,
+    createdBy: row.createdBy ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -627,6 +643,11 @@ export class JobRequestService {
         .orderBy(desc(proofVersions.version))
         .limit(1);
       const version = (latest?.version ?? 0) + 1;
+      // A proof is always waiting on the other side of the table. Callers may
+      // override it — staff revising a customer's artwork still hand it back to
+      // the customer rather than to themselves.
+      const awaitingDecisionFrom =
+        command.awaitingDecisionFrom ?? defaultAudienceForAuthor(actor);
       const [created] = await transaction
         .insert(proofVersions)
         .values({
@@ -635,7 +656,9 @@ export class JobRequestService {
           jobRequestId,
           version,
           storageKey: command.storageKey,
+          note: command.note ?? null,
           decision: "pending",
+          awaitingDecisionFrom,
           createdBy: actor,
           source: command.source,
         })
@@ -669,11 +692,124 @@ export class JobRequestService {
             proofVersion: version,
             storageKey: command.storageKey,
             note: command.note,
+            awaitingDecisionFrom,
           },
         },
       });
 
       return toProofResponse(created);
+    });
+  }
+
+  /**
+   * Records one side's verdict on a proof and moves the job to match.
+   *
+   * The job status is the thing customers and staff actually watch, so a
+   * decision that only wrote `proof_versions.decision` would be invisible.
+   * Approving from `under_review` advances the job; asking for changes sends it
+   * back. When the job is not in `under_review` the decision is still recorded
+   * but the status is left alone, because every other state (paid, rejected)
+   * has a stronger claim on it than a late proof comment.
+   */
+  async decideProof(
+    jobRequestId: string,
+    proofId: string,
+    command: DecideProof,
+    actor: Actor,
+  ): Promise<ProofVersionResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+
+      const [proof] = await transaction
+        .select()
+        .from(proofVersions)
+        .where(
+          and(
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+            eq(proofVersions.jobRequestId, jobRequestId),
+            eq(proofVersions.id, proofId),
+          ),
+        )
+        .limit(1);
+
+      if (!proof) {
+        throw new ResourceNotFoundError("Proof version not found");
+      }
+      assertProofDecidable(proof, command.decision, command.note, actor);
+
+      const occurredAt = new Date();
+      const [updated] = await transaction
+        .update(proofVersions)
+        .set({
+          decision: command.decision,
+          decidedAt: occurredAt,
+          decidedBy: actor,
+          decisionNote: command.note ?? null,
+          awaitingDecisionFrom: null,
+          updatedAt: occurredAt,
+        })
+        .where(
+          and(
+            eq(proofVersions.id, proof.id),
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new DataIntegrityError("Failed to record proof decision");
+      }
+
+      const toStatus = statusForProofDecision(current.status, command.decision);
+      if (toStatus) {
+        await this.applyTransition(
+          transaction,
+          current,
+          toStatus,
+          command.note ?? `Proof v${proof.version} ${command.decision}`,
+          actor,
+          command.source,
+        );
+      }
+
+      const eventId = randomUUID();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.proof.decided.v1",
+        occurredAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.proof.decided.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: occurredAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            proofId: updated.id,
+            proofVersion: updated.version,
+            decision: command.decision,
+            note: command.note,
+            decidedBy: audienceForActor(actor),
+          },
+        },
+      });
+
+      return toProofResponse(updated);
     });
   }
 
