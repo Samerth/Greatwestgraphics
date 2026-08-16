@@ -36,6 +36,7 @@ import {
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
+import { requireCustomerScope } from "../domain/customer-scope.js";
 import {
   assertProofDecidable,
   audienceForActor,
@@ -388,12 +389,28 @@ export class JobRequestService {
     });
   }
 
+  /**
+   * Moves a draft the customer owns to `submitted`.
+   *
+   * Like `decideProof`, the person filter is derived from the actor rather
+   * than taken as an argument, so a caller cannot point this at a stranger's
+   * draft by forgetting to pass an id. Without it, tenant plus account matched
+   * every retail shopper: any signed-in customer could submit somebody else's
+   * draft and read the job back out of the response.
+   */
   async submit(
     jobRequestId: string,
     command: SubmitJobRequest,
     idempotencyKey: string,
     actor: Actor,
   ): Promise<JobRequestResponse> {
+    const customerPersonId = requireCustomerScope(
+      actor,
+      () =>
+        new ScopeMismatchError(
+          "Submitting a job request requires an identified customer",
+        ),
+    );
     return this.transitionWithIdempotency(
       jobRequestId,
       command,
@@ -401,6 +418,7 @@ export class JobRequestService {
       idempotencyKey,
       actor,
       "job_request.submit",
+      customerPersonId,
     );
   }
 
@@ -727,12 +745,13 @@ export class JobRequestService {
     const { tenantId, accountId } = command.context;
     // A customer may only decide proofs on their own job. Staff decide through
     // the admin router and are deliberately not narrowed to one customer.
-    if (actor.type === "customer" && !actor.id) {
-      throw new ScopeMismatchError(
-        "A customer proof decision requires an identified customer",
-      );
-    }
-    const customerPersonId = actor.type === "customer" ? actor.id : undefined;
+    const customerPersonId = requireCustomerScope(
+      actor,
+      () =>
+        new ScopeMismatchError(
+          "A customer proof decision requires an identified customer",
+        ),
+    );
     return this.db.transaction(async (transaction) => {
       const current = await this.findScoped(
         transaction,
@@ -862,6 +881,7 @@ export class JobRequestService {
     idempotencyKey: string,
     actor: Actor,
     operationPrefix: string,
+    customerPersonId?: string,
   ): Promise<JobRequestResponse> {
     const hash = requestHash(command);
     const operation = `${operationPrefix}:${jobRequestId}`;
@@ -896,6 +916,7 @@ export class JobRequestService {
             tenantId,
             accountId,
             prior.resourceId,
+            customerPersonId,
           ),
         );
       }
@@ -905,6 +926,7 @@ export class JobRequestService {
         tenantId,
         accountId,
         jobRequestId,
+        customerPersonId,
       );
       assertJobRequestTransition(current.status, toStatus);
       const updated = await this.applyTransition(

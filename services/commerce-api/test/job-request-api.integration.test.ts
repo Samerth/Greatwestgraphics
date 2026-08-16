@@ -295,4 +295,89 @@ integration("job request API integration", () => {
     expect(anonymous.statusCode).toBe(401);
     expect(anonymous.json().error.code).toBe("UNAUTHORIZED");
   }, DB_TEST_TIMEOUT_MS);
+
+  // Reads were narrowed to the signed-in person but the submit transition was
+  // not, so a neighbour in the shared public account could still drive someone
+  // else's draft to `submitted` and read the job back out of the response.
+  it("refuses to submit another customer's draft", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: {
+          method: "pickup",
+          address: {
+            address1: "123 Private Street",
+            city: "Vancouver",
+            region: "BC",
+            postalCode: "V6A 1A1",
+            country: "Canada",
+          },
+        },
+        lines: [{ description: "Draft order", quantity: 3, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const jobRequestId = created.json().id as string;
+
+    const submitPayload = {
+      context: { tenantId, accountId, storeId },
+      source: { system: "storefront" },
+    };
+
+    const neighbour = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/submit`,
+      headers: {
+        ...headers(accountId, storeId, otherPersonId),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:submit`,
+      },
+      payload: submitPayload,
+    });
+    expect(neighbour.statusCode).toBe(404);
+
+    // The draft is untouched, so the owner can still submit it themselves.
+    const owner = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/submit`,
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:submit`,
+      },
+      payload: submitPayload,
+    });
+    expect(owner.statusCode).toBe(200);
+    expect(owner.json().status).toBe("submitted");
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("refuses to submit a job request with no identified customer", async () => {
+    const anonymous = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${randomUUID()}/submit`,
+      headers: {
+        [CommerceHeaders.tenantId]: tenantId,
+        [CommerceHeaders.accountId]: accountId,
+        [CommerceHeaders.storeId]: storeId,
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:submit`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(anonymous.statusCode).toBe(403);
+    expect(anonymous.json().error.code).toBe("SCOPE_MISMATCH");
+  }, DB_TEST_TIMEOUT_MS);
 });

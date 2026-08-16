@@ -446,6 +446,35 @@ export class CommerceClient {
     );
   }
 
+  /**
+   * Restores an earlier v1 config as the working draft.
+   *
+   * The caller used to build this request by hand, which meant it carried the
+   * dev fixture tenant headers from `COMMERCE_DEV_*` and no service token, so
+   * it could only ever have worked on a developer machine.
+   */
+  restorePricingVersion(
+    version: number,
+    adminToken: string,
+  ): Promise<PricingConfigDraftResponse> {
+    return this.request(
+      "/admin/pricing-config/restore",
+      PricingConfigDraftResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          version,
+        }),
+      },
+    );
+  }
+
   getPricingV2Draft(adminToken: string): Promise<PricingConfigV2DraftResponse> {
     return this.request(
       "/admin/pricing/v2/draft",
