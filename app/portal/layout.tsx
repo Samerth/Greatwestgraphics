@@ -16,6 +16,9 @@ export default function PortalLayout({
               ← Store
             </Link>
             <span className="w-px h-4 bg-border" />
+            <Link href="/portal" className="hover:text-accent">
+              Overview
+            </Link>
             <Link href="/portal/jobs" className="hover:text-accent">
               Jobs
             </Link>

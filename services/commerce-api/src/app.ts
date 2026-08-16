@@ -106,6 +106,34 @@ function assertTenantScope(
   }
 }
 
+/** Largest page any catalogue listing will return. */
+export const MAX_CATALOG_PAGE_SIZE = 500;
+
+/**
+ * Turns a caller-supplied page size into one the database can be trusted with.
+ *
+ * `limit` was previously passed through as `Number(query.limit)`, unbounded, to
+ * a route reachable without authentication. `?limit=1000000` therefore asked
+ * Postgres for a million rows, and a non-numeric value passed NaN down into the
+ * query. Both are clamped here rather than at each call site so a new listing
+ * route cannot reintroduce it.
+ */
+export function parsePageSize(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  const parsed = Number(raw);
+  if (!raw || !Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_CATALOG_PAGE_SIZE, Math.max(1, Math.trunc(parsed)));
+}
+
+/** Same treatment for the offset: negative or NaN offsets are not a valid ask. */
+export function parseOffset(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!raw || !Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.trunc(parsed));
+}
+
 function assertAdmin(request: FastifyRequest, environment: Environment): void {
   const suppliedToken = request.headers["x-dev-admin-token"];
   const expectedToken = environment.ADMIN_API_TOKEN ?? environment.DEV_ADMIN_TOKEN;
@@ -351,8 +379,8 @@ export function buildApp(input: {
       // as Unavailable). Staff hide = storefront_visible, not vendor active.
       storefrontOnly: true as const,
     };
-    const limit = query.limit ? Number(query.limit) : 50;
-    const offset = query.offset ? Number(query.offset) : 0;
+    const limit = parsePageSize(query.limit, 50);
+    const offset = parseOffset(query.offset);
     const [products, total] = await Promise.all([
       catalogService.listProducts(auth.tenantId, { ...filters, limit, offset }),
       catalogService.countProducts(auth.tenantId, filters),
@@ -960,8 +988,8 @@ export function buildApp(input: {
         sort,
         storefrontOnly: false as const,
       };
-      const limit = query.limit ? Number(query.limit) : 50;
-      const offset = query.offset ? Number(query.offset) : 0;
+      const limit = parsePageSize(query.limit, 50);
+      const offset = parseOffset(query.offset);
       const [products, total] = await Promise.all([
         catalogService.listProducts(auth.tenantId, {
           ...filters,

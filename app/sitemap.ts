@@ -46,17 +46,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   try {
-    // loadStorefrontCatalog uses storefront-only listing (omits soft-hidden
-    // colorways). Also skip OOS / vendor-inactive SKUs from the sitemap.
-    const catalog = await loadStorefrontCatalog({ limit: 5000 });
-    for (const product of catalog.products) {
-      if (!product.available) continue;
-      entries.push({
-        url: `${siteUrl}/product/${encodeURIComponent(product.slug)}?id=${product.id}`,
-        lastModified: now,
-        changeFrequency: "weekly",
-        priority: 0.6,
-      });
+    // Walked a page at a time rather than asked for in one call. A single
+    // request for the whole catalogue used to cap the sitemap at 5,000
+    // products, which silently hid about half of a 10,100-product catalogue
+    // from search, and the API now refuses pages that large anyway.
+    //
+    // The ceiling is a runaway guard, not a target: it sits well above the
+    // catalogue and above the sitemap protocol's own 50,000-URL limit, so a
+    // pagination bug cannot spin here forever.
+    const PAGE_SIZE = 500;
+    const MAX_PRODUCT_URLS = 50_000;
+
+    for (let page = 1; entries.length < MAX_PRODUCT_URLS; page += 1) {
+      // loadStorefrontCatalog uses storefront-only listing (omits soft-hidden
+      // colorways). Also skip OOS / vendor-inactive SKUs from the sitemap.
+      const catalog = await loadStorefrontCatalog({ limit: PAGE_SIZE, page });
+      for (const product of catalog.products) {
+        if (!product.available) continue;
+        entries.push({
+          url: `${siteUrl}/product/${encodeURIComponent(product.slug)}?id=${product.id}`,
+          lastModified: now,
+          changeFrequency: "weekly",
+          priority: 0.6,
+        });
+      }
+      // A short page means the catalogue is exhausted. Checking the returned
+      // length rather than pageCount also stops the loop if a page comes back
+      // empty, which is what an out-of-range request degrades to.
+      if (catalog.products.length < PAGE_SIZE) break;
     }
   } catch {
     // Catalog unavailable — static + category routes above still get indexed.
