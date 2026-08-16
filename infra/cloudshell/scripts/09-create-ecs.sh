@@ -40,7 +40,15 @@ if [[ -z "${ALB_SG_ID:-}" ]]; then
   save_state ALB_SG_ID "$ALB_SG_ID"
 fi
 authorize_sg_ingress "$ALB_SG_ID" tcp 80 80 cidr 0.0.0.0/0 "HTTP storefront"
-authorize_sg_ingress "$ALB_SG_ID" tcp 4000 4000 cidr 0.0.0.0/0 "HTTP commerce-api smoke"
+# Port 4000 used to be published here, which put the commerce API on the public
+# internet over plain HTTP. Nothing in a browser calls the API — the Next.js
+# server is the only client — so the listener existed purely for smoke tests,
+# and the price of that convenience was COMMERCE_SERVICE_TOKEN crossing the
+# internet in cleartext on every server-rendered page. The API now answers on
+# the internal load balancer below instead. The revoke matters as much as the
+# missing authorize: environments built before this change still carry the open
+# rule, and only an explicit revoke closes it.
+revoke_sg_ingress "$ALB_SG_ID" tcp 4000 4000 cidr 0.0.0.0/0
 
 if [[ -z "${WEB_SG_ID:-}" ]]; then
   WEB_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
@@ -51,6 +59,26 @@ if [[ -z "${WEB_SG_ID:-}" ]]; then
 fi
 authorize_sg_ingress "$WEB_SG_ID" tcp 3000 3000 sg "$ALB_SG_ID" "ALB to web"
 
+# A second, internal load balancer for the API.
+#
+# The scheme of a load balancer is fixed when it is created, so the public one
+# above cannot simply be made private. Splitting them is what allows the API to
+# keep a stable DNS name for the web tier while never resolving to a public
+# address. It also makes the security group reference below actually work: a web
+# task talking to an internet-facing balancer reaches it by public IP and
+# arrives looking like any other internet client, so the ALB sees an internet
+# source rather than WEB_SG_ID and a group-to-group rule silently matches
+# nothing. Against an internal balancer the traffic stays on private addresses
+# and the reference holds.
+if [[ -z "${API_ALB_SG_ID:-}" ]]; then
+  API_ALB_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
+    --group-name "$NAME_PREFIX-api-alb" --description "GWG internal API ALB" \
+    --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=$NAME_PREFIX-api-alb},{Key=Project,Value=$PROJECT}]" \
+    --query GroupId --output text)"
+  save_state API_ALB_SG_ID "$API_ALB_SG_ID"
+fi
+authorize_sg_ingress "$API_ALB_SG_ID" tcp 4000 4000 sg "$WEB_SG_ID" "web to internal API ALB"
+
 if [[ -z "${API_SG_ID:-}" ]]; then
   API_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
     --group-name "$NAME_PREFIX-api" --description "GWG commerce-api tasks" \
@@ -58,8 +86,11 @@ if [[ -z "${API_SG_ID:-}" ]]; then
     --query GroupId --output text)"
   save_state API_SG_ID "$API_SG_ID"
 fi
-authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$ALB_SG_ID" "ALB to api"
+authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$API_ALB_SG_ID" "internal ALB to api"
 authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$WEB_SG_ID" "web to api"
+# The public balancer no longer forwards to the API, so its reach into the API
+# tasks is left over from the old topology.
+revoke_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$ALB_SG_ID"
 authorize_sg_ingress "$DB_SG_ID" tcp 5432 5432 sg "$API_SG_ID" "api to RDS"
 
 EXEC_ROLE_NAME="$NAME_PREFIX-ecs-execution"
@@ -111,9 +142,26 @@ if [[ -z "${ALB_ARN:-}" ]]; then
 fi
 ALB_DNS="$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].DNSName' --output text)"
 save_state ALB_DNS "$ALB_DNS"
+
+if [[ -z "${API_ALB_ARN:-}" ]]; then
+  API_ALB_ARN="$(aws elbv2 create-load-balancer --name "$NAME_PREFIX-api-alb" --type application --scheme internal \
+    --subnets "$PUBLIC_SUBNET_1_ID" "$PUBLIC_SUBNET_2_ID" --security-groups "$API_ALB_SG_ID" \
+    --tags Key=Project,Value="$PROJECT" Key=Environment,Value="$ENVIRONMENT" \
+    --query 'LoadBalancers[0].LoadBalancerArn' --output text)"
+  save_state API_ALB_ARN "$API_ALB_ARN"
+fi
+# The subnets are the same ones the public balancer uses; "internal" is about
+# the addresses the balancer answers on, not about which subnet it sits in, so
+# this needs no private subnet or NAT gateway to be introduced first.
+API_ALB_DNS="$(aws elbv2 describe-load-balancers --load-balancer-arns "$API_ALB_ARN" --query 'LoadBalancers[0].DNSName' --output text)"
+save_state API_ALB_DNS "$API_ALB_DNS"
+
 SITE_URL="http://$ALB_DNS"
-API_URL="http://$ALB_DNS:4000"
+API_URL="http://$API_ALB_DNS:4000"
 if [[ -n "${SITE_HOSTNAME:-}" ]]; then SITE_URL="https://$SITE_HOSTNAME"; fi
+# Plain HTTP is acceptable on API_URL only because it never leaves the VPC. If
+# API_HOSTNAME is ever set it must be HTTPS, since a hostname implies the API is
+# being published somewhere a client outside the VPC can reach.
 if [[ -n "${API_HOSTNAME:-}" ]]; then API_URL="https://$API_HOSTNAME"; fi
 save_state SITE_URL "$SITE_URL"
 save_state API_URL "$API_URL"
@@ -138,8 +186,23 @@ if [[ -z "${WEB_LISTENER_ARN:-}" ]]; then
     --default-actions "Type=forward,TargetGroupArn=$WEB_TG_ARN" --query 'Listeners[0].ListenerArn' --output text)"
   save_state WEB_LISTENER_ARN "$WEB_LISTENER_ARN"
 fi
+# An environment provisioned before the API moved has this listener on the
+# public balancer, and leaving it there would keep port 4000 answering from the
+# internet no matter what the security groups say. Deleting and recreating is
+# safe here because the target group is unchanged: the ECS service references
+# the target group, not the listener, so the API service is not disturbed and
+# does not need a redeploy.
+if [[ -n "${API_LISTENER_ARN:-}" ]]; then
+  CURRENT_API_LB="$(aws elbv2 describe-listeners --listener-arns "$API_LISTENER_ARN" \
+    --query 'Listeners[0].LoadBalancerArn' --output text 2>/dev/null || echo "")"
+  if [[ "$CURRENT_API_LB" != "$API_ALB_ARN" ]]; then
+    [[ -n "$CURRENT_API_LB" && "$CURRENT_API_LB" != "None" ]] &&
+      aws elbv2 delete-listener --listener-arn "$API_LISTENER_ARN" >/dev/null
+    API_LISTENER_ARN=""
+  fi
+fi
 if [[ -z "${API_LISTENER_ARN:-}" ]]; then
-  API_LISTENER_ARN="$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" --protocol HTTP --port 4000 \
+  API_LISTENER_ARN="$(aws elbv2 create-listener --load-balancer-arn "$API_ALB_ARN" --protocol HTTP --port 4000 \
     --default-actions "Type=forward,TargetGroupArn=$API_TG_ARN" --query 'Listeners[0].ListenerArn' --output text)"
   save_state API_LISTENER_ARN "$API_LISTENER_ARN"
 fi
@@ -333,8 +396,10 @@ upsert_service "$NAME_PREFIX-api" "$API_TD" "$API_SG_ID" "$API_TG_ARN" api 4000
 echo "ECS cluster:     $ECS_CLUSTER"
 echo "ALB DNS:         $ALB_DNS"
 echo "Storefront URL:  $SITE_URL"
-echo "API URL:         $API_URL"
-echo "Health checks:   $SITE_URL/api/health  and  $API_URL/health"
+echo "API URL:         $API_URL  (internal to the VPC)"
+echo "Health checks:   $SITE_URL/api/health"
+echo "                 $API_URL/health is only reachable from inside the VPC;"
+echo "                 the storefront health check covers the API behind it."
 if [[ "$DESIRED" == "0" ]]; then
   echo "No images tagged $IMAGE_TAG in ECR yet — services are created at desired count 0."
   echo "Push images with .github/workflows/aws-ecr.yml (or a laptop Docker build), then re-run this script."

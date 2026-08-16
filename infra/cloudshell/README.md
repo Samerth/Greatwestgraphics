@@ -266,10 +266,14 @@ request, including the role ARN it named:
 ## Smoke checklist
 
 ```bash
-curl -fsS "$API_URL/health"
-curl -fsS "$API_URL/ready"
 curl -fsS "$SITE_URL/api/health"
 ```
+
+The commerce API sits behind an internal load balancer and has no public
+address, so `$API_URL/health` and `$API_URL/ready` only answer from inside the
+VPC. The storefront health check above exercises the API behind it, which is
+the check that matters; reach for an ECS exec session on a web task when you
+genuinely need the API's own endpoints.
 
 Staff login is `/admin/login`. Username defaults to `admin`. Password:
 
