@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { transitionJobAction } from "@/app/admin/actions";
-import { adminClient } from "@/lib/admin/api";
+import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses } from "@gwg/contracts";
 
@@ -13,7 +13,7 @@ export default async function AdminJobsPage() {
   let error: string | undefined;
   try {
     const client = await adminClient();
-    jobs = await client.listJobRequests();
+    jobs = await client.listJobRequestsAsStaff(requireAdminToken());
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Jobs unavailable";
   }

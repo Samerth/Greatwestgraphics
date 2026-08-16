@@ -5,7 +5,7 @@ import {
   decideProofAction,
   transitionJobAction,
 } from "@/app/admin/actions";
-import { adminClient } from "@/lib/admin/api";
+import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses } from "@gwg/contracts";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -24,7 +24,10 @@ export default async function AdminJobDetailPage({
   > | null = null;
 
   try {
-    detail = await (await adminClient()).getJobRequest(id);
+    detail = await (await adminClient()).getJobRequestAsStaff(
+      id,
+      requireAdminToken(),
+    );
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }

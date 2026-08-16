@@ -710,6 +710,31 @@ export function buildApp(input: {
   });
 
   if (adminRoutesEnabled(input.environment)) {
+    /**
+     * The staff inbox. Deliberately not person-scoped: reviewing everybody's
+     * work is the job, which is exactly what `/v1/job-requests` must never do.
+     *
+     * Staff previously read the customer endpoint. Once that endpoint started
+     * requiring a person id — correctly, since it had been serving every
+     * customer's jobs to every other customer — the admin inbox began
+     * answering "Sign in to view your account" and staff could no longer see a
+     * single submitted job.
+     */
+    app.get("/internal/dev/job-requests", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return service.list(auth.tenantId, auth.accountId);
+    });
+
+    app.get("/internal/dev/job-requests/:jobRequestId", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      return service.get(auth.tenantId, auth.accountId, jobRequestId);
+    });
+
     app.post(
       "/internal/dev/job-requests/:jobRequestId/transition",
       async (request) => {

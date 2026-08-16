@@ -697,6 +697,28 @@ export class CommerceClient {
     );
   }
 
+  /**
+   * The staff inbox: every job on the account, not just the caller's own.
+   * Separate from `listJobRequests` because the customer endpoint is now
+   * person-scoped, and staff reading it saw nothing at all.
+   */
+  listJobRequestsAsStaff(adminToken: string): Promise<JobRequestListResponse> {
+    return this.request("/internal/dev/job-requests", JobRequestListResponseSchema, {
+      headers: this.headers(undefined, adminToken),
+    });
+  }
+
+  getJobRequestAsStaff(
+    id: string,
+    adminToken: string,
+  ): Promise<JobRequestDetailResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}`,
+      JobRequestDetailResponseSchema,
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
   transitionJobRequest(
     id: string,
     toStatus: string,
