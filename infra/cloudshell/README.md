@@ -21,7 +21,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 3 | `03-verify.sh` | RDS checks (TLS, encryption, no `0.0.0.0/0`) |
 | 4 | `04-update-allowed-ip.sh` | Replace the trusted SQL client CIDR |
 | 5 | `05-create-s3.sh` | Private versioned uploads bucket |
-| 6 | `06-create-cognito.sh` | User pool + confidential app client (`USER_AUTH` / email OTP + password) |
+| 6 | `06-create-cognito.sh` | User pool + confidential app client (`USER_AUTH` / email OTP + password). Leaves the pool on Cognito's built-in sender: 50 messages a day from a generic address, with default AWS templates. Switch it to SES before launch — see [Email deliverability](../../docs/AWS_DEPLOYMENT.md#email-deliverability) |
 | 7 | `07-create-ecr.sh` | `gwg-web` + `gwg-commerce-api` repos and a GitHub OIDC deploy role |
 | 8 | `08-create-app-secrets.sh` | `gwg-prod/web` and `gwg-prod/api` secrets |
 | 9 | `09-create-ecs.sh` | ALB, Fargate services, security groups, task roles |

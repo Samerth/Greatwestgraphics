@@ -17,7 +17,7 @@ and the full credential checklist.
 | Uploads / artwork | S3 (+ optional CloudFront) | Set `AWS_S3_BUCKET`, `AWS_REGION`, optional `AWS_S3_PUBLIC_BASE_URL`. |
 | Secrets | Secrets Manager or SSM Parameter Store | Inject into task definitions; never bake secrets into images. |
 | Identity | Cognito (wired in app) | Pool + confidential app client; see env checklist. |
-| Email | Resend (current) or SES later | `RESEND_*` today; SES is the AWS-native path when you cut over. |
+| Email | Resend **and** SES, split by sender | Resend sends app mail (`RESEND_*`); SES sends Cognito auth mail. See [Email deliverability](#email-deliverability). |
 | DNS / TLS | Route 53 + ACM | Certificates in the ALB region (usually `us-east-1` only for CloudFront). |
 
 App Runner remains a lighter alternative for the API (see `DEPLOYMENT.md`). Prefer
@@ -116,6 +116,36 @@ Map these from `.env.example` (values never committed):
 
 Leave development-only IDs unset in production (`COMMERCE_DEV_*`). Production
 commerce scope must come from real auth / store resolution — not fixture headers.
+
+## Email deliverability
+
+Two providers send mail as `greatwestgraphics.com`, split by who generates the
+message. Resend sends anything the app composes: the contact form, team invites
+and the proof notifications drained from `outbox_events`. SES sends anything
+Cognito composes, because Cognito can only use its own built-in sender or SES —
+it cannot be pointed at Resend.
+
+Cognito's built-in sender (`COGNITO_DEFAULT`) caps at 50 messages per day and
+mails from a generic address, which is why the `gwg-staging-customers` pool is
+set to `EmailSendingAccount=DEVELOPER` against an SES domain identity instead.
+A newly provisioned pool does **not** get this: `06-create-cognito.sh` leaves
+the pool on `COGNITO_DEFAULT`, so any new environment starts capped at 50/day
+with default AWS message templates until it is switched over.
+
+Both providers authenticate as the same domain, so the DNS zone carries two
+independent DKIM setups. They do not overlap and neither is redundant:
+
+| Provider | DKIM record(s) | Envelope / Return-Path |
+| --- | --- | --- |
+| Resend | one `TXT` at `resend._domainkey` | `send.greatwestgraphics.com`, which needs its own SPF `TXT` and `MX` |
+| SES | three `CNAME`s at `<token>._domainkey` | default `*.amazonses.com`; no custom MAIL FROM is configured |
+
+The root `SPF` record belongs to Microsoft 365 and must stay a single record
+listing only `spf.protection.outlook.com`. Neither provider needs an include
+there, because each authenticates SPF against its own envelope domain and
+aligns with DMARC through DKIM. Adding a second `SPF` record at the root, or
+pointing SES's MAIL FROM at the `send` subdomain Resend already owns, is how
+this gets broken.
 
 ## Database migrations
 
