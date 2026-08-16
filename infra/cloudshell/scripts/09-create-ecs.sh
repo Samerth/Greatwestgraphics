@@ -15,6 +15,12 @@ require_command jq
 # state written by the earlier scripts.
 CONTACT_TO_EMAIL="${CONTACT_TO_EMAIL:-info@greatwestgraphics.com}"
 
+# Which build to run. `latest` only ever moves on a push to main, so staging
+# would always have tracked main and there was no way to exercise a branch
+# before merging it. Setting IMAGE_TAG to a commit SHA deploys that exact build,
+# which is how a change should be tried on staging first.
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+
 if ! aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
   echo "Creating ECS service-linked role (required once per account)..."
   aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
@@ -147,7 +153,7 @@ WEB_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-web" \
   --arg exec "$EXEC_ROLE_ARN" \
   --arg task "$TASK_ROLE_ARN" \
-  --arg image "$WEB_ECR_URI:latest" \
+  --arg image "$WEB_ECR_URI:$IMAGE_TAG" \
   --arg logs "$LOG_WEB" \
   --arg region "$AWS_REGION" \
   --arg api "$API_URL" \
@@ -215,7 +221,7 @@ API_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-api" \
   --arg exec "$EXEC_ROLE_ARN" \
   --arg task "$TASK_ROLE_ARN" \
-  --arg image "$API_ECR_URI:latest" \
+  --arg image "$API_ECR_URI:$IMAGE_TAG" \
   --arg logs "$LOG_API" \
   --arg region "$AWS_REGION" \
   --arg api_secret "$API_SECRET_ARN" \
@@ -296,8 +302,8 @@ fi
 
 HAS_WEB_IMAGE=false
 HAS_API_IMAGE=false
-aws ecr describe-images --repository-name gwg-web --image-ids imageTag=latest >/dev/null 2>&1 && HAS_WEB_IMAGE=true
-aws ecr describe-images --repository-name gwg-commerce-api --image-ids imageTag=latest >/dev/null 2>&1 && HAS_API_IMAGE=true
+aws ecr describe-images --repository-name gwg-web --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1 && HAS_WEB_IMAGE=true
+aws ecr describe-images --repository-name gwg-commerce-api --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1 && HAS_API_IMAGE=true
 DESIRED=0
 if [[ "$HAS_WEB_IMAGE" == "true" && "$HAS_API_IMAGE" == "true" ]]; then
   DESIRED=1
@@ -330,7 +336,7 @@ echo "Storefront URL:  $SITE_URL"
 echo "API URL:         $API_URL"
 echo "Health checks:   $SITE_URL/api/health  and  $API_URL/health"
 if [[ "$DESIRED" == "0" ]]; then
-  echo "No :latest images in ECR yet — services are created at desired count 0."
+  echo "No images tagged $IMAGE_TAG in ECR yet — services are created at desired count 0."
   echo "Push images with .github/workflows/aws-ecr.yml (or a laptop Docker build), then re-run this script."
 else
   echo "Services desired count is 1. Give the ALB a couple of minutes, then curl the health URLs."

@@ -90,6 +90,7 @@ the environment's config, or in its state file for the ARNs.
 
 | Setting | Effect when absent |
 | --- | --- |
+| `IMAGE_TAG` | Defaults to `latest`, which only moves on a push to `main`. Set it to a commit SHA to run that exact build — this is how a branch is tried on staging before it is merged |
 | `CONTACT_TO_EMAIL` | Defaults to `info@greatwestgraphics.com` |
 | `EMAIL_SECRET_ARN` | Contact form logs submissions instead of emailing them and still reports success to the customer; proof notifications stay queued in `outbox_events` |
 | `STAFF_NOTIFICATION_EMAIL` | Customers approving or rejecting proofs is announced to nobody |
@@ -235,7 +236,10 @@ step 7:
 
 1. GitHub → repo **Settings → Secrets and variables → Actions**
 2. Add `AWS_ROLE_TO_ASSUME` = the OIDC role ARN printed by `07-create-ecr.sh`
-3. Run **Actions → AWS ECR → Run workflow** from `main` (the OIDC role only trusts `main`)
+3. Run **Actions → AWS ECR → Run workflow**. Any branch works: the job declares
+   the `aws` environment, and the deploy role trusts that subject as well as
+   `main`. Only `main` moves the `latest` tag, so a branch build publishes its
+   commit SHA alone — deploy it by passing that SHA as `IMAGE_TAG`.
 4. Re-run `./scripts/09-create-ecs.sh` so desired count becomes 1
 
 Use the workflow's OIDC role, not an access key. CloudShell credentials are
