@@ -36,6 +36,7 @@ export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
   const [code, setCode] = useState("");
   const [otpSession, setOtpSession] = useState("");
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
   function finishAuth() {
@@ -89,6 +90,29 @@ export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not confirm your account.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /**
+   * The confirm step was a dead end. A customer whose confirmation email never
+   * arrived — spam filter, typo they can see is wrong, code expired — had one
+   * button, "Confirm account", and no way back to a working code. The resend
+   * capability was already built and reachable at /api/auth/resend-code with
+   * nothing in the UI calling it.
+   */
+  async function handleResendConfirmation() {
+    setError(undefined);
+    setNotice(undefined);
+    setSubmitting(true);
+    try {
+      await postJson("/api/auth/resend-code", { email });
+      setNotice(`A new code is on its way to ${email}.`);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not resend the code.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -177,9 +201,22 @@ export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
           />
         </Field>
         {error && <p className="text-[13px] text-red-600 font-semibold mb-sp-3">{error}</p>}
+        {notice && (
+          <p className="text-[13px] text-green-700 font-semibold mb-sp-3">
+            {notice}
+          </p>
+        )}
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? "Confirming…" : "Confirm account"}
         </Button>
+        <button
+          type="button"
+          onClick={handleResendConfirmation}
+          disabled={submitting}
+          className="mt-sp-3 text-[13px] font-semibold text-text-tertiary hover:text-accent disabled:opacity-60"
+        >
+          Send a new code
+        </button>
       </form>
     );
   }
