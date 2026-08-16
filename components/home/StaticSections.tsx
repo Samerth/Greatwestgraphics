@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArtTile } from "@/components/shared/ArtTile";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
 
@@ -106,22 +105,62 @@ export function Testimonials() {
 export type GalleryItem = {
   name: string;
   meta: string;
-  artIndex: number;
-  imageUrl?: string | null;
+  imageUrl: string;
 };
 
-const FALLBACK_GALLERY: GalleryItem[] = [
-  { name: "Marriott", meta: "Staff uniforms · embroidered", artIndex: 1 },
-  { name: "Fujitsu", meta: "Corporate polos · branded", artIndex: 2 },
-  { name: "St. George's School", meta: "Athletics hoodies · 3-colour", artIndex: 3 },
-  { name: "Grande West", meta: "Crew tees · branded", artIndex: 4 },
-  { name: "Local nonprofit", meta: "Canvas totes · benefit run", artIndex: 5 },
-  { name: "Community event", meta: "Staff tees · rush order", artIndex: 6 },
-  { name: "Trade & safety crew", meta: "Hi-vis hoodies · CSA", artIndex: 7 },
+/**
+ * Photographs of our own floor and finished work.
+ *
+ * This section used to caption each tile with a named client — Marriott,
+ * Fujitsu, St. George's School — over an image picked from the synced blanks
+ * catalogue by list position, so "Marriott · Staff uniforms · embroidered" was
+ * illustrated by whichever undecorated garment happened to land at that index,
+ * and by a bare colour gradient whenever the catalogue call came back empty. A
+ * section headed "Real Work, Delivered" was the one place on the site showing
+ * none of it. Those clients are real and are still named on /about and in the
+ * trust strip; what we lack is photography of their jobs, so the tiles show
+ * work we can actually stand behind until that photography exists.
+ */
+const GALLERY: GalleryItem[] = [
+  {
+    name: "On the press",
+    meta: "Screen printing · cured to survive the wash",
+    imageUrl: "/images/shop-press.jpg",
+  },
+  {
+    name: "Thread floor",
+    meta: "Embroidery · digitized stitch by stitch",
+    imageUrl: "/images/shop-embroidery.jpg",
+  },
+  {
+    name: "Headwear",
+    meta: "Caps & beanies · embroidered and printed",
+    imageUrl: "/images/cap-printing.jpg",
+  },
+  {
+    name: "Ink room",
+    meta: "Hand-mixed · Pantone matched",
+    imageUrl: "/images/shop-ink.jpg",
+  },
+  {
+    name: "Large format",
+    meta: "Banners, displays & window graphics",
+    imageUrl: "/images/display.jpg",
+  },
+  {
+    name: "Finished and folded",
+    meta: "Counted twice before anything ships",
+    imageUrl: "/images/shop-packing.jpg",
+  },
+  {
+    name: "Out the door",
+    meta: "Local pickup & Canada-wide courier",
+    imageUrl: "/images/caps-display.jpg",
+  },
 ];
 
-export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] }) {
-  const gallery = items.length > 0 ? items : FALLBACK_GALLERY;
+export function Gallery({ items = GALLERY }: { items?: GalleryItem[] }) {
+  const gallery = items.length > 0 ? items : GALLERY;
   return (
     <section className="section-pad scroll-section" id="gallery">
       <Container>
@@ -155,13 +194,13 @@ function GalleryTile({
       href="/quote"
       className={`relative rounded-md overflow-hidden ${aspect} group block`}
     >
-      <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-[1.05]">
-        <ArtTile
-          artIndex={item.artIndex}
-          imageSrc={item.imageUrl ?? undefined}
-          alt={item.name}
-        />
-      </div>
+      <Image
+        src={item.imageUrl}
+        alt={item.name}
+        fill
+        className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+        sizes="(max-width: 768px) 50vw, 25vw"
+      />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_45%,rgba(0,0,0,.78)_100%)]" />
       <div className="absolute left-0 right-0 bottom-0 p-sp-3 text-white">
         <b className="block text-[13.5px] font-display">{item.name}</b>
