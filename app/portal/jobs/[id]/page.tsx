@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import {
@@ -29,6 +29,16 @@ export default async function JobDetailPage({
   try {
     job = await (await createCommerceClient()).getJobRequest(id);
   } catch (caught) {
+    // A job that is missing, or that belongs to somebody else, is a 404 — not
+    // a 200 page saying so. Returning 200 told crawlers and uptime checks that
+    // a forbidden URL was fine. Anything else is our fault, so it keeps the
+    // retry affordance instead of pretending the job does not exist.
+    if (
+      caught instanceof CommerceApiError &&
+      (caught.status === 403 || caught.status === 404)
+    ) {
+      notFound();
+    }
     error =
       caught instanceof CommerceApiError
         ? caught.message
@@ -84,6 +94,8 @@ export default async function JobDetailPage({
                   const roster = line.snapshot.configuration.roster as
                     | RosterEntry[]
                     | undefined;
+                  const artworkProofUrl = line.snapshot.configuration
+                    .artworkProofUrl as string | undefined;
                   return (
                     <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
                       <div className="flex justify-between gap-sp-3">
@@ -102,6 +114,21 @@ export default async function JobDetailPage({
                           </span>
                         )}
                       </div>
+                      {artworkProofUrl && (
+                        <div className="mt-sp-3">
+                          <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                            Artwork you sent
+                          </p>
+                          <a href={artworkProofUrl} target="_blank" rel="noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={artworkProofUrl}
+                              alt={`Artwork for ${line.snapshot.description}`}
+                              className="h-28 w-auto border border-border rounded-sm bg-white"
+                            />
+                          </a>
+                        </div>
+                      )}
                       {roster && roster.length > 0 && (
                         <div className="mt-sp-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
@@ -114,6 +141,16 @@ export default async function JobDetailPage({
                   );
                 })}
               </div>
+              {job.customerNote && (
+                <div className="mt-sp-3 border-t border-fill-subtle pt-sp-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                    Your note to us
+                  </p>
+                  <p className="text-sm text-text-secondary m-0 whitespace-pre-wrap">
+                    {job.customerNote}
+                  </p>
+                </div>
+              )}
               <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
                 These are immutable submission snapshots. Final pricing follows
                 design and availability review.

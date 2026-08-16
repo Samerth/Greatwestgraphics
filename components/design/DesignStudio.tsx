@@ -186,6 +186,8 @@ export function DesignStudio({
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [designQty, setDesignQty] = useState(48);
   const [addedToCart, setAddedToCart] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [cartError, setCartError] = useState<string | null>(null);
   const [groupOrder, setGroupOrder] = useState(false);
   const [roster, setRoster] = useState<RosterRow[]>([{ size: "", name: "", number: "" }]);
   const [rosterError, setRosterError] = useState<string | null>(null);
@@ -510,9 +512,45 @@ export function DesignStudio({
     setTimeout(() => setApproved(false), 2000);
   }
 
-  function addDesignToCart() {
+  async function addDesignToCart() {
     if (!productDetail) return;
-    const artworkProofUrl = exportStageDataUrl() ?? undefined;
+
+    // Validate before uploading: an upload spent on a roster that is about to
+    // be rejected is a round trip nobody asked for.
+    if (groupOrder) {
+      if (roster.length === 0) {
+        setRosterError("Add at least one person.");
+        return;
+      }
+      if (roster.some((r) => !r.name.trim())) {
+        setRosterError("Every row needs a name.");
+        return;
+      }
+      setRosterError(null);
+    } else if (!selectedVariant) {
+      return;
+    }
+
+    // The proof has to end up somewhere staff can open. Carrying the canvas as
+    // a data: URL looked like it worked and then died on the way to checkout,
+    // which is how orders reached production with no artwork attached.
+    setCartError(null);
+    setAddingToCart(true);
+    let artworkProofUrl: string | undefined;
+    try {
+      artworkProofUrl = (await uploadProofImage()) ?? undefined;
+    } finally {
+      setAddingToCart(false);
+    }
+    if (!artworkProofUrl) {
+      setCartError(
+        signedIn
+          ? "Your artwork could not be attached, so the order would reach us blank. Try again."
+          : "Sign in first — otherwise your artwork does not travel with the order.",
+      );
+      return;
+    }
+
     // Every decorated view earns a line on the order. The old label only
     // ever mentioned two of them, so a sleeve print reached production
     // undescribed even when the customer had placed one.
@@ -529,19 +567,10 @@ export function DesignStudio({
       `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
 
     if (groupOrder) {
-      if (roster.length === 0) {
-        setRosterError("Add at least one person.");
-        return;
-      }
-      if (roster.some((r) => !r.name.trim())) {
-        setRosterError("Every row needs a name.");
-        return;
-      }
       const priceVariant =
         productDetail.variants.find((v) => v.sizeName === roster[0]!.size) ??
         selectedVariant;
       if (!priceVariant) return;
-      setRosterError(null);
       addItem({
         id: productDetail.product.id,
         productId: productDetail.product.id,
@@ -554,6 +583,7 @@ export function DesignStudio({
         unit: unitPriceMinor(priceVariant, roster.length) / 100,
         image: currentPhoto || "",
         artworkProofUrl,
+        designProjectId: savedDesignId ?? undefined,
         roster: roster.map((r) => ({
           size: r.size,
           name: r.name.trim(),
@@ -578,6 +608,7 @@ export function DesignStudio({
       unit: unitPriceMinor(selectedVariant, designQty) / 100,
       image: currentPhoto || "",
       artworkProofUrl,
+      designProjectId: savedDesignId ?? undefined,
     });
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
@@ -1207,27 +1238,36 @@ export function DesignStudio({
                 </>
               )}
 
+              {cartError && (
+                <p className="text-sm text-danger mt-2 mb-0" role="alert">
+                  {cartError}
+                </p>
+              )}
+
               <Button
                 className="w-full"
                 variant="primary"
                 disabled={
-                  groupOrder
+                  addingToCart ||
+                  (groupOrder
                     ? roster.length === 0
-                    : !selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0
+                    : !selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0)
                 }
                 onClick={addDesignToCart}
               >
-                {groupOrder
-                  ? addedToCart
-                    ? "Added ✓"
-                    : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
-                  : !selectedVariant || selectedVariant.qty <= 0
-                    ? "Unavailable"
-                    : addedToCart
+                {addingToCart
+                  ? "Attaching artwork…"
+                  : groupOrder
+                    ? addedToCart
                       ? "Added ✓"
-                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
-                          unitPriceMinor(selectedVariant, designQty) * designQty,
-                        )}`}
+                      : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
+                    : !selectedVariant || selectedVariant.qty <= 0
+                      ? "Unavailable"
+                      : addedToCart
+                        ? "Added ✓"
+                        : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
+                            unitPriceMinor(selectedVariant, designQty) * designQty,
+                          )}`}
               </Button>
             </div>
           )}

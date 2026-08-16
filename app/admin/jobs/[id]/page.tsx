@@ -138,7 +138,9 @@ export default async function AdminJobDetailPage({
                 totals?: { totalMinor?: number };
               };
             };
-            designProofs?: { front?: string; back?: string };
+            artworkProofUrl?: string;
+            designProjectId?: string;
+            roster?: { size: string; name: string; number?: string }[];
             color?: string;
             size?: string;
             storefrontProductId?: string;
@@ -147,7 +149,9 @@ export default async function AdminJobDetailPage({
           const snapshotTotalMinor =
             configuration?.pricing?.breakdown?.totals?.totalMinor ??
             configuration?.pricing?.breakdown?.totalMinor;
-          const designProofs = configuration?.designProofs;
+          const artworkProofUrl = configuration?.artworkProofUrl;
+          const designProjectId = configuration?.designProjectId;
+          const roster = configuration?.roster;
           const catalogHint =
             configuration?.productMetadata ||
             configuration?.storefrontProductId ||
@@ -174,25 +178,43 @@ export default async function AdminJobDetailPage({
                   {catalogHint}
                 </p>
               )}
-              {(designProofs?.front || designProofs?.back) && (
-                <div className="flex flex-wrap gap-3 mt-3">
-                  {designProofs.front && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={designProofs.front}
-                      alt="Front artwork proof"
-                      className="h-24 w-auto border border-border rounded-sm bg-white"
-                    />
+              {(artworkProofUrl || designProjectId) && (
+                <div className="flex flex-wrap items-start gap-3 mt-3">
+                  {artworkProofUrl && (
+                    <a href={artworkProofUrl} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={artworkProofUrl}
+                        alt={`Artwork proof for ${line.snapshot.description}`}
+                        className="h-24 w-auto border border-border rounded-sm bg-white"
+                      />
+                    </a>
                   )}
-                  {designProofs.back && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={designProofs.back}
-                      alt="Back artwork proof"
-                      className="h-24 w-auto border border-border rounded-sm bg-white"
-                    />
+                  {designProjectId && (
+                    <Link
+                      href={`/admin/designs/${designProjectId}/edit`}
+                      className="text-sm underline"
+                    >
+                      Open this design in the studio
+                    </Link>
                   )}
                 </div>
+              )}
+              {roster && roster.length > 0 && (
+                <details className="mt-3">
+                  <summary className="text-sm cursor-pointer">
+                    Roster · {roster.length} name
+                    {roster.length === 1 ? "" : "s"}
+                  </summary>
+                  <ul className="text-sm text-text-secondary mt-2 mb-0 pl-4">
+                    {roster.map((entry, index) => (
+                      <li key={`${entry.name}-${index}`}>
+                        {entry.size} · {entry.name}
+                        {entry.number ? ` · #${entry.number}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </article>
           );

@@ -21,8 +21,15 @@ export interface CartItem {
   styleId?: string;
   /** Canonical `ss_variants` UUID (specific size), present when added from the live catalog. */
   variantId?: string;
-  /** Transparent artwork-only PNG from the Design Studio, when the item includes custom art. */
+  /**
+   * Rendered proof of the decorated garment, as a stored URL the API and the
+   * admin can both load. It is deliberately not a `data:` URL — the cart lives
+   * in localStorage, which a base64 PNG per line overflows, and the job payload
+   * would carry the whole image inline.
+   */
   artworkProofUrl?: string;
+  /** The saved design this line was built from, so staff can open and edit it. */
+  designProjectId?: string;
   /** Team/group order: one row per piece with its own size, name and number. When present, `qty` equals `roster.length`. */
   roster?: { size: string; name: string; number?: string }[];
   /**
