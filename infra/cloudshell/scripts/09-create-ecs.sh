@@ -9,6 +9,12 @@ require_state ACCOUNT_ID VPC_ID PUBLIC_SUBNET_1_ID PUBLIC_SUBNET_2_ID DB_SG_ID \
 require_command aws
 require_command jq
 
+# Every value below is optional so a bare environment still provisions, but each
+# one that is missing removes a capability rather than failing loudly. They come
+# from config.env (or the per-environment config named by CONFIG_FILE) and from
+# state written by the earlier scripts.
+CONTACT_TO_EMAIL="${CONTACT_TO_EMAIL:-info@greatwestgraphics.com}"
+
 if ! aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
   echo "Creating ECS service-linked role (required once per account)..."
   aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
@@ -67,9 +73,21 @@ EXEC_ROLE_ARN="$(create_role "$EXEC_ROLE_NAME")"
 TASK_ROLE_ARN="$(create_role "$TASK_ROLE_NAME")"
 aws iam attach-role-policy --role-name "$EXEC_ROLE_NAME" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy >/dev/null 2>&1 || true
+# Secrets beyond the two base ones are optional, so an environment that has not
+# been given vendor credentials or an email key still provisions. Each one that
+# IS set has to appear here: the execution role is scoped to an explicit list,
+# and a task referencing a secret missing from it fails to start rather than
+# starting degraded.
+SECRET_ARNS=("$WEB_SECRET_ARN" "$API_SECRET_ARN")
+for optional in SERVICE_TOKEN_SECRET_ARN ADMIN_TOKEN_SECRET_ARN VENDOR_SECRET_ARN EMAIL_SECRET_ARN; do
+  value="${!optional:-}"
+  [ -n "$value" ] && SECRET_ARNS+=("$value")
+done
+
 aws iam put-role-policy --role-name "$EXEC_ROLE_NAME" --policy-name secrets \
-  --policy-document "$(jq -nc --arg web "$WEB_SECRET_ARN" --arg api "$API_SECRET_ARN" \
-    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:[$web,$api]}]}')"
+  --policy-document "$(jq -nc --args \
+    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:($ARGS.positional|unique)}]}' \
+    "${SECRET_ARNS[@]}")"
 aws iam put-role-policy --role-name "$TASK_ROLE_NAME" --policy-name s3-uploads \
   --policy-document "$(jq -nc --arg bucket "$AWS_S3_BUCKET" \
     '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["s3:PutObject","s3:GetObject"],Resource:"arn:aws:s3:::\($bucket)/designs/*"},{Effect:"Allow",Action:["s3:ListBucket"],Resource:"arn:aws:s3:::\($bucket)",Condition:{StringLike:{ "s3:prefix":["designs/*"]}}}]}')"
@@ -136,6 +154,13 @@ WEB_TASK="$(jq -nc \
   --arg site "$SITE_URL" \
   --arg bucket "$AWS_S3_BUCKET" \
   --arg web_secret "$WEB_SECRET_ARN" \
+  --arg contact_to "$CONTACT_TO_EMAIL" \
+  --arg tenant "${COMMERCE_DEFAULT_TENANT_ID:-}" \
+  --arg account "${COMMERCE_DEFAULT_ACCOUNT_ID:-}" \
+  --arg store "${COMMERCE_DEFAULT_STORE_ID:-}" \
+  --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
+  --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
+  --arg email_secret "${EMAIL_SECRET_ARN:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -149,16 +174,21 @@ WEB_TASK="$(jq -nc \
       image:$image,
       essential:true,
       portMappings:[{containerPort:3000,protocol:"tcp"}],
-      environment:[
+      environment:([
         {name:"NODE_ENV",value:"production"},
         {name:"COMMERCE_API_BASE_URL",value:$api},
         {name:"NEXT_PUBLIC_SITE_URL",value:$site},
         {name:"AWS_S3_BUCKET",value:$bucket},
         {name:"AWS_REGION",value:$region},
         {name:"COGNITO_REGION",value:$region},
-        {name:"CONTACT_TO_EMAIL",value:"info@greatwestgraphics.com"}
-      ],
-      secrets:[
+        {name:"CONTACT_TO_EMAIL",value:$contact_to}
+      ]
+      # Without these the storefront cannot resolve a store and falls back to a
+      # marketing shell with an empty catalogue.
+      + (if $tenant  != "" then [{name:"COMMERCE_DEFAULT_TENANT_ID",value:$tenant}]   else [] end)
+      + (if $account != "" then [{name:"COMMERCE_DEFAULT_ACCOUNT_ID",value:$account}] else [] end)
+      + (if $store   != "" then [{name:"COMMERCE_DEFAULT_STORE_ID",value:$store}]     else [] end)),
+      secrets:([
         {name:"STAFF_ADMIN_USER",valueFrom:($web_secret+":STAFF_ADMIN_USER::")},
         {name:"STAFF_ADMIN_PASSWORD",valueFrom:($web_secret+":STAFF_ADMIN_PASSWORD::")},
         {name:"STAFF_SESSION_SECRET",valueFrom:($web_secret+":STAFF_SESSION_SECRET::")},
@@ -166,7 +196,14 @@ WEB_TASK="$(jq -nc \
         {name:"COGNITO_USER_POOL_ID",valueFrom:($web_secret+":COGNITO_USER_POOL_ID::")},
         {name:"COGNITO_APP_CLIENT_ID",valueFrom:($web_secret+":COGNITO_APP_CLIENT_ID::")},
         {name:"COGNITO_APP_CLIENT_SECRET",valueFrom:($web_secret+":COGNITO_APP_CLIENT_SECRET::")}
-      ],
+      ]
+      # The commerce API refuses tenant-scoped requests in production without a
+      # service token, so a web tier that cannot present one gets nothing back.
+      + (if $service_token != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
+      + (if $admin_token   != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
+      # Absent this the contact form silently logs submissions instead of
+      # sending them, which reads as success to the customer.
+      + (if $email_secret  != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}]                  else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"web"}
@@ -182,6 +219,11 @@ API_TASK="$(jq -nc \
   --arg logs "$LOG_API" \
   --arg region "$AWS_REGION" \
   --arg api_secret "$API_SECRET_ARN" \
+  --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
+  --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
+  --arg vendor_secret "${VENDOR_SECRET_ARN:-}" \
+  --arg sanmar_base "${SANMAR_API_BASE_URL:-}" \
+  --arg ss_base "${SS_API_BASE_URL:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -195,15 +237,33 @@ API_TASK="$(jq -nc \
       image:$image,
       essential:true,
       portMappings:[{containerPort:4000,protocol:"tcp"}],
-      environment:[
+      environment:([
         {name:"NODE_ENV",value:"production"},
         {name:"COMMERCE_API_HOST",value:"0.0.0.0"},
         {name:"COMMERCE_API_PORT",value:"4000"},
-        {name:"ENABLE_DEV_ADMIN_ROUTES",value:"false"}
-      ],
-      secrets:[
+        {name:"ENABLE_DEV_ADMIN_ROUTES",value:"false"},
+        # Fargate has no writable public directory, so S&S images are kept as
+        # CDN URLs rather than downloaded during a sync.
+        {name:"SS_IMAGE_STORAGE",value:"remote"}
+      ]
+      + (if $sanmar_base != "" then [{name:"SANMAR_API_BASE_URL",value:$sanmar_base}] else [] end)
+      + (if $ss_base     != "" then [{name:"SS_API_BASE_URL",value:$ss_base}]         else [] end)),
+      secrets:([
         {name:"DATABASE_URL",valueFrom:($api_secret+":DATABASE_URL::")}
-      ],
+      ]
+      # Admin routes are only mounted when ADMIN_API_TOKEN is present, which is
+      # what replaces the development-only flag in production.
+      + (if $service_token  != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
+      + (if $admin_token    != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
+      # Vendor credentials drive catalogue sync; without them the storefront
+      # has no products at all.
+      + (if $vendor_secret  != "" then [
+          {name:"SANMAR_ACCOUNT_ID",valueFrom:($vendor_secret+":SANMAR_ACCOUNT_ID::")},
+          {name:"SANMAR_LOGIN_EMAIL",valueFrom:($vendor_secret+":SANMAR_LOGIN_EMAIL::")},
+          {name:"SANMAR_API_PASSWORD",valueFrom:($vendor_secret+":SANMAR_API_PASSWORD::")},
+          {name:"SS_ACCOUNT_NUMBER",valueFrom:($vendor_secret+":SS_ACCOUNT_NUMBER::")},
+          {name:"SS_API_KEY",valueFrom:($vendor_secret+":SS_API_KEY::")}
+        ] else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"api"}

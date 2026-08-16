@@ -81,6 +81,28 @@ CloudFront hands out the site's hostname, so it comes last. Once it prints one,
 set `SITE_HOSTNAME` to it and re-run `05-create-s3.sh` and `09-create-ecs.sh` so
 the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost.
 
+### Optional settings that `09-create-ecs.sh` reads
+
+Everything here is optional and the script provisions without it — but a missing
+value removes a capability quietly rather than failing, so an environment that
+skips them comes up looking healthy while behaving like a brochure. Set them in
+the environment's config, or in its state file for the ARNs.
+
+| Setting | Effect when absent |
+| --- | --- |
+| `CONTACT_TO_EMAIL` | Defaults to `info@greatwestgraphics.com` |
+| `EMAIL_SECRET_ARN` | Contact form logs submissions instead of emailing them, and still reports success to the customer |
+| `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
+| `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
+| `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |
+| `COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` | Store resolution falls back to a marketing shell with no products |
+| `SANMAR_API_BASE_URL`, `SS_API_BASE_URL` | Vendor adapters fall back to their built-in defaults |
+
+Each secret ARN that is set is also added to the task execution role. That role
+is scoped to an explicit list, and a task referencing a secret missing from the
+list fails to start rather than starting degraded — so adding a secret by hand
+in the console is not enough on its own.
+
 Each environment carries its own RDS instance, load balancer and Fargate tasks,
 so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`
 for non-production stacks.
