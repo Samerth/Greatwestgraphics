@@ -51,9 +51,15 @@ export default async function JobsPage() {
         )}
 
         {!error && jobs?.length === 0 && (
-          <p className="border border-border rounded-md p-sp-4 text-text-secondary">
-            No submitted jobs were found for this development account.
-          </p>
+          <div className="border border-border rounded-md p-sp-4 text-text-secondary flex flex-wrap items-center justify-between gap-3">
+            <span>
+              You haven&apos;t submitted any jobs yet. Once you do, proofs and
+              status updates appear here.
+            </span>
+            <ButtonLink href="/quote" size="sm">
+              Request a quote
+            </ButtonLink>
+          </div>
         )}
 
         <div className="space-y-sp-3">

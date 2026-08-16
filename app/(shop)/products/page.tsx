@@ -198,8 +198,10 @@ export default async function ProductsPage({
               more items from every major North American blank supplier.
             </h4>
             <div className="flex gap-2.5">
-              <ButtonLink href="/products" variant="secondary">
-                Browse Full Catalogue
+              {/* "Browse Full Catalogue" used to sit here pointing at
+                  /products — the page it was already on. */}
+              <ButtonLink href="/contact" variant="secondary">
+                Ask us to source it
               </ButtonLink>
               <ButtonLink href="/quote" variant="primary">
                 Request a Custom Quote

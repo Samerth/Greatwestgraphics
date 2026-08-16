@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { GarmentViewer3D } from "@/components/3d/GarmentViewer3D";
 
 export const metadata = {
@@ -6,11 +7,17 @@ export const metadata = {
 };
 
 /**
- * Demo page for 3D garment viewer.
- * This is NOT part of the public site—just for testing/development.
- * Remove or gate this route before shipping.
+ * Scratch page for the 3D garment viewer: integration notes to ourselves, and
+ * a viewer pointed at /models/garments/hoodie-sample.glb, which is not in
+ * /public. In production it therefore served a broken viewer under a heading
+ * that reads "3D Garment Viewer Demo" to anyone who guessed the URL — noindex
+ * keeps it out of search but does not keep anyone out. The file's own comment
+ * asked for it to be removed or gated before shipping; gating keeps it usable
+ * locally, which is the point of it.
  */
 export default function Demo3DPage() {
+  if (process.env.NODE_ENV === "production") notFound();
+
   return (
     <div className="min-h-screen bg-bg p-sp-6">
       <div className="max-w-4xl mx-auto">
