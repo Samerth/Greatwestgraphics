@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ProductDetail } from "@/components/pdp/ProductDetail";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
@@ -406,24 +406,14 @@ export default async function ProductPage({
     );
   }
 
-  // Fallback: resolve DB product by slug when no id query
-  const match = catalog.products.find((p) => p.slug === slug);
+  // A synced product's canonical URL is /product/<slug>?id=<uuid>. Resolve the
+  // slug through the API rather than the page-sized slice above, so a
+  // bookmarked or query-stripped link reaches the product instead of dead
+  // ending, and redirect so the canonical URL is what gets indexed.
+  const bySlug = await loadStorefrontCatalog({ search: slug, limit: 24 });
+  const match = bySlug.products.find((p) => p.slug === slug);
   if (match) {
-    return (
-      <section className="py-sp-8">
-        <Container>
-          <p className="text-text-secondary">
-            Opening catalog product…
-          </p>
-          <Link
-            href={`/product/${encodeURIComponent(match.slug)}?id=${match.id}`}
-            className="text-accent font-bold"
-          >
-            Continue to {match.name}
-          </Link>
-        </Container>
-      </section>
-    );
+    redirect(`/product/${encodeURIComponent(match.slug)}?id=${match.id}`);
   }
 
   notFound();

@@ -4,6 +4,10 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
+/* Slugs here must exist in the seeded taxonomy (see commerce-api db/seed.ts).
+ * A slug that does not resolve renders a live-looking tile that lands on an
+ * empty result set, which is why these are no longer invented separately from
+ * the categories the API actually returns. */
 const FALLBACK_CATEGORIES: Array<{ name: string; slug: string; image?: string }> = [
   { name: "T-Shirts", slug: "t-shirts", image: "/images/prod-tee.jpg" },
   { name: "Hoodies and Crewnecks", slug: "hoodies-and-crewnecks", image: "/images/prod-hoodie.jpg" },
@@ -13,26 +17,12 @@ const FALLBACK_CATEGORIES: Array<{ name: string; slug: string; image?: string }>
   { name: "Vests", slug: "vests", image: "/images/prod-safety.jpg" },
   { name: "Jerseys", slug: "jerseys", image: "/images/tshirt_2.jpg" },
   { name: "Drinkware", slug: "drinkware", image: "/images/cups.jpg" },
-  { name: "Made in Canada", slug: "made-in-canada", image: "/images/display.jpg" },
   { name: "Swag Boxes", slug: "swag-boxes", image: "/images/prod-promo.jpg" },
-  { name: "Eco-Friendly", slug: "eco-friendly", image: "/images/accessories.jpg" },
   { name: "Notebooks", slug: "notebooks", image: "/images/customize_set.jpg" },
   { name: "Technology", slug: "technology", image: "/images/printing.jpg" },
   { name: "Socks", slug: "socks", image: "/images/customize_set-2.jpg" },
   { name: "Patches", slug: "patches", image: "/images/cap-printing.jpg" },
   { name: "More", slug: "all", image: "/images/caps-display.jpg" },
-];
-
-const FILTER_PILLS = [
-  { label: "All", href: "/products" },
-  { label: "Apparel", href: "/products?category=apparel" },
-  { label: "Bags", href: "/products?category=bags" },
-  { label: "Headwear", href: "/products?category=hats" },
-  { label: "Outerwear", href: "/products?category=outerwear" },
-  { label: "Polos", href: "/products?category=polos" },
-  { label: "Promo", href: "/products?category=promo" },
-  { label: "Safety", href: "/products?category=safety" },
-  { label: "Signs", href: "/products?category=signs" },
 ];
 
 const TILE_IMAGES: Record<string, string> = Object.fromEntries(
@@ -56,6 +46,17 @@ export function CategoryBrowse({
         ]
       : FALLBACK_CATEGORIES;
 
+  const filterPills = [
+    { label: "All", href: "/products" },
+    ...tiles
+      .filter((tile) => tile.slug !== "all")
+      .slice(0, 8)
+      .map((tile) => ({
+        label: tile.name,
+        href: `/products?category=${encodeURIComponent(tile.slug)}`,
+      })),
+  ];
+
   return (
     <section className="section-pad">
       <Container>
@@ -72,7 +73,7 @@ export function CategoryBrowse({
 
         <div className="mt-sp-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            {FILTER_PILLS.map((pill, index) => (
+            {filterPills.map((pill, index) => (
               <Link
                 key={pill.label}
                 href={pill.href}

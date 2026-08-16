@@ -9,15 +9,18 @@ import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
+/* Only used when the category fetch fails. Slugs must exist in the seeded
+ * taxonomy (commerce-api db/seed.ts) or the menu degrades into links that
+ * land on an empty catalogue. */
 const FALLBACK_CATEGORIES = [
-  { label: "Apparel", href: "/products?category=apparel" },
-  { label: "Bags", href: "/products?category=bags" },
-  { label: "Hats & Beanies", href: "/products?category=hats-beanies" },
-  { label: "Outerwear", href: "/products?category=outerwear" },
+  { label: "T-Shirts", href: "/products?category=t-shirts" },
   { label: "Polos", href: "/products?category=polos" },
-  { label: "Promo", href: "/products?category=promo" },
-  { label: "Safety", href: "/products?category=safety" },
-  { label: "Signs & Displays", href: "/products?category=signs-displays" },
+  { label: "Hoodies and Crewnecks", href: "/products?category=hoodies-and-crewnecks" },
+  { label: "Hats", href: "/products?category=hats" },
+  { label: "Tote Bags", href: "/products?category=tote-bags" },
+  { label: "Jackets", href: "/products?category=jackets" },
+  { label: "Vests", href: "/products?category=vests" },
+  { label: "Jerseys", href: "/products?category=jerseys" },
 ];
 
 const PRIMARY_LINKS = [

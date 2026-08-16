@@ -24,7 +24,7 @@ const OVERLAY_TILES = [
   { name: "T-Shirts", slug: "t-shirts", blurb: "Crews, V-necks & athletic" },
   { name: "Hoodies", slug: "hoodies-and-crewnecks", blurb: "Fleece & crewnecks" },
   { name: "Hats", slug: "hats", blurb: "Caps, beanies & truckers" },
-  { name: "Bags", slug: "bags", blurb: "Totes, backpacks & more" },
+  { name: "Bags", slug: "tote-bags", blurb: "Totes, backpacks & more" },
 ];
 
 export const dynamic = "force-dynamic";

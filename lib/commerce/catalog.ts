@@ -106,15 +106,32 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       };
     }
 
-    const { products: filtered, total } = await client.listCatalogProducts({
+    const query = {
       search: options?.search,
       categoryId: categoryId || undefined,
       limit,
-      offset,
       brands: options?.brands,
       priceMinMinor: options?.priceMinMinor,
       priceMaxMinor: options?.priceMaxMinor,
+    };
+
+    let { products: filtered, total } = await client.listCatalogProducts({
+      ...query,
+      offset,
     });
+
+    // A page past the end (stale link, or a page number that drifted while a
+    // vendor sync was inserting rows) otherwise reports a range whose start is
+    // greater than its end. Serve the last real page instead.
+    const lastPage = Math.max(1, Math.ceil(total / limit));
+    let resolvedPage = page;
+    if (total > 0 && page > lastPage) {
+      resolvedPage = lastPage;
+      ({ products: filtered } = await client.listCatalogProducts({
+        ...query,
+        offset: (lastPage - 1) * limit,
+      }));
+    }
 
     if (filtered.length === 0 && total === 0) {
       return {
@@ -161,9 +178,9 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       brands,
       source: "db",
       total,
-      page,
+      page: resolvedPage,
       pageSize: limit,
-      pageCount: Math.max(1, Math.ceil(total / limit)),
+      pageCount: lastPage,
     };
   } catch (caught) {
     // eslint-disable-next-line no-console
