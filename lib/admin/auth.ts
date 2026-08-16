@@ -34,6 +34,24 @@ export async function getStaffSession(): Promise<{ username: string } | null> {
   return verifySessionToken(jar.get(COOKIE)?.value);
 }
 
+/**
+ * Guard for staff-only server actions.
+ *
+ * `middleware.ts` gates `/admin/*`, and a server action posts to the URL of the
+ * page that invoked it, so admin pages are covered today. That stops being true
+ * as soon as an action is reached from a page outside `/admin` — which is not
+ * hypothetical here, since the pricing actions live under `app/portal`. Keeping
+ * the check with the action rather than with its caller's URL means moving a
+ * component cannot quietly unprotect a mutation.
+ */
+export async function requireStaff(): Promise<{ username: string }> {
+  const session = await getStaffSession();
+  if (!session) {
+    throw new Error("Staff sign-in is required for this action");
+  }
+  return session;
+}
+
 export function adminToken() {
   const token = process.env.ADMIN_API_TOKEN || process.env.DEV_ADMIN_TOKEN;
   if (!token) {

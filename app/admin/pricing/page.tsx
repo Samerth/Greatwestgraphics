@@ -8,6 +8,7 @@ import type {
   PricingConfigVersionSummary,
 } from "@gwg/contracts";
 import { DEFAULT_PRICING_CONFIG_V1 } from "@gwg/pricing";
+import { adminToken } from "@/lib/admin/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +16,16 @@ export default async function AdminPricingPage() {
   let draft: PricingConfig | undefined;
   let versions: PricingConfigVersionSummary[] = [];
   let error: string | undefined;
-  const adminToken = process.env.DEV_ADMIN_TOKEN;
 
   try {
-    if (!adminToken) {
-      throw new Error("DEV_ADMIN_TOKEN is required for pricing admin.");
-    }
+    // Deployed environments set ADMIN_API_TOKEN, not DEV_ADMIN_TOKEN. Reading
+    // the dev variable directly is why this page showed only imported defaults
+    // on staging while every other admin page worked.
+    const token = adminToken();
     const client = (await createCommerceClient());
     const [draftResponse, versionList] = await Promise.all([
-      client.getPricingDraft(adminToken),
-      client.listPricingVersions(adminToken),
+      client.getPricingDraft(token),
+      client.listPricingVersions(token),
     ]);
     draft = draftResponse.config;
     versions = versionList;
