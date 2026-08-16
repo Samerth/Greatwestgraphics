@@ -630,7 +630,13 @@ export function buildApp(input: {
     }
   });
 
+  // Resolving a token to the address it was sent to is a disclosure, so it
+  // needs the same service credential as everything else. This was the one
+  // /v1 route that never authenticated at all, and the API answers on a public
+  // listener, so anyone holding a token could read the invited email and the
+  // account it belongs to without presenting anything.
   app.get("/v1/accounts/invites/:token", async (request, reply) => {
+    await input.auth.resolve(request);
     const token = z
       .string()
       .min(1)
@@ -659,17 +665,17 @@ export function buildApp(input: {
       .string()
       .min(1)
       .parse((request.params as { token?: string }).token);
-    const body = z
-      .object({ personId: CanonicalIdSchema, personEmail: z.string().email() })
-      .parse(request.body);
+    // `personEmail` is still sent by the deployed web tier and is deliberately
+    // ignored: the invite is matched against the person's stored address, not
+    // against one the caller supplies. Zod drops the unknown key, so the two
+    // tiers can be released independently.
+    const body = z.object({ personId: CanonicalIdSchema }).parse(request.body);
     assertActorIsPerson(auth, body.personId);
     try {
-      const result = await inviteService.acceptInvite(
-        token,
-        body.personId,
-        body.personEmail,
-        { type: "customer", id: body.personId },
-      );
+      const result = await inviteService.acceptInvite(token, body.personId, {
+        type: "customer",
+        id: body.personId,
+      });
       return result;
     } catch (error) {
       if (

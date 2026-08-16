@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
-import { accountPeople, accountInvites, accounts } from "../db/schema.js";
+import { accountPeople, accountInvites, accounts, people } from "../db/schema.js";
 
 export class NotAccountOwnerError extends Error {
   readonly code = "NOT_ACCOUNT_OWNER";
@@ -78,10 +78,20 @@ export class InviteService {
     return invite;
   }
 
+  /**
+   * Joins the accepting person to the invited account.
+   *
+   * The email is read from the `people` row rather than taken as an argument.
+   * It used to be supplied by the caller and compared against the invite, which
+   * made the one check that binds an invite to its intended recipient a
+   * comparison against a value the caller chose — and `getInvite` hands out
+   * that very address, so echoing it back defeated the check and joined the
+   * caller to somebody else's account. Deriving it here means holding the token
+   * is no longer enough; the signed-in person must actually be the invitee.
+   */
   async acceptInvite(
     token: string,
     personId: string,
-    personEmail: string,
     actor: Actor,
   ): Promise<{ accountId: string }> {
     const invite = await this.getInvite(token);
@@ -91,7 +101,15 @@ export class InviteService {
     if (invite.expiresAt.getTime() < Date.now()) {
       throw new InviteExpiredError("This invite has expired.");
     }
-    if (invite.email.toLowerCase() !== personEmail.toLowerCase()) {
+
+    const [person] = await this.db
+      .select({ email: people.email })
+      .from(people)
+      .where(and(eq(people.tenantId, invite.tenantId), eq(people.id, personId)))
+      .limit(1);
+    // A missing row, or one with no address on file, means we cannot establish
+    // who is accepting, so refuse rather than fall through to the insert.
+    if (!person?.email || person.email.toLowerCase() !== invite.email.toLowerCase()) {
       throw new InviteEmailMismatchError(
         "This invite was sent to a different email address.",
       );
