@@ -5,8 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { ArtTile } from "@/components/shared/ArtTile";
-import { CATALOG, CATEGORIES, type Category } from "@/lib/data/products";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import type {
   StorefrontCatalogProduct,
@@ -33,11 +31,9 @@ const COLOUR_SWATCHES = [
 ];
 
 type Props = {
-  initialCategory?: Category | "All" | string;
   dbProducts?: StorefrontCatalogProduct[];
   dbCategories?: StorefrontCategory[];
   dbBrands?: string[];
-  preferDb?: boolean;
   activeCategorySlug?: string | null;
   activeBrands?: string[];
   activePriceMinMinor?: number | null;
@@ -46,29 +42,22 @@ type Props = {
 };
 
 export function ProductsGrid({
-  initialCategory = "All",
   dbProducts = [],
   dbCategories = [],
   dbBrands = [],
-  preferDb = false,
   activeCategorySlug = null,
   activeBrands = [],
   activePriceMinMinor = null,
   activePriceMaxMinor = null,
   activeSearch = null,
 }: Props) {
-  const useDb = preferDb;
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const activeArtworks = useActiveDesignStore((s) => s.artworksBySide);
-  const hasDesign = mounted && hasActiveArtwork(activeArtworks);
+  const activeDesign = useActiveDesignStore((s) => s.design);
+  const hasDesign = mounted && hasActiveArtwork(activeDesign);
   const [activeCategory, setActiveCategory] = useState<string>(
-    useDb
-      ? activeCategorySlug || "All"
-      : initialCategory === "All"
-        ? "All"
-        : String(initialCategory),
+    activeCategorySlug || "All",
   );
   const [sort, setSort] = useState<SortKey>("popular");
   const [selectedBrands, setSelectedBrands] = useState<string[]>(activeBrands);
@@ -104,84 +93,56 @@ export function ProductsGrid({
     router.push(`/products${qs ? `?${qs}` : ""}`);
   }
 
+  // There used to be a second branch here that rendered twelve hardcoded demo
+  // products from lib/data/products.ts whenever the commerce API had failed,
+  // complete with invented "from $9.20/pc" prices and links to slugs that only
+  // existed in that fixture. An outage is now an outage: the page says so and
+  // offers a quote or a phone call instead of a fake catalogue.
   const tiles = useMemo(() => {
-    if (useDb) {
-      let list = [...dbProducts];
-      if (sort === "price-asc") {
-        list.sort((a, b) => a.retailMinor - b.retailMinor);
-      } else if (sort === "price-desc") {
-        list.sort((a, b) => b.retailMinor - a.retailMinor);
-      } else if (sort === "new") {
-        list.reverse();
-      }
-      return list.map((p, index) => ({
-        kind: "db" as const,
-        key: p.id,
-        href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
-        name: p.name,
-        brandName: p.brandName,
-        styleName: p.styleName,
-        colorName: p.colorName,
-        priceFrom: p.priceFrom,
-        imageUrl: p.imageUrl,
-        available: p.available,
-        bestSeller: index < 3 && p.available,
-      }));
-    }
-
-    let list =
-      activeCategory === "All"
-        ? CATALOG
-        : CATALOG.filter((t) => t.category === activeCategory);
-
-    const parsePrice = (s: string) => parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
+    const list = [...dbProducts];
     if (sort === "price-asc") {
-      list = [...list].sort((a, b) => parsePrice(a.priceFrom) - parsePrice(b.priceFrom));
+      list.sort((a, b) => a.retailMinor - b.retailMinor);
     } else if (sort === "price-desc") {
-      list = [...list].sort((a, b) => parsePrice(b.priceFrom) - parsePrice(a.priceFrom));
+      list.sort((a, b) => b.retailMinor - a.retailMinor);
     } else if (sort === "new") {
-      list = [...list].reverse();
+      list.reverse();
     }
-    return list.map((tile) => ({
-      kind: "static" as const,
-      key: tile.slug,
-      href: `/product/${tile.slug}`,
-      name: tile.name,
-      brandName: tile.category,
-      styleName: tile.sub,
-      colorName: "",
-      priceFrom: tile.priceFrom,
-      artIndex: tile.artIndex,
-      tags: tile.tags,
-      available: true,
-      bestSeller: tile.tags.some((t) => /best/i.test(t.label)),
+    return list.map((p, index) => ({
+      key: p.id,
+      href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
+      name: p.name,
+      brandName: p.brandName,
+      styleName: p.styleName,
+      colorName: p.colorName,
+      priceFrom: p.priceFrom,
+      imageUrl: p.imageUrl,
+      available: p.available,
+      bestSeller: index < 3 && p.available,
     }));
-  }, [activeCategory, sort, useDb, dbProducts]);
+  }, [sort, dbProducts]);
 
   const sidebar = (
     <aside className="space-y-sp-5">
-      {useDb && (
-        <form
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate({ search: searchInput });
-            setMobileFiltersOpen(false);
-          }}
-        >
-          <label htmlFor="catalog-search" className="sr-only">
-            Search within category
-          </label>
-          <input
-            id="catalog-search"
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search within category"
-            className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-          />
-        </form>
-      )}
+      <form
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          navigate({ search: searchInput });
+          setMobileFiltersOpen(false);
+        }}
+      >
+        <label htmlFor="catalog-search" className="sr-only">
+          Search within category
+        </label>
+        <input
+          id="catalog-search"
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search within category"
+          className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+        />
+      </form>
 
       <FacetGroup title="Product Category">
         <FacetCheck
@@ -189,24 +150,20 @@ export function ProductsGrid({
           checked={activeCategory === "All"}
           onChange={() => {
             setActiveCategory("All");
-            if (useDb) navigate({ category: "All" });
+            navigate({ category: "All" });
           }}
         />
-        {(useDb ? dbCategories : CATEGORIES.map((c) => ({ id: c, slug: c, name: c }))).map(
-          (c) => (
-            <FacetCheck
-              key={"slug" in c ? c.slug : c}
-              label={"name" in c ? c.name : String(c)}
-              checked={activeCategory === ("slug" in c ? c.slug : c)}
-              onChange={() => {
-                const slug = "slug" in c ? c.slug : String(c);
-                setActiveCategory(slug);
-                if (useDb) navigate({ category: slug });
-                else setActiveCategory(slug);
-              }}
-            />
-          ),
-        )}
+        {dbCategories.map((c) => (
+          <FacetCheck
+            key={c.slug}
+            label={c.name}
+            checked={activeCategory === c.slug}
+            onChange={() => {
+              setActiveCategory(c.slug);
+              navigate({ category: c.slug });
+            }}
+          />
+        ))}
       </FacetGroup>
 
       <FacetGroup title="Colour">
@@ -225,7 +182,7 @@ export function ProductsGrid({
         </p>
       </FacetGroup>
 
-      {useDb && dbBrands.length > 0 && (
+      {dbBrands.length > 0 && (
         <FacetGroup title="Brand">
           <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-1">
             {dbBrands.map((brand) => (
@@ -246,31 +203,29 @@ export function ProductsGrid({
         </FacetGroup>
       )}
 
-      {useDb && (
-        <FacetGroup title="Price">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="Min"
-              value={priceMinInput}
-              onChange={(e) => setPriceMinInput(e.target.value)}
-              className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
-            />
-            <span className="text-text-tertiary">–</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="Max"
-              value={priceMaxInput}
-              onChange={(e) => setPriceMaxInput(e.target.value)}
-              className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
-            />
-          </div>
-        </FacetGroup>
-      )}
+      <FacetGroup title="Price">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            placeholder="Min"
+            value={priceMinInput}
+            onChange={(e) => setPriceMinInput(e.target.value)}
+            className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
+          />
+          <span className="text-text-tertiary">–</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            placeholder="Max"
+            value={priceMaxInput}
+            onChange={(e) => setPriceMaxInput(e.target.value)}
+            className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
+          />
+        </div>
+      </FacetGroup>
 
       <FacetGroup title="Highlighted Features">
         {FEATURE_FILTERS.map((feature) => (
@@ -289,33 +244,31 @@ export function ProductsGrid({
         ))}
       </FacetGroup>
 
-      {useDb && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedBrands([]);
-              setPriceMinInput("");
-              setPriceMaxInput("");
-              setFeatureFilters([]);
-              navigate({ brands: [], priceMin: "", priceMax: "" });
-            }}
-            className="flex-1 rounded-sm border border-border py-2 text-xs font-bold hover:border-text-tertiary transition-colors"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              navigate({});
-              setMobileFiltersOpen(false);
-            }}
-            className="flex-1 rounded-sm bg-accent text-white py-2 text-xs font-bold hover:bg-accent-hover transition-colors"
-          >
-            Apply
-          </button>
-        </div>
-      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedBrands([]);
+            setPriceMinInput("");
+            setPriceMaxInput("");
+            setFeatureFilters([]);
+            navigate({ brands: [], priceMin: "", priceMax: "" });
+          }}
+          className="flex-1 rounded-sm border border-border py-2 text-xs font-bold hover:border-text-tertiary transition-colors"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            navigate({});
+            setMobileFiltersOpen(false);
+          }}
+          className="flex-1 rounded-sm bg-accent text-white py-2 text-xs font-bold hover:bg-accent-hover transition-colors"
+        >
+          Apply
+        </button>
+      </div>
     </aside>
   );
 
@@ -359,7 +312,7 @@ export function ProductsGrid({
           </div>
         )}
 
-        {useDb && tiles.length === 0 ? (
+        {tiles.length === 0 ? (
           <div className="rounded-md border border-border bg-bg-raised px-sp-5 py-sp-8 text-center">
             <p className="font-display text-[19px] mb-sp-2">Nothing here yet.</p>
             <p className="text-text-secondary max-w-[48ch] mx-auto mb-sp-4">
@@ -384,7 +337,7 @@ export function ProductsGrid({
                 )}
               >
                 <Link href={tile.href} className="relative block aspect-[300/220] bg-bg">
-                  {tile.kind === "db" && tile.imageUrl ? (
+                  {tile.imageUrl ? (
                     <Image
                       src={tile.imageUrl}
                       alt={tile.name}
@@ -392,8 +345,6 @@ export function ProductsGrid({
                       className="object-contain p-4"
                       sizes="(max-width: 768px) 100vw, 33vw"
                     />
-                  ) : tile.kind === "static" ? (
-                    <ArtTile artIndex={tile.artIndex} alt={tile.name} />
                   ) : (
                     <div className="absolute inset-0 bg-fill-subtle-15" />
                   )}
@@ -443,7 +394,7 @@ export function ProductsGrid({
                     >
                       View Product
                     </Link>
-                    {tile.kind === "db" && tile.available && (
+                    {tile.available && (
                       <button
                         type="button"
                         onClick={() =>

@@ -4,34 +4,44 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
-const FALLBACK_CATEGORIES: Array<{ name: string; slug: string; image?: string }> = [
-  { name: "T-Shirts", slug: "t-shirts", image: "/images/prod-tee.jpg" },
-  { name: "Hoodies and Crewnecks", slug: "hoodies-and-crewnecks", image: "/images/prod-hoodie.jpg" },
-  { name: "Hats", slug: "hats", image: "/images/caps.jpg" },
-  { name: "Tote Bags", slug: "tote-bags", image: "/images/prod-tote.jpg" },
-  { name: "Jackets", slug: "jackets", image: "/images/hoodie-blank.jpg" },
-  { name: "Vests", slug: "vests", image: "/images/prod-safety.jpg" },
-  { name: "Jerseys", slug: "jerseys", image: "/images/tshirt_2.jpg" },
-  { name: "Drinkware", slug: "drinkware", image: "/images/cups.jpg" },
-  { name: "Made in Canada", slug: "made-in-canada", image: "/images/display.jpg" },
-  { name: "Swag Boxes", slug: "swag-boxes", image: "/images/prod-promo.jpg" },
-  { name: "Eco-Friendly", slug: "eco-friendly", image: "/images/accessories.jpg" },
-  { name: "Notebooks", slug: "notebooks", image: "/images/customize_set.jpg" },
-  { name: "Technology", slug: "technology", image: "/images/printing.jpg" },
-  { name: "Socks", slug: "socks", image: "/images/customize_set-2.jpg" },
-  { name: "Patches", slug: "patches", image: "/images/cap-printing.jpg" },
-  { name: "More", slug: "all", image: "/images/caps-display.jpg" },
-];
-
-const TILE_IMAGES: Record<string, string> = Object.fromEntries(
-  FALLBACK_CATEGORIES.filter((c) => c.image).map((c) => [c.slug, c.image!]),
-);
+/**
+ * Photography per category slug. Slugs with no synced inventory keep an entry
+ * so the tile is ready the day they get one; a slug that never arrives simply
+ * never gets looked up.
+ *
+ * This started life as a list of sixteen fallback tiles rendered whenever the
+ * category call came back empty, and eight of those slugs -- drinkware,
+ * made-in-canada, swag-boxes, eco-friendly, notebooks, technology, socks,
+ * patches -- are not categories the catalogue has. During an outage the
+ * homepage therefore advertised eight departments that led to empty listings.
+ */
+const TILE_IMAGES: Record<string, string> = {
+  "t-shirts": "/images/prod-tee.jpg",
+  "hoodies-and-crewnecks": "/images/prod-hoodie.jpg",
+  hats: "/images/caps.jpg",
+  "tote-bags": "/images/prod-tote.jpg",
+  jackets: "/images/hoodie-blank.jpg",
+  vests: "/images/prod-safety.jpg",
+  jerseys: "/images/tshirt_2.jpg",
+  drinkware: "/images/cups.jpg",
+  "made-in-canada": "/images/display.jpg",
+  "swag-boxes": "/images/prod-promo.jpg",
+  "eco-friendly": "/images/accessories.jpg",
+  notebooks: "/images/customize_set.jpg",
+  technology: "/images/printing.jpg",
+  socks: "/images/customize_set-2.jpg",
+  patches: "/images/cap-printing.jpg",
+  all: "/images/caps-display.jpg",
+};
 
 export function CategoryBrowse({
   categories = [],
 }: {
   categories?: StorefrontCategory[];
 }) {
+  // No categories means we could not reach the catalogue. The heading, the
+  // "All" pill and the "can't find it?" panel below still give a way forward,
+  // so the grid removes itself rather than inventing departments.
   const tiles =
     categories.length > 0
       ? [
@@ -42,7 +52,7 @@ export function CategoryBrowse({
           })),
           { name: "More", slug: "all", image: TILE_IMAGES.all },
         ]
-      : FALLBACK_CATEGORIES;
+      : [];
 
   // These used to be a hardcoded nine — Apparel, Bags, Outerwear, Promo,
   // Safety, Signs and friends — written against a category taxonomy the synced
@@ -94,6 +104,7 @@ export function CategoryBrowse({
           </div>
         </div>
 
+        {tiles.length > 0 && (
         <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-sp-3">
           {tiles.map((tile) => (
             <Link
@@ -126,6 +137,7 @@ export function CategoryBrowse({
             </Link>
           ))}
         </div>
+        )}
 
         <div className="mt-sp-5 sm:mt-sp-6 rounded-md border border-border bg-bg-raised px-sp-4 py-sp-4 flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center justify-between gap-sp-3">
           <div className="min-w-0">
@@ -145,12 +157,15 @@ export function CategoryBrowse({
             >
               Browse Full Catalogue
             </ButtonLink>
+            {/* Labelled "Ask Codchat!" — the web agency's product name on
+                GWG's homepage, on a button that opens the contact form and
+                not a chat. */}
             <ButtonLink
               href="/contact"
               variant="secondary"
               className="flex-1 sm:flex-none justify-center"
             >
-              Ask Codchat!
+              Ask Us
             </ButtonLink>
           </div>
         </div>

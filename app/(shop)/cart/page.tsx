@@ -343,7 +343,7 @@ export default function CartPage() {
             <div className="pt-sp-5">
               <CrossSellGrid
                 title="You Might Also Like"
-                items={crossSellItems.length > 0 ? crossSellItems : undefined}
+                items={crossSellItems}
               />
             </div>
           </div>
