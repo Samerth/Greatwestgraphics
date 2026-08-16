@@ -3,6 +3,48 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
+import {
+  descriptionLength,
+  parseVendorDescription,
+  type DescriptionBlock,
+} from "@/lib/catalog/vendor-description";
+
+/** Vendor copy is a mix of spec bullets and prose. Rendering bullets as an
+ * actual list is the whole point of parsing it, so both call sites share this. */
+function DescriptionBlocks({ blocks }: { blocks: DescriptionBlock[] }) {
+  if (blocks.length === 0) return null;
+  const out: React.ReactNode[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block.kind === "paragraph") {
+      out.push(
+        <p key={index} className="m-0 mt-2 first:mt-0 text-sm text-text-secondary">
+          {block.text}
+        </p>,
+      );
+      continue;
+    }
+    // Gather the whole bullet run so it becomes one list rather than a
+    // sequence of single-item lists.
+    const items: string[] = [];
+    while (index < blocks.length && blocks[index].kind === "bullet") {
+      items.push(blocks[index].text);
+      index += 1;
+    }
+    index -= 1;
+    out.push(
+      <ul
+        key={index}
+        className="m-0 mt-2 first:mt-0 pl-5 list-disc space-y-1 text-sm text-text-secondary"
+      >
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>,
+    );
+  }
+  return <>{out}</>;
+}
 
 /** Facts that are true of every job we take, regardless of the blank. Anything
  * garment-specific has to come from the vendor record instead — see
@@ -49,15 +91,17 @@ const ARTWORK_FAQ = [
 
 export function PdpFeatureBullets({ description }: { description?: string | null }) {
   const [expanded, setExpanded] = useState(false);
-  const text = description?.trim();
-  if (!text) return null;
+  const blocks = parseVendorDescription(description);
+  if (blocks.length === 0) return null;
 
-  const isLong = text.length > 260;
+  const isLong = descriptionLength(blocks) > 260;
+  // Collapsed, show enough to be useful without the whole spec sheet. The
+  // first block is the fabric weight and blend, which is what shoppers
+  // compare on.
+  const visible = isLong && !expanded ? blocks.slice(0, 2) : blocks;
   return (
     <div className="mt-sp-4">
-      <p className="m-0 text-sm text-text-secondary">
-        {isLong && !expanded ? `${text.slice(0, 260).trimEnd()}…` : text}
-      </p>
+      <DescriptionBlocks blocks={visible} />
       {isLong && (
         <button
           type="button"
@@ -187,11 +231,9 @@ export function PdpEnrichmentSections({
           <h2 className="font-display font-bold text-header m-0">
             Product Specifications
           </h2>
-          {description ? (
-            <p className="text-text-secondary mt-sp-3 mb-0 max-w-[80ch]">
-              {description}
-            </p>
-          ) : null}
+          <div className="mt-sp-3 max-w-[80ch]">
+            <DescriptionBlocks blocks={parseVendorDescription(description)} />
+          </div>
           <div className="mt-sp-4 border border-border rounded-md overflow-hidden">
             {specs.map((row, index) => (
               <div
