@@ -159,10 +159,14 @@ save_state API_ALB_DNS "$API_ALB_DNS"
 SITE_URL="http://$ALB_DNS"
 API_URL="http://$API_ALB_DNS:4000"
 if [[ -n "${SITE_HOSTNAME:-}" ]]; then SITE_URL="https://$SITE_HOSTNAME"; fi
-# Plain HTTP is acceptable on API_URL only because it never leaves the VPC. If
-# API_HOSTNAME is ever set it must be HTTPS, since a hostname implies the API is
-# being published somewhere a client outside the VPC can reach.
-if [[ -n "${API_HOSTNAME:-}" ]]; then API_URL="https://$API_HOSTNAME"; fi
+# Plain HTTP is acceptable on API_URL only because it never leaves the VPC.
+# API_HOSTNAME is deliberately not honoured any more: it used to point the web
+# container at a public https://api.* name on the shared balancer, and script 13
+# now refuses to create that name at all. Leaving the branch here would let a
+# stale config.env quietly send API traffic back out to the internet.
+if [[ -n "${API_HOSTNAME:-}" ]]; then
+  echo "API_HOSTNAME is set but ignored: the API is internal-only. Remove it from config.env." >&2
+fi
 save_state SITE_URL "$SITE_URL"
 save_state API_URL "$API_URL"
 

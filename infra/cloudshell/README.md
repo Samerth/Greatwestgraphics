@@ -163,12 +163,11 @@ Route 53. ACM validates over DNS and an ALB answers to a CNAME, so a subdomain
 is delegated by adding records at the existing host and the rest of the zone,
 including MX and SPF, is left untouched.
 
-Set the two names in `config.env`, then run the script twice — once to get the
-records, once more after they resolve:
+Set the storefront name in `config.env`, then run the script twice — once to get
+the records, once more after they resolve:
 
 ```bash
 SITE_HOSTNAME=staging.greatwestgraphics.com
-API_HOSTNAME=api.staging.greatwestgraphics.com
 ```
 
 ```bash
@@ -176,18 +175,22 @@ API_HOSTNAME=api.staging.greatwestgraphics.com
 ./scripts/13-create-https.sh   # attaches the listener once ACM has issued
 ```
 
-It refuses to issue for the apex or `www`. Port 4000 stays open in plaintext
-until you confirm sign-in works and then run it with
-`CLOSE_LEGACY_API_PORT=true`.
+It refuses to issue for the apex or `www`. It also refuses to run if
+`API_HOSTNAME` is set: the commerce API is served by an internal load balancer
+with no public address, and giving it a public name would undo that. The
+`CLOSE_LEGACY_API_PORT` flag is likewise gone — port 4000 is closed to the
+internet by script 9, in the same run that re-points the web container, so
+there is no window where one has happened without the other.
 
 RDS is **publicly addressable but not open**. Port 5432 is limited to
 `PUBLIC_DB_ALLOWED_CIDR` plus the commerce-api security group after step 9.
 Never use `0.0.0.0/0`.
 
-This first ECS pass is **HTTP on the ALB DNS name** (port 80 → web, port 4000 →
-API) so you can smoke-test without a domain. Add ACM + Route 53 before a public
-launch. There is no NAT gateway (Fargate tasks use `assignPublicIp=ENABLED`) to
-keep the USD 250 budget realistic.
+This first ECS pass is **HTTP on the ALB DNS name** (port 80 → web) so you can
+smoke-test without a domain. The API is not on that balancer: it answers only
+inside the VPC. Add ACM + Route 53 before a public launch. There is no NAT
+gateway (Fargate tasks use `assignPublicIp=ENABLED`) to keep the USD 250 budget
+realistic.
 
 ## Before running
 
