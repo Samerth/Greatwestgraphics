@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:all": "npm run typecheck --workspaces --if-present && npm run typecheck",
     "test": "npm run test --workspaces --if-present",
+    "test:web": "vitest run",
     "test:e2e": "playwright test",
     "start": "next start",
     "lint": "next lint",

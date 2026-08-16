@@ -38,7 +38,9 @@ export default async function AdminLoginPage({
               role="alert"
               className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-sm px-3 py-2.5 m-0"
             >
-              That username or password doesn&apos;t match our records.
+              {params.error === "rate_limited"
+                ? "Too many sign-in attempts. Please wait a few minutes and try again."
+                : "That username or password doesn't match our records."}
             </p>
           )}
           <input type="hidden" name="next" value={params.next || "/admin"} />
