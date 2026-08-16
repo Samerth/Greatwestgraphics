@@ -126,11 +126,20 @@ Cognito composes, because Cognito can only use its own built-in sender or SES �
 it cannot be pointed at Resend.
 
 Cognito's built-in sender (`COGNITO_DEFAULT`) caps at 50 messages per day and
-mails from a generic address, which is why the `gwg-staging-customers` pool is
-set to `EmailSendingAccount=DEVELOPER` against an SES domain identity instead.
-A newly provisioned pool does **not** get this: `06-create-cognito.sh` leaves
-the pool on `COGNITO_DEFAULT`, so any new environment starts capped at 50/day
-with default AWS message templates until it is switched over.
+mails from a generic `no-reply@verificationemail.com` address. That ceiling will
+not survive launch, so the destination for `gwg-staging-customers` is
+`EmailSendingAccount=DEVELOPER` against an SES domain identity.
+
+It is **not** there yet. The pool is deliberately still on `COGNITO_DEFAULT`
+while the SES domain identity is unverified, because a pool pointed at an
+unverified identity cannot send at all — SES rejects it — and that breaks
+sign-up, email-OTP sign-in and password reset for everyone testing against the
+environment. A capped sender that works beats a correct one that does not. The
+`REPLY-TO` address is set to `info@greatwestgraphics.com` even on the built-in
+sender, so replies reach the business rather than the generic AWS address.
+
+`06-create-cognito.sh` also leaves new pools on `COGNITO_DEFAULT`, so any new
+environment starts capped at 50/day with default AWS templates.
 
 Both providers authenticate as the same domain, so the DNS zone carries two
 independent DKIM setups. They do not overlap and neither is redundant:
@@ -146,6 +155,107 @@ there, because each authenticates SPF against its own envelope domain and
 aligns with DMARC through DKIM. Adding a second `SPF` record at the root, or
 pointing SES's MAIL FROM at the `send` subdomain Resend already owns, is how
 this gets broken.
+
+### Moving Cognito onto SES
+
+The order matters, and every step gates the next:
+
+1. Add the SES DKIM `CNAME` records to DNS.
+2. Wait for the SES identity to report `VerificationStatus: SUCCESS`. Until it
+   does, the pool cannot send through SES at all.
+3. Request SES production access, from the SES console's **Account dashboard**.
+   Do this *after* step 2 — AWS treats a verified identity as a prerequisite and
+   denies requests made before one exists.
+4. Wait for approval, roughly a 24-hour SLA.
+5. Only then switch the pool with the command below.
+
+Switching before production access is granted leaves the account in the SES
+sandbox, where **mail is delivered only to verified addresses**. Sign-up would
+appear to work and then silently fail for every real customer, which is worse
+than the 50/day cap it replaced.
+
+`UpdateUserPool` is a full replacement: every parameter you omit reverts to its
+default. Omitting `Policies` drops `SignInPolicy` and silently removes
+`EMAIL_OTP` as a first-factor, which breaks passwordless sign-in in a way that
+looks like an application bug. So rather than retyping the pool's settings, this
+reads the live configuration and patches only `EmailConfiguration`, which means
+it cannot drop the sign-in policy or the message templates no matter what they
+currently contain:
+
+```sh
+aws cognito-idp describe-user-pool \
+  --user-pool-id ca-central-1_W2axG4i0X --region ca-central-1 \
+  --query UserPool --output json \
+| jq '{
+    UserPoolId: .Id,
+    Policies,
+    DeletionProtection,
+    LambdaConfig,
+    AutoVerifiedAttributes,
+    VerificationMessageTemplate,
+    UserAttributeUpdateSettings,
+    MfaConfiguration,
+    AccountRecoverySetting,
+    UserPoolTier,
+    UserPoolTags,
+    AdminCreateUserConfig: (.AdminCreateUserConfig | del(.UnusedAccountValidityDays)),
+    EmailConfiguration: {
+      EmailSendingAccount: "DEVELOPER",
+      SourceArn: "arn:aws:ses:ca-central-1:297208880977:identity/greatwestgraphics.com",
+      From: "Great West Graphics <noreply@greatwestgraphics.com>",
+      ReplyToEmailAddress: "info@greatwestgraphics.com"
+    }
+  }' > /tmp/cognito-ses.json
+
+aws cognito-idp update-user-pool \
+  --cli-input-json file:///tmp/cognito-ses.json --region ca-central-1
+```
+
+`UnusedAccountValidityDays` is dropped because `DescribeUserPool` echoes it from
+`PasswordPolicy.TemporaryPasswordValidityDays`; the policy field is the
+supported one and sending both is redundant. If the pool later gains Lambda
+triggers, SMS settings or device tracking, add those keys to the `jq` filter
+before running this, since anything absent from the filter is what gets reset.
+
+Then confirm the switch took and nothing else moved:
+
+```sh
+aws cognito-idp describe-user-pool \
+  --user-pool-id ca-central-1_W2axG4i0X --region ca-central-1 \
+  --query 'UserPool.{Email:EmailConfiguration,SignIn:Policies.SignInPolicy,Mfa:MfaConfiguration,Tier:UserPoolTier}'
+```
+
+To go back to the built-in sender, run the same pipeline with
+`EmailConfiguration` replaced by
+`{EmailSendingAccount: "COGNITO_DEFAULT", ReplyToEmailAddress: "info@greatwestgraphics.com"}`.
+Drop `SourceArn` and `From` when you do: with `COGNITO_DEFAULT` a `SourceArn`
+is treated as a custom FROM address and needs its own SES sending-authorization
+policy, so leaving it in place points the built-in sender back at the identity
+you were trying to stop using. `ReplyToEmailAddress` is valid with either
+sending account.
+
+No IAM work is needed on either switch. Cognito created the
+`AWSServiceRoleForAmazonCognitoIdpEmailService` service-linked role the first
+time the pool was pointed at SES, and the identity carries a
+`CognitoUserPoolSend` authorization policy scoped to this pool. Both survive the
+pool pointing away from SES and neither needs recreating.
+
+### The email-OTP message is still AWS boilerplate
+
+The sign-up verification and invitation templates are branded, and the
+verification template covers password reset too, because Cognito routes
+password-reset mail through the code template. Email-OTP **sign-in** codes are
+not covered: that message comes from `EmailMfaConfiguration`, and Cognito
+refuses to accept one while MFA is off, with `InvalidParameterException: can't
+turn off MFA and configure an MFA together`.
+
+Branding it therefore requires `MfaConfiguration=OPTIONAL`. That is a change to
+the pool's authentication posture rather than a cosmetic one, so it was left
+alone: the pool has `EMAIL_OTP` as a *first* factor, which is governed by
+`SignInPolicy` and works with MFA off, and turning MFA on to fix an email's
+letterhead is the wrong trade to make without deciding the auth behaviour first.
+Until that decision is made, customers signing in by one-time code get a
+default-styled AWS email.
 
 ## Database migrations
 
