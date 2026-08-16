@@ -10,8 +10,12 @@ const SOCIAL_LINKS = [
     Icon: Instagram,
   },
   {
+    // Plain http:// and LinkedIn's long-dead /profile/view?id= form, which
+    // now dumps logged-out visitors onto a login wall. https at least avoids
+    // the insecure hop; the URL still needs replacing with the real company
+    // page, which we don't have.
     label: "LinkedIn",
-    href: "http://www.linkedin.com/profile/view?id=31370827&locale=en_US&trk=tyah",
+    href: "https://www.linkedin.com/profile/view?id=31370827",
     Icon: Linkedin,
   },
   {

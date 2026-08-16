@@ -23,18 +23,6 @@ const FALLBACK_CATEGORIES: Array<{ name: string; slug: string; image?: string }>
   { name: "More", slug: "all", image: "/images/caps-display.jpg" },
 ];
 
-const FILTER_PILLS = [
-  { label: "All", href: "/products" },
-  { label: "Apparel", href: "/products?category=apparel" },
-  { label: "Bags", href: "/products?category=bags" },
-  { label: "Headwear", href: "/products?category=hats" },
-  { label: "Outerwear", href: "/products?category=outerwear" },
-  { label: "Polos", href: "/products?category=polos" },
-  { label: "Promo", href: "/products?category=promo" },
-  { label: "Safety", href: "/products?category=safety" },
-  { label: "Signs", href: "/products?category=signs" },
-];
-
 const TILE_IMAGES: Record<string, string> = Object.fromEntries(
   FALLBACK_CATEGORIES.filter((c) => c.image).map((c) => [c.slug, c.image!]),
 );
@@ -56,6 +44,21 @@ export function CategoryBrowse({
         ]
       : FALLBACK_CATEGORIES;
 
+  // These used to be a hardcoded nine — Apparel, Bags, Outerwear, Promo,
+  // Safety, Signs and friends — written against a category taxonomy the synced
+  // catalogue does not use. Six of the nine resolved to no category at all, so
+  // clicking them landed the shopper on an empty listing directly beneath a
+  // heading promising "Real products, real methods, real starting prices".
+  // Deriving them from the same list that feeds the tiles means a pill can only
+  // exist for a category that has something in it.
+  const pills = [
+    { label: "All", href: "/products" },
+    ...categories.slice(0, 8).map((c) => ({
+      label: c.name,
+      href: `/products?category=${encodeURIComponent(c.slug)}`,
+    })),
+  ];
+
   return (
     <section className="section-pad">
       <Container>
@@ -70,9 +73,12 @@ export function CategoryBrowse({
           </p>
         </div>
 
-        <div className="mt-sp-5 flex flex-wrap items-center justify-between gap-3">
+        {/* "Sort: Popular ▾" used to sit at the end of this row. It was a
+            <span>, not a control — styled to look like a sort dropdown that
+            nothing was ever wired to. */}
+        <div className="mt-sp-5 flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            {FILTER_PILLS.map((pill, index) => (
+            {pills.map((pill, index) => (
               <Link
                 key={pill.label}
                 href={pill.href}
@@ -86,9 +92,6 @@ export function CategoryBrowse({
               </Link>
             ))}
           </div>
-          <span className="text-sm font-bold text-text-secondary hidden sm:inline">
-            Sort: Popular ▾
-          </span>
         </div>
 
         <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-sp-3">

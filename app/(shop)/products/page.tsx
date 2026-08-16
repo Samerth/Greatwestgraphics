@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
@@ -20,12 +21,28 @@ const CATEGORY_SLUGS: Record<string, Category> = {
   signs: "Signs",
 };
 
-const OVERLAY_TILES = [
-  { name: "T-Shirts", slug: "t-shirts", blurb: "Crews, V-necks & athletic" },
-  { name: "Hoodies", slug: "hoodies-and-crewnecks", blurb: "Fleece & crewnecks" },
-  { name: "Hats", slug: "hats", blurb: "Caps, beanies & truckers" },
-  { name: "Bags", slug: "bags", blurb: "Totes, backpacks & more" },
-];
+/** Copy and photography for the "Shop by Category" tiles, keyed by real
+ * catalogue slug. This used to be a hardcoded list of four that included
+ * `bags`, which is not a slug the synced catalogue has — the real one is
+ * `tote-bags` — so that tile led to an empty listing. Slugs absent from the
+ * live category list are now skipped rather than linked. */
+const TILE_META: Record<string, { blurb: string; image: string }> = {
+  "t-shirts": {
+    blurb: "Crews, V-necks & athletic",
+    image: "/images/prod-tee.jpg",
+  },
+  "hoodies-and-crewnecks": {
+    blurb: "Fleece & crewnecks",
+    image: "/images/prod-hoodie.jpg",
+  },
+  hats: { blurb: "Caps, beanies & truckers", image: "/images/caps.jpg" },
+  "tote-bags": {
+    blurb: "Totes, backpacks & more",
+    image: "/images/prod-tote.jpg",
+  },
+  polos: { blurb: "Piqué & performance", image: "/images/tshirt_2.jpg" },
+  jackets: { blurb: "Softshell & insulated", image: "/images/hoodie-blank.jpg" },
+};
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +115,10 @@ export default async function ProductsPage({
   const preferDb = catalog.source === "db" || catalog.source === "empty";
   const initialCategory =
     (category && CATEGORY_SLUGS[category.toLowerCase()]) || "All";
+  const overlayTiles = catalog.categories
+    .filter((c) => TILE_META[c.slug])
+    .slice(0, 4)
+    .map((c) => ({ name: c.name, slug: c.slug, ...TILE_META[c.slug] }));
 
   return (
     <>
@@ -127,37 +148,41 @@ export default async function ProductsPage({
         </Container>
       </section>
 
-      <section className="pt-sp-5 pb-0">
-        <Container>
-          <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
-          <div className="mt-sp-3 grid grid-cols-2 lg:grid-cols-4 gap-sp-3">
-            {OVERLAY_TILES.map((tile) => (
-              <Link
-                key={tile.slug}
-                href={`/products?category=${encodeURIComponent(tile.slug)}`}
-                className="group relative overflow-hidden rounded-md border border-border min-h-[140px] flex items-end p-sp-3 text-white"
-                style={{
-                  background:
-                    "linear-gradient(160deg, var(--color-accent) 0%, #0b1f4a 55%, #0D0D0D 100%)",
-                }}
-              >
-                <span
-                  className="absolute inset-0 opacity-25 group-hover:opacity-40 transition-opacity"
-                  style={{
-                    backgroundImage:
-                      "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.35), transparent 50%)",
-                  }}
-                  aria-hidden
-                />
-                <span className="relative">
-                  <span className="block font-display font-bold text-base">{tile.name}</span>
-                  <span className="block text-xs text-white/80 mt-1">{tile.blurb}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </Container>
-      </section>
+      {overlayTiles.length > 0 && (
+        <section className="pt-sp-5 pb-0">
+          <Container>
+            <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
+            <div className="mt-sp-3 grid grid-cols-2 lg:grid-cols-4 gap-sp-3">
+              {overlayTiles.map((tile) => (
+                <Link
+                  key={tile.slug}
+                  href={`/products?category=${encodeURIComponent(tile.slug)}`}
+                  className="group relative overflow-hidden rounded-md border border-border min-h-[140px] flex items-end p-sp-3 text-white"
+                >
+                  {/* Previously a flat accent-to-black gradient on every tile.
+                      We already ship a real photo for each of these categories
+                      in /public/images, so show the product instead. */}
+                  <Image
+                    src={tile.image}
+                    alt=""
+                    fill
+                    className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+                    sizes="(max-width: 1024px) 50vw, 25vw"
+                  />
+                  <span
+                    className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,.7))]"
+                    aria-hidden
+                  />
+                  <span className="relative">
+                    <span className="block font-display font-bold text-base">{tile.name}</span>
+                    <span className="block text-xs text-white/80 mt-1">{tile.blurb}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </Container>
+        </section>
+      )}
 
       <section className="py-sp-8">
         <Container>
