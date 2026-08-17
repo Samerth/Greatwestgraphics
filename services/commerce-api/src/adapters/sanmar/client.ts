@@ -276,6 +276,22 @@ export function parseConfigurationAndPricingXml(
   return [...byPart.values()];
 }
 
+/**
+ * One `<url>` element can hold several addresses.
+ *
+ * SanMar Canada answers a style-level media request with every colour and
+ * angle it has, newline-separated inside a single element. Taking the element's
+ * text as one URL stored a hundred addresses glued together as the product
+ * image, and every one of those tiles 400'd.
+ */
+function splitUrls(text: string | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split(/\s+/)
+    .map((candidate) => candidate.trim())
+    .filter((candidate) => /^https?:\/\//i.test(candidate));
+}
+
 /** Parse getMediaContent SOAP body → Primary (1006) URLs first, then any image URLs. */
 export function parseMediaContentXml(xml: string): string[] {
   const mediaBlocks =
@@ -287,21 +303,21 @@ export function parseMediaContentXml(xml: string): string[] {
   const other: string[] = [];
 
   for (const block of mediaBlocks) {
-    const url = firstTag(block, "url");
-    if (!url || !/^https?:\/\//i.test(url)) continue;
+    const urls = splitUrls(firstTag(block, "url"));
+    if (urls.length === 0) continue;
     const classType =
       firstTag(block, "classTypeId") ||
       firstTag(block, "classType") ||
       "";
     if (classType === "1006" || /primary/i.test(classType)) {
-      primary.push(url);
+      primary.push(...urls);
     } else {
-      other.push(url);
+      other.push(...urls);
     }
   }
 
   if (primary.length === 0 && other.length === 0) {
-    return extractTags(xml, "url").filter((u) => /^https?:\/\//i.test(u));
+    return extractTags(xml, "url").flatMap(splitUrls);
   }
   return [...new Set([...primary, ...other])];
 }
