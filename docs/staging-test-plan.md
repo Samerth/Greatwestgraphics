@@ -16,11 +16,9 @@ game, including wording, layout, and anything that merely feels wrong.
 - **No payment is taken anywhere.** Checkout collects a payment *preference*
   (card, Interac, Net-30) and submits the order for design review. There is no
   payment processor connected, and no card fields are shown by design.
-- **SanMar products have no images.** Roughly 2,750 products show a grey tile.
-  We are waiting on a media password from the vendor. S&S Activewear products
-  do have images — test with those.
 - **About a quarter of products have no category**, mostly quarter-zips and
   caps. They are reachable by search and by direct link, not by category.
+  Around 265 SanMar styles are in this group.
 - **Sorting only reorders the page you are on**, not the whole result set.
 - **Colour swatches and feature checkboxes on the product *listing* page are
   decorative.** The ones on the product *detail* page are real.
@@ -68,8 +66,9 @@ retail customer.
 1. **Browse.** From the home page, open a category from the nav or the tiles.
    Check the category actually filters, that paging works, and that the counts
    at the top of `/products` agree with what is shown.
-2. **Open a product.** Use an S&S Activewear product so you get images. Check
-   the description reads as prose and bullets, with no visible HTML tags.
+2. **Open a product.** Check the description reads as prose and bullets, with
+   no visible HTML tags. SanMar images were only switched on tonight, so please
+   watch for products that still show a grey tile and tell us which ones.
    Change colour and size and confirm the image and availability follow.
 3. **Check the price.** The product page quotes a price that changes with
    quantity. Increase the quantity and confirm the unit price drops at the
