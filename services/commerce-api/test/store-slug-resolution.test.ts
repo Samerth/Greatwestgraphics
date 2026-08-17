@@ -14,6 +14,7 @@ type Row = {
   tagline: string | null;
   customDomain: string | null;
   pricingAdjustmentPercent: string | null;
+  isPublic: boolean;
 };
 
 const ACME: Row = {
@@ -28,6 +29,22 @@ const ACME: Row = {
   tagline: null,
   customDomain: null,
   pricingAdjustmentPercent: null,
+  isPublic: false,
+};
+
+/**
+ * A team store carrying no branding at all. Access must not depend on styling:
+ * treating "no logo, no accent colour" as public once enrolled any signed-in
+ * stranger into the account of a customer who had simply skipped that step.
+ */
+const UNSTYLED_TEAM_STORE: Row = {
+  ...ACME,
+  id: "33333333-3333-4333-8333-333333333333",
+  slug: "plain",
+  name: "Plain Team Store",
+  accentColor: null,
+  logoUrl: null,
+  isPublic: false,
 };
 
 /** Same slug, different tenant — the case that must never cross over. */
@@ -92,6 +109,21 @@ describe("StoreService.resolveBySlug", () => {
     const resolved = await service.resolveBySlug(ACME.tenantId, "acme");
     expect(resolved?.storeId).toBe(ACME.id);
     expect(resolved?.name).toBe("Acme Team Store");
+  });
+
+  it("reports an unbranded team store as private, not public", async () => {
+    // Sign-in reads this flag to decide whether to enrol the visitor in the
+    // store's account. Deriving it from the absence of a logo, as it once did,
+    // opened every plainly-styled corporate account to strangers.
+    const { db, captured } = fakeDb([UNSTYLED_TEAM_STORE]);
+    const service = new RecordingStoreService(db, captured);
+    const resolved = await service.resolveBySlug(
+      UNSTYLED_TEAM_STORE.tenantId,
+      "plain",
+    );
+    expect(resolved?.accentColor).toBeNull();
+    expect(resolved?.logoUrl).toBeNull();
+    expect(resolved?.isPublic).toBe(false);
   });
 
   it("refuses to hand back another tenant's store with the same slug", async () => {

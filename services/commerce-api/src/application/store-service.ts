@@ -17,6 +17,8 @@ export type ResolvedStore = {
   accentColor: string | null;
   tagline: string | null;
   pricingAdjustmentPercent: number | null;
+  /** Anyone may join by signing in. False for invitation-only team stores. */
+  isPublic: boolean;
 };
 
 function toResolvedStore(row: typeof stores.$inferSelect): ResolvedStore {
@@ -33,6 +35,7 @@ function toResolvedStore(row: typeof stores.$inferSelect): ResolvedStore {
     pricingAdjustmentPercent: row.pricingAdjustmentPercent
       ? Number(row.pricingAdjustmentPercent)
       : null,
+    isPublic: row.isPublic,
   };
 }
 

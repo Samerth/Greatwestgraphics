@@ -14,6 +14,7 @@ const acmeStore = {
   tagline: null,
   customDomain: "shop.acme.test",
   pricingAdjustmentPercent: null,
+  isPublic: false,
 };
 
 /**

@@ -577,11 +577,14 @@ export function buildApp(input: {
       })
       .parse(request.body);
     const store = await storeService.getById(auth.tenantId, auth.storeId);
-    const isPublicStore = !store.accentColor && !store.logoUrl;
+    // Read from the store's own flag, never from how it happens to be styled.
+    // The old test — no logo and no accent colour means public — enrolled any
+    // signed-in stranger into a corporate account whose owner had simply not
+    // picked a brand colour.
     return personService.findOrCreateByExternalIdentity(
       auth.tenantId,
       auth.accountId,
-      isPublicStore,
+      store.isPublic,
       body.system,
       body.externalId,
       { email: body.email, name: body.name },

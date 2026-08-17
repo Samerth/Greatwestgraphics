@@ -95,6 +95,14 @@ export const stores = pgTable(
     accentColor: text("accent_color"),
     tagline: text("tagline"),
     customDomain: text("custom_domain"),
+    /**
+     * The operator's own retail storefront, which anyone may shop and join by
+     * signing in. False for every self-serve corporate store, whose members
+     * arrive by invitation only. Kept explicit because this was once inferred
+     * from whether the store had a logo or accent colour, which quietly made
+     * any unstyled team store joinable by strangers.
+     */
+    isPublic: boolean("is_public").notNull().default(false),
     // Signed decimal string, e.g. "-0.1" for a 10% storewide discount off
     // the tenant's published pricing config, "0.05" for a 5% markup. Null
     // means no override — the store sees the tenant's published pricing
