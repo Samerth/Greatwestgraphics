@@ -77,6 +77,11 @@ import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
 import { RequestContextSchema } from "@gwg/contracts";
+import {
+  staffScopedContext,
+  type JobOwner,
+  type RequestScope,
+} from "./domain/staff-scope.js";
 
 class UnauthorizedError extends Error {
   readonly code = "UNAUTHORIZED";
@@ -95,6 +100,22 @@ function assertScope(
       "Request context does not match the authenticated scope",
     );
   }
+}
+
+function staffScope(
+  auth: AuthContext,
+  context: RequestScope,
+  owner: JobOwner,
+): RequestScope {
+  return staffScopedContext(
+    auth.tenantId,
+    context,
+    owner,
+    () =>
+      new ScopeMismatchError(
+        "Request context does not match the authenticated tenant",
+      ),
+  );
 }
 
 /**
@@ -723,7 +744,7 @@ export function buildApp(input: {
     app.get("/internal/dev/job-requests", async (request) => {
       assertAdmin(request, input.environment);
       const auth = await input.auth.resolve(request);
-      return service.list(auth.tenantId, auth.accountId);
+      return service.listForStaff(auth.tenantId);
     });
 
     app.get("/internal/dev/job-requests/:jobRequestId", async (request) => {
@@ -732,7 +753,8 @@ export function buildApp(input: {
       const jobRequestId = CanonicalIdSchema.parse(
         (request.params as { jobRequestId?: string }).jobRequestId,
       );
-      return service.get(auth.tenantId, auth.accountId, jobRequestId);
+      const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+      return service.get(auth.tenantId, owner.accountId, jobRequestId);
     });
 
     app.post(
@@ -744,8 +766,15 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = TransitionJobRequestSchema.parse(request.body);
-        assertScope(auth, command.context);
-        return service.transition(jobRequestId, command, staffActor(auth));
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.transition(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
       },
     );
 
@@ -758,10 +787,13 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = CreateFinalQuoteSchema.parse(request.body);
-        assertScope(auth, command.context);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         const created = await service.createFinalQuote(
           jobRequestId,
-          command,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
           staffActor(auth),
         );
         return reply
@@ -779,10 +811,13 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = CreateProofVersionSchema.parse(request.body);
-        assertScope(auth, command.context);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         const created = await service.createProof(
           jobRequestId,
-          command,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
           staffActor(auth),
         );
         return reply
@@ -806,11 +841,14 @@ export function buildApp(input: {
           (request.params as { proofId?: string }).proofId,
         );
         const command = DecideProofSchema.parse(request.body);
-        assertScope(auth, command.context);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         const decided = await service.decideProof(
           jobRequestId,
           proofId,
-          command,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
           staffActor(auth),
         );
         return reply.code(200).send(ProofVersionResponseSchema.parse(decided));

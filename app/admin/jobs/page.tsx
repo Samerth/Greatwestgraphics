@@ -10,10 +10,24 @@ export default async function AdminJobsPage() {
   let jobs: Awaited<
     ReturnType<Awaited<ReturnType<typeof adminClient>>["listJobRequests"]>
   > = [];
+  let storeNames = new Map<string, string>();
   let error: string | undefined;
   try {
     const client = await adminClient();
-    jobs = await client.listJobRequestsAsStaff(requireAdminToken());
+    const token = requireAdminToken();
+    // The inbox now spans every store in the tenant, so a bare job number is
+    // ambiguous: staff need to know whose team store an order came from before
+    // they price or proof it.
+    const [rows, stores] = await Promise.all([
+      client.listJobRequestsAsStaff(token),
+      client.listAllStores(token).catch(() => []),
+    ]);
+    jobs = rows;
+    storeNames = new Map(
+      stores
+        .filter((store) => typeof store.id === "string")
+        .map((store) => [String(store.id), String(store.name ?? store.slug)]),
+    );
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Jobs unavailable";
   }
@@ -62,6 +76,7 @@ export default async function AdminJobsPage() {
                     {job.displayId}
                   </p>
                   <p className="text-xs text-text-tertiary mt-1 mb-0">
+                    {storeNames.get(job.context.storeId) ?? "Main store"} ·{" "}
                     {job.submittedAt
                       ? new Date(job.submittedAt).toLocaleString("en-CA")
                       : "Not submitted"}

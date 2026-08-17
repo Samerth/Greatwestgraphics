@@ -875,6 +875,55 @@ export class JobRequestService {
     return rows.map(toResponse);
   }
 
+  /**
+   * Every job in the tenant, for the staff inbox.
+   *
+   * Staff work across accounts by definition: a branded team store signs up
+   * with an account of its own, so an account-scoped inbox showed head office
+   * nothing a team store had ordered. The rows were in the database and no one
+   * who could fulfil them was able to see them.
+   */
+  async listForStaff(tenantId: string): Promise<JobRequestResponse[]> {
+    const rows = await this.db
+      .select()
+      .from(jobRequests)
+      .where(eq(jobRequests.tenantId, tenantId))
+      .orderBy(desc(jobRequests.createdAt));
+
+    return rows.map(toResponse);
+  }
+
+  /**
+   * The account and store a job actually belongs to.
+   *
+   * Staff routes resolve this from the row instead of trusting the caller's
+   * own scope, which lets them act on a team store's job without loosening a
+   * single customer-facing check.
+   */
+  async locateForStaff(
+    tenantId: string,
+    jobRequestId: string,
+  ): Promise<{ accountId: string; storeId: string }> {
+    const [row] = await this.db
+      .select({
+        accountId: jobRequests.accountId,
+        storeId: jobRequests.storeId,
+      })
+      .from(jobRequests)
+      .where(
+        and(
+          eq(jobRequests.tenantId, tenantId),
+          eq(jobRequests.id, jobRequestId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new ResourceNotFoundError("Job request not found in this tenant");
+    }
+    return row;
+  }
+
   private async transitionWithIdempotency(
     jobRequestId: string,
     command: SubmitJobRequest,
