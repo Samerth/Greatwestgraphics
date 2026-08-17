@@ -63,7 +63,10 @@ const QUICK_PATHS = [
     num: "02",
     title: "I need promo products",
     body: "Swag, giveaways and event gear. Pens to tote bags, branded and delivered on deadline.",
-    href: "/products?category=promo",
+    // Pointed at "?category=promo", which is not a catalogue category — the
+    // listing came back empty. We do not stock a promo line in the synced
+    // catalogue, so sourcing these starts with a conversation.
+    href: "/quote",
   },
   {
     num: "03",

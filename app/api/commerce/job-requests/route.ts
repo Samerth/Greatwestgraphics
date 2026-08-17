@@ -5,9 +5,25 @@ import {
   CommerceApiError,
   createCommerceClient,
 } from "@/lib/commerce/client";
+import { getCustomerSession } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
   try {
+    // A job has to belong to somebody. Without this the anonymous case fell
+    // through to an empty customer id and surfaced as an opaque validation
+    // failure from the commerce API instead of asking the visitor to sign in.
+    const session = await getCustomerSession();
+    if (!session) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "SIGN_IN_REQUIRED",
+            message: "Sign in to submit a job request.",
+          },
+        },
+        { status: 401 },
+      );
+    }
     const submission = StorefrontJobSubmissionSchema.parse(await request.json());
     const jobRequest = await (await createCommerceClient()).submitJobRequest(submission);
     return NextResponse.json(jobRequest, { status: 201 });

@@ -18,11 +18,11 @@ export function PreviewDesignButton({
   productId: string;
   className?: string;
 }) {
-  const artworksBySide = useActiveDesignStore((s) => s.artworksBySide);
+  const design = useActiveDesignStore((s) => s.design);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const hasDesign = mounted && hasActiveArtwork(artworksBySide);
+  const hasDesign = mounted && hasActiveArtwork(design);
 
   return (
     <Link href={`/design?garmentId=${encodeURIComponent(productId)}`} className={className}>

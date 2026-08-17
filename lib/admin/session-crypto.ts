@@ -45,16 +45,39 @@ export async function signSessionPayload(payload: string): Promise<string> {
   return hmacSha256Hex(sessionSecret(), payload);
 }
 
+/**
+ * Reads back a token minted by `createStaffSession`, whose shape is
+ * `username.expiry.signature`.
+ *
+ * The username is taken as everything before the last two segments rather than
+ * as the first of three, because a username is allowed to contain dots and the
+ * login page suggests an email address. Splitting on every dot and demanding
+ * exactly three parts meant that setting STAFF_ADMIN_USER to an email made
+ * signing in appear to work — the password check passed and the cookie was set
+ * — and then every request afterwards failed to verify and bounced back to the
+ * login page. A credential that is accepted and then silently disbelieved is
+ * indistinguishable from a wrong password, so this failed as an unexplainable
+ * login loop rather than as an error anyone could act on.
+ *
+ * Tokens from dot-free usernames parse identically, so existing sessions are
+ * unaffected.
+ */
 export async function verifySessionToken(
   token: string | undefined
 ): Promise<{ username: string } | null> {
   if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [username, expRaw, signature] = parts;
+
+  const signatureAt = token.lastIndexOf(".");
+  if (signatureAt <= 0) return null;
+  const signature = token.slice(signatureAt + 1);
+  const payload = token.slice(0, signatureAt);
+
+  const expiryAt = payload.lastIndexOf(".");
+  if (expiryAt <= 0) return null;
+  const expRaw = payload.slice(expiryAt + 1);
+  const username = payload.slice(0, expiryAt);
   if (!username || !expRaw || !signature) return null;
 
-  const payload = `${username}.${expRaw}`;
   let expected: string;
   try {
     expected = await signSessionPayload(payload);
@@ -63,6 +86,9 @@ export async function verifySessionToken(
   }
 
   if (!timingSafeEqualHex(signature, expected)) return null;
-  if (Number(expRaw) < Date.now()) return null;
+  // An unparseable expiry must not read as "not yet expired": NaN compares
+  // false against everything, so the original check would have let it through.
+  const expiresAt = Number(expRaw);
+  if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null;
   return { username };
 }

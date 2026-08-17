@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArtTile } from "@/components/shared/ArtTile";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
 
@@ -71,11 +70,12 @@ export function Testimonials() {
         <h2 className="text-center font-display font-bold text-header m-0 text-balance">
           What Our Clients Say
         </h2>
-        <div className="mt-sp-2 mb-sp-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm sm:text-base text-text-secondary">
-          <span>4.8/5 · 214 reviews</span>
-          <Link href="/#reviews" className="font-bold text-accent hover:underline">
-            See all reviews
-          </Link>
+        {/* The "4.8/5 · 214 reviews" strip that used to sit here, and its "See
+            all reviews" link back to this same section, were both invented —
+            there is no review store behind them. The three quotes below are
+            real and are all we can substantiate today. */}
+        <div className="mt-sp-2 mb-sp-6 text-center text-sm sm:text-base text-text-secondary">
+          Reviews left by Vancouver businesses we print for.
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-sp-3">
           {TESTIMONIALS.map((t, index) => (
@@ -105,22 +105,62 @@ export function Testimonials() {
 export type GalleryItem = {
   name: string;
   meta: string;
-  artIndex: number;
-  imageUrl?: string | null;
+  imageUrl: string;
 };
 
-const FALLBACK_GALLERY: GalleryItem[] = [
-  { name: "Marriott", meta: "Staff uniforms · embroidered", artIndex: 1 },
-  { name: "Fujitsu", meta: "Corporate polos · branded", artIndex: 2 },
-  { name: "St. George's School", meta: "Athletics hoodies · 3-colour", artIndex: 3 },
-  { name: "Grande West", meta: "Crew tees · branded", artIndex: 4 },
-  { name: "Local nonprofit", meta: "Canvas totes · benefit run", artIndex: 5 },
-  { name: "Community event", meta: "Staff tees · rush order", artIndex: 6 },
-  { name: "Trade & safety crew", meta: "Hi-vis hoodies · CSA", artIndex: 7 },
+/**
+ * Photographs of our own floor and finished work.
+ *
+ * This section used to caption each tile with a named client — Marriott,
+ * Fujitsu, St. George's School — over an image picked from the synced blanks
+ * catalogue by list position, so "Marriott · Staff uniforms · embroidered" was
+ * illustrated by whichever undecorated garment happened to land at that index,
+ * and by a bare colour gradient whenever the catalogue call came back empty. A
+ * section headed "Real Work, Delivered" was the one place on the site showing
+ * none of it. Those clients are real and are still named on /about and in the
+ * trust strip; what we lack is photography of their jobs, so the tiles show
+ * work we can actually stand behind until that photography exists.
+ */
+const GALLERY: GalleryItem[] = [
+  {
+    name: "On the press",
+    meta: "Screen printing · cured to survive the wash",
+    imageUrl: "/images/shop-press.jpg",
+  },
+  {
+    name: "Thread floor",
+    meta: "Embroidery · digitized stitch by stitch",
+    imageUrl: "/images/shop-embroidery.jpg",
+  },
+  {
+    name: "Headwear",
+    meta: "Caps & beanies · embroidered and printed",
+    imageUrl: "/images/cap-printing.jpg",
+  },
+  {
+    name: "Ink room",
+    meta: "Hand-mixed · Pantone matched",
+    imageUrl: "/images/shop-ink.jpg",
+  },
+  {
+    name: "Large format",
+    meta: "Banners, displays & window graphics",
+    imageUrl: "/images/display.jpg",
+  },
+  {
+    name: "Finished and folded",
+    meta: "Counted twice before anything ships",
+    imageUrl: "/images/shop-packing.jpg",
+  },
+  {
+    name: "Out the door",
+    meta: "Local pickup & Canada-wide courier",
+    imageUrl: "/images/caps-display.jpg",
+  },
 ];
 
-export function Gallery({ items = FALLBACK_GALLERY }: { items?: GalleryItem[] }) {
-  const gallery = items.length > 0 ? items : FALLBACK_GALLERY;
+export function Gallery({ items = GALLERY }: { items?: GalleryItem[] }) {
+  const gallery = items.length > 0 ? items : GALLERY;
   return (
     <section className="section-pad scroll-section" id="gallery">
       <Container>
@@ -154,13 +194,13 @@ function GalleryTile({
       href="/quote"
       className={`relative rounded-md overflow-hidden ${aspect} group block`}
     >
-      <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-[1.05]">
-        <ArtTile
-          artIndex={item.artIndex}
-          imageSrc={item.imageUrl ?? undefined}
-          alt={item.name}
-        />
-      </div>
+      <Image
+        src={item.imageUrl}
+        alt={item.name}
+        fill
+        className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+        sizes="(max-width: 768px) 50vw, 25vw"
+      />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_45%,rgba(0,0,0,.78)_100%)]" />
       <div className="absolute left-0 right-0 bottom-0 p-sp-3 text-white">
         <b className="block text-[13.5px] font-display">{item.name}</b>
@@ -171,7 +211,13 @@ function GalleryTile({
 }
 
 const STATS = [
-  { n: "35", l: "Years in Vancouver", accent: false },
+  // Founded 1980 (see /about), so this has to track the founding year rather
+  // than sit at a number that was already stale when it was written.
+  {
+    n: String(new Date().getFullYear() - 1980),
+    l: "Years in Vancouver",
+    accent: false,
+  },
   { n: "18M+", l: "Garments printed", accent: true },
   { n: "2,800+", l: "Businesses served", accent: false },
   { n: "99.4%", l: "On-time delivery", accent: true },

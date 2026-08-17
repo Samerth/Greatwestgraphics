@@ -51,7 +51,19 @@ export default async function AdminStoreDetailPage({
         </h1>
         {store && (
           <p className="text-text-secondary mt-1 mb-0">
-            {String(store.slug)}.greatwestgraphics.com · {String(store.status)}
+            {/* The address this store can actually be opened at today. It used
+                to advertise a subdomain that has no DNS behind it, so the one
+                thing staff would copy to a customer was the one thing that
+                did not work. */}
+            <a
+              href={`/s/${String(store.slug)}`}
+              className="underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              /s/{String(store.slug)}
+            </a>{" "}
+            · {String(store.status)}
           </p>
         )}
       </div>

@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
-import { Button, ButtonLink } from "@/components/shared/Button";
+import { ButtonLink } from "@/components/shared/Button";
 import {
   CommerceApiError,
   createCommerceClient,
@@ -9,6 +9,7 @@ import { jobStatusPresentation } from "@/lib/commerce/status";
 import { money } from "@/lib/utils/quote-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
+import { ProofReview } from "@/components/portal/ProofReview";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,16 @@ export default async function JobDetailPage({
   try {
     job = await (await createCommerceClient()).getJobRequest(id);
   } catch (caught) {
+    // A job that is missing, or that belongs to somebody else, is a 404 — not
+    // a 200 page saying so. Returning 200 told crawlers and uptime checks that
+    // a forbidden URL was fine. Anything else is our fault, so it keeps the
+    // retry affordance instead of pretending the job does not exist.
+    if (
+      caught instanceof CommerceApiError &&
+      (caught.status === 403 || caught.status === 404)
+    ) {
+      notFound();
+    }
     error =
       caught instanceof CommerceApiError
         ? caught.message
@@ -83,6 +94,8 @@ export default async function JobDetailPage({
                   const roster = line.snapshot.configuration.roster as
                     | RosterEntry[]
                     | undefined;
+                  const artworkProofUrl = line.snapshot.configuration
+                    .artworkProofUrl as string | undefined;
                   return (
                     <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
                       <div className="flex justify-between gap-sp-3">
@@ -101,6 +114,21 @@ export default async function JobDetailPage({
                           </span>
                         )}
                       </div>
+                      {artworkProofUrl && (
+                        <div className="mt-sp-3">
+                          <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                            Artwork you sent
+                          </p>
+                          <a href={artworkProofUrl} target="_blank" rel="noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={artworkProofUrl}
+                              alt={`Artwork for ${line.snapshot.description}`}
+                              className="h-28 w-auto border border-border rounded-sm bg-white"
+                            />
+                          </a>
+                        </div>
+                      )}
                       {roster && roster.length > 0 && (
                         <div className="mt-sp-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
@@ -113,10 +141,27 @@ export default async function JobDetailPage({
                   );
                 })}
               </div>
+              {job.customerNote && (
+                <div className="mt-sp-3 border-t border-fill-subtle pt-sp-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
+                    Your note to us
+                  </p>
+                  <p className="text-sm text-text-secondary m-0 whitespace-pre-wrap">
+                    {job.customerNote}
+                  </p>
+                </div>
+              )}
               <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
                 These are immutable submission snapshots. Final pricing follows
                 design and availability review.
               </p>
+            </section>
+
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">
+                Proofs &amp; approvals
+              </h2>
+              <ProofReview jobId={job.id} proofs={job.proofs} />
             </section>
 
             <section className="border border-border rounded-md p-sp-4">
@@ -140,12 +185,22 @@ export default async function JobDetailPage({
             <p className="text-text-secondary">{presentation.nextAction}</p>
             <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
               {presentation.paymentReady
-                ? "The job is approved and payment-ready, but online payment is not connected yet."
+                ? "This job is approved and ready to invoice. Online card payment is not connected yet, so we will send an invoice you can pay by e-transfer, cheque or card over the phone."
                 : "Payment stays locked until design approval and final pricing are complete."}
             </div>
-            <Button disabled className="w-full" title="Stripe is not connected">
-              Pay approved amount (coming soon)
-            </Button>
+            {/* This was a permanently disabled "Pay approved amount (coming
+                soon)" button. Honest about Stripe, but it left a customer with
+                an approved job and nothing to click. Until online payment is
+                connected, point at the humans who can actually take it. */}
+            {presentation.paymentReady ? (
+              <ButtonLink
+                href="/contact"
+                variant="primary"
+                className="w-full text-center"
+              >
+                Request an invoice
+              </ButtonLink>
+            ) : null}
           </aside>
         </div>
       </Container>

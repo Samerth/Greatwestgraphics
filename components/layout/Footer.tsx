@@ -10,8 +10,13 @@ const SOCIAL_LINKS = [
     Icon: Instagram,
   },
   {
+    // Was plain http:// and LinkedIn's long-dead /profile/view?id=31370827
+    // form, which redirects logged-out visitors to a login wall rather than
+    // to anything about the company. The company page it should have pointed
+    // at lists this exact street address, both of our phone numbers and
+    // info@greatwestgraphics.com, and it loads without signing in.
     label: "LinkedIn",
-    href: "http://www.linkedin.com/profile/view?id=31370827&locale=en_US&trk=tyah",
+    href: "https://www.linkedin.com/company/great-west-graphics",
     Icon: Linkedin,
   },
   {
@@ -56,12 +61,18 @@ export function Footer({
     { label: "Design Studio", href: "/design" },
   ];
 
+  // "Privacy Policy" used to point at /shipping#privacy, an anchor that does
+  // not exist on that page, and "Sitemap" pointed at /products — neither went
+  // where its label promised.
   const importantLinks = [
-    { label: "How to Order", href: "/quote" },
+    // Was "How to Order", which reads as a page explaining the process. There
+    // is no such page — /quote is the price calculator — and the closest thing
+    // to ordering instructions lives in the FAQ, which is linked right below.
+    { label: "Start an Order", href: "/quote" },
     { label: "FAQ", href: "/faq" },
     { label: "Shipping Policy", href: "/shipping" },
-    { label: "Privacy Policy", href: "/shipping#privacy" },
-    { label: "Sitemap", href: "/products" },
+    { label: "Privacy Policy", href: "/privacy" },
+    { label: "Sitemap", href: "/sitemap.xml" },
   ];
 
   const aboutLinks = [
@@ -83,8 +94,8 @@ export function Footer({
           {!isBranded && (
             <>
               <p className="text-[13.5px] mt-sp-3 max-w-[36ch]">
-                Vancouver&apos;s trusted custom print and embroidery partner for
-                35 years — real prints, real fast, every time.
+                Vancouver&apos;s trusted custom print and embroidery partner
+                since 1980 — real prints, real fast, every time.
               </p>
               <p className="text-[13px] mt-sp-3 max-w-[36ch]">
                 #105 – 342 East Kent Avenue South, Vancouver, BC V5X 4N6
@@ -153,9 +164,17 @@ function FooterCol({
       <ul className="space-y-2">
         {links.map((l) => (
           <li key={l.label} className="text-sm">
-            <Link href={l.href} className="hover:text-white transition-colors">
-              {l.label}
-            </Link>
+            {/* /sitemap.xml is a generated route, not a page — client-side
+                navigation can't render it, so it needs a real document load. */}
+            {l.href.endsWith(".xml") ? (
+              <a href={l.href} className="hover:text-white transition-colors">
+                {l.label}
+              </a>
+            ) : (
+              <Link href={l.href} className="hover:text-white transition-colors">
+                {l.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>

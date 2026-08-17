@@ -4,6 +4,11 @@ import { buildApp } from "./app.js";
 import { DevelopmentHeaderAuth, ServiceTokenAuth } from "./auth.js";
 import { loadEnvironment } from "./config.js";
 import { createDatabase } from "./db/client.js";
+import {
+  ResendEmailSender,
+  UnconfiguredEmailSender,
+} from "./notifications/email.js";
+import { startOutboxDispatcher } from "./notifications/outbox-dispatcher.js";
 
 loadDotenv({
   path: fileURLToPath(new URL("../../../.env", import.meta.url)),
@@ -29,8 +34,41 @@ if (isProduction && !environment.COMMERCE_SERVICE_TOKEN) {
   );
 }
 
+// Proof decisions write outbox events inside the same transaction as the state
+// change; without something draining them, neither side ever learns their turn
+// has come.
+const emailSender = environment.RESEND_API_KEY
+  ? new ResendEmailSender(
+      environment.RESEND_API_KEY,
+      environment.NOTIFICATIONS_FROM_EMAIL,
+    )
+  : new UnconfiguredEmailSender();
+
+if (environment.OUTBOX_DISPATCH_ENABLED && !environment.RESEND_API_KEY) {
+  app.log.warn(
+    "RESEND_API_KEY is not set. Notifications stay queued in outbox_events and will send once it is configured.",
+  );
+}
+if (environment.OUTBOX_DISPATCH_ENABLED && !environment.STAFF_NOTIFICATION_EMAIL) {
+  app.log.warn(
+    "STAFF_NOTIFICATION_EMAIL is not set. Customer-side proof activity will not be announced to staff.",
+  );
+}
+
+const dispatcher = environment.OUTBOX_DISPATCH_ENABLED
+  ? startOutboxDispatcher({
+      db: database.db,
+      sender: emailSender,
+      siteBaseUrl: environment.SITE_BASE_URL,
+      staffEmail: environment.STAFF_NOTIFICATION_EMAIL ?? null,
+      intervalMs: environment.OUTBOX_POLL_MS,
+      logger: app.log,
+    })
+  : undefined;
+
 async function shutdown(signal: string) {
   app.log.info({ signal }, "Shutting down commerce API");
+  dispatcher?.stop();
   await app.close();
   await database.close();
 }

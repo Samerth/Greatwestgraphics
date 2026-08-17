@@ -376,6 +376,51 @@ export class CommerceClient {
     );
   }
 
+  listAdminDesignProjects(
+    adminToken: string,
+    params?: { limit?: number; offset?: number },
+  ) {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined)
+      search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return this.request(
+      `/admin/design-projects${qs ? `?${qs}` : ""}`,
+      z.array(z.record(z.unknown())),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  getAdminDesignProject(adminToken: string, id: string) {
+    return this.request(
+      `/admin/design-projects/${encodeURIComponent(id)}`,
+      z.record(z.unknown()),
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  updateAdminDesignProject(
+    adminToken: string,
+    id: string,
+    body: {
+      name?: string;
+      garmentProductId?: string | null;
+      design?: unknown;
+      proofImageUrl?: string | null;
+    },
+  ) {
+    return this.request(
+      `/admin/design-projects/${encodeURIComponent(id)}`,
+      z.record(z.unknown()),
+      {
+        method: "PUT",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
   getPublishedPricingConfig(): Promise<PublishedPricingConfigResponse> {
     return this.request(
       "/pricing-config/published",
@@ -443,6 +488,35 @@ export class CommerceClient {
       "/admin/pricing-config/versions",
       z.array(PricingConfigVersionSummarySchema),
       { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
+  /**
+   * Restores an earlier v1 config as the working draft.
+   *
+   * The caller used to build this request by hand, which meant it carried the
+   * dev fixture tenant headers from `COMMERCE_DEV_*` and no service token, so
+   * it could only ever have worked on a developer machine.
+   */
+  restorePricingVersion(
+    version: number,
+    adminToken: string,
+  ): Promise<PricingConfigDraftResponse> {
+    return this.request(
+      "/admin/pricing-config/restore",
+      PricingConfigDraftResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          version,
+        }),
+      },
     );
   }
 
@@ -623,6 +697,28 @@ export class CommerceClient {
     );
   }
 
+  /**
+   * The staff inbox: every job on the account, not just the caller's own.
+   * Separate from `listJobRequests` because the customer endpoint is now
+   * person-scoped, and staff reading it saw nothing at all.
+   */
+  listJobRequestsAsStaff(adminToken: string): Promise<JobRequestListResponse> {
+    return this.request("/internal/dev/job-requests", JobRequestListResponseSchema, {
+      headers: this.headers(undefined, adminToken),
+    });
+  }
+
+  getJobRequestAsStaff(
+    id: string,
+    adminToken: string,
+  ): Promise<JobRequestDetailResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}`,
+      JobRequestDetailResponseSchema,
+      { headers: this.headers(undefined, adminToken) },
+    );
+  }
+
   transitionJobRequest(
     id: string,
     toStatus: string,
@@ -683,7 +779,11 @@ export class CommerceClient {
 
   createProof(
     id: string,
-    input: { storageKey: string; note?: string },
+    input: {
+      storageKey: string;
+      note?: string;
+      awaitingDecisionFrom?: "customer" | "staff";
+    },
     adminToken: string,
   ): Promise<ProofVersionResponse> {
     return this.request(
@@ -700,10 +800,47 @@ export class CommerceClient {
           },
           storageKey: input.storageKey,
           note: input.note,
+          awaitingDecisionFrom: input.awaitingDecisionFrom,
           source: { system: "commerce_api" },
         }),
       },
     );
+  }
+
+  /**
+   * Records a verdict on a proof.
+   *
+   * The two sides of the round trip hit different routes: staff go through the
+   * admin router with an admin token, customers through the public one with
+   * their session actor. Passing `adminToken` is what selects the staff path.
+   */
+  decideProof(
+    id: string,
+    proofId: string,
+    input: { decision: "approved" | "changes_requested"; note?: string },
+    options?: { adminToken?: string },
+  ): Promise<ProofVersionResponse> {
+    const adminToken = options?.adminToken;
+    const path = adminToken
+      ? `/internal/dev/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`
+      : `/v1/job-requests/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}/decision`;
+    // The customer actor travels in the standard actor header that every
+    // request carries, taken from the session. It used to be passed here as
+    // well, in the idempotency-key slot, which sent a nonsense key.
+    return this.request(path, ProofVersionResponseSchema, {
+      method: "POST",
+      headers: this.headers(undefined, adminToken),
+      body: JSON.stringify({
+        context: {
+          tenantId: this.identity.tenantId,
+          accountId: this.identity.accountId,
+          storeId: this.identity.storeId,
+        },
+        decision: input.decision,
+        note: input.note,
+        source: { system: "commerce_api" },
+      }),
+    });
   }
 
   getAdminDashboard(adminToken: string) {

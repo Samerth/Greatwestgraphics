@@ -38,7 +38,9 @@ export default async function AdminLoginPage({
               role="alert"
               className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-sm px-3 py-2.5 m-0"
             >
-              That username or password doesn&apos;t match our records.
+              {params.error === "rate_limited"
+                ? "Too many sign-in attempts. Please wait a few minutes and try again."
+                : "That username or password doesn't match our records."}
             </p>
           )}
           <input type="hidden" name="next" value={params.next || "/admin"} />
@@ -62,31 +64,24 @@ export default async function AdminLoginPage({
               required
             />
           </label>
-          <p className="text-sm m-0">
-            <Link href="/contact" className="font-bold text-accent hover:underline">
-              Forgot Password?
-            </Link>
-          </p>
           <button
             type="submit"
             className="w-full bg-accent text-white font-bold rounded-md py-3.5 hover:bg-accent-hover transition-colors"
           >
             Login
           </button>
-          <p className="text-center text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
-            OR
-          </p>
-          <Link
-            href="/contact"
-            className="block w-full text-center border border-border rounded-md py-3.5 font-bold text-sm hover:border-accent hover:text-accent transition-colors"
-          >
-            Login with a One-time Code
-          </Link>
+          {/* A "Login with a One-time Code" button, "Forgot Password?" and
+              "Sign up!" all linked to /contact. Staff sign-in is a single
+              credential issued internally: there is no one-time code, no self
+              service reset and no self registration, so all three advertised
+              journeys that end nowhere. One-time codes are a customer feature,
+              which is why the pointer to the customer login stays. */}
           <p className="text-sm text-text-secondary m-0 pt-1">
-            Don&apos;t have an account?{" "}
+            Lost your access?{" "}
             <Link href="/contact" className="font-bold text-accent hover:underline">
-              Sign up!
-            </Link>
+              Ask an administrator
+            </Link>{" "}
+            to reissue it.
           </p>
         </form>
       </div>
@@ -111,11 +106,10 @@ export default async function AdminLoginPage({
             Upload your art or design from scratch, preview a real mockup, and
             order — all before you talk to a rep.
           </p>
-          <p className="m-0 mt-4 text-sm font-bold">
-            <span className="text-accent tracking-widest" aria-hidden>
-              ★★★★★
-            </span>{" "}
-            <span className="text-white/85">4.8/5 · Rated by Vancouver businesses</span>
+          {/* Was a five-star glyph and an invented "4.8/5" rating. No review
+              data exists behind it, so it said nothing true. */}
+          <p className="m-0 mt-4 text-sm font-bold text-white/85">
+            Proofed before every print run, since 1980.
           </p>
         </div>
       </aside>

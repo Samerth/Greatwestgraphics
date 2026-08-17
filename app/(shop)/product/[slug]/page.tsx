@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
-import { ProductDetail } from "@/components/pdp/ProductDetail";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
@@ -15,8 +14,8 @@ import {
 } from "@/components/pdp/PdpEnrichment";
 import { PdpImageGallery } from "@/components/pdp/PdpImageGallery";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
+import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 import { ButtonLink } from "@/components/shared/Button";
-import { CATALOG } from "@/lib/data/products";
 import {
   loadStorefrontCatalog,
   loadStorefrontProduct,
@@ -42,8 +41,20 @@ export async function generateMetadata({
   const { id } = await searchParams;
 
   if (id) {
-    const detail = await loadStorefrontProduct(id);
-    if (!detail) return {};
+    const result = await loadStorefrontProduct(id);
+
+    // The page still renders something useful when the catalogue is down, but
+    // it is a holding page, so keep it out of the index. Without this a
+    // crawler that arrives mid-outage can record the apology as the product's
+    // content. `follow` stays on so the links out of it still count.
+    if (result.kind === "unavailable") {
+      return {
+        title: "Temporarily unavailable",
+        robots: { index: false, follow: true },
+      };
+    }
+    if (result.kind === "missing") return {};
+    const detail = result.detail;
     const product = detail.product as Record<string, unknown>;
     const style = detail.style as Record<string, unknown>;
     const title = `${style.brandName || ""} ${style.styleName || ""}`.trim();
@@ -75,22 +86,10 @@ export async function generateMetadata({
     };
   }
 
-  const staticProduct = CATALOG.find((item) => item.slug === slug);
-  if (staticProduct) {
-    const description = `${staticProduct.name} — ${staticProduct.sub || "custom decorated"}. ${staticProduct.priceFrom}, screen printed or embroidered in Vancouver.`;
-    return {
-      title: staticProduct.name,
-      description,
-      alternates: { canonical: `/product/${slug}` },
-      openGraph: {
-        type: "website",
-        title: staticProduct.name,
-        description,
-        url: `/product/${slug}`,
-      },
-    };
-  }
-
+  // A bare /product/<slug> is resolved to its canonical ?id= URL by the page
+  // itself, so there is no metadata to build here. This used to look the slug
+  // up in the static demo catalogue and publish that fixture's invented price
+  // in the description.
   return {};
 }
 
@@ -168,8 +167,26 @@ export default async function ProductPage({
   const { id } = await searchParams;
 
   if (id) {
-    const detail = await loadStorefrontProduct(id);
-    if (!detail) notFound();
+    // Only a genuine absence is a 404. An outage used to answer notFound()
+    // too, which told the shopper the product had been discontinued and told
+    // crawlers to drop the URL — a lie that outlasts the outage that caused
+    // it. Rendering the holding page keeps the URL alive and honest; the
+    // matching metadata marks it noindex so nobody records it as the product.
+    const result = await loadStorefrontProduct(id);
+    if (result.kind === "unavailable") {
+      return (
+        <section className="py-sp-8">
+          <Container>
+            <CatalogUnavailable
+              title="This product is temporarily unavailable"
+              retryHref={`/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(id)}`}
+            />
+          </Container>
+        </section>
+      );
+    }
+    if (result.kind === "missing") notFound();
+    const detail = result.detail;
     const product = detail.product as Record<string, unknown>;
     const style = detail.style as Record<string, unknown>;
     const variants = (detail.variants as Record<string, unknown>[]) || [];
@@ -275,15 +292,12 @@ export default async function ProductPage({
                         Number(variants[0]?.retailMinor || 0),
                       )}`
                     : "Unavailable"}
-                  {available ? (
-                    <span className="ml-3 text-sm font-semibold text-text-secondary">
-                      4.8/5 · 214 reviews
-                    </span>
-                  ) : null}
                 </p>
 
                 <PdpTrustChecks />
-                <PdpFeatureBullets />
+                <PdpFeatureBullets
+                  description={(style.description as string | null) || null}
+                />
 
                 {!available && (
                   <PdpOutOfStockBanner
@@ -349,13 +363,19 @@ export default async function ProductPage({
         <PdpEnrichmentSections
           brandName={String(style.brandName || "")}
           styleName={String(style.styleName || title)}
+          styleTitle={(style.title as string | null) || null}
+          partNumber={(style.partNumber as string | null) || null}
           sizeRange={
-            variants.length > 0
-              ? `${String(variants[0]?.sizeName || "S")} – ${String(
-                  variants[variants.length - 1]?.sizeName || "3XL",
+            variants.length > 1
+              ? `${String(variants[0]?.sizeName || "")} – ${String(
+                  variants[variants.length - 1]?.sizeName || "",
                 )}`
-              : undefined
+              : variants.length === 1
+                ? String(variants[0]?.sizeName || "")
+                : undefined
           }
+          colourCount={colorways.length}
+          description={(style.description as string | null) || null}
         />
 
         <section className="py-sp-8">
@@ -370,57 +390,37 @@ export default async function ProductPage({
     );
   }
 
-  const catalog = await loadStorefrontCatalog({ limit: 200 });
-  const crossSellItems = toCrossSellItems(
-    catalog.products.filter((p) => p.slug !== slug),
-  );
+  // There was a branch here that served twelve demo products from
+  // lib/data/products.ts at slugs like /product/premium-custom-tshirts, with
+  // invented prices and a recoloured silhouette in place of a photo. Nothing
+  // links to those slugs now that the listing and the cross-sell grid no
+  // longer fall back to that fixture, so the branch only stood between a real
+  // visitor and the canonical redirect below.
 
-  const staticProduct = CATALOG.find((item) => item.slug === slug);
-  if (staticProduct) {
-    return (
-      <>
-        <section className="py-sp-8">
-          <Container>
-            <div className="text-[13px] text-text-tertiary mb-sp-3">
-              Home / Shop / {staticProduct.category} /{" "}
-              <b className="text-text-primary">{staticProduct.name}</b>
-            </div>
-            <ProductDetail slug={slug} />
-          </Container>
-        </section>
-
-        <PdpEnrichmentSections
-          brandName={staticProduct.category}
-          styleName={staticProduct.name}
-        />
-
-        <section className="py-sp-8">
-          <Container>
-            <CrossSellGrid
-              title="Complete Your Project"
-              items={crossSellItems.length > 0 ? crossSellItems : undefined}
-            />
-          </Container>
-        </section>
-      </>
-    );
+  // A bare /product/<slug> with no ?id — an old bookmark, a shared link with
+  // the query string stripped, or a crawler. Resolve the slug against the
+  // catalog and send the visitor to the canonical URL. This used to render an
+  // "Opening catalog product…" page with a manual "Continue" link, which is a
+  // dead end for anyone who doesn't notice the link and for every crawler.
+  // The lookup is a targeted search rather than a scan of the first N
+  // products, so it resolves slugs from anywhere in a five-figure catalog.
+  const bySlug = await loadStorefrontCatalog({ search: slug, limit: 60 });
+  const match = bySlug.products.find((p) => p.slug === slug);
+  if (match) {
+    redirect(`/product/${encodeURIComponent(match.slug)}?id=${match.id}`);
   }
 
-  // Fallback: resolve DB product by slug when no id query
-  const match = catalog.products.find((p) => p.slug === slug);
-  if (match) {
+  // We cannot tell a retired slug from a live one while the catalogue is
+  // unreachable, so do not guess at 404 — that is the answer we can least
+  // afford to get wrong on a URL someone bookmarked.
+  if (bySlug.source === "error") {
     return (
       <section className="py-sp-8">
         <Container>
-          <p className="text-text-secondary">
-            Opening catalog product…
-          </p>
-          <Link
-            href={`/product/${encodeURIComponent(match.slug)}?id=${match.id}`}
-            className="text-accent font-bold"
-          >
-            Continue to {match.name}
-          </Link>
+          <CatalogUnavailable
+            title="This product is temporarily unavailable"
+            retryHref={`/product/${encodeURIComponent(slug)}`}
+          />
         </Container>
       </section>
     );

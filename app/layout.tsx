@@ -24,7 +24,7 @@ const SITE_NAME = "Great West Graphics";
 const DEFAULT_TITLE =
   "Great West Graphics · Vancouver Screen Printing & Embroidery";
 const DEFAULT_DESCRIPTION =
-  "Vancouver screen printing and embroidery studio. Ink, thread and 35 years of getting it right, proofed before a single sheet runs.";
+  "Vancouver screen printing and embroidery studio since 1980. Ink, thread and four decades of getting it right, proofed before a single sheet runs.";
 const DEFAULT_OG_IMAGE = "/images/hero-press.jpg";
 
 export const metadata: Metadata = {

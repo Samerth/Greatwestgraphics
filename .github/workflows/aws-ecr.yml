@@ -25,6 +25,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    # The deploy role's trust policy only accepts two subject forms: the main
+    # branch, or this environment. Dispatching on a feature branch sent
+    # `ref:refs/heads/<branch>`, matched neither, and failed at STS -- which
+    # made it impossible to build a branch image and try it on staging before
+    # merging. Declaring the environment switches the subject to
+    # `environment:aws`, which the policy already allows from any ref.
+    #
+    # The branch is no longer part of the subject, so what may run here is
+    # governed by this environment's protection rules rather than by the ref.
+    # That is bounded by the fact that only main moves the :latest tag; a branch
+    # build publishes its commit tag alone and cannot change what is deployed.
+    environment: aws
     env:
       AWS_REGION: ca-central-1
     steps:

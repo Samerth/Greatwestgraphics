@@ -10,19 +10,24 @@ export interface CrossSellItem {
   href?: string;
 }
 
-const DEFAULT_ITEMS: CrossSellItem[] = [
-  { slug: "drinkware-mugs", name: "Drinkware", meta: "11oz ceramic — from $3.20", artIndex: 8 },
-  { slug: "caps-beanies", name: "Caps", meta: "Custom woven, badge clip — from $2.10", artIndex: 11 },
-  { slug: "stickers-decals", name: "Sticker Sheets", meta: "Die-cut, weatherproof — from $1.85", artIndex: 9 },
-];
-
+/**
+ * `items` used to default to three hardcoded fixtures -- Drinkware "from
+ * $3.20", Caps "from $2.10", Sticker Sheets "from $1.85" -- pointing at demo
+ * slugs. Callers passed `items.length > 0 ? items : undefined`, so the
+ * fixtures appeared precisely when the catalogue call had failed: the moment
+ * we were least able to honour a price. There is no honest cross-sell to show
+ * without live products, and a heading over an empty grid is its own kind of
+ * stub, so the section now removes itself.
+ */
 export function CrossSellGrid({
   title = "Complete your project",
-  items = DEFAULT_ITEMS,
+  items = [],
 }: {
   title?: string;
   items?: CrossSellItem[];
 }) {
+  if (items.length === 0) return null;
+
   return (
     <div>
       <h2 className="text-center font-display font-bold text-header mb-sp-5">{title}</h2>

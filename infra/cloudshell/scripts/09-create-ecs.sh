@@ -9,6 +9,18 @@ require_state ACCOUNT_ID VPC_ID PUBLIC_SUBNET_1_ID PUBLIC_SUBNET_2_ID DB_SG_ID \
 require_command aws
 require_command jq
 
+# Every value below is optional so a bare environment still provisions, but each
+# one that is missing removes a capability rather than failing loudly. They come
+# from config.env (or the per-environment config named by CONFIG_FILE) and from
+# state written by the earlier scripts.
+CONTACT_TO_EMAIL="${CONTACT_TO_EMAIL:-info@greatwestgraphics.com}"
+
+# Which build to run. `latest` only ever moves on a push to main, so staging
+# would always have tracked main and there was no way to exercise a branch
+# before merging it. Setting IMAGE_TAG to a commit SHA deploys that exact build,
+# which is how a change should be tried on staging first.
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+
 if ! aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1; then
   echo "Creating ECS service-linked role (required once per account)..."
   aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
@@ -28,7 +40,15 @@ if [[ -z "${ALB_SG_ID:-}" ]]; then
   save_state ALB_SG_ID "$ALB_SG_ID"
 fi
 authorize_sg_ingress "$ALB_SG_ID" tcp 80 80 cidr 0.0.0.0/0 "HTTP storefront"
-authorize_sg_ingress "$ALB_SG_ID" tcp 4000 4000 cidr 0.0.0.0/0 "HTTP commerce-api smoke"
+# Port 4000 used to be published here, which put the commerce API on the public
+# internet over plain HTTP. Nothing in a browser calls the API — the Next.js
+# server is the only client — so the listener existed purely for smoke tests,
+# and the price of that convenience was COMMERCE_SERVICE_TOKEN crossing the
+# internet in cleartext on every server-rendered page. The API now answers on
+# the internal load balancer below instead. The revoke matters as much as the
+# missing authorize: environments built before this change still carry the open
+# rule, and only an explicit revoke closes it.
+revoke_sg_ingress "$ALB_SG_ID" tcp 4000 4000 cidr 0.0.0.0/0
 
 if [[ -z "${WEB_SG_ID:-}" ]]; then
   WEB_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
@@ -39,6 +59,26 @@ if [[ -z "${WEB_SG_ID:-}" ]]; then
 fi
 authorize_sg_ingress "$WEB_SG_ID" tcp 3000 3000 sg "$ALB_SG_ID" "ALB to web"
 
+# A second, internal load balancer for the API.
+#
+# The scheme of a load balancer is fixed when it is created, so the public one
+# above cannot simply be made private. Splitting them is what allows the API to
+# keep a stable DNS name for the web tier while never resolving to a public
+# address. It also makes the security group reference below actually work: a web
+# task talking to an internet-facing balancer reaches it by public IP and
+# arrives looking like any other internet client, so the ALB sees an internet
+# source rather than WEB_SG_ID and a group-to-group rule silently matches
+# nothing. Against an internal balancer the traffic stays on private addresses
+# and the reference holds.
+if [[ -z "${API_ALB_SG_ID:-}" ]]; then
+  API_ALB_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
+    --group-name "$NAME_PREFIX-api-alb" --description "GWG internal API ALB" \
+    --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=$NAME_PREFIX-api-alb},{Key=Project,Value=$PROJECT}]" \
+    --query GroupId --output text)"
+  save_state API_ALB_SG_ID "$API_ALB_SG_ID"
+fi
+authorize_sg_ingress "$API_ALB_SG_ID" tcp 4000 4000 sg "$WEB_SG_ID" "web to internal API ALB"
+
 if [[ -z "${API_SG_ID:-}" ]]; then
   API_SG_ID="$(aws ec2 create-security-group --vpc-id "$VPC_ID" \
     --group-name "$NAME_PREFIX-api" --description "GWG commerce-api tasks" \
@@ -46,8 +86,11 @@ if [[ -z "${API_SG_ID:-}" ]]; then
     --query GroupId --output text)"
   save_state API_SG_ID "$API_SG_ID"
 fi
-authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$ALB_SG_ID" "ALB to api"
+authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$API_ALB_SG_ID" "internal ALB to api"
 authorize_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$WEB_SG_ID" "web to api"
+# The public balancer no longer forwards to the API, so its reach into the API
+# tasks is left over from the old topology.
+revoke_sg_ingress "$API_SG_ID" tcp 4000 4000 sg "$ALB_SG_ID"
 authorize_sg_ingress "$DB_SG_ID" tcp 5432 5432 sg "$API_SG_ID" "api to RDS"
 
 EXEC_ROLE_NAME="$NAME_PREFIX-ecs-execution"
@@ -67,9 +110,21 @@ EXEC_ROLE_ARN="$(create_role "$EXEC_ROLE_NAME")"
 TASK_ROLE_ARN="$(create_role "$TASK_ROLE_NAME")"
 aws iam attach-role-policy --role-name "$EXEC_ROLE_NAME" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy >/dev/null 2>&1 || true
+# Secrets beyond the two base ones are optional, so an environment that has not
+# been given vendor credentials or an email key still provisions. Each one that
+# IS set has to appear here: the execution role is scoped to an explicit list,
+# and a task referencing a secret missing from it fails to start rather than
+# starting degraded.
+SECRET_ARNS=("$WEB_SECRET_ARN" "$API_SECRET_ARN")
+for optional in SERVICE_TOKEN_SECRET_ARN ADMIN_TOKEN_SECRET_ARN VENDOR_SECRET_ARN EMAIL_SECRET_ARN; do
+  value="${!optional:-}"
+  [ -n "$value" ] && SECRET_ARNS+=("$value")
+done
+
 aws iam put-role-policy --role-name "$EXEC_ROLE_NAME" --policy-name secrets \
-  --policy-document "$(jq -nc --arg web "$WEB_SECRET_ARN" --arg api "$API_SECRET_ARN" \
-    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:[$web,$api]}]}')"
+  --policy-document "$(jq -nc --args \
+    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:($ARGS.positional|unique)}]}' \
+    "${SECRET_ARNS[@]}")"
 aws iam put-role-policy --role-name "$TASK_ROLE_NAME" --policy-name s3-uploads \
   --policy-document "$(jq -nc --arg bucket "$AWS_S3_BUCKET" \
     '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["s3:PutObject","s3:GetObject"],Resource:"arn:aws:s3:::\($bucket)/designs/*"},{Effect:"Allow",Action:["s3:ListBucket"],Resource:"arn:aws:s3:::\($bucket)",Condition:{StringLike:{ "s3:prefix":["designs/*"]}}}]}')"
@@ -87,10 +142,31 @@ if [[ -z "${ALB_ARN:-}" ]]; then
 fi
 ALB_DNS="$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].DNSName' --output text)"
 save_state ALB_DNS "$ALB_DNS"
+
+if [[ -z "${API_ALB_ARN:-}" ]]; then
+  API_ALB_ARN="$(aws elbv2 create-load-balancer --name "$NAME_PREFIX-api-alb" --type application --scheme internal \
+    --subnets "$PUBLIC_SUBNET_1_ID" "$PUBLIC_SUBNET_2_ID" --security-groups "$API_ALB_SG_ID" \
+    --tags Key=Project,Value="$PROJECT" Key=Environment,Value="$ENVIRONMENT" \
+    --query 'LoadBalancers[0].LoadBalancerArn' --output text)"
+  save_state API_ALB_ARN "$API_ALB_ARN"
+fi
+# The subnets are the same ones the public balancer uses; "internal" is about
+# the addresses the balancer answers on, not about which subnet it sits in, so
+# this needs no private subnet or NAT gateway to be introduced first.
+API_ALB_DNS="$(aws elbv2 describe-load-balancers --load-balancer-arns "$API_ALB_ARN" --query 'LoadBalancers[0].DNSName' --output text)"
+save_state API_ALB_DNS "$API_ALB_DNS"
+
 SITE_URL="http://$ALB_DNS"
-API_URL="http://$ALB_DNS:4000"
+API_URL="http://$API_ALB_DNS:4000"
 if [[ -n "${SITE_HOSTNAME:-}" ]]; then SITE_URL="https://$SITE_HOSTNAME"; fi
-if [[ -n "${API_HOSTNAME:-}" ]]; then API_URL="https://$API_HOSTNAME"; fi
+# Plain HTTP is acceptable on API_URL only because it never leaves the VPC.
+# API_HOSTNAME is deliberately not honoured any more: it used to point the web
+# container at a public https://api.* name on the shared balancer, and script 13
+# now refuses to create that name at all. Leaving the branch here would let a
+# stale config.env quietly send API traffic back out to the internet.
+if [[ -n "${API_HOSTNAME:-}" ]]; then
+  echo "API_HOSTNAME is set but ignored: the API is internal-only. Remove it from config.env." >&2
+fi
 save_state SITE_URL "$SITE_URL"
 save_state API_URL "$API_URL"
 
@@ -114,8 +190,23 @@ if [[ -z "${WEB_LISTENER_ARN:-}" ]]; then
     --default-actions "Type=forward,TargetGroupArn=$WEB_TG_ARN" --query 'Listeners[0].ListenerArn' --output text)"
   save_state WEB_LISTENER_ARN "$WEB_LISTENER_ARN"
 fi
+# An environment provisioned before the API moved has this listener on the
+# public balancer, and leaving it there would keep port 4000 answering from the
+# internet no matter what the security groups say. Deleting and recreating is
+# safe here because the target group is unchanged: the ECS service references
+# the target group, not the listener, so the API service is not disturbed and
+# does not need a redeploy.
+if [[ -n "${API_LISTENER_ARN:-}" ]]; then
+  CURRENT_API_LB="$(aws elbv2 describe-listeners --listener-arns "$API_LISTENER_ARN" \
+    --query 'Listeners[0].LoadBalancerArn' --output text 2>/dev/null || echo "")"
+  if [[ "$CURRENT_API_LB" != "$API_ALB_ARN" ]]; then
+    [[ -n "$CURRENT_API_LB" && "$CURRENT_API_LB" != "None" ]] &&
+      aws elbv2 delete-listener --listener-arn "$API_LISTENER_ARN" >/dev/null
+    API_LISTENER_ARN=""
+  fi
+fi
 if [[ -z "${API_LISTENER_ARN:-}" ]]; then
-  API_LISTENER_ARN="$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" --protocol HTTP --port 4000 \
+  API_LISTENER_ARN="$(aws elbv2 create-listener --load-balancer-arn "$API_ALB_ARN" --protocol HTTP --port 4000 \
     --default-actions "Type=forward,TargetGroupArn=$API_TG_ARN" --query 'Listeners[0].ListenerArn' --output text)"
   save_state API_LISTENER_ARN "$API_LISTENER_ARN"
 fi
@@ -129,13 +220,22 @@ WEB_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-web" \
   --arg exec "$EXEC_ROLE_ARN" \
   --arg task "$TASK_ROLE_ARN" \
-  --arg image "$WEB_ECR_URI:latest" \
+  --arg image "$WEB_ECR_URI:$IMAGE_TAG" \
   --arg logs "$LOG_WEB" \
   --arg region "$AWS_REGION" \
   --arg api "$API_URL" \
   --arg site "$SITE_URL" \
   --arg bucket "$AWS_S3_BUCKET" \
   --arg web_secret "$WEB_SECRET_ARN" \
+  --arg contact_to "$CONTACT_TO_EMAIL" \
+  --arg tenant "${COMMERCE_DEFAULT_TENANT_ID:-}" \
+  --arg account "${COMMERCE_DEFAULT_ACCOUNT_ID:-}" \
+  --arg store "${COMMERCE_DEFAULT_STORE_ID:-}" \
+  --arg store_slug "${COMMERCE_DEFAULT_STORE_SLUG:-}" \
+  --arg store_name "${COMMERCE_DEFAULT_STORE_NAME:-}" \
+  --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
+  --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
+  --arg email_secret "${EMAIL_SECRET_ARN:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -149,16 +249,25 @@ WEB_TASK="$(jq -nc \
       image:$image,
       essential:true,
       portMappings:[{containerPort:3000,protocol:"tcp"}],
-      environment:[
+      environment:([
         {name:"NODE_ENV",value:"production"},
         {name:"COMMERCE_API_BASE_URL",value:$api},
         {name:"NEXT_PUBLIC_SITE_URL",value:$site},
         {name:"AWS_S3_BUCKET",value:$bucket},
         {name:"AWS_REGION",value:$region},
         {name:"COGNITO_REGION",value:$region},
-        {name:"CONTACT_TO_EMAIL",value:"info@greatwestgraphics.com"}
-      ],
-      secrets:[
+        {name:"CONTACT_TO_EMAIL",value:$contact_to}
+      ]
+      # Which store this environment serves. Without these the storefront has no
+      # store to be and falls back to a marketing shell with an empty tenant id,
+      # which renders a healthy-looking page with no catalogue behind it.
+      # 16-create-store.sh writes them into state; it has to have been run.
+      + (if $tenant     != "" then [{name:"COMMERCE_DEFAULT_TENANT_ID",value:$tenant}]      else [] end)
+      + (if $account    != "" then [{name:"COMMERCE_DEFAULT_ACCOUNT_ID",value:$account}]    else [] end)
+      + (if $store      != "" then [{name:"COMMERCE_DEFAULT_STORE_ID",value:$store}]        else [] end)
+      + (if $store_slug != "" then [{name:"COMMERCE_DEFAULT_STORE_SLUG",value:$store_slug}] else [] end)
+      + (if $store_name != "" then [{name:"COMMERCE_DEFAULT_STORE_NAME",value:$store_name}] else [] end)),
+      secrets:([
         {name:"STAFF_ADMIN_USER",valueFrom:($web_secret+":STAFF_ADMIN_USER::")},
         {name:"STAFF_ADMIN_PASSWORD",valueFrom:($web_secret+":STAFF_ADMIN_PASSWORD::")},
         {name:"STAFF_SESSION_SECRET",valueFrom:($web_secret+":STAFF_SESSION_SECRET::")},
@@ -166,7 +275,14 @@ WEB_TASK="$(jq -nc \
         {name:"COGNITO_USER_POOL_ID",valueFrom:($web_secret+":COGNITO_USER_POOL_ID::")},
         {name:"COGNITO_APP_CLIENT_ID",valueFrom:($web_secret+":COGNITO_APP_CLIENT_ID::")},
         {name:"COGNITO_APP_CLIENT_SECRET",valueFrom:($web_secret+":COGNITO_APP_CLIENT_SECRET::")}
-      ],
+      ]
+      # The commerce API refuses tenant-scoped requests in production without a
+      # service token, so a web tier that cannot present one gets nothing back.
+      + (if $service_token != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
+      + (if $admin_token   != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
+      # Absent this the contact form silently logs submissions instead of
+      # sending them, which reads as success to the customer.
+      + (if $email_secret  != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}]                  else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"web"}
@@ -178,10 +294,20 @@ API_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-api" \
   --arg exec "$EXEC_ROLE_ARN" \
   --arg task "$TASK_ROLE_ARN" \
-  --arg image "$API_ECR_URI:latest" \
+  --arg image "$API_ECR_URI:$IMAGE_TAG" \
   --arg logs "$LOG_API" \
   --arg region "$AWS_REGION" \
   --arg api_secret "$API_SECRET_ARN" \
+  --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
+  --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
+  --arg vendor_secret "${VENDOR_SECRET_ARN:-}" \
+  --arg sanmar_base "${SANMAR_API_BASE_URL:-}" \
+  --arg ss_base "${SS_API_BASE_URL:-}" \
+  --arg email_secret "${EMAIL_SECRET_ARN:-}" \
+  --arg site "$SITE_URL" \
+  --arg staff_email "${STAFF_NOTIFICATION_EMAIL:-}" \
+  --arg from_email "${NOTIFICATIONS_FROM_EMAIL:-}" \
+  --arg store_base_domain "${COMMERCE_STOREFRONT_BASE_DOMAIN:-}" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -195,15 +321,44 @@ API_TASK="$(jq -nc \
       image:$image,
       essential:true,
       portMappings:[{containerPort:4000,protocol:"tcp"}],
-      environment:[
+      environment:([
         {name:"NODE_ENV",value:"production"},
         {name:"COMMERCE_API_HOST",value:"0.0.0.0"},
         {name:"COMMERCE_API_PORT",value:"4000"},
-        {name:"ENABLE_DEV_ADMIN_ROUTES",value:"false"}
-      ],
-      secrets:[
+        {name:"ENABLE_DEV_ADMIN_ROUTES",value:"false"},
+        # Fargate has no writable public directory, so S&S images are kept as
+        # CDN URLs rather than downloaded during a sync.
+        {name:"SS_IMAGE_STORAGE",value:"remote"},
+        # Links inside notification emails point back at the storefront.
+        {name:"SITE_BASE_URL",value:$site}
+      ]
+      + (if $sanmar_base != "" then [{name:"SANMAR_API_BASE_URL",value:$sanmar_base}] else [] end)
+      + (if $ss_base     != "" then [{name:"SS_API_BASE_URL",value:$ss_base}]         else [] end)
+      # Without a staff address, customer proof activity is delivered nowhere.
+      + (if $staff_email != "" then [{name:"STAFF_NOTIFICATION_EMAIL",value:$staff_email}] else [] end)
+      + (if $from_email  != "" then [{name:"NOTIFICATIONS_FROM_EMAIL",value:$from_email}]   else [] end)
+      # Only set on a stack that serves several stores off one wildcard domain.
+      # Absent, a host resolves only against a registered stores.custom_domain.
+      + (if $store_base_domain != "" then [{name:"COMMERCE_STOREFRONT_BASE_DOMAIN",value:$store_base_domain}] else [] end)),
+      secrets:([
         {name:"DATABASE_URL",valueFrom:($api_secret+":DATABASE_URL::")}
-      ],
+      ]
+      # Admin routes are only mounted when ADMIN_API_TOKEN is present, which is
+      # what replaces the development-only flag in production.
+      + (if $service_token  != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
+      + (if $admin_token    != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
+      # The API drains the outbox, so the mail key belongs here as well as on
+      # the web tier. Without it proof notifications stay queued.
+      + (if $email_secret   != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}] else [] end)
+      # Vendor credentials drive catalogue sync; without them the storefront
+      # has no products at all.
+      + (if $vendor_secret  != "" then [
+          {name:"SANMAR_ACCOUNT_ID",valueFrom:($vendor_secret+":SANMAR_ACCOUNT_ID::")},
+          {name:"SANMAR_LOGIN_EMAIL",valueFrom:($vendor_secret+":SANMAR_LOGIN_EMAIL::")},
+          {name:"SANMAR_API_PASSWORD",valueFrom:($vendor_secret+":SANMAR_API_PASSWORD::")},
+          {name:"SS_ACCOUNT_NUMBER",valueFrom:($vendor_secret+":SS_ACCOUNT_NUMBER::")},
+          {name:"SS_API_KEY",valueFrom:($vendor_secret+":SS_API_KEY::")}
+        ] else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"api"}
@@ -224,8 +379,8 @@ fi
 
 HAS_WEB_IMAGE=false
 HAS_API_IMAGE=false
-aws ecr describe-images --repository-name gwg-web --image-ids imageTag=latest >/dev/null 2>&1 && HAS_WEB_IMAGE=true
-aws ecr describe-images --repository-name gwg-commerce-api --image-ids imageTag=latest >/dev/null 2>&1 && HAS_API_IMAGE=true
+aws ecr describe-images --repository-name gwg-web --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1 && HAS_WEB_IMAGE=true
+aws ecr describe-images --repository-name gwg-commerce-api --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1 && HAS_API_IMAGE=true
 DESIRED=0
 if [[ "$HAS_WEB_IMAGE" == "true" && "$HAS_API_IMAGE" == "true" ]]; then
   DESIRED=1
@@ -255,13 +410,25 @@ upsert_service "$NAME_PREFIX-api" "$API_TD" "$API_SG_ID" "$API_TG_ARN" api 4000
 echo "ECS cluster:     $ECS_CLUSTER"
 echo "ALB DNS:         $ALB_DNS"
 echo "Storefront URL:  $SITE_URL"
-echo "API URL:         $API_URL"
-echo "Health checks:   $SITE_URL/api/health  and  $API_URL/health"
+echo "API URL:         $API_URL  (internal to the VPC)"
+echo "Health checks:   $SITE_URL/api/health"
+echo "                 $API_URL/health is only reachable from inside the VPC;"
+echo "                 the storefront health check covers the API behind it."
 if [[ "$DESIRED" == "0" ]]; then
-  echo "No :latest images in ECR yet — services are created at desired count 0."
+  echo "No images tagged $IMAGE_TAG in ECR yet — services are created at desired count 0."
   echo "Push images with .github/workflows/aws-ecr.yml (or a laptop Docker build), then re-run this script."
 else
   echo "Services desired count is 1. Give the ALB a couple of minutes, then curl the health URLs."
 fi
 echo "This first pass is HTTP on the ALB DNS. Add ACM + Route 53 before production HTTPS."
 echo "ENABLE_DEV_ADMIN_ROUTES is false. COMMERCE_DEV_* IDs are not set."
+# Said out loud because the storefront will not say it. With no store to be, it
+# renders a marketing shell and returns 200 for every page, so an environment
+# missing this looks deployed and sells nothing.
+if [[ -z "${COMMERCE_DEFAULT_STORE_ID:-}" ]]; then
+  echo
+  echo "WARNING: no store identity for this environment, so the storefront will" >&2
+  echo "serve a marketing shell with an empty catalogue. Run:" >&2
+  echo "  ./scripts/16-create-store.sh" >&2
+  echo "then run this script again." >&2
+fi

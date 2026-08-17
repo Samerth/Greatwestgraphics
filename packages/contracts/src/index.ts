@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LinePricingSnapshotV2Schema } from "./pricing-v2.js";
 
 export * from "./pricing-v2.js";
+export * from "./design-document.js";
 
 export const CanonicalIdSchema = z.string().uuid();
 export type CanonicalId = z.infer<typeof CanonicalIdSchema>;
@@ -452,6 +453,18 @@ export const FinalQuoteResponseSchema = z.object({
 });
 export type FinalQuoteResponse = z.infer<typeof FinalQuoteResponseSchema>;
 
+/** A proof is reviewed by whichever party did not raise it: staff send a proof
+ * for the customer to sign off, and a customer's own artwork is reviewed by
+ * staff. Storing the audience explicitly keeps "whose turn is it" answerable
+ * without re-deriving it from the creating actor on every read. */
+export const ProofAudiences = ["customer", "staff"] as const;
+export const ProofAudienceSchema = z.enum(ProofAudiences);
+export type ProofAudience = (typeof ProofAudiences)[number];
+
+export const ProofDecisions = ["approved", "changes_requested"] as const;
+export const ProofDecisionSchema = z.enum(ProofDecisions);
+export type ProofDecision = (typeof ProofDecisions)[number];
+
 export const ProofVersionResponseSchema = z.object({
   id: CanonicalIdSchema,
   jobRequestId: CanonicalIdSchema,
@@ -459,9 +472,24 @@ export const ProofVersionResponseSchema = z.object({
   storageKey: z.string().min(1).max(2_000),
   decision: z.enum(["pending", "approved", "changes_requested"]).nullable(),
   decidedAt: z.string().datetime().nullable(),
+  decidedBy: ActorSchema.nullable().default(null),
+  decisionNote: z.string().max(2_000).nullable().default(null),
+  awaitingDecisionFrom: ProofAudienceSchema.nullable().default(null),
+  note: z.string().max(2_000).nullable().default(null),
+  createdBy: ActorSchema.nullable().default(null),
   createdAt: z.string().datetime(),
 });
 export type ProofVersionResponse = z.infer<typeof ProofVersionResponseSchema>;
+
+export const DecideProofSchema = z.object({
+  context: RequestContextSchema,
+  decision: ProofDecisionSchema,
+  /** Required when asking for changes: an unexplained rejection just costs
+   * everyone another round trip. */
+  note: z.string().max(2_000).optional(),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type DecideProof = z.infer<typeof DecideProofSchema>;
 
 export const CreateFinalQuoteSchema = z.object({
   context: RequestContextSchema,
@@ -477,11 +505,19 @@ export const CreateProofVersionSchema = z.object({
   context: RequestContextSchema,
   storageKey: z.string().min(1).max(2_000),
   note: z.string().max(2_000).optional(),
+  /** Defaults to the opposite party from whoever is uploading. */
+  awaitingDecisionFrom: ProofAudienceSchema.optional(),
   source: SourceMetadataSchema.default({ system: "commerce_api" }),
 });
 export type CreateProofVersion = z.infer<typeof CreateProofVersionSchema>;
 
 export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.extend({
+  /** What the customer typed at checkout, plus how they said they intend to
+   * pay. It was accepted on `CreateJobRequest`, written to the row and then
+   * dropped from every read, so the only place it surfaced was the CRM push —
+   * meaning staff working a job in the admin never saw the deadline, PO number
+   * or payment preference the checkout copy promised to pass along. */
+  customerNote: z.string().max(4_000).nullable().default(null),
   lines: z.array(
     z.object({
       id: CanonicalIdSchema,
@@ -530,6 +566,7 @@ export const CommerceEventTypes = [
   "commerce.job_request.status_changed.v1",
   "commerce.job_request.final_quote.created.v1",
   "commerce.job_request.proof.created.v1",
+  "commerce.job_request.proof.decided.v1",
   "commerce.contact_request.received.v1",
 ] as const;
 export const CommerceEventTypeSchema = z.enum(CommerceEventTypes);

@@ -1,24 +1,21 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { PlacedArtwork } from "@/components/design/ArtworkLayer";
-
-export type ActiveDesignArtworks = {
-  front: PlacedArtwork[];
-  back: PlacedArtwork[];
-  side?: PlacedArtwork[];
-};
-
-const EMPTY_ARTWORKS: ActiveDesignArtworks = { front: [], back: [], side: [] };
+import {
+  designDocumentHasArtwork,
+  emptyDesignDocument,
+  normalizeDesignDocument,
+  type DesignDocument,
+} from "@gwg/contracts";
 
 interface ActiveDesignState {
   name: string;
   garmentProductId: string | null;
-  artworksBySide: ActiveDesignArtworks;
+  design: DesignDocument;
   savedDesignId: string | null;
   setDesign: (design: {
     name: string;
     garmentProductId: string | null;
-    artworksBySide: ActiveDesignArtworks;
+    design: DesignDocument;
     savedDesignId?: string | null;
   }) => void;
   setGarment: (garmentProductId: string | null) => void;
@@ -37,32 +34,45 @@ export const useActiveDesignStore = create<ActiveDesignState>()(
     (set) => ({
       name: "",
       garmentProductId: null,
-      artworksBySide: EMPTY_ARTWORKS,
+      design: emptyDesignDocument(),
       savedDesignId: null,
-      setDesign: (design) =>
+      setDesign: (next) =>
         set({
-          name: design.name,
-          garmentProductId: design.garmentProductId,
-          artworksBySide: design.artworksBySide,
-          savedDesignId: design.savedDesignId ?? null,
+          name: next.name,
+          garmentProductId: next.garmentProductId,
+          design: next.design,
+          savedDesignId: next.savedDesignId ?? null,
         }),
       setGarment: (garmentProductId) => set({ garmentProductId }),
       clear: () =>
         set({
           name: "",
           garmentProductId: null,
-          artworksBySide: EMPTY_ARTWORKS,
+          design: emptyDesignDocument(),
           savedDesignId: null,
         }),
     }),
-    { name: "gwg-active-design" },
+    {
+      name: "gwg-active-design",
+      // A browser holding the pre-sleeve `artworksBySide` shape from a
+      // previous visit still has a real design in it; migrating on read
+      // keeps that customer's work instead of silently starting them over.
+      migrate: (persisted) => {
+        const state = (persisted ?? {}) as Partial<ActiveDesignState> & {
+          artworksBySide?: unknown;
+        };
+        return {
+          ...state,
+          design: normalizeDesignDocument(
+            state.design ?? state.artworksBySide,
+          ),
+        } as ActiveDesignState;
+      },
+      version: 2,
+    },
   ),
 );
 
-export function hasActiveArtwork(artworksBySide: ActiveDesignArtworks): boolean {
-  return (
-    artworksBySide.front.length > 0 ||
-    artworksBySide.back.length > 0 ||
-    (artworksBySide.side?.length ?? 0) > 0
-  );
+export function hasActiveArtwork(design: DesignDocument): boolean {
+  return designDocumentHasArtwork(design);
 }

@@ -4,6 +4,7 @@ import type {
 } from "@gwg/contracts";
 import { PRICING_MASTER_V2 } from "@gwg/pricing";
 import { PricingV2Admin } from "@/components/portal/pricing/v2/PricingV2Admin";
+import { adminToken } from "@/lib/admin/auth";
 import {
   CommerceApiError,
   createCommerceClient,
@@ -18,25 +19,20 @@ export default async function PricingV2Page() {
   let versions: PricingConfigV2VersionSummary[] = [];
   let readOnlyReason: string | undefined;
 
-  const adminToken = process.env.DEV_ADMIN_TOKEN;
-
   try {
-    if (!adminToken) {
-      throw new Error(
-        "DEV_ADMIN_TOKEN is not configured, so changes can't be saved. The numbers below are the imported defaults.",
-      );
-    }
+    // Deployed environments set ADMIN_API_TOKEN, not DEV_ADMIN_TOKEN.
+    const token = adminToken();
     const client = await createCommerceClient();
     const [draftResponse, versionList] = await Promise.all([
-      client.getPricingV2Draft(adminToken),
-      client.listPricingV2Versions(adminToken),
+      client.getPricingV2Draft(token),
+      client.listPricingV2Versions(token),
     ]);
     draft = draftResponse.config;
     draftVersion = draftResponse.version;
     versions = versionList;
 
     try {
-      publishedConfig = (await client.getPricingV2Published(adminToken)).config;
+      publishedConfig = (await client.getPricingV2Published(token)).config;
     } catch {
       // A tenant that has never published has no live config to compare against.
       publishedConfig = null;

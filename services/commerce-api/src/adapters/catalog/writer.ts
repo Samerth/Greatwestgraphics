@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../../db/client.js";
 import {
@@ -22,16 +22,69 @@ import {
 import { externalKeyToNumericId } from "./ids.js";
 import type { CatalogSkuRow, InventoryRow, SyncRunResult } from "./types.js";
 
-const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
-  { pattern: /hoodie|crewneck|sweatshirt/i, categorySlug: "hoodies-and-crewnecks" },
-  { pattern: /\btee\b|t-shirt|tshirt/i, categorySlug: "t-shirts" },
-  { pattern: /hat|cap|beanie/i, categorySlug: "hats" },
-  { pattern: /tote|bag/i, categorySlug: "tote-bags" },
-  { pattern: /jacket/i, categorySlug: "jackets" },
-  { pattern: /vest/i, categorySlug: "vests" },
-  { pattern: /jersey/i, categorySlug: "jerseys" },
-  { pattern: /\bpolo\b/i, categorySlug: "polos" },
+/**
+ * Last-resort categorisation for vendor rows that arrive with no category of
+ * their own. Order is significant: the first match wins, so the specific
+ * garments sit above the general ones -- a hi-vis vest belongs under safety
+ * rather than vests, and a quarter-zip is a sweatshirt before it is a jacket.
+ *
+ * Every pattern is anchored on word boundaries. Without them `hat` matched any
+ * product whose name merely contained those letters, and `bag` filed "baggy"
+ * under tote bags.
+ */
+export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
+  // Safety first: hi-vis outerwear names itself after the garment it replaces,
+  // so "safety vest" and "hi-vis jacket" would otherwise land in vests/jackets.
+  {
+    pattern: /\b(hi[- ]?vis|high[- ]?visibility|reflective|ansi|safety)\b/i,
+    categorySlug: "safety",
+  },
+  {
+    pattern:
+      /\b(hoodie|hooded|crewneck|sweatshirt|sweater|fleece|pullover|quarter[- ]?zip|1\/4[- ]?zip|half[- ]?zip|1\/2[- ]?zip)\b/i,
+    categorySlug: "hoodies-and-crewnecks",
+  },
+  { pattern: /\b(tee|tees|t-shirt|tshirt|t shirt)\b/i, categorySlug: "t-shirts" },
+  {
+    pattern: /\b(hat|hats|cap|caps|beanie|toque|visor|snapback|trucker)\b/i,
+    categorySlug: "hats",
+  },
+  {
+    pattern: /\b(tote|bag|bags|backpack|duffel|duffle|cinch|pack)\b/i,
+    categorySlug: "tote-bags",
+  },
+  { pattern: /\b(jacket|parka|windbreaker|shell|anorak)\b/i, categorySlug: "jackets" },
+  { pattern: /\b(vest|bodywarmer|gilet)\b/i, categorySlug: "vests" },
+  { pattern: /\b(jersey|jerseys)\b/i, categorySlug: "jerseys" },
+  { pattern: /\b(polo|polos)\b/i, categorySlug: "polos" },
+  { pattern: /\b(sock|socks)\b/i, categorySlug: "socks" },
+  {
+    pattern: /\b(tumbler|mug|bottle|drinkware|flask|growler|can cooler)\b/i,
+    categorySlug: "drinkware",
+  },
+  { pattern: /\b(notebook|journal|notepad|planner)\b/i, categorySlug: "notebooks" },
+  { pattern: /\b(patch|patches)\b/i, categorySlug: "patches" },
 ];
+
+/**
+ * Every fallback category a product's text suggests, best match first.
+ *
+ * All the candidates are returned rather than just the winner because a tenant
+ * need not have every category: the caller keeps walking the list until it
+ * finds one that exists, which is what the original per-rule query did.
+ *
+ * Separated from the database write so the rules can be exercised directly --
+ * the ordering between overlapping rules is the part most likely to regress.
+ */
+export function fallbackCategorySlugs(searchText: string): string[] {
+  const slugs: string[] = [];
+  for (const rule of KEYWORD_FALLBACKS) {
+    if (rule.pattern.test(searchText) && !slugs.includes(rule.categorySlug)) {
+      slugs.push(rule.categorySlug);
+    }
+  }
+  return slugs;
+}
 
 /**
  * Shared catalog upsert used by every vendor adapter (S&S wrapper, Sanmar, CSV).
@@ -573,6 +626,104 @@ export class CatalogWriter {
     return updated;
   }
 
+  /**
+   * File a vendor's still-uncategorised products using the keyword fallbacks.
+   *
+   * The fast upsert path skips category assignment on purpose — it exists to
+   * land tens of thousands of sellable rows quickly, and per-product category
+   * queries are exactly what makes the slow path slow. That was survivable
+   * while the fast path was only used for interim rows, but Sanmar's whole
+   * catalogue goes through it, so every one of its products stayed
+   * uncategorised no matter how good the keyword rules got.
+   *
+   * It runs as a separate pass rather than inside the upsert because a
+   * sellable feed carries no product names: until enrichment has replaced the
+   * placeholder style name with the real one there is no text to match on, and
+   * matching too early would file everything under nothing and then leave it
+   * there.
+   *
+   * Only products with no category at all are touched. A product that already
+   * has a row was categorised by a vendor mapping or by staff, and guessing
+   * over top of either would be worse than leaving it alone.
+   */
+  async assignFallbackCategories(
+    tenantId: string,
+    vendor: string,
+  ): Promise<{ assigned: number; unmatched: number }> {
+    const tenantCategories = await this.db
+      .select({ id: categories.id, slug: categories.slug })
+      .from(categories)
+      .where(eq(categories.tenantId, tenantId));
+    const categoryIdBySlug = new Map(
+      tenantCategories.map((row) => [row.slug, row.id]),
+    );
+    if (categoryIdBySlug.size === 0) return { assigned: 0, unmatched: 0 };
+
+    const uncategorised = await this.db
+      .select({
+        productUuid: ssProducts.id,
+        styleName: ssStyles.styleName,
+        title: ssStyles.title,
+        baseCategory: ssStyles.baseCategory,
+      })
+      .from(ssProducts)
+      .innerJoin(ssStyles, eq(ssStyles.id, ssProducts.styleUuid))
+      .leftJoin(
+        ssProductCategories,
+        eq(ssProductCategories.productUuid, ssProducts.id),
+      )
+      .where(
+        and(
+          eq(ssProducts.tenantId, tenantId),
+          eq(ssProducts.vendor, vendor),
+          isNull(ssProductCategories.id),
+        ),
+      );
+    if (uncategorised.length === 0) return { assigned: 0, unmatched: 0 };
+
+    // A staff override means the product is deliberately filed somewhere, even
+    // if the join above found no row yet to prove it.
+    const overrides = await this.db
+      .select({ productUuid: categoryOverrides.productUuid })
+      .from(categoryOverrides)
+      .where(eq(categoryOverrides.tenantId, tenantId));
+    const overridden = new Set(overrides.map((row) => row.productUuid));
+
+    const values: Array<{
+      tenantId: string;
+      productUuid: string;
+      categoryId: string;
+      assignmentSource: string;
+    }> = [];
+    let unmatched = 0;
+
+    for (const row of uncategorised) {
+      if (overridden.has(row.productUuid)) continue;
+      const searchText = [row.styleName, row.title, row.baseCategory]
+        .filter(Boolean)
+        .join(" ");
+      const categoryId = fallbackCategorySlugs(searchText)
+        .map((slug) => categoryIdBySlug.get(slug))
+        .find(Boolean);
+      if (!categoryId) {
+        unmatched += 1;
+        continue;
+      }
+      values.push({
+        tenantId,
+        productUuid: row.productUuid,
+        categoryId,
+        assignmentSource: "map",
+      });
+    }
+
+    for (let i = 0; i < values.length; i += 500) {
+      await this.db.insert(ssProductCategories).values(values.slice(i, i + 500));
+    }
+
+    return { assigned: values.length, unmatched };
+  }
+
   async updateInventory(
     tenantId: string,
     vendor: string,
@@ -962,24 +1113,23 @@ export class CatalogWriter {
 
     // Sellable-first rows often have no category yet — avoid N category queries.
     if (categoryKeys.length === 0) {
-      let matched: string | null = null;
-      for (const rule of KEYWORD_FALLBACKS) {
-        if (!rule.pattern.test(searchText)) continue;
-        const [cat] = await this.db
-          .select()
-          .from(categories)
-          .where(
-            and(
-              eq(categories.tenantId, tenantId),
-              eq(categories.slug, rule.categorySlug),
-            ),
-          )
-          .limit(1);
-        if (cat) {
-          matched = cat.id;
-          break;
-        }
-      }
+      const candidates = fallbackCategorySlugs(searchText);
+      if (candidates.length === 0) return;
+
+      // One query for every candidate, then the best-ranked slug that this
+      // tenant actually has. Previously this issued a query per matching rule.
+      const found = await this.db
+        .select({ id: categories.id, slug: categories.slug })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.tenantId, tenantId),
+            inArray(categories.slug, candidates),
+          ),
+        );
+      const bySlug = new Map(found.map((row) => [row.slug, row.id]));
+      const matched =
+        candidates.map((slug) => bySlug.get(slug)).find(Boolean) ?? null;
       if (!matched) return;
       await this.db
         .delete(ssProductCategories)

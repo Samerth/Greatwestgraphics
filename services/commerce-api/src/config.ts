@@ -23,6 +23,41 @@ const EnvironmentSchema = z
      * over pricing publication and catalogue editing.
      */
     ADMIN_API_TOKEN: z.string().min(32).optional(),
+    /**
+     * Notification delivery. Without RESEND_API_KEY the dispatcher leaves
+     * events queued rather than marking them sent, so wiring the key up later
+     * still delivers the backlog instead of silently dropping it.
+     */
+    RESEND_API_KEY: z.string().optional(),
+    /**
+     * Must be on a domain verified in Resend. The previous default was Resend's
+     * shared `onboarding@resend.dev`, which only delivers to the Resend account
+     * owner — so proof notifications to customers were rejected outright while
+     * the dispatcher looked healthy. Defaulting to the real sending identity
+     * means a missing variable degrades to "verify the domain" rather than to
+     * "silently reach nobody".
+     */
+    NOTIFICATIONS_FROM_EMAIL: z
+      .string()
+      .default("Great West Graphics <noreply@greatwestgraphics.com>"),
+    /** Where customer-side activity is announced. Unset means staff get no mail. */
+    STAFF_NOTIFICATION_EMAIL: z.string().email().optional(),
+    /** Used to build the portal and admin links inside notification emails. */
+    SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+    /**
+     * Domain under which a store's slug doubles as its subdomain, so that
+     * `acme.stores.example.com` resolves the store with slug `acme`. Leaving
+     * it unset — the case for every environment that serves a single store —
+     * means `/v1/stores/by-host` only answers for a registered custom domain,
+     * and an unknown host resolves to nothing rather than to whichever store
+     * shares its first label.
+     */
+    COMMERCE_STOREFRONT_BASE_DOMAIN: z.string().min(1).optional(),
+    OUTBOX_DISPATCH_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+    OUTBOX_POLL_MS: z.coerce.number().int().min(1_000).default(30_000),
     SS_ACCOUNT_NUMBER: z.string().optional(),
     SS_API_KEY: z.string().optional(),
     SS_API_BASE_URL: z

@@ -15,7 +15,6 @@ import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
 import { useCartStore } from "@/lib/store/cart";
-import { loadDesignProofs } from "@/lib/commerce/design-attachment";
 import type {
   ContactValues,
   ShippingValues,
@@ -116,11 +115,6 @@ export function CheckoutWizard() {
                 },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => {
-                  const proofs = loadDesignProofs();
-                  const designProofs =
-                    proofs?.front || proofs?.back
-                      ? { front: proofs.front, back: proofs.back }
-                      : undefined;
                   return {
                     description: item.name,
                     quantity: item.qty,
@@ -134,7 +128,12 @@ export function CheckoutWizard() {
                       color: item.color,
                       size: item.size,
                       image: item.image,
-                      designProofs,
+                      // Per line, because two lines can carry two different
+                      // designs. This used to read a browser store that nothing
+                      // ever wrote, so every order arrived with no artwork.
+                      artworkProofUrl: item.artworkProofUrl,
+                      designProjectId: item.designProjectId,
+                      roster: item.roster,
                       // Sending the snapshot lets the API re-price the line
                       // against the config that is live right now, so a cart
                       // left open for a week can't lock in stale pricing.

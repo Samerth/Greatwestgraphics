@@ -38,6 +38,9 @@ export default async function ShopLayout({
               ? "This store is still being reviewed. Check back shortly."
               : "This store isn't currently available."}
           </p>
+          <a href="/leave-store" className="text-sm underline">
+            Go to the main Great West Graphics shop
+          </a>
         </div>
       </div>
     );
@@ -48,6 +51,18 @@ export default async function ShopLayout({
   return (
     <div style={brandVars as React.CSSProperties | undefined}>
       {!isBranded && <OrganizationJsonLd />}
+      {isBranded && (
+        <div className="bg-fill-subtle border-b border-border text-sm">
+          <div className="mx-auto max-w-[1280px] px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              You are shopping the <b>{store.name}</b> team store.
+            </span>
+            <a href="/leave-store" className="underline whitespace-nowrap">
+              Shop the main site instead
+            </a>
+          </div>
+        </div>
+      )}
       <TickBar />
       <Header
         categories={categories}

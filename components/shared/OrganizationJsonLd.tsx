@@ -35,7 +35,14 @@ export function OrganizationJsonLd() {
       closes: "16:30",
     },
     priceRange: "$$",
-    sameAs: [],
+    // Was an empty array while the footer linked three real profiles. sameAs
+    // is how a search engine ties this markup to those accounts, so leaving it
+    // empty threw away the corroboration we already had sitting in the footer.
+    sameAs: [
+      "https://www.instagram.com/greatwestgraphics/",
+      "https://www.facebook.com/GreatWestGraphicsInc/",
+      "https://www.linkedin.com/company/great-west-graphics",
+    ],
   };
 
   return (

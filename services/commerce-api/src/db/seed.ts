@@ -81,6 +81,8 @@ try {
       accountId: ids.accountId,
       name: "Development Storefront",
       slug: "development",
+      // The retail storefront: shopping here is open to anyone who signs in.
+      isPublic: true,
     })
     .onConflictDoNothing();
   await database.db

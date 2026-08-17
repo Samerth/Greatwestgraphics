@@ -21,7 +21,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 3 | `03-verify.sh` | RDS checks (TLS, encryption, no `0.0.0.0/0`) |
 | 4 | `04-update-allowed-ip.sh` | Replace the trusted SQL client CIDR |
 | 5 | `05-create-s3.sh` | Private versioned uploads bucket |
-| 6 | `06-create-cognito.sh` | User pool + confidential app client (`USER_AUTH` / email OTP + password) |
+| 6 | `06-create-cognito.sh` | User pool + confidential app client (`USER_AUTH` / email OTP + password). Leaves the pool on Cognito's built-in sender: 50 messages a day from a generic address, with default AWS templates. Switch it to SES before launch — see [Email deliverability](../../docs/AWS_DEPLOYMENT.md#email-deliverability) |
 | 7 | `07-create-ecr.sh` | `gwg-web` + `gwg-commerce-api` repos and a GitHub OIDC deploy role |
 | 8 | `08-create-app-secrets.sh` | `gwg-prod/web` and `gwg-prod/api` secrets |
 | 9 | `09-create-ecs.sh` | ALB, Fargate services, security groups, task roles |
@@ -31,6 +31,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 13 | `13-create-https.sh` | ACM certificate, HTTPS listener, HTTP→HTTPS redirect |
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 | 15 | `15-copy-database.sh` | Nothing. Copies catalogue and pricing rows from one environment into another. |
+| 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
 
 ## Running more than one environment
 
@@ -65,6 +66,7 @@ export CONFIG_FILE=config.staging.env
 ./scripts/06-create-cognito.sh
 ./scripts/07-create-ecr.sh
 ./scripts/08-create-app-secrets.sh
+./scripts/16-create-store.sh      # the store this stack serves; without it, no catalogue
 ./scripts/09-create-ecs.sh
 ./scripts/14-create-cloudfront.sh
 unset CONFIG_FILE                 # back to production
@@ -79,7 +81,63 @@ environment's own deploy role.
 
 CloudFront hands out the site's hostname, so it comes last. Once it prints one,
 set `SITE_HOSTNAME` to it and re-run `05-create-s3.sh` and `09-create-ecs.sh` so
-the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost.
+the CORS origin and `NEXT_PUBLIC_SITE_URL` stop pointing at localhost. Run
+`16-create-store.sh` again afterwards so the store row carries the final
+hostname too.
+
+## Which store an environment serves (script 16)
+
+`02-migrate-drizzle.sh` creates the schema and no rows, and `npm run db:seed` is
+fixture data that does not belong in a real environment — so a freshly
+provisioned stack has no tenant, account or store at all. The storefront does not
+fail on that. It falls back to a marketing shell with an empty tenant id and
+returns 200 for every page, which is why an environment can sit in this state
+indefinitely looking deployed.
+
+```bash
+./scripts/16-create-store.sh
+./scripts/09-create-ecs.sh   # picks the recorded ids up out of state
+```
+
+Script 16 creates the three rows (or adopts the ones already there), registers
+the site's hostname on the store as its `custom_domain`, and writes
+`COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` / `_STORE_SLUG` /
+`_STORE_NAME` into the environment's state file. `09-create-ecs.sh` reads state,
+so the values reach the web task without anyone copying UUIDs by hand, and it
+warns when they are missing rather than quietly shipping the brochure.
+
+Those variables pin the store: the storefront serves exactly the one they name
+and does not ask the API to resolve the inbound `Host` header at all. The
+hostname on the store row is what a deployment serving several stores from one
+web tier would resolve against instead, and registering it keeps the two answers
+in agreement.
+
+### Optional settings that `09-create-ecs.sh` reads
+
+Everything here is optional and the script provisions without it — but a missing
+value removes a capability quietly rather than failing, so an environment that
+skips them comes up looking healthy while behaving like a brochure. Set them in
+the environment's config, or in its state file for the ARNs.
+
+| Setting | Effect when absent |
+| --- | --- |
+| `IMAGE_TAG` | Defaults to `latest`, which only moves on a push to `main`. Set it to a commit SHA to run that exact build — this is how a branch is tried on staging before it is merged |
+| `CONTACT_TO_EMAIL` | Defaults to `info@greatwestgraphics.com` |
+| `EMAIL_SECRET_ARN` | Contact form returns 503 instead of confirming a message it cannot send; proof notifications stay queued in `outbox_events` |
+| `STAFF_NOTIFICATION_EMAIL` | Customers approving or rejecting proofs is announced to nobody |
+| `NOTIFICATIONS_FROM_EMAIL` | Falls back to `noreply@greatwestgraphics.com`, which delivers only once that domain is verified in Resend — sends fail loudly until it is, rather than reaching nobody quietly |
+| `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
+| `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
+| `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |
+| `COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` | The storefront has no store to be and serves a marketing shell with no products. Written into state by `16-create-store.sh` rather than set by hand |
+| `COMMERCE_DEFAULT_STORE_SLUG` / `_STORE_NAME` | The pinned store shows the built-in `great-west-graphics` / `Great West Graphics` labels rather than the row's own |
+| `COMMERCE_STOREFRONT_BASE_DOMAIN` | The commerce API resolves a host only against a registered `stores.custom_domain`. Only a stack serving several stores off one wildcard domain needs it |
+| `SANMAR_API_BASE_URL`, `SS_API_BASE_URL` | Vendor adapters fall back to their built-in defaults |
+
+Each secret ARN that is set is also added to the task execution role. That role
+is scoped to an explicit list, and a task referencing a secret missing from the
+list fails to start rather than starting degraded — so adding a secret by hand
+in the console is not enough on its own.
 
 Each environment carries its own RDS instance, load balancer and Fargate tasks,
 so a second one roughly doubles the monthly bill. Lower `RDS_INSTANCE_CLASS`
@@ -138,12 +196,11 @@ Route 53. ACM validates over DNS and an ALB answers to a CNAME, so a subdomain
 is delegated by adding records at the existing host and the rest of the zone,
 including MX and SPF, is left untouched.
 
-Set the two names in `config.env`, then run the script twice — once to get the
-records, once more after they resolve:
+Set the storefront name in `config.env`, then run the script twice — once to get
+the records, once more after they resolve:
 
 ```bash
 SITE_HOSTNAME=staging.greatwestgraphics.com
-API_HOSTNAME=api.staging.greatwestgraphics.com
 ```
 
 ```bash
@@ -151,18 +208,22 @@ API_HOSTNAME=api.staging.greatwestgraphics.com
 ./scripts/13-create-https.sh   # attaches the listener once ACM has issued
 ```
 
-It refuses to issue for the apex or `www`. Port 4000 stays open in plaintext
-until you confirm sign-in works and then run it with
-`CLOSE_LEGACY_API_PORT=true`.
+It refuses to issue for the apex or `www`. It also refuses to run if
+`API_HOSTNAME` is set: the commerce API is served by an internal load balancer
+with no public address, and giving it a public name would undo that. The
+`CLOSE_LEGACY_API_PORT` flag is likewise gone — port 4000 is closed to the
+internet by script 9, in the same run that re-points the web container, so
+there is no window where one has happened without the other.
 
 RDS is **publicly addressable but not open**. Port 5432 is limited to
 `PUBLIC_DB_ALLOWED_CIDR` plus the commerce-api security group after step 9.
 Never use `0.0.0.0/0`.
 
-This first ECS pass is **HTTP on the ALB DNS name** (port 80 → web, port 4000 →
-API) so you can smoke-test without a domain. Add ACM + Route 53 before a public
-launch. There is no NAT gateway (Fargate tasks use `assignPublicIp=ENABLED`) to
-keep the USD 250 budget realistic.
+This first ECS pass is **HTTP on the ALB DNS name** (port 80 → web) so you can
+smoke-test without a domain. The API is not on that balancer: it answers only
+inside the VPC. Add ACM + Route 53 before a public launch. There is no NAT
+gateway (Fargate tasks use `assignPublicIp=ENABLED`) to keep the USD 250 budget
+realistic.
 
 ## Before running
 
@@ -211,7 +272,10 @@ step 7:
 
 1. GitHub → repo **Settings → Secrets and variables → Actions**
 2. Add `AWS_ROLE_TO_ASSUME` = the OIDC role ARN printed by `07-create-ecr.sh`
-3. Run **Actions → AWS ECR → Run workflow** from `main` (the OIDC role only trusts `main`)
+3. Run **Actions → AWS ECR → Run workflow**. Any branch works: the job declares
+   the `aws` environment, and the deploy role trusts that subject as well as
+   `main`. Only `main` moves the `latest` tag, so a branch build publishes its
+   commit SHA alone — deploy it by passing that SHA as `IMAGE_TAG`.
 4. Re-run `./scripts/09-create-ecs.sh` so desired count becomes 1
 
 Use the workflow's OIDC role, not an access key. CloudShell credentials are
@@ -238,10 +302,14 @@ request, including the role ARN it named:
 ## Smoke checklist
 
 ```bash
-curl -fsS "$API_URL/health"
-curl -fsS "$API_URL/ready"
 curl -fsS "$SITE_URL/api/health"
 ```
+
+The commerce API sits behind an internal load balancer and has no public
+address, so `$API_URL/health` and `$API_URL/ready` only answer from inside the
+VPC. The storefront health check above exercises the API behind it, which is
+the check that matters; reach for an ECS exec session on a web task when you
+genuinely need the API's own endpoints.
 
 Staff login is `/admin/login`. Username defaults to `admin`. Password:
 

@@ -3,6 +3,7 @@ import type {
   CreateFinalQuote,
   CreateJobRequest,
   CreateProofVersion,
+  DecideProof,
   FinalQuoteResponse,
   JobRequestDetailResponse,
   JobRequestLineInput,
@@ -35,6 +36,13 @@ import {
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
+import { requireCustomerScope } from "../domain/customer-scope.js";
+import {
+  assertProofDecidable,
+  audienceForActor,
+  defaultAudienceForAuthor,
+  statusForProofDecision,
+} from "../domain/proof-decision.js";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { PricingConfigSchema } from "@gwg/contracts";
@@ -181,6 +189,10 @@ function toProofResponse(
     row.decision === "pending"
       ? row.decision
       : null;
+  const awaiting =
+    row.awaitingDecisionFrom === "customer" || row.awaitingDecisionFrom === "staff"
+      ? row.awaitingDecisionFrom
+      : null;
   return {
     id: row.id,
     jobRequestId: row.jobRequestId,
@@ -188,6 +200,11 @@ function toProofResponse(
     storageKey: row.storageKey,
     decision,
     decidedAt: row.decidedAt?.toISOString() ?? null,
+    decidedBy: row.decidedBy ?? null,
+    decisionNote: row.decisionNote ?? null,
+    awaitingDecisionFrom: awaiting,
+    note: row.note ?? null,
+    createdBy: row.createdBy ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -372,12 +389,28 @@ export class JobRequestService {
     });
   }
 
+  /**
+   * Moves a draft the customer owns to `submitted`.
+   *
+   * Like `decideProof`, the person filter is derived from the actor rather
+   * than taken as an argument, so a caller cannot point this at a stranger's
+   * draft by forgetting to pass an id. Without it, tenant plus account matched
+   * every retail shopper: any signed-in customer could submit somebody else's
+   * draft and read the job back out of the response.
+   */
   async submit(
     jobRequestId: string,
     command: SubmitJobRequest,
     idempotencyKey: string,
     actor: Actor,
   ): Promise<JobRequestResponse> {
+    const customerPersonId = requireCustomerScope(
+      actor,
+      () =>
+        new ScopeMismatchError(
+          "Submitting a job request requires an identified customer",
+        ),
+    );
     return this.transitionWithIdempotency(
       jobRequestId,
       command,
@@ -385,6 +418,7 @@ export class JobRequestService {
       idempotencyKey,
       actor,
       "job_request.submit",
+      customerPersonId,
     );
   }
 
@@ -417,8 +451,15 @@ export class JobRequestService {
     tenantId: string,
     accountId: string,
     jobRequestId: string,
+    customerPersonId?: string,
   ): Promise<JobRequestDetailResponse> {
-    const row = await this.findScoped(this.db, tenantId, accountId, jobRequestId);
+    const row = await this.findScoped(
+      this.db,
+      tenantId,
+      accountId,
+      jobRequestId,
+      customerPersonId,
+    );
     const [lines, history, quotes, proofs] = await Promise.all([
       this.db
         .select()
@@ -468,6 +509,7 @@ export class JobRequestService {
 
     return {
       ...toResponse(row),
+      customerNote: row.customerNote ?? null,
       lines: lines.map((line) => ({
         id: line.id,
         position: line.position,
@@ -627,6 +669,11 @@ export class JobRequestService {
         .orderBy(desc(proofVersions.version))
         .limit(1);
       const version = (latest?.version ?? 0) + 1;
+      // A proof is always waiting on the other side of the table. Callers may
+      // override it — staff revising a customer's artwork still hand it back to
+      // the customer rather than to themselves.
+      const awaitingDecisionFrom =
+        command.awaitingDecisionFrom ?? defaultAudienceForAuthor(actor);
       const [created] = await transaction
         .insert(proofVersions)
         .values({
@@ -635,7 +682,9 @@ export class JobRequestService {
           jobRequestId,
           version,
           storageKey: command.storageKey,
+          note: command.note ?? null,
           decision: "pending",
+          awaitingDecisionFrom,
           createdBy: actor,
           source: command.source,
         })
@@ -669,6 +718,7 @@ export class JobRequestService {
             proofVersion: version,
             storageKey: command.storageKey,
             note: command.note,
+            awaitingDecisionFrom,
           },
         },
       });
@@ -677,9 +727,136 @@ export class JobRequestService {
     });
   }
 
+  /**
+   * Records one side's verdict on a proof and moves the job to match.
+   *
+   * The job status is the thing customers and staff actually watch, so a
+   * decision that only wrote `proof_versions.decision` would be invisible.
+   * Approving from `under_review` advances the job; asking for changes sends it
+   * back. When the job is not in `under_review` the decision is still recorded
+   * but the status is left alone, because every other state (paid, rejected)
+   * has a stronger claim on it than a late proof comment.
+   */
+  async decideProof(
+    jobRequestId: string,
+    proofId: string,
+    command: DecideProof,
+    actor: Actor,
+  ): Promise<ProofVersionResponse> {
+    const { tenantId, accountId } = command.context;
+    // A customer may only decide proofs on their own job. Staff decide through
+    // the admin router and are deliberately not narrowed to one customer.
+    const customerPersonId = requireCustomerScope(
+      actor,
+      () =>
+        new ScopeMismatchError(
+          "A customer proof decision requires an identified customer",
+        ),
+    );
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+        customerPersonId,
+      );
+
+      const [proof] = await transaction
+        .select()
+        .from(proofVersions)
+        .where(
+          and(
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+            eq(proofVersions.jobRequestId, jobRequestId),
+            eq(proofVersions.id, proofId),
+          ),
+        )
+        .limit(1);
+
+      if (!proof) {
+        throw new ResourceNotFoundError("Proof version not found");
+      }
+      assertProofDecidable(proof, command.decision, command.note, actor);
+
+      const occurredAt = new Date();
+      const [updated] = await transaction
+        .update(proofVersions)
+        .set({
+          decision: command.decision,
+          decidedAt: occurredAt,
+          decidedBy: actor,
+          decisionNote: command.note ?? null,
+          awaitingDecisionFrom: null,
+          updatedAt: occurredAt,
+        })
+        .where(
+          and(
+            eq(proofVersions.id, proof.id),
+            eq(proofVersions.tenantId, tenantId),
+            eq(proofVersions.accountId, accountId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new DataIntegrityError("Failed to record proof decision");
+      }
+
+      const toStatus = statusForProofDecision(current.status, command.decision);
+      if (toStatus) {
+        await this.applyTransition(
+          transaction,
+          current,
+          toStatus,
+          command.note ?? `Proof v${proof.version} ${command.decision}`,
+          actor,
+          command.source,
+        );
+      }
+
+      const eventId = randomUUID();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.proof.decided.v1",
+        occurredAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.proof.decided.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: occurredAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            proofId: updated.id,
+            proofVersion: updated.version,
+            decision: command.decision,
+            note: command.note,
+            decidedBy: audienceForActor(actor),
+          },
+        },
+      });
+
+      return toProofResponse(updated);
+    });
+  }
+
+  /**
+   * Lists job requests in an account, optionally narrowed to one customer's
+   * own. See `findScoped` for why customer-facing callers must always narrow.
+   */
   async list(
     tenantId: string,
     accountId: string,
+    customerPersonId?: string,
   ): Promise<JobRequestResponse[]> {
     const rows = await this.db
       .select()
@@ -688,11 +865,63 @@ export class JobRequestService {
         and(
           eq(jobRequests.tenantId, tenantId),
           eq(jobRequests.accountId, accountId),
+          ...(customerPersonId
+            ? [eq(jobRequests.customerPersonId, customerPersonId)]
+            : []),
         ),
       )
       .orderBy(desc(jobRequests.createdAt));
 
     return rows.map(toResponse);
+  }
+
+  /**
+   * Every job in the tenant, for the staff inbox.
+   *
+   * Staff work across accounts by definition: a branded team store signs up
+   * with an account of its own, so an account-scoped inbox showed head office
+   * nothing a team store had ordered. The rows were in the database and no one
+   * who could fulfil them was able to see them.
+   */
+  async listForStaff(tenantId: string): Promise<JobRequestResponse[]> {
+    const rows = await this.db
+      .select()
+      .from(jobRequests)
+      .where(eq(jobRequests.tenantId, tenantId))
+      .orderBy(desc(jobRequests.createdAt));
+
+    return rows.map(toResponse);
+  }
+
+  /**
+   * The account and store a job actually belongs to.
+   *
+   * Staff routes resolve this from the row instead of trusting the caller's
+   * own scope, which lets them act on a team store's job without loosening a
+   * single customer-facing check.
+   */
+  async locateForStaff(
+    tenantId: string,
+    jobRequestId: string,
+  ): Promise<{ accountId: string; storeId: string }> {
+    const [row] = await this.db
+      .select({
+        accountId: jobRequests.accountId,
+        storeId: jobRequests.storeId,
+      })
+      .from(jobRequests)
+      .where(
+        and(
+          eq(jobRequests.tenantId, tenantId),
+          eq(jobRequests.id, jobRequestId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new ResourceNotFoundError("Job request not found in this tenant");
+    }
+    return row;
   }
 
   private async transitionWithIdempotency(
@@ -702,6 +931,7 @@ export class JobRequestService {
     idempotencyKey: string,
     actor: Actor,
     operationPrefix: string,
+    customerPersonId?: string,
   ): Promise<JobRequestResponse> {
     const hash = requestHash(command);
     const operation = `${operationPrefix}:${jobRequestId}`;
@@ -736,6 +966,7 @@ export class JobRequestService {
             tenantId,
             accountId,
             prior.resourceId,
+            customerPersonId,
           ),
         );
       }
@@ -745,6 +976,7 @@ export class JobRequestService {
         tenantId,
         accountId,
         jobRequestId,
+        customerPersonId,
       );
       assertJobRequestTransition(current.status, toStatus);
       const updated = await this.applyTransition(
@@ -875,11 +1107,23 @@ export class JobRequestService {
     return toResponse(updated);
   }
 
+  /**
+   * Loads a job request inside a tenant/account scope.
+   *
+   * `customerPersonId` narrows the lookup to a single customer's own job and
+   * must be supplied on every customer-initiated path. Account scope alone is
+   * not an authorization boundary for retail customers: an unbranded public
+   * storefront enrols every shopper who signs in into one shared account, so
+   * without the person filter one customer's id would match another's job.
+   * Staff paths intentionally pass nothing, because reviewing any job in the
+   * account is the entire point of the admin router.
+   */
   private async findScoped(
     executor: Pick<CommerceDatabase, "select">,
     tenantId: string,
     accountId: string,
     jobRequestId: string,
+    customerPersonId?: string,
   ): Promise<typeof jobRequests.$inferSelect> {
     const [row] = await executor
       .select()
@@ -889,6 +1133,9 @@ export class JobRequestService {
           eq(jobRequests.tenantId, tenantId),
           eq(jobRequests.accountId, accountId),
           eq(jobRequests.id, jobRequestId),
+          ...(customerPersonId
+            ? [eq(jobRequests.customerPersonId, customerPersonId)]
+            : []),
         ),
       )
       .limit(1);

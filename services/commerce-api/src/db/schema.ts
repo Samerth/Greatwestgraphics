@@ -95,6 +95,14 @@ export const stores = pgTable(
     accentColor: text("accent_color"),
     tagline: text("tagline"),
     customDomain: text("custom_domain"),
+    /**
+     * The operator's own retail storefront, which anyone may shop and join by
+     * signing in. False for every self-serve corporate store, whose members
+     * arrive by invitation only. Kept explicit because this was once inferred
+     * from whether the store had a logo or accent colour, which quietly made
+     * any unstyled team store joinable by strangers.
+     */
+    isPublic: boolean("is_public").notNull().default(false),
     // Signed decimal string, e.g. "-0.1" for a 10% storewide discount off
     // the tenant's published pricing config, "0.05" for a 5% markup. Null
     // means no override — the store sees the tenant's published pricing
@@ -995,8 +1003,13 @@ export const proofVersions = pgTable(
     artworkVersionId: uuid("artwork_version_id").references(() => artworkVersions.id),
     version: integer("version").notNull(),
     storageKey: text("storage_key").notNull(),
+    note: text("note"),
     decision: text("decision"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: jsonb("decided_by").$type<Actor>(),
+    decisionNote: text("decision_note"),
+    /** "customer" | "staff" — the party this round trip is waiting on. */
+    awaitingDecisionFrom: text("awaiting_decision_from"),
     ...auditColumns,
   },
   (table) => [
@@ -1069,7 +1082,15 @@ export const designProjects = pgTable(
     name: text("name").notNull(),
     garmentProductId: uuid("garment_product_id").references(() => ssProducts.id),
     artworksBySide: jsonb("artworks_by_side").notNull(),
+    // Nullable rather than defaulted: rows saved before placements were
+    // persisted genuinely have no recorded print zone, and inventing one for
+    // them would tell a press operator something the customer never said.
+    placementBySide: jsonb("placement_by_side"),
     proofImageUrl: text("proof_image_url"),
+    // Staff can now edit a customer's artwork, so the row has to say who
+    // touched it last. Only this table carries it; widening `auditColumns`
+    // would drag every other table into the migration.
+    updatedBy: jsonb("updated_by").$type<Actor>(),
     ...auditColumns,
   },
   (table) => [

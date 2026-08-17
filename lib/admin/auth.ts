@@ -34,11 +34,36 @@ export async function getStaffSession(): Promise<{ username: string } | null> {
   return verifySessionToken(jar.get(COOKIE)?.value);
 }
 
+/**
+ * Guard for staff-only server actions.
+ *
+ * `middleware.ts` gates `/admin/*`, and a server action posts to the URL of the
+ * page that invoked it, so admin pages are covered today. That stops being true
+ * as soon as an action is reached from a page outside `/admin` — which is not
+ * hypothetical here, since the pricing actions live under `app/portal`. Keeping
+ * the check with the action rather than with its caller's URL means moving a
+ * component cannot quietly unprotect a mutation.
+ */
+export async function requireStaff(): Promise<{ username: string }> {
+  const session = await getStaffSession();
+  if (!session) {
+    throw new Error("Staff sign-in is required for this action");
+  }
+  return session;
+}
+
 export function adminToken() {
-  const token = process.env.ADMIN_API_TOKEN || process.env.DEV_ADMIN_TOKEN;
+  // DEV_ADMIN_TOKEN is a local convenience and is only honoured outside
+  // production. Falling back to it everywhere meant a development credential
+  // could quietly become the production one the moment ADMIN_API_TOKEN was
+  // missing, and the failure would be invisible: the admin pages would work.
+  // Refusing is louder and safer than reaching for the weaker secret.
+  const token =
+    process.env.ADMIN_API_TOKEN ||
+    (process.env.NODE_ENV === "production" ? undefined : process.env.DEV_ADMIN_TOKEN);
   if (!token) {
     throw new Error(
-      "Neither ADMIN_API_TOKEN nor DEV_ADMIN_TOKEN is configured; the admin API cannot be reached",
+      "ADMIN_API_TOKEN is not configured; the admin API cannot be reached",
     );
   }
   return token;

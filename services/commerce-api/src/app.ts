@@ -4,7 +4,11 @@ import {
   CreateFinalQuoteSchema,
   CreateJobRequestSchema,
   CreateProofVersionSchema,
+  DecideProofSchema,
+  DesignProjectWriteSchema,
+  EphemeralArtworkError,
   FinalQuoteResponseSchema,
+  normalizeDesignDocument,
   IdempotencyKeySchema,
   PreviewQuoteV2ResponseSchema,
   PreviewQuoteV2Schema,
@@ -37,6 +41,7 @@ import {
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
+import { ProofDecisionError } from "./domain/proof-decision.js";
 import {
   applyStorePricingAdjustment,
   PricingConfigService,
@@ -46,7 +51,10 @@ import {
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
-import { DesignProjectService } from "./application/design-project-service.js";
+import {
+  designProjectPatch,
+  DesignProjectService,
+} from "./application/design-project-service.js";
 import { StoreService } from "./application/store-service.js";
 import { PersonService } from "./application/person-service.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
@@ -69,6 +77,11 @@ import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
 import { RequestContextSchema } from "@gwg/contracts";
+import {
+  staffScopedContext,
+  type JobOwner,
+  type RequestScope,
+} from "./domain/staff-scope.js";
 
 class UnauthorizedError extends Error {
   readonly code = "UNAUTHORIZED";
@@ -89,6 +102,22 @@ function assertScope(
   }
 }
 
+function staffScope(
+  auth: AuthContext,
+  context: RequestScope,
+  owner: JobOwner,
+): RequestScope {
+  return staffScopedContext(
+    auth.tenantId,
+    context,
+    owner,
+    () =>
+      new ScopeMismatchError(
+        "Request context does not match the authenticated tenant",
+      ),
+  );
+}
+
 /**
  * Pricing v2 admin contexts carry an optional storeId — pricing is configured
  * per tenant, not per store — so only the tenant and account are checked.
@@ -102,6 +131,34 @@ function assertTenantScope(
       "Request context does not match the authenticated scope",
     );
   }
+}
+
+/** Largest page any catalogue listing will return. */
+export const MAX_CATALOG_PAGE_SIZE = 500;
+
+/**
+ * Turns a caller-supplied page size into one the database can be trusted with.
+ *
+ * `limit` was previously passed through as `Number(query.limit)`, unbounded, to
+ * a route reachable without authentication. `?limit=1000000` therefore asked
+ * Postgres for a million rows, and a non-numeric value passed NaN down into the
+ * query. Both are clamped here rather than at each call site so a new listing
+ * route cannot reintroduce it.
+ */
+export function parsePageSize(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  const parsed = Number(raw);
+  if (!raw || !Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_CATALOG_PAGE_SIZE, Math.max(1, Math.trunc(parsed)));
+}
+
+/** Same treatment for the offset: negative or NaN offsets are not a valid ask. */
+export function parseOffset(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!raw || !Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.trunc(parsed));
 }
 
 function assertAdmin(request: FastifyRequest, environment: Environment): void {
@@ -140,7 +197,10 @@ export function buildApp(input: {
   const pricingV2Service = new PricingConfigV2Service(input.db);
   const catalogService = new CatalogService(input.db);
   const designProjectService = new DesignProjectService(input.db);
-  const storeService = new StoreService(input.db);
+  const storeService = new StoreService(
+    input.db,
+    input.environment.COMMERCE_STOREFRONT_BASE_DOMAIN,
+  );
   const personService = new PersonService(input.db);
   const accountService = new AccountService(input.db);
   const inviteService = new InviteService(input.db);
@@ -151,6 +211,39 @@ export function buildApp(input: {
       id: auth.actor.id,
       displayName: "Development admin",
     };
+  }
+
+  /**
+   * The signed-in customer behind this request. Every route that returns or
+   * mutates one customer's own records must go through this rather than
+   * settling for the account scope, which is shared across retail shoppers.
+   */
+  function requirePersonId(auth: AuthContext): string {
+    if (!auth.actor.id) {
+      throw new UnauthorizedError("Sign in to view your account");
+    }
+    return auth.actor.id;
+  }
+
+  /**
+   * Ties a person id taken from a request body or path to the caller who
+   * actually authenticated.
+   *
+   * Several routes were written to read the acting person out of the payload.
+   * The web tier always fills that in from the session, so the storefront
+   * behaves correctly, but the payload is not a credential: every caller shares
+   * one service token, so a claimed id was accepted as proof of being that
+   * person. That let a request invite teammates as an account owner, accept an
+   * invite on somebody else's behalf, or read another person's memberships.
+   * `/v1` actors are always customers (see `readTenantScope`), so there is no
+   * staff path through here to accommodate.
+   */
+  function assertActorIsPerson(auth: AuthContext, personId: string): void {
+    if (requirePersonId(auth) !== personId) {
+      throw new UnauthorizedError(
+        "Request acts on behalf of a different person than the signed-in one",
+      );
+    }
   }
 
   function requireSsClient() {
@@ -264,6 +357,7 @@ export function buildApp(input: {
     const auth = await input.auth.resolve(request);
     const command = CreateJobRequestSchema.parse(request.body);
     assertScope(auth, command.context);
+    assertActorIsPerson(auth, command.customerPersonId);
     const key = IdempotencyKeySchema.parse(
       request.headers[CommerceHeaders.idempotencyKey],
     );
@@ -284,9 +378,13 @@ export function buildApp(input: {
     return service.submit(jobRequestId, command, key, auth.actor);
   });
 
+  // Customer-facing job reads are scoped to the signed-in person, not just to
+  // the account. The public storefront puts every retail shopper into one
+  // shared account, so account scope alone would show each customer everyone
+  // else's jobs — contact details, addresses, rosters and proofs included.
   app.get("/v1/job-requests", async (request) => {
     const auth = await input.auth.resolve(request);
-    return service.list(auth.tenantId, auth.accountId);
+    return service.list(auth.tenantId, auth.accountId, requirePersonId(auth));
   });
 
   app.get("/v1/job-requests/:jobRequestId", async (request) => {
@@ -294,8 +392,38 @@ export function buildApp(input: {
     const jobRequestId = CanonicalIdSchema.parse(
       (request.params as { jobRequestId?: string }).jobRequestId,
     );
-    return service.get(auth.tenantId, auth.accountId, jobRequestId);
+    return service.get(
+      auth.tenantId,
+      auth.accountId,
+      jobRequestId,
+      requirePersonId(auth),
+    );
   });
+
+  // The customer half of the proof round trip. The service refuses a decision
+  // from the side that raised the proof, so this cannot be used to self-approve
+  // artwork that staff have not looked at yet.
+  app.post(
+    "/v1/job-requests/:jobRequestId/proofs/:proofId/decision",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const proofId = CanonicalIdSchema.parse(
+        (request.params as { proofId?: string }).proofId,
+      );
+      const command = DecideProofSchema.parse(request.body);
+      assertScope(auth, command.context);
+      const decided = await service.decideProof(
+        jobRequestId,
+        proofId,
+        command,
+        { ...auth.actor, type: "customer" as const },
+      );
+      return ProofVersionResponseSchema.parse(decided);
+    },
+  );
 
   app.get("/v1/catalog/products", async (request) => {
     const auth = await input.auth.resolve(request);
@@ -324,8 +452,8 @@ export function buildApp(input: {
       // as Unavailable). Staff hide = storefront_visible, not vendor active.
       storefrontOnly: true as const,
     };
-    const limit = query.limit ? Number(query.limit) : 50;
-    const offset = query.offset ? Number(query.offset) : 0;
+    const limit = parsePageSize(query.limit, 50);
+    const offset = parseOffset(query.offset);
     const [products, total] = await Promise.all([
       catalogService.listProducts(auth.tenantId, { ...filters, limit, offset }),
       catalogService.countProducts(auth.tenantId, filters),
@@ -353,13 +481,6 @@ export function buildApp(input: {
     return catalogService.listCategories(auth.tenantId, auth.storeId, onlyWithProducts);
   });
 
-  function requirePersonId(auth: AuthContext): string {
-    if (!auth.actor.id) {
-      throw new UnauthorizedError("Sign in to manage saved designs");
-    }
-    return auth.actor.id;
-  }
-
   app.get("/v1/design-projects", async (request) => {
     const auth = await input.auth.resolve(request);
     const personId = requirePersonId(auth);
@@ -378,18 +499,16 @@ export function buildApp(input: {
   app.post("/v1/design-projects", async (request) => {
     const auth = await input.auth.resolve(request);
     const personId = requirePersonId(auth);
-    const body = z
-      .object({
-        name: z.string().min(1).max(120),
-        garmentProductId: z.string().uuid().nullable(),
-        artworksBySide: z.unknown(),
-        proofImageUrl: z.string().nullable(),
-      })
-      .parse(request.body);
+    const body = DesignProjectWriteSchema.parse(request.body);
     return designProjectService.save(
       auth.tenantId,
       personId,
-      body,
+      {
+        name: body.name ?? "Untitled design",
+        garmentProductId: body.garmentProductId ?? null,
+        design: normalizeDesignDocument(body.design ?? body.artworksBySide),
+        proofImageUrl: body.proofImageUrl ?? null,
+      },
       { type: "customer", id: personId, displayName: "Customer" },
     );
   });
@@ -400,15 +519,13 @@ export function buildApp(input: {
     const id = CanonicalIdSchema.parse(
       (request.params as { id?: string }).id,
     );
-    const body = z
-      .object({
-        name: z.string().min(1).max(120).optional(),
-        garmentProductId: z.string().uuid().nullable().optional(),
-        artworksBySide: z.unknown().optional(),
-        proofImageUrl: z.string().nullable().optional(),
-      })
-      .parse(request.body);
-    return designProjectService.update(auth.tenantId, personId, id, body);
+    const body = DesignProjectWriteSchema.parse(request.body);
+    return designProjectService.update(
+      auth.tenantId,
+      personId,
+      id,
+      designProjectPatch(body),
+    );
   });
 
   app.delete("/v1/design-projects/:id", async (request) => {
@@ -434,6 +551,21 @@ export function buildApp(input: {
     return resolved;
   });
 
+  // Path-based branded storefronts: /s/<slug> on the main domain. Scoped to a
+  // tenant the caller names, because a slug is only unique inside one.
+  app.get("/v1/stores/by-slug", async (request, reply) => {
+    const query = request.query as { tenantId?: string; slug?: string };
+    const tenantId = CanonicalIdSchema.parse(query.tenantId);
+    const slug = z.string().min(1).max(63).parse(query.slug);
+    const resolved = await storeService.resolveBySlug(tenantId, slug);
+    if (!resolved) {
+      return reply.code(404).send({
+        error: { code: "STORE_NOT_FOUND", message: "No store with this slug" },
+      });
+    }
+    return resolved;
+  });
+
   app.post("/v1/auth/link-person", async (request) => {
     const auth = await input.auth.resolve(request);
     const body = z
@@ -445,11 +577,14 @@ export function buildApp(input: {
       })
       .parse(request.body);
     const store = await storeService.getById(auth.tenantId, auth.storeId);
-    const isPublicStore = !store.accentColor && !store.logoUrl;
+    // Read from the store's own flag, never from how it happens to be styled.
+    // The old test — no logo and no accent colour means public — enrolled any
+    // signed-in stranger into a corporate account whose owner had simply not
+    // picked a brand colour.
     return personService.findOrCreateByExternalIdentity(
       auth.tenantId,
       auth.accountId,
-      isPublicStore,
+      store.isPublic,
       body.system,
       body.externalId,
       { email: body.email, name: body.name },
@@ -481,6 +616,7 @@ export function buildApp(input: {
         tagline: z.string().max(200).optional(),
       })
       .parse(request.body);
+    assertActorIsPerson(auth, body.personId);
     try {
       const result = await accountService.createAccountWithStore(
         auth.tenantId,
@@ -504,6 +640,7 @@ export function buildApp(input: {
     const personId = CanonicalIdSchema.parse(
       (request.params as { personId?: string }).personId,
     );
+    assertActorIsPerson(auth, personId);
     return accountService.listMembershipsForPerson(auth.tenantId, personId);
   });
 
@@ -515,6 +652,7 @@ export function buildApp(input: {
     const body = z
       .object({ inviterPersonId: CanonicalIdSchema, email: z.string().email() })
       .parse(request.body);
+    assertActorIsPerson(auth, body.inviterPersonId);
     try {
       const result = await inviteService.createInvite(
         auth.tenantId,
@@ -534,7 +672,13 @@ export function buildApp(input: {
     }
   });
 
+  // Resolving a token to the address it was sent to is a disclosure, so it
+  // needs the same service credential as everything else. This was the one
+  // /v1 route that never authenticated at all, and the API answers on a public
+  // listener, so anyone holding a token could read the invited email and the
+  // account it belongs to without presenting anything.
   app.get("/v1/accounts/invites/:token", async (request, reply) => {
+    await input.auth.resolve(request);
     const token = z
       .string()
       .min(1)
@@ -558,21 +702,22 @@ export function buildApp(input: {
   });
 
   app.post("/v1/accounts/invites/:token/accept", async (request, reply) => {
-    await input.auth.resolve(request);
+    const auth = await input.auth.resolve(request);
     const token = z
       .string()
       .min(1)
       .parse((request.params as { token?: string }).token);
-    const body = z
-      .object({ personId: CanonicalIdSchema, personEmail: z.string().email() })
-      .parse(request.body);
+    // `personEmail` is still sent by the deployed web tier and is deliberately
+    // ignored: the invite is matched against the person's stored address, not
+    // against one the caller supplies. Zod drops the unknown key, so the two
+    // tiers can be released independently.
+    const body = z.object({ personId: CanonicalIdSchema }).parse(request.body);
+    assertActorIsPerson(auth, body.personId);
     try {
-      const result = await inviteService.acceptInvite(
-        token,
-        body.personId,
-        body.personEmail,
-        { type: "customer", id: body.personId },
-      );
+      const result = await inviteService.acceptInvite(token, body.personId, {
+        type: "customer",
+        id: body.personId,
+      });
       return result;
     } catch (error) {
       if (
@@ -589,6 +734,32 @@ export function buildApp(input: {
   });
 
   if (adminRoutesEnabled(input.environment)) {
+    /**
+     * The staff inbox. Deliberately not person-scoped: reviewing everybody's
+     * work is the job, which is exactly what `/v1/job-requests` must never do.
+     *
+     * Staff previously read the customer endpoint. Once that endpoint started
+     * requiring a person id — correctly, since it had been serving every
+     * customer's jobs to every other customer — the admin inbox began
+     * answering "Sign in to view your account" and staff could no longer see a
+     * single submitted job.
+     */
+    app.get("/internal/dev/job-requests", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      return service.listForStaff(auth.tenantId);
+    });
+
+    app.get("/internal/dev/job-requests/:jobRequestId", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+      return service.get(auth.tenantId, owner.accountId, jobRequestId);
+    });
+
     app.post(
       "/internal/dev/job-requests/:jobRequestId/transition",
       async (request) => {
@@ -598,8 +769,15 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = TransitionJobRequestSchema.parse(request.body);
-        assertScope(auth, command.context);
-        return service.transition(jobRequestId, command, staffActor(auth));
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.transition(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
       },
     );
 
@@ -612,10 +790,13 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = CreateFinalQuoteSchema.parse(request.body);
-        assertScope(auth, command.context);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         const created = await service.createFinalQuote(
           jobRequestId,
-          command,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
           staffActor(auth),
         );
         return reply
@@ -633,15 +814,47 @@ export function buildApp(input: {
           (request.params as { jobRequestId?: string }).jobRequestId,
         );
         const command = CreateProofVersionSchema.parse(request.body);
-        assertScope(auth, command.context);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         const created = await service.createProof(
           jobRequestId,
-          command,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
           staffActor(auth),
         );
         return reply
           .code(201)
           .send(ProofVersionResponseSchema.parse(created));
+      },
+    );
+
+    // Staff side of the round trip: sign off on, or push back, artwork the
+    // customer submitted. The customer's half lives on the public router below,
+    // because it must be reachable with only a customer session.
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/proofs/:proofId/decision",
+      async (request, reply) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const proofId = CanonicalIdSchema.parse(
+          (request.params as { proofId?: string }).proofId,
+        );
+        const command = DecideProofSchema.parse(request.body);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        const decided = await service.decideProof(
+          jobRequestId,
+          proofId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
+        return reply.code(200).send(ProofVersionResponseSchema.parse(decided));
       },
     );
 
@@ -767,6 +980,40 @@ export function buildApp(input: {
       const dash = await catalogService.dashboard(auth.tenantId);
       const jobs = await service.list(auth.tenantId, auth.accountId);
       return { ...dash, openJobs: jobs.length };
+    });
+
+    // Staff browse and repair customer artwork before it reaches the press.
+    // Tenant-scoped only — reaching across customers is the point of these
+    // three routes, which is exactly why they sit behind `assertAdmin`
+    // instead of alongside the customer's own `/v1/design-projects`.
+    app.get("/admin/design-projects", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const query = request.query as { limit?: string; offset?: string };
+      return designProjectService.listForStaff(auth.tenantId, {
+        limit: parsePageSize(query.limit, 50),
+        offset: parseOffset(query.offset),
+      });
+    });
+
+    app.get("/admin/design-projects/:id", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const id = CanonicalIdSchema.parse((request.params as { id?: string }).id);
+      return designProjectService.getForStaff(auth.tenantId, id);
+    });
+
+    app.put("/admin/design-projects/:id", async (request) => {
+      assertAdmin(request, input.environment);
+      const auth = await input.auth.resolve(request);
+      const id = CanonicalIdSchema.parse((request.params as { id?: string }).id);
+      const body = DesignProjectWriteSchema.parse(request.body);
+      return designProjectService.updateForStaff(
+        auth.tenantId,
+        id,
+        designProjectPatch(body),
+        staffActor(auth),
+      );
     });
 
     app.get("/admin/accounts/pending", async (request) => {
@@ -907,8 +1154,8 @@ export function buildApp(input: {
         sort,
         storefrontOnly: false as const,
       };
-      const limit = query.limit ? Number(query.limit) : 50;
-      const offset = query.offset ? Number(query.offset) : 0;
+      const limit = parsePageSize(query.limit, 50);
+      const offset = parseOffset(query.offset);
       const [products, total] = await Promise.all([
         catalogService.listProducts(auth.tenantId, {
           ...filters,
@@ -1209,6 +1456,8 @@ export function buildApp(input: {
     } else if (
       error instanceof InvalidJobRequestTransitionError ||
       error instanceof IdempotencyConflictError ||
+      error instanceof ProofDecisionError ||
+      error instanceof EphemeralArtworkError ||
       error instanceof DataIntegrityError
     ) {
       statusCode = 409;

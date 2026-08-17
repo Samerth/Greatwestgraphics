@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { normalizeDesignDocument } from "@gwg/contracts";
 import { Container } from "@/components/shared/Container";
 import { DesignStudio, type SavedDesignProject } from "@/components/design/DesignStudio";
 import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
@@ -49,7 +50,10 @@ export default async function DesignPage({
         id: String(row.id),
         name: String(row.name),
         garmentProductId: row.garmentProductId ? String(row.garmentProductId) : null,
-        artworksBySide: row.artworksBySide as SavedDesignProject["artworksBySide"],
+        // The API already migrates whichever generation of row this is into
+        // the current document, but normalize again so a response from an
+        // older API build still loads rather than rendering an empty studio.
+        design: normalizeDesignDocument(row.design ?? row),
       };
     } catch {
       initialDesign = null;
@@ -93,7 +97,7 @@ export default async function DesignPage({
         <Container>
           <CrossSellGrid
             title="Pair it with these Products!"
-            items={crossSellItems.length > 0 ? crossSellItems : undefined}
+            items={crossSellItems}
           />
         </Container>
       </section>

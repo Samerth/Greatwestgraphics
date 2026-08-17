@@ -1,6 +1,26 @@
 import { cache } from "react";
-import { createCommerceClient } from "@/lib/commerce/client";
+import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+
+/**
+ * Next signals control flow by throwing: notFound() and redirect() raise
+ * errors tagged NEXT_NOT_FOUND / NEXT_REDIRECT, and the static-render probe
+ * raises DYNAMIC_SERVER_USAGE when a route touches cookies or headers. None of
+ * those are commerce API failures, and catching them here does two kinds of
+ * damage — it reports a catalogue outage that is not happening (eleven of them
+ * on every production build, which is exactly the false alarm this logging
+ * exists to avoid), and it eats the signal Next needs to mark a route dynamic.
+ *
+ * Matched on the digest rather than an instanceof, because the error classes
+ * live behind internal import paths that move between Next releases.
+ */
+function isFrameworkControlFlow(caught: unknown): boolean {
+  const digest = (caught as { digest?: unknown } | null)?.digest;
+  return (
+    typeof digest === "string" &&
+    (digest.startsWith("NEXT_") || digest === "DYNAMIC_SERVER_USAGE")
+  );
+}
 
 export type StorefrontCatalogProduct = {
   id: string;
@@ -166,8 +186,23 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       pageCount: Math.max(1, Math.ceil(total / limit)),
     };
   } catch (caught) {
+    if (isFrameworkControlFlow(caught)) throw caught;
+    // Single-line, prefixed and greppable so a catalogue outage is findable in
+    // CloudWatch Logs Insights rather than buried in a stack trace. The
+    // storefront no longer papers over this with demo products, so this log is
+    // the only place an outage is recorded before the customer sees it.
     // eslint-disable-next-line no-console
-    console.error("[loadStorefrontCatalog] commerce API call failed:", caught);
+    console.error(
+      "[storefront] CATALOG_UNAVAILABLE loadStorefrontCatalog failed",
+      JSON.stringify({
+        page,
+        limit,
+        search: options?.search ?? null,
+        categorySlug: options?.categorySlug ?? null,
+        status: caught instanceof CommerceApiError ? caught.status : null,
+        message: caught instanceof Error ? caught.message : String(caught),
+      }),
+    );
     return {
       products: [],
       categories: [],
@@ -226,16 +261,67 @@ export async function loadStorefrontCategories(
       name: String(row.name),
       slug: String(row.slug),
     }));
-  } catch {
+  } catch (caught) {
+    if (isFrameworkControlFlow(caught)) throw caught;
+    // Returning [] is the right call — the header and footer degrade to their
+    // own fallbacks rather than breaking every page — but it used to happen in
+    // total silence, so a category outage was invisible until someone noticed
+    // the nav had gone quiet.
+    // eslint-disable-next-line no-console
+    console.error(
+      "[storefront] CATEGORIES_UNAVAILABLE loadStorefrontCategories failed",
+      JSON.stringify({
+        onlyWithProducts,
+        status: caught instanceof CommerceApiError ? caught.status : null,
+        message: caught instanceof Error ? caught.message : String(caught),
+      }),
+    );
     return [];
   }
 }
 
-export const loadStorefrontProduct = cache(async (productId: string) => {
-  try {
-    const detail = await (await createCommerceClient()).getCatalogProduct(productId);
-    return detail;
-  } catch {
-    return null;
-  }
-});
+/**
+ * "missing" and "unavailable" are deliberately separate.
+ *
+ * This loader used to return null for both, so a commerce API outage made
+ * every product page answer "Page not found" — the worst reply available. It
+ * tells a shopper the product does not exist and tells a crawler to deindex
+ * the URL, and both of those outlive the outage that caused them.
+ *
+ * Callers decide what to do, rather than the distinction being thrown away
+ * here: rendering turns "unavailable" into a real error so the visitor gets
+ * the retry boundary, while metadata generation ignores it, because a missing
+ * <title> is not worth failing a page over.
+ */
+export type StorefrontProductResult =
+  | { kind: "found"; detail: Awaited<ReturnType<CommerceClient["getCatalogProduct"]>> }
+  | { kind: "missing" }
+  | { kind: "unavailable"; error: unknown };
+
+type CommerceClient = Awaited<ReturnType<typeof createCommerceClient>>;
+
+export const loadStorefrontProduct = cache(
+  async (productId: string): Promise<StorefrontProductResult> => {
+    try {
+      const detail = await (
+        await createCommerceClient()
+      ).getCatalogProduct(productId);
+      return detail ? { kind: "found", detail } : { kind: "missing" };
+    } catch (caught) {
+      if (isFrameworkControlFlow(caught)) throw caught;
+      const status = caught instanceof CommerceApiError ? caught.status : null;
+      if (status === 404) return { kind: "missing" };
+
+      // eslint-disable-next-line no-console
+      console.error(
+        "[storefront] PRODUCT_UNAVAILABLE loadStorefrontProduct failed",
+        JSON.stringify({
+          productId,
+          status,
+          message: caught instanceof Error ? caught.message : String(caught),
+        }),
+      );
+      return { kind: "unavailable", error: caught };
+    }
+  },
+);

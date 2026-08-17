@@ -113,6 +113,53 @@ describe("parseConfigurationAndPricingXml", () => {
 });
 
 describe("parseMediaContentXml", () => {
+  it("splits several addresses out of one url element", () => {
+    // SanMar Canada returns every colour and angle newline-separated inside a
+    // single element. Read as one address it becomes a hundred URLs glued
+    // together, which is what was being stored as the product image.
+    const xml = `
+      <GetMediaContentResponse>
+        <MediaContent>
+          <url>https://media.example.com/front.jpg
+https://media.example.com/back.jpg
+https://media.example.com/side.jpg</url>
+          <classTypeId>1006</classTypeId>
+        </MediaContent>
+      </GetMediaContentResponse>`;
+    expect(parseMediaContentXml(xml)).toEqual([
+      "https://media.example.com/front.jpg",
+      "https://media.example.com/back.jpg",
+      "https://media.example.com/side.jpg",
+    ]);
+  });
+
+  it("keeps the first address usable on its own", () => {
+    // The sync stores urls[0] as the product's front image, so that one entry
+    // has to be a single loadable address rather than a run-on string.
+    const xml = `
+      <GetMediaContentResponse>
+        <MediaContent>
+          <url>  https://media.example.com/a.jpg\thttps://media.example.com/b.jpg  </url>
+          <classTypeId>1006</classTypeId>
+        </MediaContent>
+      </GetMediaContentResponse>`;
+    const [first] = parseMediaContentXml(xml);
+    expect(first).toBe("https://media.example.com/a.jpg");
+  });
+
+  it("ignores non-http noise inside the element", () => {
+    const xml = `
+      <GetMediaContentResponse>
+        <MediaContent>
+          <url>n/a https://media.example.com/real.jpg</url>
+          <classTypeId>1006</classTypeId>
+        </MediaContent>
+      </GetMediaContentResponse>`;
+    expect(parseMediaContentXml(xml)).toEqual([
+      "https://media.example.com/real.jpg",
+    ]);
+  });
+
   it("prefers Primary classType 1006 URLs", () => {
     const xml = `
       <GetMediaContentResponse>

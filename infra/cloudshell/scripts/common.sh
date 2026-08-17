@@ -166,6 +166,40 @@ authorize_sg_ingress() {
   return 1
 }
 
+# The counterpart to authorize_sg_ingress, for rules that have to be taken away
+# rather than added. Dropping an authorize_ line only stops a rule being created
+# in a fresh environment; an environment already carrying the rule keeps it
+# forever unless something revokes it, which is how a closed port silently
+# reopens on the next run.
+revoke_sg_ingress() {
+  local group_id="$1" protocol="$2" from_port="$3" to_port="$4"
+  local source_kind="$5" source_value="$6"
+  local permissions err
+  if [[ "$source_kind" == "cidr" ]]; then
+    permissions="$(jq -nc --arg proto "$protocol" --argjson from "$from_port" --argjson to "$to_port" \
+      --arg cidr "$source_value" \
+      '[{IpProtocol:$proto,FromPort:$from,ToPort:$to,IpRanges:[{CidrIp:$cidr}]}]')"
+  else
+    permissions="$(jq -nc --arg proto "$protocol" --argjson from "$from_port" --argjson to "$to_port" \
+      --arg sg "$source_value" \
+      '[{IpProtocol:$proto,FromPort:$from,ToPort:$to,UserIdGroupPairs:[{GroupId:$sg}]}]')"
+  fi
+  err="$(mktemp)"
+  if aws ec2 revoke-security-group-ingress --group-id "$group_id" \
+    --ip-permissions "$permissions" >/dev/null 2>"$err"; then
+    rm -f "$err"
+    return 0
+  fi
+  # Already absent is the state we wanted, so it is not a failure.
+  if grep -q InvalidPermission.NotFound "$err"; then
+    rm -f "$err"
+    return 0
+  fi
+  cat "$err" >&2
+  rm -f "$err"
+  return 1
+}
+
 rds_database_url() {
   require_state DB_SECRET_ARN RDS_ENDPOINT DB_NAME DB_USERNAME
   local secret password encoded

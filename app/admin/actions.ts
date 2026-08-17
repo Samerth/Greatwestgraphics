@@ -52,9 +52,40 @@ export async function createProofAction(formData: FormData) {
   const client = await adminClient();
   await client.createProof(
     jobId,
-    { storageKey, note },
+    // A staff proof is always the customer's turn next. Naming it here rather
+    // than letting the API infer it keeps a revision aimed at the customer even
+    // when it is a rework of artwork they sent us.
+    { storageKey, note, awaitingDecisionFrom: "customer" },
     requireAdminToken(),
   );
+  revalidatePath(`/admin/jobs/${jobId}`);
+}
+
+/** Staff side of the proof round trip: sign off on, or push back, artwork the
+ * customer submitted. The API refuses a decision aimed at the other party, so
+ * this cannot be used to approve a proof that is sitting with the customer. */
+export async function decideProofAction(formData: FormData) {
+  const jobId = String(formData.get("jobId") || "");
+  const proofId = String(formData.get("proofId") || "");
+  const decision = String(formData.get("decision") || "");
+  const note = String(formData.get("note") || "").trim();
+  if (!jobId || !proofId) {
+    throw new Error("Job and proof are required");
+  }
+  if (decision !== "approved" && decision !== "changes_requested") {
+    throw new Error("Decision must be approved or changes_requested");
+  }
+  if (decision === "changes_requested" && !note) {
+    throw new Error("Say what needs to change so the customer can act on it");
+  }
+  const client = await adminClient();
+  await client.decideProof(
+    jobId,
+    proofId,
+    { decision, note: note || undefined },
+    { adminToken: requireAdminToken() },
+  );
+  revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
 }
 

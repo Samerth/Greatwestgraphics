@@ -4,6 +4,8 @@ import {
   SignUpCommand,
   ConfirmSignUpCommand,
   ResendConfirmationCodeCommand,
+  ForgotPasswordCommand,
+  ConfirmForgotPasswordCommand,
   InitiateAuthCommand,
   RespondToAuthChallengeCommand,
   type AuthenticationResultType,
@@ -79,6 +81,15 @@ function wrap<T>(promise: Promise<T>): Promise<T> {
     if (name === "InvalidPasswordException") {
       throw new CognitoAuthError(message, "INVALID_PASSWORD");
     }
+    if (name === "LimitExceededException" || name === "TooManyRequestsException") {
+      throw new CognitoAuthError(
+        "Too many attempts. Wait a few minutes and try again.",
+        "RATE_LIMITED",
+      );
+    }
+    if (name === "UserNotFoundException") {
+      throw new CognitoAuthError("No account matches that email.", "USER_NOT_FOUND");
+    }
     throw new CognitoAuthError(message, "COGNITO_AUTH_ERROR");
   });
 }
@@ -130,6 +141,43 @@ export async function resendConfirmationCode(email: string): Promise<void> {
       new ResendConfirmationCodeCommand({
         ClientId: clientId(),
         Username: email,
+        SecretHash: secretHash(email),
+      }),
+    ),
+  );
+}
+
+/**
+ * Starts a password reset — Cognito emails a recovery code.
+ *
+ * Callers must not turn a failure here into a different answer than a success,
+ * or the endpoint becomes a way to test which email addresses have accounts.
+ */
+export async function startPasswordReset(email: string): Promise<void> {
+  await wrap(
+    client().send(
+      new ForgotPasswordCommand({
+        ClientId: clientId(),
+        Username: email,
+        SecretHash: secretHash(email),
+      }),
+    ),
+  );
+}
+
+/** Completes a password reset with the emailed code and the new password. */
+export async function completePasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  await wrap(
+    client().send(
+      new ConfirmForgotPasswordCommand({
+        ClientId: clientId(),
+        Username: email,
+        ConfirmationCode: code,
+        Password: newPassword,
         SecretHash: secretHash(email),
       }),
     ),

@@ -21,8 +21,6 @@ export default function CartPage() {
   const totals = computeCartTotals(items);
 
   const [mounted, setMounted] = useState(false);
-  const [promo, setPromo] = useState("");
-  const [promoNote, setPromoNote] = useState<string | null>(null);
   const [saved, setSaved] = useState<CartItem[]>([]);
 
   useEffect(() => {
@@ -343,7 +341,7 @@ export default function CartPage() {
             <div className="pt-sp-5">
               <CrossSellGrid
                 title="You Might Also Like"
-                items={crossSellItems.length > 0 ? crossSellItems : undefined}
+                items={crossSellItems}
               />
             </div>
           </div>
@@ -368,36 +366,11 @@ export default function CartPage() {
               <SummaryRow label="Shipping (Vancouver)" value="Free" />
             </div>
 
-            <form
-              className="mt-sp-4 flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setPromoNote(
-                  promo.trim()
-                    ? "Promo codes are applied by your rep at quote confirmation."
-                    : "Enter a promo code to continue.",
-                );
-              }}
-            >
-              <input
-                value={promo}
-                onChange={(e) => setPromo(e.target.value)}
-                placeholder="Promo code"
-                className="flex-1 border border-border rounded-sm px-3 py-2 text-sm bg-white"
-                aria-label="Promo code"
-              />
-              <button
-                type="submit"
-                className="border border-border rounded-sm px-3 py-2 text-sm font-bold hover:border-accent hover:text-accent transition-colors"
-              >
-                Apply
-              </button>
-            </form>
-            {promoNote ? (
-              <p className="text-[12px] text-text-tertiary mt-2 mb-0">
-                {promoNote}
-              </p>
-            ) : null}
+            {/* A "Promo code" field and an Apply button sat here. There is no
+                promotion or discount code anywhere in the product — nothing in
+                the contracts, the API or the submission payload carries one —
+                so Apply only printed "your rep applies it at quote
+                confirmation" and threw the code away. The rep never saw it. */}
 
             <div className="flex justify-between items-center border-t border-border mt-sp-3 pt-sp-4 mb-sp-4">
               <span className="font-display font-bold text-[16px]">Total</span>
@@ -414,8 +387,12 @@ export default function CartPage() {
             >
               Request Quote
             </Link>
+            {/* Read "🔒 Secure checkout · Visa · Mastercard · Amex" directly
+                under the checkout button. Checkout takes no card and has no
+                processor behind it; it submits the job for design review. */}
             <p className="text-[12px] text-text-tertiary text-center mt-sp-3 mb-1">
-              🔒 Secure checkout · Visa · Mastercard · Amex
+              No payment is taken at checkout — we price and invoice after
+              design review.
             </p>
             <p className="text-[12px] text-text-tertiary text-center m-0">
               Per-piece pricing improves as your quantity goes up.

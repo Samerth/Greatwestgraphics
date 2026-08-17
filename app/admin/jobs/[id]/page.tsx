@@ -2,9 +2,10 @@ import Link from "next/link";
 import {
   createFinalQuoteAction,
   createProofAction,
+  decideProofAction,
   transitionJobAction,
 } from "@/app/admin/actions";
-import { adminClient } from "@/lib/admin/api";
+import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses } from "@gwg/contracts";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -23,7 +24,10 @@ export default async function AdminJobDetailPage({
   > | null = null;
 
   try {
-    detail = await (await adminClient()).getJobRequest(id);
+    detail = await (await adminClient()).getJobRequestAsStaff(
+      id,
+      requireAdminToken(),
+    );
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -111,6 +115,20 @@ export default async function AdminJobDetailPage({
         </p>
       )}
 
+      {/* Checkout tells the customer their notes and payment preference reach
+          the studio. The note was stored on the job row and then dropped from
+          every read, so nobody working the job here could see it. */}
+      {detail.customerNote ? (
+        <section className="border border-border rounded-md p-sp-3 bg-bg-raised">
+          <h2 className="font-display font-bold text-xl m-0 mb-2">
+            Customer note
+          </h2>
+          <p className="text-sm whitespace-pre-wrap m-0">
+            {detail.customerNote}
+          </p>
+        </section>
+      ) : null}
+
       <section className="space-y-sp-3">
         <h2 className="font-display font-bold text-xl m-0">Lines</h2>
         {detail.lines.map((line) => {
@@ -123,7 +141,9 @@ export default async function AdminJobDetailPage({
                 totals?: { totalMinor?: number };
               };
             };
-            designProofs?: { front?: string; back?: string };
+            artworkProofUrl?: string;
+            designProjectId?: string;
+            roster?: { size: string; name: string; number?: string }[];
             color?: string;
             size?: string;
             storefrontProductId?: string;
@@ -132,7 +152,9 @@ export default async function AdminJobDetailPage({
           const snapshotTotalMinor =
             configuration?.pricing?.breakdown?.totals?.totalMinor ??
             configuration?.pricing?.breakdown?.totalMinor;
-          const designProofs = configuration?.designProofs;
+          const artworkProofUrl = configuration?.artworkProofUrl;
+          const designProjectId = configuration?.designProjectId;
+          const roster = configuration?.roster;
           const catalogHint =
             configuration?.productMetadata ||
             configuration?.storefrontProductId ||
@@ -159,25 +181,43 @@ export default async function AdminJobDetailPage({
                   {catalogHint}
                 </p>
               )}
-              {(designProofs?.front || designProofs?.back) && (
-                <div className="flex flex-wrap gap-3 mt-3">
-                  {designProofs.front && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={designProofs.front}
-                      alt="Front artwork proof"
-                      className="h-24 w-auto border border-border rounded-sm bg-white"
-                    />
+              {(artworkProofUrl || designProjectId) && (
+                <div className="flex flex-wrap items-start gap-3 mt-3">
+                  {artworkProofUrl && (
+                    <a href={artworkProofUrl} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={artworkProofUrl}
+                        alt={`Artwork proof for ${line.snapshot.description}`}
+                        className="h-24 w-auto border border-border rounded-sm bg-white"
+                      />
+                    </a>
                   )}
-                  {designProofs.back && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={designProofs.back}
-                      alt="Back artwork proof"
-                      className="h-24 w-auto border border-border rounded-sm bg-white"
-                    />
+                  {designProjectId && (
+                    <Link
+                      href={`/admin/designs/${designProjectId}/edit`}
+                      className="text-sm underline"
+                    >
+                      Open this design in the studio
+                    </Link>
                   )}
                 </div>
+              )}
+              {roster && roster.length > 0 && (
+                <details className="mt-3">
+                  <summary className="text-sm cursor-pointer">
+                    Roster · {roster.length} name
+                    {roster.length === 1 ? "" : "s"}
+                  </summary>
+                  <ul className="text-sm text-text-secondary mt-2 mb-0 pl-4">
+                    {roster.map((entry, index) => (
+                      <li key={`${entry.name}-${index}`}>
+                        {entry.size} · {entry.name}
+                        {entry.number ? ` · #${entry.number}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </article>
           );
@@ -233,15 +273,85 @@ export default async function AdminJobDetailPage({
         </div>
 
         <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
-          <h2 className="font-display font-bold text-xl m-0">Staff proofs</h2>
+          <h2 className="font-display font-bold text-xl m-0">Proofs</h2>
           {(detail.proofs ?? []).length > 0 ? (
-            <ul className="m-0 p-0 list-none space-y-1 text-sm">
-              {(detail.proofs ?? []).map((proof) => (
-                <li key={proof.id} className="break-all">
-                  v{proof.version}: {proof.storageKey}
-                  {proof.decision ? ` · ${proof.decision}` : ""}
-                </li>
-              ))}
+            <ul className="m-0 p-0 list-none space-y-3 text-sm">
+              {[...(detail.proofs ?? [])]
+                .sort((a, b) => b.version - a.version)
+                .map((proof) => {
+                  const undecided =
+                    !proof.decision || proof.decision === "pending";
+                  const oursToDecide =
+                    undecided && proof.awaitingDecisionFrom === "staff";
+                  return (
+                    <li
+                      key={proof.id}
+                      className="border border-border rounded-sm p-2"
+                    >
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <b>v{proof.version}</b>
+                        <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">
+                          {undecided
+                            ? oursToDecide
+                              ? "Needs your review"
+                              : "With the customer"
+                            : proof.decision === "approved"
+                              ? "Approved"
+                              : "Changes requested"}
+                        </span>
+                      </div>
+                      <p className="break-all text-xs text-text-secondary mt-1 mb-0">
+                        {proof.storageKey}
+                      </p>
+                      {proof.note && (
+                        <p className="text-xs text-text-secondary mt-1 mb-0">
+                          Note: {proof.note}
+                        </p>
+                      )}
+                      {proof.decisionNote && (
+                        <p className="text-xs text-text-secondary mt-1 mb-0">
+                          Response: “{proof.decisionNote}”
+                        </p>
+                      )}
+                      {oursToDecide && (
+                        <form
+                          action={decideProofAction}
+                          className="mt-2 space-y-2"
+                        >
+                          <input type="hidden" name="jobId" value={detail.id} />
+                          <input
+                            type="hidden"
+                            name="proofId"
+                            value={proof.id}
+                          />
+                          <input
+                            name="note"
+                            placeholder="Note (required to request changes)"
+                            className="block w-full border border-border rounded-sm px-2 py-1"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="submit"
+                              name="decision"
+                              value="approved"
+                              className="bg-accent text-white font-bold px-3 py-1 rounded-sm"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="submit"
+                              name="decision"
+                              value="changes_requested"
+                              className="border border-border font-bold px-3 py-1 rounded-sm"
+                            >
+                              Request changes
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </li>
+                  );
+                })}
             </ul>
           ) : (
             <p className="text-sm text-text-secondary m-0">No proofs yet.</p>

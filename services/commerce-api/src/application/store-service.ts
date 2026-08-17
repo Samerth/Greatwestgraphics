@@ -17,6 +17,8 @@ export type ResolvedStore = {
   accentColor: string | null;
   tagline: string | null;
   pricingAdjustmentPercent: number | null;
+  /** Anyone may join by signing in. False for invitation-only team stores. */
+  isPublic: boolean;
 };
 
 function toResolvedStore(row: typeof stores.$inferSelect): ResolvedStore {
@@ -33,11 +35,20 @@ function toResolvedStore(row: typeof stores.$inferSelect): ResolvedStore {
     pricingAdjustmentPercent: row.pricingAdjustmentPercent
       ? Number(row.pricingAdjustmentPercent)
       : null,
+    isPublic: row.isPublic,
   };
 }
 
 export class StoreService {
-  constructor(private readonly db: CommerceDatabase) {}
+  constructor(
+    private readonly db: CommerceDatabase,
+    /**
+     * Domain under which a store's slug doubles as its subdomain, e.g.
+     * `stores.example.com` lets `acme.stores.example.com` resolve the store
+     * with slug `acme`. Unset means only an exact `custom_domain` resolves.
+     */
+    private readonly storefrontBaseDomain?: string,
+  ) {}
 
   /**
    * Resolves a store from an inbound Host header. Unlike every other
@@ -56,15 +67,59 @@ export class StoreService {
       .limit(1);
     if (byDomain) return toResolvedStore(byDomain);
 
-    const subdomain = normalizedHost.split(".")[0];
-    if (!subdomain) return null;
+    const slug = this.subdomainSlug(normalizedHost);
+    if (!slug) return null;
 
     const [bySlug] = await this.db
       .select()
       .from(stores)
-      .where(eq(stores.slug, subdomain))
+      .where(eq(stores.slug, slug))
       .limit(1);
     return bySlug ? toResolvedStore(bySlug) : null;
+  }
+
+  /**
+   * The first label of `host`, but only when everything after it is exactly
+   * the configured base domain.
+   *
+   * This used to take the first label of any host at all, which made the
+   * slug lookup — the one query here that no tenant scopes — reachable from
+   * a hostname nobody had registered: point `acme.anything.test` at this API
+   * and it answers with Acme's tenant, account and store ids, from whichever
+   * tenant happens to own that slug. Requiring the base domain means an
+   * unrecognised host resolves to nothing and the caller has to fall back
+   * deliberately, rather than being handed a stranger's store.
+   */
+  private subdomainSlug(host: string): string | null {
+    const base = this.storefrontBaseDomain?.trim().toLowerCase().replace(/^\.+/, "");
+    if (!base) return null;
+    const suffix = `.${base}`;
+    if (!host.endsWith(suffix)) return null;
+    const label = host.slice(0, -suffix.length);
+    return label && !label.includes(".") ? label : null;
+  }
+
+  /**
+   * Resolves a store from a slug in the URL path, within one tenant.
+   *
+   * The tenant scope is not optional. `stores.slug` is unique per tenant, not
+   * globally, so an unscoped slug lookup would answer `/s/acme` with whichever
+   * tenant happened to own that slug — the same hole the host resolver had.
+   * A path-based storefront always knows its tenant: it is the one the
+   * deployment serves.
+   */
+  async resolveBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<ResolvedStore | null> {
+    const normalized = slug.trim().toLowerCase();
+    if (!normalized) return null;
+    const [row] = await this.db
+      .select()
+      .from(stores)
+      .where(and(eq(stores.tenantId, tenantId), eq(stores.slug, normalized)))
+      .limit(1);
+    return row ? toResolvedStore(row) : null;
   }
 
   async getById(tenantId: string, storeId: string): Promise<ResolvedStore> {

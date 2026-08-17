@@ -92,6 +92,34 @@
       "when": 1786600000000,
       "tag": "0012_pricing_config_schema_version",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786873572054,
+      "tag": "0013_proof_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786905000000,
+      "tag": "0014_crm_columns_catch_up",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786907179256,
+      "tag": "0015_design_placements",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786907239256,
+      "tag": "0016_store_visibility",
+      "breakpoints": true
     }
   ]
 }
