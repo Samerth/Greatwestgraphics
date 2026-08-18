@@ -2,8 +2,13 @@ import { TickBar } from "@/components/layout/TickBar";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { headers } from "next/headers";
 import { loadStorefrontCategories } from "@/lib/commerce/catalog";
 import { createCommerceClient } from "@/lib/commerce/client";
+import {
+  isAccountManagementPath,
+  PATHNAME_HEADER,
+} from "@/lib/commerce/store-cookie";
 import { getCustomerSession } from "@/lib/auth/session";
 import {
   PUBLIC_STOREFRONT_FALLBACK,
@@ -62,7 +67,16 @@ export default async function ShopLayout({
   // so at the top instead, while it still costs them nothing.
   const membership = await storeMembership(store, customerSession?.personId);
 
-  if (store.status !== "active") {
+  // A store awaiting approval must not be shoppable, but its owner still has
+  // to reach the pages that are about their account rather than about the
+  // shop -- inviting teammates above all, which is the one thing there is to
+  // do while waiting. Gating the whole route group sealed the owner out of the
+  // team page the moment they created the store it belongs to.
+  const managingAccount = isAccountManagementPath(
+    (await headers()).get(PATHNAME_HEADER) ?? "",
+  );
+
+  if (store.status !== "active" && !managingAccount) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6 text-center">
         <div>

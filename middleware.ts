@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySessionToken } from "@/lib/admin/session-crypto";
-import { STORE_COOKIE, STORE_SLUG_HEADER } from "@/lib/commerce/store-cookie";
+import {
+  PATHNAME_HEADER,
+  STORE_COOKIE,
+  STORE_SLUG_HEADER,
+} from "@/lib/commerce/store-cookie";
 
 const COOKIE = "gwg_staff_session";
 
@@ -34,6 +38,7 @@ export async function middleware(request: NextRequest) {
   // does not, so a CDN that cached one would serve it to somebody else's team.
   const headers = new Headers(request.headers);
   headers.set(STORE_SLUG_HEADER, storeSlug);
+  headers.set(PATHNAME_HEADER, pathname);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set("Cache-Control", "private, no-store");
   return response;
