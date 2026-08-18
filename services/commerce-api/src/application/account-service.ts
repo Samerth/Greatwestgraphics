@@ -120,6 +120,10 @@ export class AccountService {
         storeName: stores.name,
         storeSlug: stores.slug,
         storeStatus: stores.status,
+        // Lets the caller tell a corporate membership from the one every
+        // retail shopper holds on the operator's own shop, which is the
+        // difference between "you have a team" and "you bought a t-shirt".
+        storeIsPublic: stores.isPublic,
       })
       .from(accountPeople)
       .innerJoin(accounts, eq(accountPeople.accountId, accounts.id))

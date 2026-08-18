@@ -190,6 +190,7 @@ export class CommerceClient {
           storeName: z.string(),
           storeSlug: z.string(),
           storeStatus: z.string(),
+          storeIsPublic: z.boolean().optional().default(false),
         }),
       ),
       { headers: this.headers() },
