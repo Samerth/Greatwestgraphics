@@ -10,6 +10,7 @@ import { money } from "@/lib/utils/quote-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 import { ProofReview } from "@/components/portal/ProofReview";
+import { FinalQuoteReview } from "@/components/portal/FinalQuoteReview";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,10 @@ export default async function JobDetailPage({
   }
 
   const presentation = jobStatusPresentation[job.status];
+  const latestQuote = [...job.finalQuotes].sort(
+    (a, b) => b.version - a.version,
+  )[0];
+  const quoteAccepted = Boolean(latestQuote?.acceptedAt);
 
   return (
     <section className="py-sp-8">
@@ -159,6 +164,17 @@ export default async function JobDetailPage({
 
             <section className="border border-border rounded-md p-sp-4">
               <h2 className="font-display font-bold text-lg mb-sp-3">
+                Final quote
+              </h2>
+              <FinalQuoteReview
+                jobId={job.id}
+                status={job.status}
+                quotes={job.finalQuotes}
+              />
+            </section>
+
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">
                 Proofs &amp; approvals
               </h2>
               <ProofReview jobId={job.id} proofs={job.proofs} />
@@ -184,15 +200,17 @@ export default async function JobDetailPage({
             <h2 className="font-display font-bold text-lg mb-sp-2">Next action</h2>
             <p className="text-text-secondary">{presentation.nextAction}</p>
             <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
-              {presentation.paymentReady
-                ? "This job is approved and ready to invoice. Online card payment is not connected yet, so we will send an invoice you can pay by e-transfer, cheque or card over the phone."
-                : "Payment stays locked until design approval and final pricing are complete."}
+              {quoteAccepted
+                ? "Your final quote is accepted and ready to invoice. Online card payment is not connected yet, so we will send an invoice you can pay by e-transfer, cheque or card over the phone."
+                : latestQuote
+                  ? "Review and accept the latest final quote before requesting an invoice."
+                  : "Payment stays locked until design approval and final pricing are complete."}
             </div>
             {/* This was a permanently disabled "Pay approved amount (coming
                 soon)" button. Honest about Stripe, but it left a customer with
                 an approved job and nothing to click. Until online payment is
                 connected, point at the humans who can actually take it. */}
-            {presentation.paymentReady ? (
+            {quoteAccepted ? (
               <ButtonLink
                 href="/contact"
                 variant="primary"

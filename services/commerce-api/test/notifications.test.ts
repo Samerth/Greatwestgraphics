@@ -20,6 +20,35 @@ const context: NotificationContext = {
 };
 
 describe("notificationsForEvent", () => {
+  it("tells the customer when a final quote is ready", () => {
+    const [message] = notificationsForEvent(
+      {
+        type: "commerce.job_request.final_quote.created.v1",
+        data: { amountMinor: 12_345, currency: "CAD", quoteVersion: 2 },
+      },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("buyer@example.test");
+    expect(message.subject).toMatch(/final quote is ready/i);
+    expect(message.text).toContain("$123.45");
+    expect(message.text).toContain(`/portal/jobs/${JOB_ID}`);
+  });
+
+  it("tells staff when the customer accepts a final quote", () => {
+    const [message] = notificationsForEvent(
+      {
+        type: "commerce.job_request.final_quote.accepted.v1",
+        data: { quoteVersion: 2 },
+      },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("art@example.test");
+    expect(message.subject).toMatch(/customer accepted/i);
+    expect(message.text).toContain(`/admin/jobs/${JOB_ID}`);
+  });
+
   it("asks the customer to approve a proof staff raised", () => {
     const [message] = notificationsForEvent(
       {

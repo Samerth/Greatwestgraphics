@@ -455,10 +455,17 @@ export const FinalQuoteResponseSchema = z.object({
   version: z.number().int().positive(),
   amountMinor: MinorAmountSchema,
   currency: z.string().length(3).toUpperCase(),
+  note: z.string().max(2_000).nullable().default(null),
   acceptedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
 });
 export type FinalQuoteResponse = z.infer<typeof FinalQuoteResponseSchema>;
+
+export const AcceptFinalQuoteSchema = z.object({
+  context: RequestContextSchema,
+  source: SourceMetadataSchema.default({ system: "storefront" }),
+});
+export type AcceptFinalQuote = z.infer<typeof AcceptFinalQuoteSchema>;
 
 /** A proof is reviewed by whichever party did not raise it: staff send a proof
  * for the customer to sign off, and a customer's own artwork is reviewed by
@@ -503,6 +510,9 @@ export const CreateFinalQuoteSchema = z.object({
   amountMinor: MinorAmountSchema,
   currency: z.string().length(3).toUpperCase().default("CAD"),
   note: z.string().max(2_000).optional(),
+  /** Legacy wire name. When true, staff approve an under-review job so the
+   * customer can accept this quote; only customer acceptance moves it to
+   * awaiting_payment. */
   markAwaitingPayment: z.boolean().default(false),
   source: SourceMetadataSchema.default({ system: "commerce_api" }),
 });
@@ -525,6 +535,10 @@ export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.ext
    * meaning staff working a job in the admin never saw the deadline, PO number
    * or payment preference the checkout copy promised to pass along. */
   customerNote: z.string().max(4_000).nullable().default(null),
+  /** Immutable checkout handoff. Nullable only for legacy rows written before
+   * the created snapshot carried these fields. */
+  contact: CustomerContactSnapshotSchema.nullable().default(null),
+  fulfillment: FulfillmentSnapshotSchema.nullable().default(null),
   lines: z.array(
     z.object({
       id: CanonicalIdSchema,
@@ -572,6 +586,7 @@ export const CommerceEventTypes = [
   "commerce.job_request.submitted.v1",
   "commerce.job_request.status_changed.v1",
   "commerce.job_request.final_quote.created.v1",
+  "commerce.job_request.final_quote.accepted.v1",
   "commerce.job_request.proof.created.v1",
   "commerce.job_request.proof.decided.v1",
   "commerce.contact_request.received.v1",

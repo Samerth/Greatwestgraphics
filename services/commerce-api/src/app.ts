@@ -1,4 +1,5 @@
 import {
+  AcceptFinalQuoteSchema,
   CanonicalIdSchema,
   CommerceHeaders,
   CreateFinalQuoteSchema,
@@ -39,6 +40,7 @@ import {
   IdempotencyConflictError,
   JobRequestService,
   NotAStoreMemberError,
+  QuoteAcceptanceError,
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
@@ -455,6 +457,29 @@ export function buildApp(input: {
         { ...auth.actor, type: "customer" as const },
       );
       return ProofVersionResponseSchema.parse(decided);
+    },
+  );
+
+  app.post(
+    "/v1/job-requests/:jobRequestId/final-quotes/:finalQuoteId/accept",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const finalQuoteId = CanonicalIdSchema.parse(
+        (request.params as { finalQuoteId?: string }).finalQuoteId,
+      );
+      const command = AcceptFinalQuoteSchema.parse(request.body);
+      assertScope(auth, command.context);
+      const accepted = await service.acceptFinalQuote(
+        jobRequestId,
+        finalQuoteId,
+        command,
+        { ...auth.actor, type: "customer" as const },
+        await customerPersonFilter(auth),
+      );
+      return FinalQuoteResponseSchema.parse(accepted);
     },
   );
 
@@ -1494,6 +1519,7 @@ export function buildApp(input: {
       error instanceof InvalidJobRequestTransitionError ||
       error instanceof IdempotencyConflictError ||
       error instanceof ProofDecisionError ||
+      error instanceof QuoteAcceptanceError ||
       error instanceof EphemeralArtworkError ||
       error instanceof DataIntegrityError
     ) {

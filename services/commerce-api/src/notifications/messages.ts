@@ -42,7 +42,7 @@ function lines(...parts: Array<string | null | undefined>): string {
 }
 
 /**
- * Only proof events produce mail today.
+ * Proof and final-quote events produce mail today.
  *
  * Status changes are deliberately excluded: a proof decision already moves the
  * job, so notifying on both would send two emails for one action. Notifying on
@@ -55,6 +55,44 @@ export function notificationsForEvent(
   context: NotificationContext,
 ): EmailMessage[] {
   const data = envelope.data ?? {};
+
+  if (envelope.type === "commerce.job_request.final_quote.created.v1") {
+    if (!context.customerEmail) return [];
+    const amountMinor =
+      typeof data.amountMinor === "number" ? data.amountMinor : null;
+    const currency = typeof data.currency === "string" ? data.currency : "CAD";
+    const amount =
+      amountMinor == null
+        ? "A final quote"
+        : new Intl.NumberFormat("en-CA", {
+            style: "currency",
+            currency,
+          }).format(amountMinor / 100);
+    return [
+      {
+        to: context.customerEmail,
+        subject: `${context.jobDisplayId}: your final quote is ready`,
+        text: lines(
+          `${amount} is ready for your review on ${context.jobDisplayId}.`,
+          `\nReview and accept it: ${customerJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
+
+  if (envelope.type === "commerce.job_request.final_quote.accepted.v1") {
+    if (!context.staffEmail) return [];
+    return [
+      {
+        to: context.staffEmail,
+        subject: `${context.jobDisplayId}: customer accepted the final quote`,
+        text: lines(
+          `The customer accepted final quote v${data.quoteVersion} on ${context.jobDisplayId}.`,
+          `\nPrepare the invoice: ${staffJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
 
   if (envelope.type === "commerce.job_request.proof.created.v1") {
     const version = data.proofVersion;

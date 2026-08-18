@@ -1058,6 +1058,7 @@ export const finalQuotes = pgTable(
     version: integer("version").notNull(),
     amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
     currency: text("currency").notNull(),
+    note: text("note"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     ...auditColumns,
   },

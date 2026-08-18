@@ -12,6 +12,18 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 
 export const dynamic = "force-dynamic";
 
+function safeProofUrl(storageKey: string): string | null {
+  if (storageKey.startsWith("/")) return storageKey;
+  try {
+    const url = new URL(storageKey);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function AdminJobDetailPage({
   params,
 }: {
@@ -114,6 +126,75 @@ export default async function AdminJobDetailPage({
           This job is in a terminal status. No further staff transitions are available.
         </p>
       )}
+
+      <section className="grid gap-sp-3 md:grid-cols-2">
+        <div className="border border-border rounded-md p-sp-3 bg-bg-raised">
+          <h2 className="font-display font-bold text-xl m-0 mb-2">
+            Customer contact
+          </h2>
+          {detail.contact ? (
+            <address className="not-italic text-sm space-y-1">
+              <p className="font-semibold m-0">{detail.contact.fullName}</p>
+              {detail.contact.company && (
+                <p className="text-text-secondary m-0">
+                  {detail.contact.company}
+                </p>
+              )}
+              <p className="m-0">
+                <a className="text-accent underline" href={`mailto:${detail.contact.email}`}>
+                  {detail.contact.email}
+                </a>
+              </p>
+              <p className="m-0">
+                <a className="text-accent underline" href={`tel:${detail.contact.phone}`}>
+                  {detail.contact.phone}
+                </a>
+              </p>
+            </address>
+          ) : (
+            <p className="text-sm text-text-secondary m-0">
+              Contact details are unavailable for this legacy job.
+            </p>
+          )}
+        </div>
+
+        <div className="border border-border rounded-md p-sp-3 bg-bg-raised">
+          <h2 className="font-display font-bold text-xl m-0 mb-2">
+            Fulfilment
+          </h2>
+          {detail.fulfillment ? (
+            <div className="text-sm">
+              <p className="font-semibold capitalize mt-0 mb-1">
+                {detail.fulfillment.method.replace("_", " ")}
+              </p>
+              <address className="not-italic text-text-secondary">
+                {detail.fulfillment.address.address1}
+                <br />
+                {detail.fulfillment.address.address2 && (
+                  <>
+                    {detail.fulfillment.address.address2}
+                    <br />
+                  </>
+                )}
+                {detail.fulfillment.address.city},{" "}
+                {detail.fulfillment.address.region}{" "}
+                {detail.fulfillment.address.postalCode}
+                <br />
+                {detail.fulfillment.address.country}
+              </address>
+              {detail.fulfillment.deliveryNotes && (
+                <p className="border-t border-fill-subtle mt-2 pt-2 mb-0 whitespace-pre-wrap">
+                  Delivery note: {detail.fulfillment.deliveryNotes}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-text-secondary m-0">
+              Fulfilment details are unavailable for this legacy job.
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* Checkout tells the customer their notes and payment preference reach
           the studio. The note was stored on the job row and then dropped from
@@ -233,6 +314,14 @@ export default async function AdminJobDetailPage({
                 <li key={quote.id}>
                   v{quote.version}: {moneyFromMinor(quote.amountMinor)}{" "}
                   {quote.currency}
+                  {quote.acceptedAt
+                    ? ` · accepted ${new Date(quote.acceptedAt).toLocaleString("en-CA")}`
+                    : " · awaiting customer acceptance"}
+                  {quote.note && (
+                    <span className="block text-text-secondary">
+                      {quote.note}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -261,7 +350,7 @@ export default async function AdminJobDetailPage({
             </label>
             <label className="flex items-center gap-2 text-sm font-semibold">
               <input type="checkbox" name="markAwaitingPayment" value="1" />
-              Mark awaiting payment
+              Approve job and open quote for customer acceptance
             </label>
             <button
               type="submit"
@@ -283,6 +372,13 @@ export default async function AdminJobDetailPage({
                     !proof.decision || proof.decision === "pending";
                   const oursToDecide =
                     undecided && proof.awaitingDecisionFrom === "staff";
+                  const proofUrl = safeProofUrl(proof.storageKey);
+                  const imageLike =
+                    Boolean(proofUrl) &&
+                    (/\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(
+                      proofUrl!,
+                    ) ||
+                      proofUrl!.includes("/api/uploads/"));
                   return (
                     <li
                       key={proof.id}
@@ -300,9 +396,28 @@ export default async function AdminJobDetailPage({
                               : "Changes requested"}
                         </span>
                       </div>
-                      <p className="break-all text-xs text-text-secondary mt-1 mb-0">
-                        {proof.storageKey}
-                      </p>
+                      {proofUrl ? (
+                        <a
+                          href={proofUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-block mt-2 text-xs font-bold text-accent"
+                        >
+                          {imageLike && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={proofUrl}
+                              alt={`Proof version ${proof.version}`}
+                              className="max-h-56 max-w-full object-contain border border-border rounded-sm bg-white mb-1"
+                            />
+                          )}
+                          Open proof file ↗
+                        </a>
+                      ) : (
+                        <p role="alert" className="text-xs text-error mt-1 mb-0">
+                          Proof file is unavailable; upload a replacement.
+                        </p>
+                      )}
                       {proof.note && (
                         <p className="text-xs text-text-secondary mt-1 mb-0">
                           Note: {proof.note}

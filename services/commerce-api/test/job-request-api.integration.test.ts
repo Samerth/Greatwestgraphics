@@ -9,12 +9,14 @@ import { createDatabase, type CommerceDatabase } from "../src/db/client.js";
 import {
   accountPeople,
   accounts,
+  finalQuotes,
   idempotencyKeys,
   jobRequestLines,
   jobRequests,
   jobRequestSnapshots,
   jobRequestStatusHistory,
   outboxEvents,
+  paymentObligations,
   people,
   stores,
   tenants,
@@ -99,6 +101,10 @@ integration("job request API integration", () => {
     if (!db) return;
     await db.delete(idempotencyKeys).where(eq(idempotencyKeys.tenantId, tenantId));
     await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
+    await db
+      .delete(paymentObligations)
+      .where(eq(paymentObligations.tenantId, tenantId));
+    await db.delete(finalQuotes).where(eq(finalQuotes.tenantId, tenantId));
     await db
       .delete(jobRequestStatusHistory)
       .where(eq(jobRequestStatusHistory.tenantId, tenantId));
@@ -192,6 +198,18 @@ integration("job request API integration", () => {
     expect((await submit()).json().status).toBe("submitted");
     expect((await submit()).json().status).toBe("submitted");
 
+    const detail = await app.inject({
+      method: "GET",
+      url: `/v1/job-requests/${jobRequestId}`,
+      headers: headers(),
+    });
+    expect(detail.json()).toEqual(
+      expect.objectContaining({
+        contact: command.contact,
+        fulfillment: command.fulfillment,
+      }),
+    );
+
     const scopedList = await app.inject({
       method: "GET",
       url: "/v1/job-requests",
@@ -215,6 +233,139 @@ integration("job request API integration", () => {
       headers: headers(otherAccountId, otherStoreId),
     });
     expect(hiddenDetail.statusCode).toBe(404);
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("lets the owning customer accept only the latest final quote", async () => {
+    const idempotencyKey = randomUUID();
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${idempotencyKey}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: {
+          method: "pickup",
+          address: {
+            address1: "123 Test Street",
+            city: "Vancouver",
+            region: "BC",
+            postalCode: "V6A 1A1",
+            country: "Canada",
+          },
+        },
+        lines: [{ description: "Quoted shirt", quantity: 12, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    const jobRequestId = created.json().id as string;
+    await db
+      .update(jobRequests)
+      .set({ status: "approved" })
+      .where(eq(jobRequests.id, jobRequestId));
+    const [oldQuote, quote] = await db
+      .insert(finalQuotes)
+      .values([
+        {
+          tenantId,
+          accountId,
+          jobRequestId,
+          version: 1,
+          amountMinor: 9_999,
+          currency: "CAD",
+          note: "Superseded amount.",
+          createdBy: { type: "staff", id: randomUUID() },
+          source: { system: "commerce_api" },
+        },
+        {
+          tenantId,
+          accountId,
+          jobRequestId,
+          version: 2,
+          amountMinor: 12_345,
+          currency: "CAD",
+          note: "Includes decoration and setup.",
+          createdBy: { type: "staff", id: randomUUID() },
+          source: { system: "commerce_api" },
+        },
+      ])
+      .returning();
+    expect(quote).toBeDefined();
+    const [obligation] = await db
+      .insert(paymentObligations)
+      .values({
+        tenantId,
+        accountId,
+        jobRequestId,
+        finalQuoteId: quote!.id,
+        amountMinor: quote!.amountMinor,
+        currency: quote!.currency,
+        status: "pending_acceptance",
+        createdBy: { type: "staff", id: randomUUID() },
+        source: { system: "commerce_api" },
+      })
+      .returning();
+
+    const accept = (quoteId = quote!.id) =>
+      app.inject({
+        method: "POST",
+        url: `/v1/job-requests/${jobRequestId}/final-quotes/${quoteId}/accept`,
+        headers: headers(),
+        payload: {
+          context: { tenantId, accountId, storeId },
+          source: { system: "storefront" },
+        },
+      });
+    expect((await accept(oldQuote!.id)).statusCode).toBe(409);
+    const first = await accept();
+    const second = await accept();
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual(
+      expect.objectContaining({
+        id: quote!.id,
+        amountMinor: 12_345,
+        note: "Includes decoration and setup.",
+        acceptedAt: expect.any(String),
+      }),
+    );
+    expect(second.json().acceptedAt).toBe(first.json().acceptedAt);
+
+    const [updatedJob] = await db
+      .select()
+      .from(jobRequests)
+      .where(eq(jobRequests.id, jobRequestId))
+      .limit(1);
+    expect(updatedJob).toEqual(
+      expect.objectContaining({
+        status: "awaiting_payment",
+        finalQuoteAmountMinor: 12_345,
+      }),
+    );
+    const [updatedObligation] = await db
+      .select()
+      .from(paymentObligations)
+      .where(eq(paymentObligations.id, obligation!.id))
+      .limit(1);
+    expect(updatedObligation?.status).toBe("ready");
+
+    const otherCustomer = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/final-quotes/${quote!.id}/accept`,
+      headers: headers(accountId, storeId, otherPersonId),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(otherCustomer.statusCode).toBe(404);
   }, DB_TEST_TIMEOUT_MS);
 
   it("hides one customer's job from another customer in the same account", async () => {

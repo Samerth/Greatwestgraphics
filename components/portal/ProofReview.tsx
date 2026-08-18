@@ -18,6 +18,50 @@ export interface ProofForReview {
   awaitingDecisionFrom: string | null;
 }
 
+function safeProofUrl(storageKey: string): string | null {
+  if (storageKey.startsWith("/")) return storageKey;
+  try {
+    const url = new URL(storageKey);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function ProofAsset({ proof }: { proof: ProofForReview }) {
+  const url = safeProofUrl(proof.storageKey);
+  if (!url) {
+    return (
+      <p role="alert" className="text-sm text-error">
+        This proof file is unavailable. Ask our team to upload it again.
+      </p>
+    );
+  }
+  const imageLike =
+    /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(url) ||
+    url.includes("/api/uploads/");
+
+  return (
+    <div className="my-sp-3">
+      <a href={url} target="_blank" rel="noreferrer" className="inline-block">
+        {imageLike && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={url}
+            alt={`Proof version ${proof.version}`}
+            className="max-h-80 max-w-full object-contain border border-border rounded-sm bg-white"
+          />
+        )}
+        <span className="block text-sm font-bold text-accent mt-1">
+          Open proof file ↗
+        </span>
+      </a>
+    </div>
+  );
+}
+
 function DecidedProof({ proof }: { proof: ProofForReview }) {
   const approved = proof.decision === "approved";
   return (
@@ -34,6 +78,7 @@ function DecidedProof({ proof }: { proof: ProofForReview }) {
           {approved ? "Approved by you" : "Changes requested"}
         </span>
       </div>
+      <ProofAsset proof={proof} />
       {proof.decisionNote && (
         <p className="text-sm text-text-secondary mt-sp-2 mb-0">
           “{proof.decisionNote}”
@@ -57,6 +102,7 @@ function PendingWithStaff({ proof }: { proof: ProofForReview }) {
           With our team
         </span>
       </div>
+      <ProofAsset proof={proof} />
       <p className="text-sm text-text-secondary mt-sp-2 mb-0">
         Our art team is reviewing this. We will send it back for your sign-off.
       </p>
@@ -93,6 +139,7 @@ function ProofDecisionForm({
           Note from our team: {proof.note}
         </p>
       )}
+      <ProofAsset proof={proof} />
 
       <fieldset className="border-0 p-0 m-0 mb-sp-3">
         <legend className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">

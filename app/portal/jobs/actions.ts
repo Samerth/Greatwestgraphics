@@ -9,6 +9,11 @@ export interface ProofDecisionState {
   ok?: boolean;
 }
 
+export interface QuoteAcceptanceState {
+  error?: string;
+  ok?: boolean;
+}
+
 /**
  * The customer's half of the proof round trip.
  *
@@ -49,6 +54,33 @@ export async function decideProofAction(
         caught instanceof CommerceApiError
           ? caught.message
           : "We could not record your response. Please try again.",
+    };
+  }
+
+  revalidatePath(`/portal/jobs/${jobId}`);
+  revalidatePath("/portal/jobs");
+  return { ok: true };
+}
+
+export async function acceptFinalQuoteAction(
+  jobId: string,
+  finalQuoteId: string,
+  _previous: QuoteAcceptanceState,
+  _formData: FormData,
+): Promise<QuoteAcceptanceState> {
+  const session = await getCustomerSession();
+  if (!session) {
+    return { error: "Your session expired. Sign in again to accept the quote." };
+  }
+
+  try {
+    await (await createCommerceClient()).acceptFinalQuote(jobId, finalQuoteId);
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof CommerceApiError
+          ? caught.message
+          : "We could not record your acceptance. Please try again.",
     };
   }
 

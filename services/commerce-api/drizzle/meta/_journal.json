@@ -120,6 +120,13 @@
       "when": 1786907239256,
       "tag": "0016_store_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787040000000,
+      "tag": "0017_final_quote_note",
+      "breakpoints": true
     }
   ]
 }

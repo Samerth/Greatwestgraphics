@@ -845,6 +845,28 @@ export class CommerceClient {
     });
   }
 
+  acceptFinalQuote(
+    id: string,
+    finalQuoteId: string,
+  ): Promise<FinalQuoteResponse> {
+    return this.request(
+      `/v1/job-requests/${encodeURIComponent(id)}/final-quotes/${encodeURIComponent(finalQuoteId)}/accept`,
+      FinalQuoteResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          source: { system: "storefront" },
+        }),
+      },
+    );
+  }
+
   getAdminDashboard(adminToken: string) {
     return this.request("/admin/dashboard", z.record(z.unknown()), {
       headers: this.headers(undefined, adminToken),

@@ -14,6 +14,40 @@
 -- Written idempotently because staging and production are at different points
 -- and this needs to be safe to re-run against either.
 
+-- Some early development databases recorded 0008 without retaining its CRM
+-- tables. Repair that drift before adding the catch-up columns so a database
+-- with a complete journal but incomplete schema can still migrate forward.
+CREATE TABLE IF NOT EXISTS crm_order_syncs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  job_request_id uuid NOT NULL REFERENCES job_requests(id),
+  cod_crm_job_id text,
+  sync_status text NOT NULL,
+  last_synced_at timestamp with time zone,
+  error_message text,
+  metadata jsonb DEFAULT '{}',
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_by jsonb,
+  source jsonb,
+  CONSTRAINT crm_order_syncs_job_request_uq UNIQUE (tenant_id, job_request_id)
+);
+
+CREATE TABLE IF NOT EXISTS crm_status_updates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  job_request_id uuid NOT NULL REFERENCES job_requests(id),
+  cod_crm_status text,
+  mapped_internal_status text,
+  is_processed boolean NOT NULL DEFAULT false,
+  processed_at timestamp with time zone,
+  metadata jsonb DEFAULT '{}',
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_by jsonb,
+  source jsonb
+);
+
 ALTER TABLE job_requests
   ADD COLUMN IF NOT EXISTS cod_crm_job_id text;
 
@@ -27,6 +61,15 @@ ALTER TABLE crm_order_syncs
 -- when it actually starts writing rows.
 ALTER TABLE crm_status_updates
   ADD COLUMN IF NOT EXISTS cod_crm_status text;
+
+CREATE INDEX IF NOT EXISTS crm_order_syncs_status_idx
+  ON crm_order_syncs (sync_status);
+
+CREATE INDEX IF NOT EXISTS crm_status_updates_job_request_idx
+  ON crm_status_updates (job_request_id);
+
+CREATE INDEX IF NOT EXISTS crm_status_updates_is_processed_idx
+  ON crm_status_updates (is_processed);
 
 CREATE INDEX IF NOT EXISTS job_requests_cod_crm_job_id_idx
   ON job_requests (cod_crm_job_id);

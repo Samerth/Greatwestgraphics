@@ -1,4 +1,5 @@
 import type {
+  AcceptFinalQuote,
   Actor,
   CreateFinalQuote,
   CreateJobRequest,
@@ -15,6 +16,7 @@ import type {
   TransitionJobRequest,
 } from "@gwg/contracts";
 import {
+  CreateJobRequestSchema,
   PricingConfigV2Schema,
   QuoteInputSchema,
   QuoteInputV2Schema,
@@ -77,6 +79,10 @@ export class IdempotencyConflictError extends Error {
 
 export class DataIntegrityError extends Error {
   readonly code = "DATA_INTEGRITY_ERROR";
+}
+
+export class QuoteAcceptanceError extends Error {
+  readonly code = "QUOTE_ACCEPTANCE_ERROR";
 }
 
 function requestHash(value: unknown): string {
@@ -191,6 +197,7 @@ function toFinalQuoteResponse(
     version: row.version,
     amountMinor: row.amountMinor,
     currency: row.currency,
+    note: row.note ?? null,
     acceptedAt: row.acceptedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -481,7 +488,7 @@ export class JobRequestService {
       jobRequestId,
       customerPersonId,
     );
-    const [lines, history, quotes, proofs] = await Promise.all([
+    const [lines, history, quotes, proofs, snapshots] = await Promise.all([
       this.db
         .select()
         .from(jobRequestLines)
@@ -526,11 +533,30 @@ export class JobRequestService {
           ),
         )
         .orderBy(asc(proofVersions.version)),
+      this.db
+        .select({ snapshot: jobRequestSnapshots.snapshot })
+        .from(jobRequestSnapshots)
+        .where(
+          and(
+            eq(jobRequestSnapshots.tenantId, tenantId),
+            eq(jobRequestSnapshots.accountId, accountId),
+            eq(jobRequestSnapshots.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(asc(jobRequestSnapshots.version))
+        .limit(1),
     ]);
+    const createdSnapshot = CreateJobRequestSchema.safeParse(
+      snapshots[0]?.snapshot,
+    );
 
     return {
       ...toResponse(row),
       customerNote: row.customerNote ?? null,
+      contact: createdSnapshot.success ? createdSnapshot.data.contact : null,
+      fulfillment: createdSnapshot.success
+        ? createdSnapshot.data.fulfillment
+        : null,
       lines: lines.map((line) => ({
         id: line.id,
         position: line.position,
@@ -585,6 +611,7 @@ export class JobRequestService {
           version,
           amountMinor: command.amountMinor,
           currency: command.currency,
+          note: command.note,
           createdBy: actor,
           source: command.source,
         })
@@ -600,7 +627,7 @@ export class JobRequestService {
         finalQuoteId: created.id,
         amountMinor: command.amountMinor,
         currency: command.currency,
-        status: "ready",
+        status: "pending_acceptance",
         createdBy: actor,
         source: command.source,
       });
@@ -636,29 +663,12 @@ export class JobRequestService {
       });
 
       if (command.markAwaitingPayment) {
-        let working = current;
-        if (working.status === "under_review") {
+        if (current.status === "under_review") {
           await this.applyTransition(
             transaction,
-            working,
+            current,
             "approved",
             command.note ?? "Approved with final quote",
-            actor,
-            command.source,
-          );
-          working = await this.findScoped(
-            transaction,
-            tenantId,
-            accountId,
-            jobRequestId,
-          );
-        }
-        if (working.status === "approved") {
-          await this.applyTransition(
-            transaction,
-            working,
-            "awaiting_payment",
-            command.note ?? "Final quote issued — awaiting payment",
             actor,
             command.source,
           );
@@ -666,6 +676,150 @@ export class JobRequestService {
       }
 
       return toFinalQuoteResponse(created);
+    });
+  }
+
+  /**
+   * Records the customer's agreement to the latest final quote.
+   *
+   * Older versions cannot be accepted once staff issue a replacement, and the
+   * timestamp update is conditional so a double click or retry is idempotent.
+   * A private-store owner may accept for a teammate because the route passes
+   * the same whole-account visibility used by their portal; retail customers
+   * always arrive with their own person filter.
+   */
+  async acceptFinalQuote(
+    jobRequestId: string,
+    finalQuoteId: string,
+    command: AcceptFinalQuote,
+    actor: Actor,
+    customerPersonId?: string,
+  ): Promise<FinalQuoteResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+        customerPersonId,
+      );
+      if (actor.type !== "customer" || !actor.id) {
+        throw new ScopeMismatchError(
+          "Accepting a quote requires an identified customer",
+        );
+      }
+      if (
+        current.status !== "approved" &&
+        current.status !== "awaiting_payment"
+      ) {
+        throw new QuoteAcceptanceError(
+          "The final quote can be accepted after design approval.",
+        );
+      }
+
+      const [latest] = await transaction
+        .select()
+        .from(finalQuotes)
+        .where(
+          and(
+            eq(finalQuotes.tenantId, tenantId),
+            eq(finalQuotes.accountId, accountId),
+            eq(finalQuotes.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(desc(finalQuotes.version))
+        .limit(1);
+      if (!latest) {
+        throw new ResourceNotFoundError("Final quote not found");
+      }
+      if (latest.id !== finalQuoteId) {
+        throw new QuoteAcceptanceError(
+          "A newer final quote is available. Review that version before accepting.",
+        );
+      }
+      if (latest.acceptedAt) return toFinalQuoteResponse(latest);
+
+      const acceptedAt = new Date();
+      const [accepted] = await transaction
+        .update(finalQuotes)
+        .set({ acceptedAt })
+        .where(
+          and(
+            eq(finalQuotes.id, latest.id),
+            sql`${finalQuotes.acceptedAt} is null`,
+          ),
+        )
+        .returning();
+      if (!accepted) {
+        const [alreadyAccepted] = await transaction
+          .select()
+          .from(finalQuotes)
+          .where(eq(finalQuotes.id, latest.id))
+          .limit(1);
+        if (alreadyAccepted?.acceptedAt) {
+          return toFinalQuoteResponse(alreadyAccepted);
+        }
+        throw new DataIntegrityError("Failed to accept the final quote");
+      }
+
+      await transaction
+        .update(jobRequests)
+        .set({
+          finalQuoteAmountMinor: accepted.amountMinor,
+          updatedAt: acceptedAt,
+        })
+        .where(eq(jobRequests.id, current.id));
+      await transaction
+        .update(paymentObligations)
+        .set({ status: "ready", updatedAt: acceptedAt })
+        .where(
+          and(
+            eq(paymentObligations.tenantId, tenantId),
+            eq(paymentObligations.accountId, accountId),
+            eq(paymentObligations.finalQuoteId, accepted.id),
+          ),
+        );
+
+      const eventId = randomUUID();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.final_quote.accepted.v1",
+        occurredAt: acceptedAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.final_quote.accepted.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: acceptedAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            finalQuoteId: accepted.id,
+            amountMinor: accepted.amountMinor,
+            currency: accepted.currency,
+            quoteVersion: accepted.version,
+          },
+        },
+      });
+
+      if (current.status === "approved") {
+        await this.applyTransition(
+          transaction,
+          current,
+          "awaiting_payment",
+          "Customer accepted the final quote",
+          actor,
+          command.source,
+        );
+      }
+      return toFinalQuoteResponse(accepted);
     });
   }
 
