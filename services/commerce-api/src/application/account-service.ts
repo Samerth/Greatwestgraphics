@@ -86,6 +86,30 @@ export class AccountService {
     return { accountId: account.id, storeId: store.id, slug: store.slug };
   }
 
+  /**
+   * The person's role on an account, or null when they hold no membership.
+   * Null rather than a thrown error: a signed-in stranger reading a store they
+   * do not belong to is an ordinary state, not a fault.
+   */
+  async membershipRole(
+    tenantId: string,
+    accountId: string,
+    personId: string,
+  ): Promise<string | null> {
+    const [membership] = await this.db
+      .select({ role: accountPeople.role })
+      .from(accountPeople)
+      .where(
+        and(
+          eq(accountPeople.tenantId, tenantId),
+          eq(accountPeople.accountId, accountId),
+          eq(accountPeople.personId, personId),
+        ),
+      )
+      .limit(1);
+    return membership?.role ?? null;
+  }
+
   async listMembershipsForPerson(tenantId: string, personId: string) {
     return this.db
       .select({
@@ -96,6 +120,10 @@ export class AccountService {
         storeName: stores.name,
         storeSlug: stores.slug,
         storeStatus: stores.status,
+        // Lets the caller tell a corporate membership from the one every
+        // retail shopper holds on the operator's own shop, which is the
+        // difference between "you have a team" and "you bought a t-shirt".
+        storeIsPublic: stores.isPublic,
       })
       .from(accountPeople)
       .innerJoin(accounts, eq(accountPeople.accountId, accounts.id))

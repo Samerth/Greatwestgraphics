@@ -24,12 +24,14 @@ export function DesignSidePreview({
   side,
   design,
   garmentImageUrl,
+  mirrorGarment,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
   side: DesignSide;
   design: DesignDocument;
   garmentImageUrl?: string | null;
+  mirrorGarment?: boolean;
   size?: number;
   className?: string;
 }) {
@@ -37,7 +39,7 @@ export function DesignSidePreview({
   // Back and right views reuse the front and left photos when the vendor
   // supplied nothing better, so they are flipped to at least face the right
   // way — the same fallback the studio itself draws.
-  const mirrored = side === "back" || side === "right";
+  const mirrored = mirrorGarment ?? (side === "back" || side === "right");
 
   return (
     <div

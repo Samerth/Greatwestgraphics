@@ -190,6 +190,7 @@ export class CommerceClient {
           storeName: z.string(),
           storeSlug: z.string(),
           storeStatus: z.string(),
+          storeIsPublic: z.boolean().optional().default(false),
         }),
       ),
       { headers: this.headers() },
@@ -218,6 +219,7 @@ export class CommerceClient {
       z.object({
         email: z.string(),
         accountId: z.string(),
+        accountName: z.string().nullable().optional(),
         status: z.string(),
         expiresAt: z.string(),
       }),

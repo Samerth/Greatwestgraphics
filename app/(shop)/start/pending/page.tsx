@@ -14,11 +14,15 @@ export default function StartPendingPage() {
         <p className="text-text-secondary mb-sp-5">
           A specialist checks every new store before it goes live — usually
           within one business day. We&apos;ll be in touch as soon as yours is
-          ready.
+          ready. You can invite your colleagues now; their invitations will be
+          waiting for them when the store opens.
         </p>
-        <ButtonLink href="/products" variant="secondary">
-          Browse the catalogue in the meantime
-        </ButtonLink>
+        <div className="flex flex-wrap gap-sp-3 justify-center">
+          <ButtonLink href="/account/team">Invite your team</ButtonLink>
+          <ButtonLink href="/products" variant="secondary">
+            Browse the catalogue in the meantime
+          </ButtonLink>
+        </div>
       </Container>
     </section>
   );

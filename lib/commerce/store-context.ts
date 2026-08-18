@@ -13,7 +13,20 @@ export type StoreContext = {
   logoUrl: string | null;
   accentColor: string | null;
   tagline: string | null;
+  /**
+   * The operator's own shop, which anyone may browse and join by signing in.
+   * False for a corporate team store, whose members arrive by invitation. Used
+   * to decide what to tell a visitor who does not belong here — the access
+   * rule itself is enforced by the API, not by this flag.
+   */
+  isPublic: boolean;
 };
+
+/** API store payloads predate `isPublic`; absent means "not a public shop". */
+function withVisibility(payload: unknown): StoreContext {
+  const store = payload as StoreContext;
+  return { ...store, isPublic: Boolean(store.isPublic) };
+}
 
 const DEV_HOST_PREFIXES = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -30,6 +43,7 @@ export const PUBLIC_STOREFRONT_FALLBACK: StoreContext = {
   logoUrl: null,
   accentColor: null,
   tagline: null,
+  isPublic: true,
 };
 
 /** The one store this deployment serves, when its identity is pinned in the
@@ -50,6 +64,7 @@ function pinnedStore(): StoreContext | null {
     logoUrl: null,
     accentColor: null,
     tagline: null,
+    isPublic: true,
   };
 }
 
@@ -74,7 +89,7 @@ async function selectedStore(tenantId?: string): Promise<StoreContext | null> {
       { cache: "no-store", signal: AbortSignal.timeout(10_000) },
     );
     if (!response.ok) return null;
-    return (await response.json()) as StoreContext;
+    return withVisibility(await response.json());
   } catch {
     return null;
   }
@@ -118,7 +133,7 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
         { cache: "no-store", signal: AbortSignal.timeout(10_000) },
       );
       if (response.ok) {
-        return (await response.json()) as StoreContext;
+        return withVisibility(await response.json());
       }
     }
   } catch {
@@ -137,6 +152,7 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
       logoUrl: null,
       accentColor: null,
       tagline: null,
+      isPublic: true,
     };
   }
 

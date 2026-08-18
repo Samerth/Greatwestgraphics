@@ -16,7 +16,6 @@ import {
 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
-import { RecolorGarment } from "@/components/pdp/RecolorGarment";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -89,8 +88,6 @@ const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
 const DesignCanvas = dynamic(() => import("@/components/design/DesignCanvas"), {
   ssr: false,
 });
-
-const GARMENT_SILHOUETTE_COLOR = "#3a2216";
 
 const CANVAS_SIZE = DESIGN_CANVAS_SIZE;
 
@@ -172,8 +169,7 @@ export function DesignStudio({
   >({ front: null, back: null, left: null, right: null });
   const [pendingUploads, setPendingUploads] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [approved, setApproved] = useState(false);
-  const [exportedUrl, setExportedUrl] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -200,8 +196,7 @@ export function DesignStudio({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const artInputRef = useRef<HTMLInputElement>(null);
+  const artworkInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<any>(null);
   const artworks = artworksBySide[activeSide];
   const selectedId = selectedBySide[activeSide];
@@ -313,6 +308,13 @@ export function DesignStudio({
   const currentPhoto = productDetail ? photoBySide[activeSide] : null;
   const mirrorPhoto = activeSide === "right";
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
+  // Canvas pixel reads require every image to be same-origin or CORS-enabled.
+  // The Next image endpoint fetches the configured supplier hosts server-side
+  // and returns a same-origin garment image, so the composed proof can include
+  // the garment instead of degrading to the raw uploaded logo.
+  const canvasGarmentImageUrl = currentPhoto
+    ? `/_next/image?url=${encodeURIComponent(currentPhoto)}&w=640&q=90`
+    : "/images/t-shirt.png";
 
   // All four views are always offered. A sleeve print is a real thing a
   // customer orders whether or not the vendor photographed that angle, and
@@ -340,7 +342,7 @@ export function DesignStudio({
     update: (artworks: PlacedArtwork[]) => PlacedArtwork[]
   ) {
     updateArtworks(activeSide, update);
-    setExportedUrl(null);
+    setExportError(null);
   }
 
   function setPlacement(side: DesignSide, zone: string) {
@@ -497,19 +499,35 @@ export function DesignStudio({
    * button, the cart or the save with it — the design itself is unaffected.
    */
   function exportStageDataUrl(): string | null {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const transformers = stage.find("Transformer");
     try {
-      return stageRef.current?.toDataURL({ pixelRatio: 2 }) ?? null;
+      // Selection handles describe the editor; they are not part of the proof.
+      transformers.forEach((node: { hide: () => void }) => node.hide());
+      stage.batchDraw();
+      return stage.toDataURL({ pixelRatio: 2 });
     } catch {
       return null;
+    } finally {
+      transformers.forEach((node: { show: () => void }) => node.show());
+      stage.batchDraw();
     }
   }
 
-  function handleApprove() {
-    // Export the selected side locally. Persistence is intentionally deferred.
+  function downloadProof() {
     const dataUrl = exportStageDataUrl();
-    if (dataUrl) setExportedUrl(dataUrl);
-    setApproved(true);
-    setTimeout(() => setApproved(false), 2000);
+    if (!dataUrl) {
+      setExportError(
+        "The proof could not be rendered. Wait for the garment and artwork to finish loading, then try again.",
+      );
+      return;
+    }
+    setExportError(null);
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `great-west-graphics-${activeSide}-mockup.png`;
+    link.click();
   }
 
   async function addDesignToCart() {
@@ -696,27 +714,9 @@ export function DesignStudio({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[260px_1.35fr_1fr] gap-sp-3 items-stretch">
-      {/* Details / assets column — Figma left rail */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col lg:flex-row min-h-[520px]">
-        <div className="flex lg:flex-col border-b lg:border-b-0 lg:border-r border-border bg-bg shrink-0">
-          {["Product", "Image", "AI Art", "Text", "Names", "Notes"].map(
-            (tab, index) => (
-              <span
-                key={tab}
-                className={cn(
-                  "px-3 py-3 text-[11px] font-bold text-center lg:w-[72px]",
-                  index === 0
-                    ? "bg-accent-tint text-accent border-b-2 lg:border-b-0 lg:border-l-2 border-accent"
-                    : "text-text-tertiary",
-                )}
-              >
-                {tab}
-              </span>
-            ),
-          )}
-        </div>
-
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
+      {/* Product and artwork controls. Every visible control is interactive. */}
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px]">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1">
         {garmentOptions.length > 0 && (
           <div className="mb-sp-2">
@@ -752,14 +752,7 @@ export function DesignStudio({
         <h4 className="font-display text-[16px] mb-sp-2">Assets</h4>
 
         <input
-          ref={logoInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/svg+xml"
-          hidden
-          onChange={handleFileSelected}
-        />
-        <input
-          ref={artInputRef}
+          ref={artworkInputRef}
           type="file"
           accept="image/png,image/jpeg,image/svg+xml"
           hidden
@@ -767,23 +760,20 @@ export function DesignStudio({
         />
 
         <button
-          onClick={() => logoInputRef.current?.click()}
+          onClick={() => artworkInputRef.current?.click()}
           className="border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
         >
-          Upload Logo
+          Upload logo or artwork
         </button>
-        <button
-          onClick={() => artInputRef.current?.click()}
-          className="border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
-        >
-          Upload Artwork
-        </button>
+        <p className="m-0 text-[11px] leading-4 text-text-tertiary">
+          PNG, JPG or SVG. You can add more than one layer.
+        </p>
 
         <button
           onClick={() => setShowAiPrompt((open) => !open)}
           className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
         >
-          AI Concept
+          Generate an AI concept
         </button>
 
         {showAiPrompt && (
@@ -849,23 +839,12 @@ export function DesignStudio({
       </aside>
 
       {/* Canvas */}
-      <div className="bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
+      <div className="min-w-0 w-full bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
         <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
           <div>
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
               {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · Print
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
-              Undo
-            </span>
-            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
-              Redo
-            </span>
-            <span className="rounded-sm border border-white/20 px-2.5 py-1 text-[11px] font-bold text-white/70">
-              Zoom
             </span>
           </div>
         </div>
@@ -881,7 +860,7 @@ export function DesignStudio({
                   key={side}
                   onClick={() => {
                     setActiveSide(side);
-                    setExportedUrl(null);
+                    setExportError(null);
                   }}
                   aria-pressed={activeSide === side}
                   className={cn(
@@ -937,51 +916,29 @@ export function DesignStudio({
         </div>
 
         <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
-          <div className="bg-[#141414] rounded-md flex items-center justify-center p-sp-3 min-w-[min(100%,340px)]">
+          <div className="min-w-0 w-full max-w-full overflow-hidden bg-[#141414] rounded-md flex items-center justify-center p-sp-3">
             <div
-              className="relative"
-              style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
+              className="relative w-full max-w-[600px] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {/* Garment layer — uses the real synced product photo when a
-                  live catalog garment is selected; otherwise falls back to
-                  the flat recolored silhouette. A distinct pulse state while
-                  the photo is in flight keeps that fallback from reading as
-                  a stuck/broken product. */}
-              {isLoadingGarment ? (
+              {isLoadingGarment && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
-              ) : currentPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={currentPhoto}
-                  alt=""
-                  className={cn(
-                    "absolute inset-0 w-full h-full object-contain",
-                    mirrorPhoto && "-scale-x-100",
-                  )}
-                />
-              ) : (
-                <RecolorGarment
-                  maskSrc="/images/t-shirt.png"
-                  color={GARMENT_SILHOUETTE_COLOR}
-                  className={cn(
-                    "absolute inset-0",
-                    (activeSide === "back" || mirrorPhoto) && "-scale-x-100",
-                  )}
-                />
               )}
 
-              {/* Artwork layer — real, interactive, exports real pixels */}
+              {/* One stage owns garment and artwork, so what the customer
+                  edits is exactly what the proof download contains. */}
               <DesignCanvas
                 activeSide={activeSide}
                 artworks={artworks}
                 selectedId={selectedId}
                 canvasSize={CANVAS_SIZE}
+                garmentImageUrl={canvasGarmentImageUrl}
+                mirrorGarment={mirrorPhoto}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChange={(next) =>
@@ -1000,73 +957,10 @@ export function DesignStudio({
         </p>
       </div>
 
-      {/* Live mockup */}
-      <div className="bg-bg-raised border border-border rounded-lg p-sp-4 flex flex-col">
-        <div className="flex justify-between items-center mb-sp-3">
-          <b className="font-display text-[15px]">Preview Mockup</b>
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-accent bg-accent-tint px-2.5 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-            2D
-          </span>
-        </div>
-
-        <div className="flex-1 min-h-[280px] rounded-md border border-border bg-[radial-gradient(80%_90%_at_50%_15%,#fff,#E8E5DC_70%,#D6D2C7_100%)] flex items-center justify-center p-sp-3 mb-sp-3 overflow-hidden">
-          <div className="relative w-3/4 max-w-[280px] aspect-square">
-            {isLoadingGarment ? (
-              <div className="absolute inset-0 grid place-items-center">
-                <div className="w-2/3 h-2/3 rounded-md bg-black/5 animate-pulse" />
-              </div>
-            ) : currentPhoto ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={currentPhoto}
-                alt=""
-                className={cn(
-                  "absolute inset-0 w-full h-full object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,.18)]",
-                  mirrorPhoto && "-scale-x-100",
-                )}
-              />
-            ) : (
-              <RecolorGarment
-                maskSrc="/images/t-shirt.png"
-                color={GARMENT_SILHOUETTE_COLOR}
-                className={cn(
-                  "absolute inset-0 drop-shadow-[0_24px_30px_rgba(0,0,0,.18)]",
-                  (activeSide === "back" || mirrorPhoto) && "-scale-x-100"
-                )}
-              />
-            )}
-            {exportedUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={exportedUrl}
-                alt={`${DESIGN_SIDE_LABELS[activeSide]} artwork preview`}
-                className="absolute inset-0 w-full h-full object-contain"
-              />
-            )}
-            {!currentPhoto && (
-              <span className="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-text-tertiary">
-                Representative {DESIGN_SIDE_LABELS[activeSide].toLowerCase()} silhouette
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-sp-3 rounded-md overflow-hidden border border-border bg-text-primary">
-          <video
-            src="/images/design-studio-3d-mockup.mp4"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            className="w-full aspect-video object-cover"
-          />
-          <p className="m-0 px-3 py-2 text-[11px] text-white/70">
-            3D reference footage — not artwork-accurate. Use the 2D canvas above for placement.
-          </p>
-        </div>
-
+      {/* Saving, proof download and ordering belong to the main workspace,
+          below the canvas they act on — not in a duplicate preview panel. */}
+      <div className="lg:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
+        <h3 className="font-display text-[18px] mb-sp-3">Finish your design</h3>
         <div className="flex flex-col gap-2">
           {signedIn ? (
             <div className="border border-border rounded-md p-sp-3 bg-bg">
@@ -1121,30 +1015,21 @@ export function DesignStudio({
 
           <Button
             className="w-full"
-            onClick={handleApprove}
-            disabled={artworks.length === 0}
+            onClick={downloadProof}
+            disabled={artworks.length === 0 || isLoadingGarment}
           >
-            {approved
-              ? "Artwork export ready ✓"
-              : artworks.length === 0
-                ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
-                : `Export ${DESIGN_SIDE_LABELS[activeSide]} Artwork`}
+            {artworks.length === 0
+              ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
+              : `Download ${DESIGN_SIDE_LABELS[activeSide]} Mockup`}
           </Button>
-          {exportedUrl && (
-            <>
-              <a
-                href={exportedUrl}
-                download={`great-west-graphics-${activeSide}-artwork.png`}
-                className="w-full rounded-md border border-border px-4 py-2.5 text-center text-sm font-bold hover:bg-fill-subtle-15 transition-colors"
-              >
-                Download proof
-              </a>
-              <p className="text-[12px] text-text-tertiary text-center -mt-1">
-                Downloads the selected side&apos;s transparent artwork overlay; the
-                garment silhouette is representative only.
-              </p>
-            </>
+          {exportError && (
+            <p className="m-0 text-sm text-danger" role="alert">
+              {exportError}
+            </p>
           )}
+          <p className="text-[12px] text-text-tertiary text-center -mt-1">
+            Downloads the selected garment view with all placed artwork.
+          </p>
 
           {productDetail && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
@@ -1273,12 +1158,10 @@ export function DesignStudio({
           )}
         </div>
       </div>
-      <p className="lg:col-span-3 text-xs text-text-tertiary">
-        3D artwork preview is unavailable because no UV-mapped garment model is
-        included. The reference footage above is not an artwork-accurate interactive
-        preview. Sleeve views reuse the vendor&apos;s side photo where one exists and
-        a representative silhouette where it does not — your artwork and its
-        placement are saved per view either way.
+      <p className="lg:col-start-2 text-xs text-text-tertiary">
+        Sleeve views reuse the vendor&apos;s side photo where one exists and a
+        representative silhouette where it does not. Your artwork and placement
+        are saved separately for every view.
       </p>
     </div>
   );

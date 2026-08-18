@@ -31,6 +31,7 @@ import {
   jobRequestStatusHistory,
   outboxEvents,
   paymentObligations,
+  people,
   pricingConfigs,
   proofVersions,
   stores,
@@ -53,6 +54,21 @@ export class ResourceNotFoundError extends Error {
 
 export class ScopeMismatchError extends Error {
   readonly code = "SCOPE_MISMATCH";
+}
+
+/**
+ * The caller is signed in, and the store is real, but they do not belong to
+ * the account that owns it.
+ *
+ * Separate from `ScopeMismatchError` because it is the one failure here a
+ * customer can actually be in the middle of, and it has a remedy: ask the
+ * store's owner for an invitation. Reported as itself, the storefront can say
+ * that. Folded into a generic scope mismatch, a member of the public who
+ * followed a colleague's link reached the end of designing a garment and was
+ * told their store and customer must belong to the requested tenant.
+ */
+export class NotAStoreMemberError extends Error {
+  readonly code = "NOT_A_STORE_MEMBER";
 }
 
 export class IdempotencyConflictError extends Error {
@@ -277,9 +293,14 @@ export class JobRequestService {
         )
         .limit(1);
 
-      if (!store || !customer) {
+      if (!store) {
         throw new ScopeMismatchError(
           "Store and customer must belong to the requested tenant and account",
+        );
+      }
+      if (!customer) {
+        throw new NotAStoreMemberError(
+          "You are signed in, but you are not a member of this store yet. Ask the store's owner to invite you.",
         );
       }
 
@@ -853,14 +874,21 @@ export class JobRequestService {
    * Lists job requests in an account, optionally narrowed to one customer's
    * own. See `findScoped` for why customer-facing callers must always narrow.
    */
+  /**
+   * Orders in one account, narrowed to a single person unless the caller is
+   * entitled to the whole account. The placer's name rides along so a team
+   * store's owner reads a roster rather than a column of order numbers; it is
+   * the account's own membership, not anyone else's.
+   */
   async list(
     tenantId: string,
     accountId: string,
     customerPersonId?: string,
   ): Promise<JobRequestResponse[]> {
     const rows = await this.db
-      .select()
+      .select({ job: jobRequests, placedBy: people.displayName })
       .from(jobRequests)
+      .leftJoin(people, eq(people.id, jobRequests.customerPersonId))
       .where(
         and(
           eq(jobRequests.tenantId, tenantId),
@@ -872,7 +900,10 @@ export class JobRequestService {
       )
       .orderBy(desc(jobRequests.createdAt));
 
-    return rows.map(toResponse);
+    return rows.map((row) => ({
+      ...toResponse(row.job),
+      customerName: row.placedBy,
+    }));
   }
 
   /**
