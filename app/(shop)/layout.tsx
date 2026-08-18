@@ -3,6 +3,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { loadStorefrontCategories } from "@/lib/commerce/catalog";
+import { createCommerceClient } from "@/lib/commerce/client";
 import { getCustomerSession } from "@/lib/auth/session";
 import {
   PUBLIC_STOREFRONT_FALLBACK,
@@ -10,6 +11,35 @@ import {
 } from "@/lib/commerce/store-context";
 import { brandColorVars } from "@/lib/utils/color";
 import { OrganizationJsonLd } from "@/components/shared/OrganizationJsonLd";
+
+type Membership = "n/a" | "signed-out" | "not-a-member" | "member";
+
+/**
+ * Whether the visitor belongs to the store they are looking at.
+ *
+ * Only asked of a private team store: on the operator's own shop everyone is
+ * welcome, and asking would cost a request per render for an answer that is
+ * always yes. Any failure answers "n/a" — this decides what to explain, and a
+ * membership lookup that times out is no reason to accuse someone of not
+ * belonging, nor to take down the shell.
+ */
+async function storeMembership(
+  store: { isPublic: boolean; accountId: string },
+  personId: string | undefined,
+): Promise<Membership> {
+  if (store.isPublic) return "n/a";
+  if (!personId) return "signed-out";
+  try {
+    const memberships = await (
+      await createCommerceClient()
+    ).listMyMemberships(personId);
+    return memberships.some((m) => m.accountId === store.accountId)
+      ? "member"
+      : "not-a-member";
+  } catch {
+    return "n/a";
+  }
+}
 
 export default async function ShopLayout({
   children,
@@ -25,6 +55,12 @@ export default async function ShopLayout({
   ]);
 
   const isBranded = Boolean(store.accentColor || store.logoUrl);
+
+  // A team store admits its members only. Someone who followed a colleague's
+  // link can otherwise browse it, design a garment and be refused at the very
+  // last step, by an API error about tenants that means nothing to them. Say
+  // so at the top instead, while it still costs them nothing.
+  const membership = await storeMembership(store, customerSession?.personId);
 
   if (store.status !== "active") {
     return (
@@ -59,6 +95,43 @@ export default async function ShopLayout({
             </span>
             <a href="/leave-store" className="underline whitespace-nowrap">
               Shop the main site instead
+            </a>
+          </div>
+        </div>
+      )}
+      {membership === "signed-out" && (
+        <div
+          role="status"
+          className="bg-amber-50 border-b border-amber-300 text-amber-900 text-sm"
+        >
+          <div className="mx-auto max-w-[1280px] px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              <b>{store.name}</b> is a private team store. Sign in with the
+              address its owner invited to place an order.
+            </span>
+            <a
+              href={`/account?next=${encodeURIComponent(`/s/${store.slug}`)}`}
+              className="underline whitespace-nowrap"
+            >
+              Sign in
+            </a>
+          </div>
+        </div>
+      )}
+      {membership === "not-a-member" && (
+        <div
+          role="status"
+          className="bg-amber-50 border-b border-amber-300 text-amber-900 text-sm"
+        >
+          <div className="mx-auto max-w-[1280px] px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              You can browse <b>{store.name}</b>, but you are not one of its
+              members, so you cannot order from it yet. Ask the store&apos;s
+              owner to send an invitation to{" "}
+              <b>{customerSession?.email}</b>.
+            </span>
+            <a href="/leave-store" className="underline whitespace-nowrap">
+              Shop the main site
             </a>
           </div>
         </div>
