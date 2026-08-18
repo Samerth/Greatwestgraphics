@@ -717,10 +717,11 @@ export function buildApp(input: {
       .min(1)
       .parse((request.params as { token?: string }).token);
     try {
-      const invite = await inviteService.getInvite(token);
+      const invite = await inviteService.getInviteWithAccountName(token);
       return {
         email: invite.email,
         accountId: invite.accountId,
+        accountName: invite.accountName,
         status: invite.status,
         expiresAt: invite.expiresAt,
       };

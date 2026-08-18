@@ -219,6 +219,7 @@ export class CommerceClient {
       z.object({
         email: z.string(),
         accountId: z.string(),
+        accountName: z.string().nullable().optional(),
         status: z.string(),
         expiresAt: z.string(),
       }),

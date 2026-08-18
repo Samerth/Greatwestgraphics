@@ -18,7 +18,9 @@ export default async function InviteAcceptPage({
   }
 
   let error: string | undefined;
-  let invite: { email: string; status: string } | undefined;
+  let invite:
+    | { email: string; status: string; accountName?: string | null }
+    | undefined;
   try {
     const client = await createCommerceClient();
     invite = await client.getAccountInvite(token);
@@ -36,8 +38,20 @@ export default async function InviteAcceptPage({
           Team invite
         </span>
         <h1 className="font-display font-bold text-header leading-header mt-sp-2 mb-sp-4">
-          Join the team
+          {invite?.accountName
+            ? `Join ${invite.accountName}`
+            : "Join the team"}
         </h1>
+
+        {invite?.status === "pending" && (
+          <p className="text-text-secondary mb-sp-4">
+            You have been invited to order from
+            {invite.accountName ? ` ${invite.accountName}'s` : " your team's"}{" "}
+            store. Accepting adds you to the team so you can place orders
+            against its pricing; it does not share anyone&apos;s payment
+            details with you.
+          </p>
+        )}
 
         {error && <p className="text-[14px] text-red-600 font-semibold">{error}</p>}
 

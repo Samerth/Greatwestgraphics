@@ -79,6 +79,26 @@ export class InviteService {
   }
 
   /**
+   * The invite plus the name of the account it joins, for the page the
+   * recipient lands on. Without the name that page could only offer to join
+   * "the team", which is not something anyone should accept on trust.
+   */
+  async getInviteWithAccountName(token: string) {
+    const invite = await this.getInvite(token);
+    const [account] = await this.db
+      .select({ name: accounts.name })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.tenantId, invite.tenantId),
+          eq(accounts.id, invite.accountId),
+        ),
+      )
+      .limit(1);
+    return { ...invite, accountName: account?.name ?? null };
+  }
+
+  /**
    * Joins the accepting person to the invited account.
    *
    * The email is read from the `people` row rather than taken as an argument.
