@@ -20,13 +20,16 @@ export const PATHNAME_HEADER = "x-gwg-pathname";
 /**
  * Paths that belong to a person's account rather than to the shop, and stay
  * reachable no matter what state the selected store is in.
+ *
+ * Accepting an invitation counts, and matters most: invitations go out in the
+ * hours after a store is created, which is exactly when it is still awaiting
+ * approval. Gating that path met every invitee with "this store isn't live
+ * yet" and no way to accept, on the one link the whole team arrives through.
  */
 export function isAccountManagementPath(pathname: string): boolean {
-  return (
-    pathname === "/account" ||
-    pathname.startsWith("/account/") ||
-    pathname === "/start" ||
-    pathname.startsWith("/start/")
+  const roots = ["/account", "/start", "/invite"];
+  return roots.some(
+    (root) => pathname === root || pathname.startsWith(`${root}/`),
   );
 }
 

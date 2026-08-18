@@ -11,9 +11,17 @@ describe("isAccountManagementPath", () => {
       "/account/team",
       "/start",
       "/start/pending",
+      "/invite/EjxUtqXsyu_SjsDQGbwp385C0Mrk4Cp7",
     ]) {
       expect(isAccountManagementPath(path)).toBe(true);
     }
+  });
+
+  // Invitations are sent in the hours after a store is created, while it is
+  // still awaiting approval, so this is the path most likely to be hit during
+  // exactly the window the gate covers.
+  it("lets an invitee accept while the store still awaits approval", () => {
+    expect(isAccountManagementPath("/invite/some-token")).toBe(true);
   });
 
   it("leaves the shop itself gated", () => {
@@ -35,6 +43,7 @@ describe("isAccountManagementPath", () => {
   it("does not match a path that merely starts with the same letters", () => {
     expect(isAccountManagementPath("/accounts-payable")).toBe(false);
     expect(isAccountManagementPath("/started")).toBe(false);
+    expect(isAccountManagementPath("/invitations")).toBe(false);
   });
 
   it("treats an unknown path as part of the shop", () => {
