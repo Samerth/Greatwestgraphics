@@ -28,6 +28,14 @@ export default async function JobsPage() {
         : "The customer portal is not configured for this environment.";
   }
 
+  // An account owner is served their whole team's orders; everyone else only
+  // ever sees their own. Rather than ask the API a second question, read it
+  // from the answer: someone else's order in the list means this is the team
+  // view, and the page should stop calling the list "yours".
+  const showingTeam = Boolean(
+    jobs?.some((job) => job.customerPersonId !== session.personId),
+  );
+
   return (
     <section className="py-sp-8">
       <Container>
@@ -35,10 +43,12 @@ export default async function JobsPage() {
           Customer portal
         </p>
         <h1 className="font-display font-bold text-display-sm mb-sp-2">
-          Your Jobs
+          {showingTeam ? "Your Team's Jobs" : "Your Jobs"}
         </h1>
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
           Signed in as {session.name || session.email}.
+          {showingTeam &&
+            " As the account owner you can see every job placed in your store."}
         </p>
 
         {error && (
@@ -73,6 +83,12 @@ export default async function JobsPage() {
                       {job.displayId}
                     </p>
                     <p className="text-sm text-text-tertiary mt-1 mb-0">
+                      {showingTeam &&
+                        `${
+                          job.customerPersonId === session.personId
+                            ? "You"
+                            : job.customerName || "A teammate"
+                        } · `}
                       Submitted{" "}
                       {job.submittedAt
                         ? new Date(job.submittedAt).toLocaleString("en-CA")

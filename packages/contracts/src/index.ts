@@ -431,6 +431,13 @@ const JobRequestResponseObjectSchema = z.object({
   displayId: z.string().min(1).max(64).optional(),
   context: RequestContextSchema,
   customerPersonId: CanonicalIdSchema,
+  /**
+   * Who placed the order, for a reader entitled to see more than their own.
+   * A team store's owner reads their whole account, and a list of order
+   * numbers with no names attached tells them nothing they can act on.
+   * Absent on the reads that only ever return the reader's own orders.
+   */
+  customerName: z.string().nullable().optional(),
   status: JobRequestStatusSchema,
   version: z.number().int().positive(),
   submittedAt: z.string().datetime().nullable(),

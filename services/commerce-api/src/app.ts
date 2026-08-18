@@ -38,10 +38,15 @@ import {
   DataIntegrityError,
   IdempotencyConflictError,
   JobRequestService,
+  NotAStoreMemberError,
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
 import { ProofDecisionError } from "./domain/proof-decision.js";
+import {
+  orderVisibilityFor,
+  personFilterFor,
+} from "./domain/order-visibility.js";
 import {
   applyStorePricingAdjustment,
   PricingConfigService,
@@ -382,9 +387,37 @@ export function buildApp(input: {
   // the account. The public storefront puts every retail shopper into one
   // shared account, so account scope alone would show each customer everyone
   // else's jobs — contact details, addresses, rosters and proofs included.
+  //
+  // A private team store is the one exception, and only for its owner: they
+  // are answerable for what the team orders. `orderVisibilityFor` checks the
+  // store is private before it looks at the role, so the shared retail account
+  // stays narrow no matter what role a row there happens to carry.
+  async function customerPersonFilter(
+    auth: AuthContext,
+  ): Promise<string | undefined> {
+    const personId = requirePersonId(auth);
+    const store = await storeService.getById(auth.tenantId, auth.storeId);
+    const membershipRole = await accountService.membershipRole(
+      auth.tenantId,
+      auth.accountId,
+      personId,
+    );
+    return personFilterFor(
+      orderVisibilityFor({
+        storeIsPublic: store.isPublic,
+        membershipRole,
+        personId,
+      }),
+    );
+  }
+
   app.get("/v1/job-requests", async (request) => {
     const auth = await input.auth.resolve(request);
-    return service.list(auth.tenantId, auth.accountId, requirePersonId(auth));
+    return service.list(
+      auth.tenantId,
+      auth.accountId,
+      await customerPersonFilter(auth),
+    );
   });
 
   app.get("/v1/job-requests/:jobRequestId", async (request) => {
@@ -396,7 +429,7 @@ export function buildApp(input: {
       auth.tenantId,
       auth.accountId,
       jobRequestId,
-      requirePersonId(auth),
+      await customerPersonFilter(auth),
     );
   });
 
@@ -1449,7 +1482,10 @@ export function buildApp(input: {
       statusCode = 400;
       code = "VALIDATION_ERROR";
       message = error.issues.map((issue) => issue.message).join("; ");
-    } else if (error instanceof ScopeMismatchError) {
+    } else if (
+      error instanceof ScopeMismatchError ||
+      error instanceof NotAStoreMemberError
+    ) {
       statusCode = 403;
       code = error.code;
       message = error.message;
