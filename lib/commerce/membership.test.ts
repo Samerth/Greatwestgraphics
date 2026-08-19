@@ -40,6 +40,12 @@ describe("teamMemberships", () => {
   it("drops the public retail membership every shopper holds", () => {
     expect(teamMemberships([PUBLIC, ACME])).toEqual([ACME]);
   });
+
+  it("keeps a store the person owns even when it was marked public", () => {
+    expect(
+      teamMemberships([PUBLIC, { ...ACME, storeIsPublic: true, role: "owner" }]),
+    ).toEqual([{ ...ACME, storeIsPublic: true, role: "owner" }]);
+  });
 });
 
 describe("existingTeamStorePath", () => {

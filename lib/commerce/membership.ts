@@ -17,6 +17,10 @@ export type StoreMembership = {
 };
 
 export function isTeamMembership(membership: StoreMembership): boolean {
+  // The operator's retail shop auto-joins every signed-in customer as a
+  // member. An owner or admin on any store — even one later marked public —
+  // is running a branded store and must not be sent back to the wizard.
+  if (membership.role === "owner" || membership.role === "admin") return true;
   return !membership.storeIsPublic;
 }
 
