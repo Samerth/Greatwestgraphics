@@ -36,9 +36,7 @@ export function AccountAuth({
   localDev?: boolean;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>(() =>
-    next.startsWith("/start") ? "sign-up" : "sign-in",
-  );
+  const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState(localDev ? "customer@example.test" : "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");

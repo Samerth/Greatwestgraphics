@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pickPortalStore, teamMemberships } from "./membership";
+import {
+  existingTeamStorePath,
+  pickPortalStore,
+  teamMemberships,
+} from "./membership";
 
 const PUBLIC = {
   accountId: "retail-account",
@@ -34,6 +38,33 @@ const BETA = {
 describe("teamMemberships", () => {
   it("drops the public retail membership every shopper holds", () => {
     expect(teamMemberships([PUBLIC, ACME])).toEqual([ACME]);
+  });
+});
+
+describe("existingTeamStorePath", () => {
+  it("keeps a first-time owner on the create-store wizard", () => {
+    expect(existingTeamStorePath([PUBLIC])).toBeNull();
+  });
+
+  it("opens an approved team store instead of asking for details again", () => {
+    expect(existingTeamStorePath([PUBLIC, ACME])).toBe("/s/acme");
+  });
+
+  it("sends a store still awaiting review to the pending screen", () => {
+    expect(existingTeamStorePath([PUBLIC, BETA])).toBe("/start/pending");
+  });
+
+  it("prefers the live store when one team is approved and another is not", () => {
+    expect(existingTeamStorePath([PUBLIC, BETA, ACME])).toBe("/s/acme");
+  });
+
+  it("sends a suspended team store to the team page instead of the wizard", () => {
+    expect(
+      existingTeamStorePath([
+        PUBLIC,
+        { ...ACME, storeStatus: "suspended" },
+      ]),
+    ).toBe("/account/team");
   });
 });
 

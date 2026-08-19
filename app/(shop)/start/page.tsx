@@ -2,11 +2,28 @@ import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { StoreWizard } from "@/components/account/StoreWizard";
 import { getCustomerSession } from "@/lib/auth/session";
+import { createCommerceClient } from "@/lib/commerce/client";
+import { existingTeamStorePath } from "@/lib/commerce/membership";
+
+export const dynamic = "force-dynamic";
 
 export default async function StartPage() {
   const session = await getCustomerSession();
   if (!session) {
     redirect("/account?next=/start");
+  }
+
+  let alreadyHasStore: string | null = null;
+  try {
+    const memberships = await (
+      await createCommerceClient()
+    ).listMyMemberships(session.personId);
+    alreadyHasStore = existingTeamStorePath(memberships);
+  } catch {
+    // A failed lookup must not block a first-time owner from creating a store.
+  }
+  if (alreadyHasStore) {
+    redirect(alreadyHasStore);
   }
 
   return (
