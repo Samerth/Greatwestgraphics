@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Field, Input } from "@/components/checkout/FormField";
 import { Button } from "@/components/shared/Button";
@@ -36,7 +36,9 @@ export function AccountAuth({
   localDev?: boolean;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("sign-in");
+  const [mode, setMode] = useState<Mode>(() =>
+    next.startsWith("/start") ? "sign-up" : "sign-in",
+  );
   const [email, setEmail] = useState(localDev ? "customer@example.test" : "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -46,7 +48,22 @@ export function AccountAuth({
   const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("gwg-pending-confirm");
+      if (!raw) return;
+      const pending = JSON.parse(raw) as { email?: string };
+      if (pending.email) {
+        setEmail(pending.email);
+        setMode("confirm");
+      }
+    } catch {
+      sessionStorage.removeItem("gwg-pending-confirm");
+    }
+  }, []);
+
   function finishAuth() {
+    sessionStorage.removeItem("gwg-pending-confirm");
     router.push(next);
     router.refresh();
   }
@@ -75,6 +92,10 @@ export function AccountAuth({
         await postJson("/api/auth/sign-in", { email, password });
         finishAuth();
       } else {
+        sessionStorage.setItem(
+          "gwg-pending-confirm",
+          JSON.stringify({ email }),
+        );
         setMode("confirm");
       }
     } catch (caught) {
@@ -196,7 +217,9 @@ export function AccountAuth({
     return (
       <form onSubmit={handleConfirm} className="max-w-sm">
         <p className="text-sm text-text-secondary mb-sp-3">
-          We sent a code to <b>{email}</b>. Enter it below to confirm your account.
+          We sent a confirmation code to <b>{email}</b>. It comes from
+          Amazon Cognito — look for <b>no-reply@verificationemail.com</b> and
+          check spam or junk if it is not in the inbox within a minute.
         </p>
         <Field label="Confirmation code">
           <Input
