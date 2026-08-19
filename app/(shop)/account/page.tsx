@@ -3,7 +3,11 @@ import { Container } from "@/components/shared/Container";
 import { AccountAuth } from "@/components/account/AccountAuth";
 import { isLocalCustomerAuthEnabled } from "@/lib/auth/local-customer";
 import { getCustomerSession } from "@/lib/auth/session";
+import { createCommerceClient } from "@/lib/commerce/client";
+import { destinationAfterSignIn } from "@/lib/commerce/membership";
 import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default async function AccountPage({
   searchParams,
@@ -13,7 +17,17 @@ export default async function AccountPage({
   const { next } = await searchParams;
   const session = await getCustomerSession();
   if (session) {
-    redirect(next || "/portal/jobs");
+    let memberships: Awaited<
+      ReturnType<Awaited<ReturnType<typeof createCommerceClient>>["listMyMemberships"]>
+    > = [];
+    try {
+      memberships = await (
+        await createCommerceClient()
+      ).listMyMemberships(session.personId);
+    } catch {
+      // Fall through to destinationAfterSignIn with an empty list.
+    }
+    redirect(destinationAfterSignIn(next, memberships));
   }
 
   return (
@@ -25,12 +39,12 @@ export default async function AccountPage({
           </p>
           <h1 className="font-display font-bold text-[clamp(1.75rem,3vw,2.5rem)] leading-tight mt-2 mb-sp-2 max-w-[16ch]">
             {next?.startsWith("/start")
-              ? "Create your company login"
+              ? "Sign in to your company store"
               : "Sign In to Your Account"}
           </h1>
           <p className="text-sm text-text-secondary mb-sp-5 max-w-[42ch]">
             {next?.startsWith("/start")
-              ? "First confirm the email for the person who will own the branded store. After that you name the store and wait for staff to open it."
+              ? "Use the email you registered the store with. If this is your first time, create an account, name the store, and staff will open it."
               : "Orders, saved artwork, and your team store live in the customer portal after you sign in."}{" "}
             Staff use{" "}
             <Link href="/admin/login" className="font-bold text-accent hover:underline">

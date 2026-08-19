@@ -28,7 +28,7 @@ async function postJson(path: string, body: unknown) {
 }
 
 export function AccountAuth({
-  next = "/portal/jobs",
+  next,
   localDev = false,
 }: {
   next?: string;
@@ -36,9 +36,7 @@ export function AccountAuth({
   localDev?: boolean;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>(() =>
-    next.startsWith("/start") ? "sign-up" : "sign-in",
-  );
+  const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState(localDev ? "customer@example.test" : "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -64,7 +62,12 @@ export function AccountAuth({
 
   function finishAuth() {
     sessionStorage.removeItem("gwg-pending-confirm");
-    router.push(next);
+    // Bounce through /account so the server can put an approved owner in
+    // their own branded store instead of the public shop or the wizard.
+    const dest = next
+      ? `/account?next=${encodeURIComponent(next)}`
+      : "/account";
+    router.push(dest);
     router.refresh();
   }
 
