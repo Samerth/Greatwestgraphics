@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  destinationAfterSignIn,
   existingTeamStorePath,
   pickPortalStore,
   teamMemberships,
@@ -65,6 +66,27 @@ describe("existingTeamStorePath", () => {
         { ...ACME, storeStatus: "suspended" },
       ]),
     ).toBe("/account/team");
+  });
+});
+
+describe("destinationAfterSignIn", () => {
+  it("opens the owner's branded store after a generic corporate login", () => {
+    expect(destinationAfterSignIn("/start", [PUBLIC, ACME])).toBe("/s/acme");
+    expect(destinationAfterSignIn(undefined, [PUBLIC, ACME])).toBe("/s/acme");
+  });
+
+  it("keeps a first-time corporate owner on the wizard", () => {
+    expect(destinationAfterSignIn("/start", [PUBLIC])).toBe("/start");
+  });
+
+  it("opens checkout inside the owner's store so they stay on their storefront", () => {
+    expect(destinationAfterSignIn("/checkout", [PUBLIC, ACME])).toBe(
+      "/s/acme?next=%2Fcheckout",
+    );
+  });
+
+  it("leaves a retail shopper on the portal", () => {
+    expect(destinationAfterSignIn(undefined, [PUBLIC])).toBe("/portal/jobs");
   });
 });
 

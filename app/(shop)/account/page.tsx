@@ -3,7 +3,11 @@ import { Container } from "@/components/shared/Container";
 import { AccountAuth } from "@/components/account/AccountAuth";
 import { isLocalCustomerAuthEnabled } from "@/lib/auth/local-customer";
 import { getCustomerSession } from "@/lib/auth/session";
+import { createCommerceClient } from "@/lib/commerce/client";
+import { destinationAfterSignIn } from "@/lib/commerce/membership";
 import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default async function AccountPage({
   searchParams,
@@ -13,7 +17,17 @@ export default async function AccountPage({
   const { next } = await searchParams;
   const session = await getCustomerSession();
   if (session) {
-    redirect(next || "/portal/jobs");
+    let memberships: Awaited<
+      ReturnType<Awaited<ReturnType<typeof createCommerceClient>>["listMyMemberships"]>
+    > = [];
+    try {
+      memberships = await (
+        await createCommerceClient()
+      ).listMyMemberships(session.personId);
+    } catch {
+      // Fall through to destinationAfterSignIn with an empty list.
+    }
+    redirect(destinationAfterSignIn(next, memberships));
   }
 
   return (
