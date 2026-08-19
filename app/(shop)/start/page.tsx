@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
+import { RedirectIfExistingStore } from "@/components/account/RedirectIfExistingStore";
 import { StoreWizard } from "@/components/account/StoreWizard";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
@@ -38,8 +39,11 @@ export default async function StartPage() {
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
           Your team gets a branded storefront — your name, your colours, your own
           address — while every order is produced and fulfilled by Great West
-          Graphics behind the scenes.
+          Graphics behind the scenes. If you already opened a store on this
+          login, we will take you there instead of asking for these details
+          again.
         </p>
+        <RedirectIfExistingStore />
         <StoreWizard />
       </Container>
     </section>

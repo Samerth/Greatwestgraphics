@@ -1,7 +1,7 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, sql, ilike, inArray } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
-import { accountPeople, accounts, stores } from "../db/schema.js";
+import { accountPeople, accounts, people, stores } from "../db/schema.js";
 import { slugify } from "../adapters/ss-activewear/client.js";
 
 export class SlugTakenError extends Error {
@@ -53,37 +53,39 @@ export class AccountService {
       throw new SlugTakenError(`The slug "${input.slug}" is already in use.`);
     }
 
-    const [account] = await this.db
-      .insert(accounts)
-      .values({ tenantId, name: input.accountName, createdBy: actor })
-      .returning();
-    if (!account) throw new Error("Failed to create account");
+    return this.db.transaction(async (tx) => {
+      const [account] = await tx
+        .insert(accounts)
+        .values({ tenantId, name: input.accountName, createdBy: actor })
+        .returning();
+      if (!account) throw new Error("Failed to create account");
 
-    const [store] = await this.db
-      .insert(stores)
-      .values({
+      const [store] = await tx
+        .insert(stores)
+        .values({
+          tenantId,
+          accountId: account.id,
+          name: input.storeName,
+          slug: input.slug,
+          status: "pending_review",
+          accentColor: input.accentColor ?? null,
+          logoUrl: input.logoUrl ?? null,
+          tagline: input.tagline ?? null,
+          createdBy: actor,
+        })
+        .returning();
+      if (!store) throw new Error("Failed to create store");
+
+      await tx.insert(accountPeople).values({
         tenantId,
         accountId: account.id,
-        name: input.storeName,
-        slug: input.slug,
-        status: "pending_review",
-        accentColor: input.accentColor ?? null,
-        logoUrl: input.logoUrl ?? null,
-        tagline: input.tagline ?? null,
+        personId,
+        role: "owner",
         createdBy: actor,
-      })
-      .returning();
-    if (!store) throw new Error("Failed to create store");
+      });
 
-    await this.db.insert(accountPeople).values({
-      tenantId,
-      accountId: account.id,
-      personId,
-      role: "owner",
-      createdBy: actor,
+      return { accountId: account.id, storeId: store.id, slug: store.slug };
     });
-
-    return { accountId: account.id, storeId: store.id, slug: store.slug };
   }
 
   /**
@@ -111,6 +113,109 @@ export class AccountService {
   }
 
   async listMembershipsForPerson(tenantId: string, personId: string) {
+    const personIds = await this.personIdsForIdentity(tenantId, personId);
+    await this.attachMissingOwnedStores(tenantId, personId, personIds);
+    return this.selectMemberships(tenantId, personIds);
+  }
+
+  /**
+   * The signed-in person plus any other `people` rows that share their email.
+   * A second Cognito user (or a case-different email) used to create a second
+   * person, so the store they already opened disappeared from this login.
+   */
+  private async personIdsForIdentity(
+    tenantId: string,
+    personId: string,
+  ): Promise<string[]> {
+    const [person] = await this.db
+      .select({ id: people.id, email: people.email })
+      .from(people)
+      .where(and(eq(people.tenantId, tenantId), eq(people.id, personId)))
+      .limit(1);
+    if (!person?.email) return [personId];
+
+    const aliases = await this.db
+      .select({ id: people.id })
+      .from(people)
+      .where(
+        and(
+          eq(people.tenantId, tenantId),
+          sql`lower(${people.email}) = ${person.email.toLowerCase()}`,
+        ),
+      );
+    return [...new Set([personId, ...aliases.map((row) => row.id)])];
+  }
+
+  /**
+   * Re-attach stores this person clearly already owns. Staging had approved
+   * stores whose `account_people` row never landed (create is now transactional)
+   * or landed on a duplicate person row, so `/start` kept showing the wizard.
+   */
+  private async attachMissingOwnedStores(
+    tenantId: string,
+    actingPersonId: string,
+    personIds: string[],
+  ): Promise<void> {
+    const created = await this.db
+      .select({
+        accountId: stores.accountId,
+      })
+      .from(stores)
+      .where(
+        and(
+          eq(stores.tenantId, tenantId),
+          or(
+            ...personIds.map(
+              (id) => sql`${stores.createdBy} ->> 'id' = ${id}`,
+            ),
+          ),
+        ),
+      );
+
+    const [person] = await this.db
+      .select({ displayName: people.displayName })
+      .from(people)
+      .where(eq(people.id, actingPersonId))
+      .limit(1);
+
+    const named =
+      person?.displayName && person.displayName.trim().length >= 3
+        ? await this.db
+            .select({ accountId: stores.accountId })
+            .from(stores)
+            .where(
+              and(
+                eq(stores.tenantId, tenantId),
+                eq(stores.isPublic, false),
+                or(
+                  ilike(stores.name, person.displayName.trim()),
+                  ilike(stores.name, `${person.displayName.trim()} %`),
+                ),
+              ),
+            )
+        : [];
+
+    const accountIds = [
+      ...new Set([...created, ...named].map((row) => row.accountId)),
+    ];
+    if (accountIds.length === 0) return;
+
+    const actor: Actor = { type: "customer", id: actingPersonId };
+    for (const accountId of accountIds) {
+      await this.db
+        .insert(accountPeople)
+        .values({
+          tenantId,
+          accountId,
+          personId: actingPersonId,
+          role: "owner",
+          createdBy: actor,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  private selectMemberships(tenantId: string, personIds: string[]) {
     return this.db
       .select({
         accountId: accounts.id,
@@ -129,7 +234,10 @@ export class AccountService {
       .innerJoin(accounts, eq(accountPeople.accountId, accounts.id))
       .innerJoin(stores, eq(stores.accountId, accounts.id))
       .where(
-        and(eq(accountPeople.tenantId, tenantId), eq(accountPeople.personId, personId)),
+        and(
+          eq(accountPeople.tenantId, tenantId),
+          inArray(accountPeople.personId, personIds),
+        ),
       );
   }
 
