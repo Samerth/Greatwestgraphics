@@ -21,13 +21,18 @@ export default async function AccountPage({
       <section className="flex flex-col justify-center px-sp-5 sm:px-sp-7 py-sp-8">
         <Container className="max-w-xl !px-0">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent m-0">
-            Personal login
+            {next?.startsWith("/start") ? "Corporate & institutional" : "Customer login"}
           </p>
           <h1 className="font-display font-bold text-[clamp(1.75rem,3vw,2.5rem)] leading-tight mt-2 mb-sp-2 max-w-[16ch]">
-            Sign In to Your Account
+            {next?.startsWith("/start")
+              ? "Create your company login"
+              : "Sign In to Your Account"}
           </h1>
           <p className="text-sm text-text-secondary mb-sp-5 max-w-[42ch]">
-            For individual customers and small orders. Staff use{" "}
+            {next?.startsWith("/start")
+              ? "First confirm the email for the person who will own the branded store. After that you name the store and wait for staff to open it."
+              : "Orders, saved artwork, and your team store live in the customer portal after you sign in."}{" "}
+            Staff use{" "}
             <Link href="/admin/login" className="font-bold text-accent hover:underline">
               Staff Login
             </Link>

@@ -155,7 +155,7 @@ export default async function ShopLayout({
       <TickBar />
       <Header
         categories={categories}
-        customerName={customerSession?.name ?? null}
+        customerName={customerSession?.name || customerSession?.email || null}
         storeName={isBranded ? store.name : undefined}
         storeLogoUrl={store.logoUrl}
       />

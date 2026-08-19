@@ -7,6 +7,7 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
+import { SignOutButton } from "@/components/account/SignOutButton";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 
 // Used only when the commerce API returned no categories. This was a list of
@@ -198,12 +199,75 @@ export function Header({
         <div className="flex items-center gap-sp-2 shrink-0">
           <ActiveDesignBadge />
           {customerName ? (
-            <Link
-              href="/portal/jobs"
-              className="hidden sm:inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
+            <div
+              className="relative hidden sm:block"
+              onMouseEnter={openAccount}
+              onMouseLeave={scheduleAccountClose}
             >
-              Hi, {customerName.split(" ")[0]}
-            </Link>
+              <button
+                type="button"
+                onClick={() => setAccountOpen((v) => !v)}
+                aria-expanded={accountOpen}
+                className="inline-flex items-center px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
+              >
+                Your account
+              </button>
+              {accountOpen && (
+                <div
+                  onMouseEnter={openAccount}
+                  onMouseLeave={scheduleAccountClose}
+                  className="absolute right-0 top-full pt-2 w-[300px] z-50"
+                >
+                  <div className="rounded-md border border-border bg-bg-raised shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-2">
+                    <p className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-text-tertiary m-0">
+                      Signed in as {customerName.split(" ")[0]}
+                    </p>
+                    <Link
+                      href="/portal"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Customer portal</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Overview of proofs, quotes, and saved artwork.
+                      </span>
+                    </Link>
+                    <Link
+                      href="/portal/jobs"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Your orders</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Jobs, proofs, and invoices.
+                      </span>
+                    </Link>
+                    <Link
+                      href="/portal/designs"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Your designs</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Reopen artwork in the studio.
+                      </span>
+                    </Link>
+                    <Link
+                      href="/account/team"
+                      onClick={() => setAccountOpen(false)}
+                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                    >
+                      <span className="block font-bold text-sm">Team store</span>
+                      <span className="block text-xs text-text-secondary mt-1">
+                        Create or invite people to a branded store.
+                      </span>
+                    </Link>
+                    <div className="border-t border-border my-1" />
+                    <SignOutButton className="block w-full text-left rounded-sm px-3 py-3 text-sm font-bold hover:bg-fill-subtle-15 transition-colors" />
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <div
               className="relative hidden sm:block"
@@ -370,13 +434,47 @@ export function Header({
             >
               Contact
             </Link>
-            <Link
-              href={customerName ? "/portal/jobs" : "/account"}
-              onClick={() => setMobileOpen(false)}
-              className="text-sm font-bold px-3 py-2"
-            >
-              {customerName ? `Hi, ${customerName.split(" ")[0]}` : "Sign In"}
-            </Link>
+            {customerName ? (
+              <>
+                <Link
+                  href="/portal"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Customer portal
+                </Link>
+                <Link
+                  href="/portal/jobs"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Your orders
+                </Link>
+                <Link
+                  href="/portal/designs"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Your designs
+                </Link>
+                <Link
+                  href="/account/team"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Team store
+                </Link>
+                <SignOutButton className="text-sm font-bold px-3 py-2 text-left" />
+              </>
+            ) : (
+              <Link
+                href="/account"
+                onClick={() => setMobileOpen(false)}
+                className="text-sm font-bold px-3 py-2"
+              >
+                Sign In
+              </Link>
+            )}
             <Link
               href="/admin/login"
               onClick={() => setMobileOpen(false)}

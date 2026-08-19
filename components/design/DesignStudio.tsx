@@ -9,6 +9,7 @@ import {
   DesignSides,
   emptyDesignDocument,
   ephemeralArtworkSides,
+  isDurableArtworkSrc,
   normalizeDesignDocument,
   type DesignDocument,
   type DesignSide,
@@ -18,6 +19,11 @@ import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
+import {
+  artworkSrcForDraft,
+  dataUrlToBlob,
+  filenameForArtworkBlob,
+} from "@/lib/store/design-draft";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
@@ -231,25 +237,37 @@ export function DesignStudio({
   // last saved) so it follows the customer across the catalog. A
   // `garmentIdOverride` from a "Preview my design on this" click always
   // wins for the garment, while the artwork itself carries over.
+  //
+  // Zustand persist hydrates from localStorage *after* the first paint.
+  // Applying on mount alone raced that and left a returning / signed-in
+  // visitor on an empty canvas even though the draft was still in the
+  // browser.
   useEffect(() => {
-    // Staff are editing one specific customer's design; the browser-local
-    // "design in progress" belongs to whoever last used this machine and
-    // must never bleed into it.
     if (initialDesign || isStaff) return;
-    const stored = useActiveDesignStore.getState();
-    if (hasActiveArtwork(stored.design)) {
-      setDesign(normalizeDesignDocument(stored.design));
-      if (stored.name) setDesignName(stored.name);
-      if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
-      if (!garmentIdOverride && stored.garmentProductId) {
-        setSelectedGarmentId(stored.garmentProductId);
+
+    const applyStored = () => {
+      if (hasActiveArtwork(design)) return;
+      const stored = useActiveDesignStore.getState();
+      if (hasActiveArtwork(stored.design)) {
+        setDesign(normalizeDesignDocument(stored.design));
+        if (stored.name) setDesignName(stored.name);
+        if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
+        if (!garmentIdOverride && stored.garmentProductId) {
+          setSelectedGarmentId(stored.garmentProductId);
+        }
       }
+      if (garmentIdOverride) {
+        setSelectedGarmentId(garmentIdOverride);
+      }
+    };
+
+    const persistApi = useActiveDesignStore.persist;
+    if (persistApi.hasHydrated()) {
+      applyStored();
+      return;
     }
-    if (garmentIdOverride) {
-      setSelectedGarmentId(garmentIdOverride);
-    }
-    // Runs once on mount only — this hydrates from persisted state, it
-    // isn't meant to re-sync on every dependency change.
+    return persistApi.onFinishHydration(applyStored);
+    // Runs for the first hydration only — this is not a live sync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,6 +430,51 @@ export function DesignStudio({
     [updateArtworks, uploadUrl],
   );
 
+  // After sign-in, hosted uploads become possible. Promote any data-URL
+  // layers left from the unsigned preview so Save / add-to-cart have a
+  // durable file instead of a blank reload.
+  const ephemeralArtworkKey = DesignSides.flatMap((side) =>
+    artworksBySide[side]
+      .filter((artwork) => !isDurableArtworkSrc(artwork.src))
+      .map((artwork) => artwork.id),
+  ).join("|");
+  const promotingRef = useRef(false);
+  useEffect(() => {
+    if (!signedIn || isStaff || promotingRef.current || !ephemeralArtworkKey) {
+      return;
+    }
+    const pending = DesignSides.flatMap((side) =>
+      artworksBySide[side]
+        .filter((artwork) => !isDurableArtworkSrc(artwork.src))
+        .map((artwork) => ({ side, artwork })),
+    );
+    if (pending.length === 0) return;
+
+    promotingRef.current = true;
+    void (async () => {
+      try {
+        for (const { side, artwork } of pending) {
+          const blob = await dataUrlToBlob(artwork.src);
+          await uploadArtwork(
+            side,
+            artwork.id,
+            blob,
+            filenameForArtworkBlob(blob),
+          );
+        }
+      } catch {
+        setUploadError(
+          "Sign-in worked, but your artwork still needs to be uploaded. Re-add the file if the canvas looks empty.",
+        );
+      } finally {
+        promotingRef.current = false;
+      }
+    })();
+    // artworksBySide is read at effect start; the key lists every layer
+    // that still needs a hosted URL so a successful swap does not retrigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, isStaff, ephemeralArtworkKey, uploadArtwork]);
+
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -431,13 +494,18 @@ export function DesignStudio({
     filename: string,
     scale = 0.4,
   ): Promise<string | null> {
-    const objectUrl = URL.createObjectURL(blob);
     const id = crypto.randomUUID();
     const side = activeSide;
+    // Unsigned visitors cannot upload. A `blob:` URL dies when they leave
+    // to confirm an account, so the draft is stored as a data URL that
+    // localStorage can bring back onto the canvas after sign-in.
+    const src = signedIn
+      ? URL.createObjectURL(blob)
+      : await artworkSrcForDraft(blob);
 
     const newArtwork: PlacedArtwork = {
       id,
-      src: objectUrl,
+      src,
       x: CANVAS_SIZE / 2,
       y: CANVAS_SIZE / 2,
       scaleX: scale,
@@ -449,16 +517,11 @@ export function DesignStudio({
     setSelectedId(id);
 
     if (!signedIn) {
-      // Nothing to upload to — anonymous visitors get a working preview and
-      // the sign-in nudge next to the save box tells them why it stops there.
       return null;
     }
 
     const hostedUrl = await uploadArtwork(side, id, blob, filename);
-    // Only safe to release once the hosted copy has been loaded, which
-    // uploadArtwork has already confirmed; releasing earlier would blank the
-    // layer for as long as the swap took.
-    if (hostedUrl) URL.revokeObjectURL(objectUrl);
+    if (hostedUrl && src.startsWith("blob:")) URL.revokeObjectURL(src);
     return hostedUrl;
   }
 
@@ -1051,8 +1114,9 @@ export function DesignStudio({
               <a href="/account?next=/design" className="text-accent font-bold">
                 Sign in
               </a>{" "}
-              to save this design to your profile and reuse it on other products.
-              Artwork is only stored once you do.
+              to keep this mockup on your account. The artwork stays on this
+              canvas when you come back — then we upload it so staff can open
+              the same file.
             </p>
           )}
 
