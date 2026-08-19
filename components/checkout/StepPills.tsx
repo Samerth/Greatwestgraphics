@@ -1,13 +1,18 @@
 import { cn } from "@/lib/utils/cn";
 
-const STEPS = [
-  { n: 1, label: "Contact" },
-  { n: 2, label: "Ship To" },
-  { n: 3, label: "Delivery" },
-  { n: 4, label: "Payment" },
-];
-
-export function StepPills({ current }: { current: number }) {
+export function StepPills({
+  current,
+  pickup,
+}: {
+  current: number;
+  pickup: boolean;
+}) {
+  const STEPS = [
+    { n: 1, label: "Contact" },
+    { n: 2, label: "Fulfilment" },
+    { n: 3, label: pickup ? "Pickup" : "Address" },
+    { n: 4, label: "Review" },
+  ];
   return (
     <div className="flex gap-2 flex-wrap mb-sp-5">
       {STEPS.map((s) => {

@@ -4,6 +4,7 @@ import { ButtonLink } from "@/components/shared/Button";
 import { InviteForm } from "@/components/account/InviteForm";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
+import { teamMemberships } from "@/lib/commerce/membership";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function AccountTeamPage() {
           Store & team access
         </h1>
 
-        {memberships.length === 0 ? (
+        {teamMemberships(memberships).length === 0 ? (
           <div>
             <p className="text-text-secondary mb-sp-4">
               You don&apos;t have a branded store yet.
@@ -42,7 +43,7 @@ export default async function AccountTeamPage() {
           </div>
         ) : (
           <div className="space-y-sp-5">
-            {memberships.map((m) => (
+            {teamMemberships(memberships).map((m) => (
               <div
                 key={m.accountId}
                 className="border border-border rounded-lg p-sp-4 bg-bg-raised"
@@ -51,7 +52,11 @@ export default async function AccountTeamPage() {
                   <div>
                     <p className="font-display font-bold text-lg m-0">{m.storeName}</p>
                     <p className="text-[13px] text-text-tertiary m-0 mt-1">
-                      {m.storeSlug}.greatwestgraphics.com · {m.role}
+                      <a href={`/s/${m.storeSlug}`} className="underline hover:text-accent">
+                        /s/{m.storeSlug}
+                      </a>
+                      {" · "}
+                      {m.role}
                       {m.storeStatus !== "active" ? ` · ${m.storeStatus}` : ""}
                     </p>
                   </div>

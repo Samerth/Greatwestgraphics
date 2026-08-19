@@ -66,7 +66,7 @@ export function ShippingStep({
         <Button type="button" variant="secondary" onClick={onBack}>
           ← Back
         </Button>
-        <Button type="submit">Continue to Delivery →</Button>
+        <Button type="submit">Continue to Review →</Button>
       </div>
     </form>
   );

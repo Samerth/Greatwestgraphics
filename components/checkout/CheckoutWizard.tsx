@@ -10,11 +10,11 @@ import { useEffect, useState } from "react";
 import { StepPills } from "./StepPills";
 import { ContactStep } from "./ContactStep";
 import { ShippingStep } from "./ShippingStep";
-import { DeliveryStep } from "./DeliveryStep";
+import { DeliveryStep, PickupStep } from "./DeliveryStep";
 import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
-import { useCartStore } from "@/lib/store/cart";
+import { useCartStore, useVisibleCartItems } from "@/lib/store/cart";
 import type {
   ContactValues,
   ShippingValues,
@@ -24,11 +24,12 @@ import type {
 interface CheckoutData {
   contact?: ContactValues;
   shipping?: ShippingValues;
+  pickupNotes?: string;
   delivery: DeliveryKey;
 }
 
 export function CheckoutWizard() {
-  const items = useCartStore((s) => s.items);
+  const items = useVisibleCartItems();
   const clearCart = useCartStore((s) => s.clear);
 
   const [step, setStep] = useState(1);
@@ -63,7 +64,7 @@ export function CheckoutWizard() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-sp-5 items-start">
       <div>
-        <StepPills current={step} />
+        <StepPills current={step} pickup={data.delivery === "pickup"} />
 
         {step === 1 && (
           <ContactStep
@@ -76,22 +77,33 @@ export function CheckoutWizard() {
         )}
 
         {step === 2 && (
-          <ShippingStep
-            defaultValues={data.shipping ?? {}}
+          <DeliveryStep
+            defaultValue={data.delivery}
             onBack={() => setStep(1)}
-            onNext={(shipping) => {
-              setData((d) => ({ ...d, shipping }));
+            onNext={(delivery) => {
+              setData((d) => ({ ...d, delivery }));
               setStep(3);
             }}
           />
         )}
 
-        {step === 3 && (
-          <DeliveryStep
-            defaultValue={data.delivery}
+        {step === 3 && data.delivery === "pickup" && (
+          <PickupStep
+            defaultNotes={data.pickupNotes}
             onBack={() => setStep(2)}
-            onNext={(delivery) => {
-              setData((d) => ({ ...d, delivery }));
+            onNext={(pickupNotes) => {
+              setData((d) => ({ ...d, pickupNotes, shipping: undefined }));
+              setStep(4);
+            }}
+          />
+        )}
+
+        {step === 3 && data.delivery !== "pickup" && (
+          <ShippingStep
+            defaultValues={data.shipping ?? {}}
+            onBack={() => setStep(2)}
+            onNext={(shipping) => {
+              setData((d) => ({ ...d, shipping }));
               setStep(4);
             }}
           />
@@ -103,16 +115,32 @@ export function CheckoutWizard() {
             delivery={data.delivery}
             error={submissionError}
             onSubmit={async (customerNote) => {
-              if (!data.contact || !data.shipping) return;
+              if (!data.contact) return;
+              if (data.delivery !== "pickup" && !data.shipping) return;
               setSubmissionError(undefined);
-              const { notes, sameBilling: _sameBilling, ...address } = data.shipping;
+              const { notes, sameBilling: _sameBilling, ...address } =
+                data.shipping ?? {
+                  notes: undefined,
+                  sameBilling: true,
+                  address1: "",
+                  city: "",
+                  region: "",
+                  postalCode: "",
+                  country: "",
+                };
               const submissionWithoutKey = {
                 contact: data.contact,
-                fulfillment: {
-                  method: data.delivery,
-                  address,
-                  deliveryNotes: notes || undefined,
-                },
+                fulfillment:
+                  data.delivery === "pickup"
+                    ? {
+                        method: "pickup" as const,
+                        deliveryNotes: data.pickupNotes || undefined,
+                      }
+                    : {
+                        method: data.delivery,
+                        address,
+                        deliveryNotes: notes || undefined,
+                      },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => {
                   return {

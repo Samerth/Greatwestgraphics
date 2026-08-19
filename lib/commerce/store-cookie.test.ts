@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isAccountManagementPath } from "./store-cookie";
+import {
+  isAccountManagementPath,
+  isPendingStoreAllowedPath,
+  isStoreSlug,
+  safeInternalNextPath,
+} from "./store-cookie";
 
 describe("isAccountManagementPath", () => {
   // These stay reachable while a store waits for approval. Inviting teammates
@@ -48,5 +53,38 @@ describe("isAccountManagementPath", () => {
 
   it("treats an unknown path as part of the shop", () => {
     expect(isAccountManagementPath("")).toBe(false);
+  });
+});
+
+describe("isPendingStoreAllowedPath", () => {
+  it("lets a team prepare artwork before the store is approved", () => {
+    expect(isPendingStoreAllowedPath("/design")).toBe(true);
+    expect(isPendingStoreAllowedPath("/account/team")).toBe(true);
+  });
+
+  it("keeps shopping and checkout gated", () => {
+    expect(isPendingStoreAllowedPath("/products")).toBe(false);
+    expect(isPendingStoreAllowedPath("/checkout")).toBe(false);
+  });
+});
+
+describe("safeInternalNextPath", () => {
+  it("keeps a same-origin portal path", () => {
+    expect(safeInternalNextPath("/portal/jobs")).toBe("/portal/jobs");
+  });
+
+  it("rejects an open redirect", () => {
+    expect(safeInternalNextPath("https://evil.example")).toBe("/");
+    expect(safeInternalNextPath("//evil.example")).toBe("/");
+    expect(safeInternalNextPath("/\\evil.example")).toBe("/");
+    expect(safeInternalNextPath("portal/jobs")).toBe("/");
+  });
+});
+
+describe("isStoreSlug", () => {
+  it("accepts the slugs /s/<slug> already sets", () => {
+    expect(isStoreSlug("acme")).toBe(true);
+    expect(isStoreSlug("a")).toBe(false);
+    expect(isStoreSlug("Acme")).toBe(false);
   });
 });

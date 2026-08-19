@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
-import { accountPeople, accountInvites, accounts, people } from "../db/schema.js";
+import { accountPeople, accountInvites, accounts, people, stores } from "../db/schema.js";
 
 export class NotAccountOwnerError extends Error {
   readonly code = "NOT_ACCOUNT_OWNER";
@@ -113,7 +113,7 @@ export class InviteService {
     token: string,
     personId: string,
     actor: Actor,
-  ): Promise<{ accountId: string }> {
+  ): Promise<{ accountId: string; storeSlug: string | null; storeName: string | null }> {
     const invite = await this.getInvite(token);
     if (invite.status !== "pending") {
       throw new InviteNotFoundError("This invite has already been used.");
@@ -161,7 +161,22 @@ export class InviteService {
       .set({ status: "accepted", updatedAt: new Date() })
       .where(eq(accountInvites.id, invite.id));
 
-    return { accountId: invite.accountId };
+    const [store] = await this.db
+      .select({ slug: stores.slug, name: stores.name })
+      .from(stores)
+      .where(
+        and(
+          eq(stores.tenantId, invite.tenantId),
+          eq(stores.accountId, invite.accountId),
+        ),
+      )
+      .limit(1);
+
+    return {
+      accountId: invite.accountId,
+      storeSlug: store?.slug ?? null,
+      storeName: store?.name ?? null,
+    };
   }
 
   async listForAccount(tenantId: string, accountId: string, requesterPersonId: string) {

@@ -28,6 +28,7 @@ export function GarmentScene({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
 
     // Scene setup
     const scene = new THREE.Scene();
@@ -37,7 +38,7 @@ export function GarmentScene({
     // Camera
     const camera = new THREE.PerspectiveCamera(
       75,
-      containerRef.current.clientWidth / containerRef.current.clientHeight,
+      container.clientWidth / container.clientHeight,
       0.1,
       1000,
     );
@@ -45,10 +46,10 @@ export function GarmentScene({
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
-    containerRef.current.appendChild(renderer.domElement);
+    container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // Lighting
@@ -117,9 +118,8 @@ export function GarmentScene({
 
     // Handle window resize
     const handleResize = () => {
-      if (!containerRef.current) return;
-      const width = containerRef.current.clientWidth;
-      const height = containerRef.current.clientHeight;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
 
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -133,7 +133,9 @@ export function GarmentScene({
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(animationId);
       renderer.dispose();
-      containerRef.current?.removeChild(renderer.domElement);
+      if (renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement);
+      }
     };
   }, [modelUrl, textureUrl, onLoad, onError]);
 

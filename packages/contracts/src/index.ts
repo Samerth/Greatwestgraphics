@@ -19,24 +19,48 @@ export const JobRequestStatuses = [
   "payment_failed",
   "paid",
   "ready_for_production",
+  "in_production",
+  "ready_for_pickup",
+  "shipped",
+  "completed",
+  "cancelled",
 ] as const;
 
 export const JobRequestStatusSchema = z.enum(JobRequestStatuses);
 export type JobRequestStatus = z.infer<typeof JobRequestStatusSchema>;
 
+/** Hidden from the default staff inbox and excluded from the open-jobs count. */
+export const StaffClosedJobStatuses = [
+  "draft",
+  "rejected",
+  "completed",
+  "cancelled",
+] as const satisfies readonly JobRequestStatus[];
+
+export function isStaffOpenJob(status: JobRequestStatus): boolean {
+  return !(StaffClosedJobStatuses as readonly JobRequestStatus[]).includes(
+    status,
+  );
+}
+
 /** Canonical legal transitions for staff UI and API domain logic. */
 export const JobRequestTransitions = {
-  draft: ["submitted"],
-  submitted: ["under_review", "rejected"],
-  under_review: ["changes_requested", "rejected", "approved"],
-  changes_requested: ["submitted", "rejected"],
+  draft: ["submitted", "cancelled"],
+  submitted: ["under_review", "rejected", "cancelled"],
+  under_review: ["changes_requested", "rejected", "approved", "cancelled"],
+  changes_requested: ["submitted", "rejected", "cancelled"],
   rejected: [],
-  approved: ["awaiting_payment"],
-  awaiting_payment: ["payment_pending"],
-  payment_pending: ["payment_failed", "paid"],
-  payment_failed: ["payment_pending"],
-  paid: ["ready_for_production"],
-  ready_for_production: [],
+  approved: ["awaiting_payment", "cancelled"],
+  awaiting_payment: ["payment_pending", "paid", "cancelled"],
+  payment_pending: ["payment_failed", "paid", "cancelled"],
+  payment_failed: ["payment_pending", "paid", "cancelled"],
+  paid: ["ready_for_production", "cancelled"],
+  ready_for_production: ["in_production", "cancelled"],
+  in_production: ["ready_for_pickup", "shipped", "cancelled"],
+  ready_for_pickup: ["completed", "cancelled"],
+  shipped: ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
 } as const satisfies Record<JobRequestStatus, readonly JobRequestStatus[]>;
 
 export function validNextStatuses(
@@ -360,18 +384,32 @@ export type CustomerContactSnapshot = z.infer<
   typeof CustomerContactSnapshotSchema
 >;
 
-export const FulfillmentSnapshotSchema = z.object({
-  method: z.enum(["standard", "priority", "rush", "pickup"]),
-  address: z.object({
-    address1: z.string().min(3).max(200),
-    address2: z.string().max(200).optional(),
-    city: z.string().min(2).max(100),
-    region: z.string().min(2).max(100),
-    postalCode: z.string().min(3).max(20),
-    country: z.string().min(2).max(100),
-  }),
-  deliveryNotes: z.string().max(1_000).optional(),
+export const PostalAddressSchema = z.object({
+  address1: z.string().min(3).max(200),
+  address2: z.string().max(200).optional(),
+  city: z.string().min(2).max(100),
+  region: z.string().min(2).max(100),
+  postalCode: z.string().min(3).max(20),
+  country: z.string().min(2).max(100),
 });
+export type PostalAddress = z.infer<typeof PostalAddressSchema>;
+
+export const FulfillmentSnapshotSchema = z
+  .object({
+    method: z.enum(["standard", "priority", "rush", "pickup"]),
+    address: PostalAddressSchema.optional(),
+    deliveryNotes: z.string().max(1_000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.method !== "pickup" && !value.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["address"],
+        message:
+          "A shipping address is required unless you choose studio pickup.",
+      });
+    }
+  });
 export type FulfillmentSnapshot = z.infer<typeof FulfillmentSnapshotSchema>;
 
 export const CreateJobRequestSchema = z.object({
@@ -438,6 +476,7 @@ const JobRequestResponseObjectSchema = z.object({
    * Absent on the reads that only ever return the reader's own orders.
    */
   customerName: z.string().nullable().optional(),
+  invoiceRequestedAt: z.string().datetime().nullable().optional(),
   status: JobRequestStatusSchema,
   version: z.number().int().positive(),
   submittedAt: z.string().datetime().nullable(),
@@ -466,6 +505,56 @@ export const AcceptFinalQuoteSchema = z.object({
   source: SourceMetadataSchema.default({ system: "storefront" }),
 });
 export type AcceptFinalQuote = z.infer<typeof AcceptFinalQuoteSchema>;
+
+/** Customer reply when the job itself is parked on `changes_requested`. */
+export const RespondToChangesSchema = z.object({
+  context: RequestContextSchema,
+  note: z.string().min(1).max(2_000),
+  storageKey: z.string().min(1).max(2_000).optional(),
+  source: SourceMetadataSchema.default({ system: "storefront" }),
+});
+export type RespondToChanges = z.infer<typeof RespondToChangesSchema>;
+
+export const RequestInvoiceSchema = z.object({
+  context: RequestContextSchema,
+  source: SourceMetadataSchema.default({ system: "storefront" }),
+});
+export type RequestInvoice = z.infer<typeof RequestInvoiceSchema>;
+
+export const InvoiceRequestResponseSchema = z.object({
+  invoiceRequestedAt: z.string().datetime(),
+});
+export type InvoiceRequestResponse = z.infer<
+  typeof InvoiceRequestResponseSchema
+>;
+
+export const IssueInvoiceSchema = z.object({
+  context: RequestContextSchema,
+  note: z.string().max(2_000).optional(),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type IssueInvoice = z.infer<typeof IssueInvoiceSchema>;
+
+export const RecordPaymentSchema = z.object({
+  context: RequestContextSchema,
+  note: z.string().min(1).max(2_000),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type RecordPayment = z.infer<typeof RecordPaymentSchema>;
+
+export const InventoryCheckLineSchema = z.object({
+  lineId: CanonicalIdSchema,
+  description: z.string(),
+  requested: z.number().int().nonnegative(),
+  available: z.number().int().nullable(),
+  sku: z.string().nullable().optional(),
+});
+export type InventoryCheckLine = z.infer<typeof InventoryCheckLineSchema>;
+
+export const InventoryCheckSchema = z.object({
+  lines: z.array(InventoryCheckLineSchema),
+});
+export type InventoryCheck = z.infer<typeof InventoryCheckSchema>;
 
 /** A proof is reviewed by whichever party did not raise it: staff send a proof
  * for the customer to sign off, and a customer's own artwork is reviewed by
@@ -539,6 +628,7 @@ export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.ext
    * the created snapshot carried these fields. */
   contact: CustomerContactSnapshotSchema.nullable().default(null),
   fulfillment: FulfillmentSnapshotSchema.nullable().default(null),
+  inventory: InventoryCheckSchema.nullable().default(null),
   lines: z.array(
     z.object({
       id: CanonicalIdSchema,
@@ -585,8 +675,12 @@ export const CommerceEventTypes = [
   "commerce.job_request.created.v1",
   "commerce.job_request.submitted.v1",
   "commerce.job_request.status_changed.v1",
+  "commerce.job_request.changes_responded.v1",
   "commerce.job_request.final_quote.created.v1",
   "commerce.job_request.final_quote.accepted.v1",
+  "commerce.job_request.invoice.requested.v1",
+  "commerce.job_request.invoice.issued.v1",
+  "commerce.job_request.payment.recorded.v1",
   "commerce.job_request.proof.created.v1",
   "commerce.job_request.proof.decided.v1",
   "commerce.contact_request.received.v1",

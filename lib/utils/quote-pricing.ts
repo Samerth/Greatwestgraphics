@@ -55,3 +55,13 @@ export function money(n: number) {
 export function moneyFromMinor(minor: number) {
   return money(minor / 100);
 }
+
+/** v1 stores the total on the breakdown; v2 nests it under totals. */
+export function lineSnapshotTotalMinor(pricing: unknown): number | undefined {
+  if (!pricing || typeof pricing !== "object") return undefined;
+  const breakdown = (pricing as {
+    breakdown?: { totalMinor?: number; totals?: { totalMinor?: number } };
+  }).breakdown;
+  const total = breakdown?.totals?.totalMinor ?? breakdown?.totalMinor;
+  return typeof total === "number" ? total : undefined;
+}

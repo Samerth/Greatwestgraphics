@@ -8,7 +8,42 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/gwg_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/gwg_test
+      COMMERCE_API_HOST: 127.0.0.1
+      COMMERCE_API_PORT: 4000
+      COMMERCE_API_BASE_URL: http://127.0.0.1:4000
+      COMMERCE_DEV_TENANT_ID: 11111111-1111-4111-8111-111111111111
+      COMMERCE_DEV_ACCOUNT_ID: 22222222-2222-4222-8222-222222222222
+      COMMERCE_DEV_STORE_ID: 33333333-3333-4333-8333-333333333333
+      COMMERCE_DEV_CUSTOMER_PERSON_ID: 44444444-4444-4444-8444-444444444444
+      COMMERCE_DEFAULT_TENANT_ID: 11111111-1111-4111-8111-111111111111
+      COMMERCE_DEFAULT_ACCOUNT_ID: 22222222-2222-4222-8222-222222222222
+      COMMERCE_DEFAULT_STORE_ID: 33333333-3333-4333-8333-333333333333
+      COMMERCE_DEFAULT_STORE_SLUG: development
+      COMMERCE_DEFAULT_STORE_NAME: Development Storefront
+      ENABLE_DEV_ADMIN_ROUTES: "true"
+      DEV_ADMIN_TOKEN: ci-dev-admin-token-min-16
+      STAFF_SESSION_SECRET: ci-session-secret-at-least-32-characters
+      STAFF_ADMIN_USER: admin
+      STAFF_ADMIN_PASSWORD: ci-staff-password
+      CUSTOMER_SESSION_SECRET: ci-customer-session-secret-at-least-32
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gwg_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gwg_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,29 +52,27 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Typecheck
         run: npm run typecheck:all
       - name: Unit tests
         run: npm test
+      - name: Migrate and seed test database
+        run: npm run db:migrate && npm run db:seed
+      - name: PostgreSQL integration tests
+        run: npm test --workspace @gwg/commerce-api
       - name: Production build
         run: npm run build:all
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-      - name: End-to-end smoke
+        run: npx playwright install chromium
+        timeout-minutes: 5
+      - name: End-to-end workflows
         run: npm run test:e2e
         env:
           CI: true
-          STAFF_SESSION_SECRET: ci-session-secret-at-least-32-characters
-          STAFF_ADMIN_USER: admin
-          STAFF_ADMIN_PASSWORD: ci-staff-password
-          COMMERCE_API_BASE_URL: http://127.0.0.1:4000
-          COMMERCE_DEV_TENANT_ID: 11111111-1111-4111-8111-111111111111
-          COMMERCE_DEV_ACCOUNT_ID: 22222222-2222-4222-8222-222222222222
-          COMMERCE_DEV_STORE_ID: 33333333-3333-4333-8333-333333333333
-          COMMERCE_DEV_CUSTOMER_PERSON_ID: 44444444-4444-4444-8444-444444444444
       - name: Dependency audit (high+)
         run: npm audit --audit-level=high
-        continue-on-error: true
 
   docker:
     name: Docker images

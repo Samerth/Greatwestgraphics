@@ -191,7 +191,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
     // CloudWatch Logs Insights rather than buried in a stack trace. The
     // storefront no longer papers over this with demo products, so this log is
     // the only place an outage is recorded before the customer sees it.
-    // eslint-disable-next-line no-console
+     
     console.error(
       "[storefront] CATALOG_UNAVAILABLE loadStorefrontCatalog failed",
       JSON.stringify({
@@ -267,7 +267,7 @@ export async function loadStorefrontCategories(
     // own fallbacks rather than breaking every page — but it used to happen in
     // total silence, so a category outage was invisible until someone noticed
     // the nav had gone quiet.
-    // eslint-disable-next-line no-console
+     
     console.error(
       "[storefront] CATEGORIES_UNAVAILABLE loadStorefrontCategories failed",
       JSON.stringify({
@@ -312,7 +312,7 @@ export const loadStorefrontProduct = cache(
       const status = caught instanceof CommerceApiError ? caught.status : null;
       if (status === 404) return { kind: "missing" };
 
-      // eslint-disable-next-line no-console
+       
       console.error(
         "[storefront] PRODUCT_UNAVAILABLE loadStorefrontProduct failed",
         JSON.stringify({

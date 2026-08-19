@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomerSession } from "@/lib/auth/session";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
+import { designProjectWriteFromBody } from "@/lib/commerce/design-write";
 
 export async function GET(
   _request: NextRequest,
@@ -30,20 +31,22 @@ export async function PUT(
   }
   const { id } = await params;
   const body = await request.json().catch(() => null);
-  if (!body) {
+  if (!body || typeof body !== "object") {
     return NextResponse.json({ error: { message: "Invalid request body." } }, { status: 400 });
   }
   try {
-    const design = await (await createCommerceClient()).updateDesignProject(id, {
-      name: typeof body.name === "string" ? body.name.trim() : undefined,
-      garmentProductId: body.garmentProductId ?? undefined,
-      artworksBySide: body.artworksBySide,
-      proofImageUrl: body.proofImageUrl ?? undefined,
-    });
+    const design = await (await createCommerceClient()).updateDesignProject(
+      id,
+      designProjectWriteFromBody(body as Record<string, unknown>),
+    );
     return NextResponse.json({ design });
   } catch (caught) {
-    const message = caught instanceof CommerceApiError ? caught.message : "Could not update the design.";
-    return NextResponse.json({ error: { message } }, { status: 500 });
+    const message =
+      caught instanceof CommerceApiError ? caught.message : "Could not update the design.";
+    return NextResponse.json(
+      { error: { message } },
+      { status: caught instanceof CommerceApiError ? caught.status : 500 },
+    );
   }
 }
 

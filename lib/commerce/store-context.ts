@@ -156,7 +156,7 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
     };
   }
 
-  // eslint-disable-next-line no-console
+   
   console.error(
     "[resolveStoreContext] No store for this deployment. Set COMMERCE_DEFAULT_TENANT_ID/_ACCOUNT_ID/_STORE_ID, or register this host as a stores.custom_domain. Serving public marketing shell with an empty catalogue.",
   );

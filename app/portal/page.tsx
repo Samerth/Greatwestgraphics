@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
+import { CommerceApiError } from "@/lib/commerce/client";
+import { resolvePortalScope } from "@/lib/commerce/portal-client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
@@ -18,6 +19,7 @@ export const metadata = {
 const NEEDS_CUSTOMER = new Set([
   "draft",
   "changes_requested",
+  "approved",
   "awaiting_payment",
   "payment_failed",
 ]);
@@ -31,7 +33,7 @@ export default async function PortalHomePage() {
   let jobs: JobRequestListResponse = [];
   let error: string | undefined;
   try {
-    jobs = await (await createCommerceClient()).listJobRequests();
+    jobs = await (await resolvePortalScope()).client.listJobRequests();
   } catch (caught) {
     error =
       caught instanceof CommerceApiError

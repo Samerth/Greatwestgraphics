@@ -513,6 +513,232 @@ integration("job request API integration", () => {
     expect(owner.json().status).toBe("submitted");
   }, DB_TEST_TIMEOUT_MS);
 
+  it("accepts a pickup job without a shipping address", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: {
+          method: "pickup",
+          deliveryNotes: "Will collect Friday",
+        },
+        lines: [{ description: "Pickup order", quantity: 4, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const jobRequestId = created.json().id as string;
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/v1/job-requests/${jobRequestId}`,
+      headers: headers(),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().fulfillment).toEqual({
+      method: "pickup",
+      deliveryNotes: "Will collect Friday",
+    });
+    expect(detail.json().invoiceRequestedAt).toBeNull();
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("lets the owning customer resubmit after changes are requested", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: { method: "pickup" },
+        lines: [{ description: "Revision order", quantity: 2, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    const jobRequestId = created.json().id as string;
+    await db
+      .update(jobRequests)
+      .set({ status: "changes_requested" })
+      .where(eq(jobRequests.id, jobRequestId));
+
+    const neighbour = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/respond`,
+      headers: headers(accountId, storeId, otherPersonId),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        note: "Should not work",
+        source: { system: "storefront" },
+      },
+    });
+    expect(neighbour.statusCode).toBe(404);
+
+    const reply = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/respond`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        note: "Updated the crest colours",
+        source: { system: "storefront" },
+      },
+    });
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json().status).toBe("submitted");
+
+    const [updated] = await db
+      .select()
+      .from(jobRequests)
+      .where(eq(jobRequests.id, jobRequestId))
+      .limit(1);
+    expect(updated?.customerNote).toContain("Updated the crest colours");
+
+    const tooLate = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/respond`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        note: "Again",
+        source: { system: "storefront" },
+      },
+    });
+    expect(tooLate.statusCode).toBe(409);
+  }, DB_TEST_TIMEOUT_MS);
+
+  it("lets the owning customer request a manual invoice after accepting", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/job-requests",
+      headers: {
+        ...headers(),
+        [CommerceHeaders.idempotencyKey]: `${randomUUID()}:create`,
+      },
+      payload: {
+        context: { tenantId, accountId, storeId },
+        customerPersonId: personId,
+        contact: {
+          email: "integration@example.test",
+          fullName: "Integration Customer",
+          phone: "6045550100",
+        },
+        fulfillment: { method: "pickup" },
+        lines: [{ description: "Invoice order", quantity: 8, currency: "CAD" }],
+        source: { system: "storefront" },
+      },
+    });
+    const jobRequestId = created.json().id as string;
+    await db
+      .update(jobRequests)
+      .set({ status: "approved" })
+      .where(eq(jobRequests.id, jobRequestId));
+    const [quote] = await db
+      .insert(finalQuotes)
+      .values({
+        tenantId,
+        accountId,
+        jobRequestId,
+        version: 1,
+        amountMinor: 8_800,
+        currency: "CAD",
+        createdBy: { type: "staff", id: randomUUID() },
+        source: { system: "commerce_api" },
+      })
+      .returning();
+    await db.insert(paymentObligations).values({
+      tenantId,
+      accountId,
+      jobRequestId,
+      finalQuoteId: quote!.id,
+      amountMinor: quote!.amountMinor,
+      currency: quote!.currency,
+      status: "pending_acceptance",
+      createdBy: { type: "staff", id: randomUUID() },
+      source: { system: "commerce_api" },
+    });
+
+    const beforeAccept = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/invoice-request`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(beforeAccept.statusCode).toBe(409);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/final-quotes/${quote!.id}/accept`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+
+    const neighbour = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/invoice-request`,
+      headers: headers(accountId, storeId, otherPersonId),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(neighbour.statusCode).toBe(404);
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/invoice-request`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: `/v1/job-requests/${jobRequestId}/invoice-request`,
+      headers: headers(),
+      payload: {
+        context: { tenantId, accountId, storeId },
+        source: { system: "storefront" },
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json().invoiceRequestedAt).toEqual(expect.any(String));
+    expect(second.json().invoiceRequestedAt).toBe(first.json().invoiceRequestedAt);
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/v1/job-requests/${jobRequestId}`,
+      headers: headers(),
+    });
+    expect(detail.json().invoiceRequestedAt).toBe(first.json().invoiceRequestedAt);
+  }, DB_TEST_TIMEOUT_MS);
+
   it("refuses to submit a job request with no identified customer", async () => {
     const anonymous = await app.inject({
       method: "POST",

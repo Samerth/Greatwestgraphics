@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
@@ -38,10 +41,36 @@ export interface CartItem {
    * shapes have to be readable.
    */
   pricingSnapshot?: LinePricingSnapshotV2 | LinePricingSnapshot;
+  /**
+   * Which storefront this line was added on. The same browser can shop the
+   * main site and a company store; without this, checkout submits one cart
+   * against whichever cookie is current.
+   */
+  storeSlug?: string;
+}
+
+export type ActiveCartStore = { slug: string; isPublic: boolean };
+
+export function cartItemBelongsToStore(
+  item: Pick<CartItem, "storeSlug">,
+  store: ActiveCartStore,
+): boolean {
+  if (item.storeSlug) return item.storeSlug === store.slug;
+  // Untagged lines predate per-store carts and belong to the retail shop.
+  return store.isPublic;
+}
+
+export function visibleCartItems(
+  items: CartItem[],
+  store: ActiveCartStore,
+): CartItem[] {
+  return items.filter((item) => cartItemBelongsToStore(item, store));
 }
 
 interface CartState {
   items: CartItem[];
+  activeStore: ActiveCartStore;
+  setActiveStore: (store: ActiveCartStore) => void;
   addItem: (item: CartItem) => void;
   removeItem: (id: string, color: string, variantId?: string) => void;
   updateQty: (id: string, color: string, qty: number, variantId?: string) => void;
@@ -71,47 +100,85 @@ export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      activeStore: { slug: "", isPublic: true },
+      setActiveStore: (activeStore) => set({ activeStore }),
       addItem: (item) =>
         set((state) => {
+          const stamped: CartItem = {
+            ...item,
+            storeSlug: item.storeSlug ?? (state.activeStore.slug || undefined),
+          };
           // Roster (team/group order) lines always add as their own line —
           // merging two separate roster submissions into one qty would lose
           // which names/numbers came from which submission.
-          const existing = item.roster
+          const existing = stamped.roster
             ? undefined
             : state.items.find(
                 (c) =>
-                  c.id === item.id &&
-                  c.color === item.color &&
-                  c.variantId === item.variantId &&
-                  !c.roster
+                  c.id === stamped.id &&
+                  c.color === stamped.color &&
+                  c.variantId === stamped.variantId &&
+                  !c.roster &&
+                  cartItemBelongsToStore(c, state.activeStore),
               );
           if (existing) {
             return {
               items: state.items.map((c) =>
-                c === existing ? { ...c, qty: c.qty + item.qty } : c
+                c === existing ? { ...c, qty: c.qty + stamped.qty } : c
               ),
             };
           }
-          return { items: [...state.items, item] };
+          return { items: [...state.items, stamped] };
         }),
       removeItem: (id, color, variantId) =>
         set((state) => ({
           items: state.items.filter(
             (c) =>
-              !(c.id === id && c.color === color && c.variantId === variantId)
+              !(
+                c.id === id &&
+                c.color === color &&
+                c.variantId === variantId &&
+                cartItemBelongsToStore(c, state.activeStore)
+              )
           ),
         })),
       updateQty: (id, color, qty, variantId) =>
         set((state) => ({
           items: state.items.map((c) =>
-            c.id === id && c.color === color && c.variantId === variantId
+            c.id === id &&
+            c.color === color &&
+            c.variantId === variantId &&
+            cartItemBelongsToStore(c, state.activeStore)
               ? { ...c, qty: Math.max(1, qty) }
               : c
           ),
         })),
-      clear: () => set({ items: [] }),
-      pieceCount: () => get().items.reduce((s, i) => s + i.qty, 0),
+      // Only the current storefront's lines — a retail checkout must not
+      // wipe a company cart sitting in the same browser.
+      clear: () =>
+        set((state) => ({
+          items: state.items.filter(
+            (c) => !cartItemBelongsToStore(c, state.activeStore),
+          ),
+        })),
+      pieceCount: () =>
+        visibleCartItems(get().items, get().activeStore).reduce(
+          (s, i) => s + i.qty,
+          0,
+        ),
     }),
-    { name: "gwg-cart" }
+    {
+      name: "gwg-cart",
+      partialize: (state) => ({ items: state.items }),
+    }
   )
 );
+
+export function useVisibleCartItems(): CartItem[] {
+  const items = useCartStore((s) => s.items);
+  const activeStore = useCartStore((s) => s.activeStore);
+  return useMemo(
+    () => visibleCartItems(items, activeStore),
+    [items, activeStore],
+  );
+}

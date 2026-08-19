@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import {
-  CommerceApiError,
-  createCommerceClient,
-} from "@/lib/commerce/client";
+import { CommerceApiError } from "@/lib/commerce/client";
+import { resolvePortalScope } from "@/lib/commerce/portal-client";
+import { teamMemberships } from "@/lib/commerce/membership";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
@@ -17,10 +16,15 @@ export default async function JobsPage() {
     redirect("/account?next=/portal/jobs");
   }
 
+  const scope = await resolvePortalScope();
+  const otherTeams = teamMemberships(scope.memberships).filter(
+    (membership) => membership.storeId !== scope.store.storeId,
+  );
+
   let jobs: JobRequestListResponse | undefined;
   let error: string | undefined;
   try {
-    jobs = await (await createCommerceClient()).listJobRequests();
+    jobs = await scope.client.listJobRequests();
   } catch (caught) {
     error =
       caught instanceof CommerceApiError
@@ -47,9 +51,27 @@ export default async function JobsPage() {
         </h1>
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
           Signed in as {session.name || session.email}.
+          {scope.usingTeam && ` Showing jobs for ${scope.store.name}.`}
           {showingTeam &&
             " As the account owner you can see every job placed in your store."}
         </p>
+        {otherTeams.length > 0 && (
+          <p className="text-sm text-text-tertiary mb-sp-5">
+            Also on{" "}
+            {otherTeams.map((membership, index) => (
+              <span key={membership.storeId}>
+                {index > 0 && ", "}
+                <a
+                  href={`/s/${membership.storeSlug}?next=${encodeURIComponent("/portal/jobs")}`}
+                  className="underline hover:text-accent"
+                >
+                  {membership.storeName}
+                </a>
+              </span>
+            ))}
+            .
+          </p>
+        )}
 
         {error && (
           <div role="alert" className="border border-red-300 bg-red-50 text-red-800 rounded-md p-sp-4">

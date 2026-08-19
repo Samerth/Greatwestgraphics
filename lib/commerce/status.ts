@@ -30,7 +30,7 @@ export const jobStatusPresentation: Record<
   },
   changes_requested: {
     label: "Changes requested",
-    nextAction: "Review the requested changes with our studio team.",
+    nextAction: "Reply with the revision so we can continue the review.",
     paymentReady: false,
   },
   rejected: {
@@ -40,12 +40,12 @@ export const jobStatusPresentation: Record<
   },
   approved: {
     label: "Design approved",
-    nextAction: "We are preparing the final payment amount.",
+    nextAction: "Review and accept the final quote when it is posted.",
     paymentReady: false,
   },
   awaiting_payment: {
     label: "Payment ready",
-    nextAction: "Payment will be available here when Stripe is connected.",
+    nextAction: "Request an invoice. We will send payment instructions.",
     paymentReady: true,
   },
   payment_pending: {
@@ -55,7 +55,7 @@ export const jobStatusPresentation: Record<
   },
   payment_failed: {
     label: "Payment needs attention",
-    nextAction: "Retry payment after the payment integration is available.",
+    nextAction: "Request the invoice again or contact the studio.",
     paymentReady: true,
   },
   paid: {
@@ -65,7 +65,32 @@ export const jobStatusPresentation: Record<
   },
   ready_for_production: {
     label: "Ready for production",
-    nextAction: "No action is needed. Production updates will follow.",
+    nextAction: "Production will start once the studio releases the job.",
+    paymentReady: false,
+  },
+  in_production: {
+    label: "In production",
+    nextAction: "No action is needed. We will update you when it is ready.",
+    paymentReady: false,
+  },
+  ready_for_pickup: {
+    label: "Ready for pickup",
+    nextAction: "Your order is ready at our Vancouver studio.",
+    paymentReady: false,
+  },
+  shipped: {
+    label: "Shipped",
+    nextAction: "Your order is on the way.",
+    paymentReady: false,
+  },
+  completed: {
+    label: "Completed",
+    nextAction: "This order is complete.",
+    paymentReady: false,
+  },
+  cancelled: {
+    label: "Cancelled",
+    nextAction: "This request was cancelled. Contact us if you need a new one.",
     paymentReady: false,
   },
 };

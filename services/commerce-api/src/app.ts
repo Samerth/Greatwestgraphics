@@ -2,6 +2,8 @@ import {
   AcceptFinalQuoteSchema,
   CanonicalIdSchema,
   CommerceHeaders,
+  InvoiceRequestResponseSchema,
+  IssueInvoiceSchema,
   CreateFinalQuoteSchema,
   CreateJobRequestSchema,
   CreateProofVersionSchema,
@@ -25,6 +27,9 @@ import {
   RestorePricingConfigDraftSchema,
   RestorePricingConfigV2DraftSchema,
   UpsertPricingConfigV2DraftSchema,
+  RecordPaymentSchema,
+  RequestInvoiceSchema,
+  RespondToChangesSchema,
   SubmitJobRequestSchema,
   TransitionJobRequestSchema,
   UpsertPricingConfigDraftSchema,
@@ -36,7 +41,9 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { sql } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import {
+  CustomerActionError,
   DataIntegrityError,
+  JobActionError,
   IdempotencyConflictError,
   JobRequestService,
   NotAStoreMemberError,
@@ -83,7 +90,7 @@ import { adminRoutesEnabled, type Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
-import { RequestContextSchema } from "@gwg/contracts";
+import { isStaffOpenJob, RequestContextSchema } from "@gwg/contracts";
 import {
   staffScopedContext,
   type JobOwner,
@@ -455,6 +462,7 @@ export function buildApp(input: {
         proofId,
         command,
         { ...auth.actor, type: "customer" as const },
+        await customerPersonFilter(auth),
       );
       return ProofVersionResponseSchema.parse(decided);
     },
@@ -480,6 +488,44 @@ export function buildApp(input: {
         await customerPersonFilter(auth),
       );
       return FinalQuoteResponseSchema.parse(accepted);
+    },
+  );
+
+  app.post(
+    "/v1/job-requests/:jobRequestId/respond",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const command = RespondToChangesSchema.parse(request.body);
+      assertScope(auth, command.context);
+      return service.respondToChanges(
+        jobRequestId,
+        command,
+        { ...auth.actor, type: "customer" as const },
+        await customerPersonFilter(auth),
+      );
+    },
+  );
+
+  app.post(
+    "/v1/job-requests/:jobRequestId/invoice-request",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const command = RequestInvoiceSchema.parse(request.body);
+      assertScope(auth, command.context);
+      return InvoiceRequestResponseSchema.parse(
+        await service.requestInvoice(
+          jobRequestId,
+          command,
+          { ...auth.actor, type: "customer" as const },
+          await customerPersonFilter(auth),
+        ),
+      );
     },
   );
 
@@ -917,6 +963,48 @@ export function buildApp(input: {
       },
     );
 
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/issue-invoice",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = IssueInvoiceSchema.parse(request.body);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.issueInvoice(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
+      },
+    );
+
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/record-payment",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = RecordPaymentSchema.parse(request.body);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.recordPayment(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
+      },
+    );
+
     app.get("/admin/pricing-config/draft", async (request) => {
       assertAdmin(request, input.environment);
       const auth = await input.auth.resolve(request);
@@ -1037,8 +1125,11 @@ export function buildApp(input: {
       assertAdmin(request, input.environment);
       const auth = await input.auth.resolve(request);
       const dash = await catalogService.dashboard(auth.tenantId);
-      const jobs = await service.list(auth.tenantId, auth.accountId);
-      return { ...dash, openJobs: jobs.length };
+      const jobs = await service.listForStaff(auth.tenantId);
+      return {
+        ...dash,
+        openJobs: jobs.filter((job) => isStaffOpenJob(job.status)).length,
+      };
     });
 
     // Staff browse and repair customer artwork before it reaches the press.
@@ -1520,6 +1611,8 @@ export function buildApp(input: {
       error instanceof IdempotencyConflictError ||
       error instanceof ProofDecisionError ||
       error instanceof QuoteAcceptanceError ||
+      error instanceof CustomerActionError ||
+      error instanceof JobActionError ||
       error instanceof EphemeralArtworkError ||
       error instanceof DataIntegrityError
     ) {

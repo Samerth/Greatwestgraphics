@@ -39,7 +39,7 @@ export function TrustStrip() {
             ) : (
               <span
                 key={logo.name}
-                className="font-display font-bold text-base sm:text-lg text-text-secondary opacity-70"
+                className="font-display font-bold text-base sm:text-lg text-text-secondary"
               >
                 {logo.name}
               </span>

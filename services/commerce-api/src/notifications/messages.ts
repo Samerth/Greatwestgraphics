@@ -42,12 +42,10 @@ function lines(...parts: Array<string | null | undefined>): string {
 }
 
 /**
- * Proof and final-quote events produce mail today.
+ * Submission, quote, proof, and invoice-request events produce mail today.
  *
- * Status changes are deliberately excluded: a proof decision already moves the
- * job, so notifying on both would send two emails for one action. Notifying on
- * status changes that a proof did not cause is worth doing, but needs a way to
- * tell the two apart first.
+ * Generic status changes are still excluded: a proof decision already moves
+ * the job, so mapping both would send two emails for one action.
  */
 export function notificationsForEvent(
   envelope: EventEnvelopeish,
@@ -55,6 +53,99 @@ export function notificationsForEvent(
   context: NotificationContext,
 ): EmailMessage[] {
   const data = envelope.data ?? {};
+
+  if (envelope.type === "commerce.job_request.submitted.v1") {
+    const messages: EmailMessage[] = [];
+    if (context.customerEmail) {
+      messages.push({
+        to: context.customerEmail,
+        subject: `${context.jobDisplayId}: we received your job request`,
+        text: lines(
+          `Thanks — ${context.jobDisplayId} is in for design and pricing review.`,
+          `\nTrack it here: ${customerJobUrl(context, jobRequestId)}`,
+        ),
+      });
+    }
+    if (context.staffEmail) {
+      messages.push({
+        to: context.staffEmail,
+        subject: `${context.jobDisplayId}: new job submitted`,
+        text: lines(
+          `A customer submitted ${context.jobDisplayId}.`,
+          `\nOpen the job: ${staffJobUrl(context, jobRequestId)}`,
+        ),
+      });
+    }
+    return messages;
+  }
+
+  if (envelope.type === "commerce.job_request.changes_responded.v1") {
+    if (!context.staffEmail) return [];
+    const note = typeof data.reason === "string" ? data.reason : null;
+    return [
+      {
+        to: context.staffEmail,
+        subject: `${context.jobDisplayId}: customer sent a revision`,
+        text: lines(
+          `The customer replied to requested changes on ${context.jobDisplayId}.`,
+          note ? `\nWhat they said: ${note}` : null,
+          `\nOpen the job: ${staffJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
+
+  if (envelope.type === "commerce.job_request.invoice.issued.v1") {
+    if (!context.customerEmail) return [];
+    return [
+      {
+        to: context.customerEmail,
+        subject: `${context.jobDisplayId}: your invoice is on the way`,
+        text: lines(
+          `We have issued the invoice for ${context.jobDisplayId}.`,
+          `\nPayment instructions will arrive by email. Track the job: ${customerJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
+
+  if (envelope.type === "commerce.job_request.payment.recorded.v1") {
+    if (!context.customerEmail) return [];
+    return [
+      {
+        to: context.customerEmail,
+        subject: `${context.jobDisplayId}: we received your payment`,
+        text: lines(
+          `Payment is recorded for ${context.jobDisplayId}. We will move the job into production next.`,
+          `\nView the job: ${customerJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
+
+  if (envelope.type === "commerce.job_request.invoice.requested.v1") {
+    if (!context.staffEmail) return [];
+    const amountMinor =
+      typeof data.amountMinor === "number" ? data.amountMinor : null;
+    const currency = typeof data.currency === "string" ? data.currency : "CAD";
+    const amount =
+      amountMinor == null
+        ? "the accepted quote"
+        : new Intl.NumberFormat("en-CA", {
+            style: "currency",
+            currency,
+          }).format(amountMinor / 100);
+    return [
+      {
+        to: context.staffEmail,
+        subject: `${context.jobDisplayId}: customer requested an invoice`,
+        text: lines(
+          `The customer asked for a manual invoice for ${amount} on ${context.jobDisplayId}.`,
+          `\nPrepare and send it: ${staffJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
 
   if (envelope.type === "commerce.job_request.final_quote.created.v1") {
     if (!context.customerEmail) return [];

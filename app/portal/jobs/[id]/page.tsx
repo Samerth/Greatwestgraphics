@@ -1,16 +1,17 @@
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import {
-  CommerceApiError,
-  createCommerceClient,
-} from "@/lib/commerce/client";
+import { CommerceApiError } from "@/lib/commerce/client";
+import { loadPortalJob } from "@/lib/commerce/portal-client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { money } from "@/lib/utils/quote-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 import { ProofReview } from "@/components/portal/ProofReview";
 import { FinalQuoteReview } from "@/components/portal/FinalQuoteReview";
+import { ChangesReply } from "@/components/portal/ChangesReply";
+import { InvoiceRequest } from "@/components/portal/InvoiceRequest";
+import { OrderHandoff } from "@/components/portal/OrderHandoff";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,8 @@ export default async function JobDetailPage({
   let job;
   let error: string | undefined;
   try {
-    job = await (await createCommerceClient()).getJobRequest(id);
+    const loaded = await loadPortalJob(id);
+    job = loaded?.job;
   } catch (caught) {
     // A job that is missing, or that belongs to somebody else, is a 404 — not
     // a 200 page saying so. Returning 200 told crawlers and uptime checks that
@@ -44,6 +46,10 @@ export default async function JobDetailPage({
       caught instanceof CommerceApiError
         ? caught.message
         : "The customer portal is not configured for this environment.";
+  }
+
+  if (!job && !error) {
+    notFound();
   }
 
   if (!job) {
@@ -90,6 +96,17 @@ export default async function JobDetailPage({
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-sp-5 items-start">
           <div className="space-y-sp-5">
+            <OrderHandoff contact={job.contact} fulfillment={job.fulfillment} />
+
+            {job.status === "changes_requested" ? (
+              <section className="border border-accent rounded-md p-sp-4 bg-accent-tint">
+                <h2 className="font-display font-bold text-lg mb-sp-3">
+                  Reply to requested changes
+                </h2>
+                <ChangesReply jobId={job.id} />
+              </section>
+            ) : null}
+
             <section className="border border-border rounded-md p-sp-4">
               <h2 className="font-display font-bold text-lg mb-sp-3">
                 Submitted items
@@ -101,6 +118,8 @@ export default async function JobDetailPage({
                     | undefined;
                   const artworkProofUrl = line.snapshot.configuration
                     .artworkProofUrl as string | undefined;
+                  const designProjectId = line.snapshot.configuration
+                    .designProjectId as string | undefined;
                   return (
                     <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
                       <div className="flex justify-between gap-sp-3">
@@ -119,19 +138,32 @@ export default async function JobDetailPage({
                           </span>
                         )}
                       </div>
-                      {artworkProofUrl && (
+                      {(artworkProofUrl || designProjectId) && (
                         <div className="mt-sp-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
                             Artwork you sent
                           </p>
-                          <a href={artworkProofUrl} target="_blank" rel="noreferrer">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={artworkProofUrl}
-                              alt={`Artwork for ${line.snapshot.description}`}
-                              className="h-28 w-auto border border-border rounded-sm bg-white"
-                            />
-                          </a>
+                          {artworkProofUrl && (
+                            <a href={artworkProofUrl} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={artworkProofUrl}
+                                alt={`Artwork for ${line.snapshot.description}`}
+                                className="h-28 w-auto border border-border rounded-sm bg-white"
+                              />
+                            </a>
+                          )}
+                          {designProjectId && (
+                            <div className={artworkProofUrl ? "mt-2" : undefined}>
+                              <ButtonLink
+                                href={`/design?loadDesignId=${encodeURIComponent(designProjectId)}`}
+                                variant="secondary"
+                                size="sm"
+                              >
+                                Reopen in the studio
+                              </ButtonLink>
+                            </div>
+                          )}
                         </div>
                       )}
                       {roster && roster.length > 0 && (
@@ -200,24 +232,19 @@ export default async function JobDetailPage({
             <h2 className="font-display font-bold text-lg mb-sp-2">Next action</h2>
             <p className="text-text-secondary">{presentation.nextAction}</p>
             <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
-              {quoteAccepted
-                ? "Your final quote is accepted and ready to invoice. Online card payment is not connected yet, so we will send an invoice you can pay by e-transfer, cheque or card over the phone."
-                : latestQuote
-                  ? "Review and accept the latest final quote before requesting an invoice."
-                  : "Payment stays locked until design approval and final pricing are complete."}
+              {job.invoiceRequestedAt
+                ? "Invoice requested. We will send payment instructions to the email on this job."
+                : quoteAccepted
+                  ? "Your final quote is accepted. Request an invoice and we will send e-transfer, cheque, or phone-card instructions."
+                  : latestQuote
+                    ? "Review and accept the latest final quote before requesting an invoice."
+                    : "Payment stays locked until design approval and final pricing are complete."}
             </div>
-            {/* This was a permanently disabled "Pay approved amount (coming
-                soon)" button. Honest about Stripe, but it left a customer with
-                an approved job and nothing to click. Until online payment is
-                connected, point at the humans who can actually take it. */}
             {quoteAccepted ? (
-              <ButtonLink
-                href="/contact"
-                variant="primary"
-                className="w-full text-center"
-              >
-                Request an invoice
-              </ButtonLink>
+              <InvoiceRequest
+                jobId={job.id}
+                alreadyRequested={Boolean(job.invoiceRequestedAt)}
+              />
             ) : null}
           </aside>
         </div>

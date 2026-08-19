@@ -16,7 +16,10 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  default: "px-5 py-3 text-body",
+  // `text-body` is a custom font-size token. tailwind-merge treats unknown
+  // `text-*` classes as colours and removed `text-white` from primary buttons,
+  // leaving dark inherited text on the blue accent background.
+  default: "px-5 py-3 text-[length:var(--fs-body)] leading-[var(--lh-body)]",
   sm: "px-3.5 py-2 text-sm",
 };
 

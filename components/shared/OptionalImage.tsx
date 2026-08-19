@@ -6,7 +6,7 @@ import Image, { ImageProps } from "next/image";
  * Wrapper around Next.js Image that respects NEXT_PUBLIC_DISABLE_IMAGES env var.
  * Used in staging to avoid loading images for performance/bandwidth testing.
  */
-export function OptionalImage(props: ImageProps) {
+export function OptionalImage({ alt, ...props }: ImageProps) {
   const disableImages = process.env.NEXT_PUBLIC_DISABLE_IMAGES === "true";
 
   if (disableImages) {
@@ -23,5 +23,5 @@ export function OptionalImage(props: ImageProps) {
     );
   }
 
-  return <Image {...props} />;
+  return <Image alt={alt} {...props} />;
 }

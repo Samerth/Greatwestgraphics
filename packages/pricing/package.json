@@ -9,7 +9,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretypecheck": "npm run build --workspace @gwg/contracts",
@@ -23,6 +25,6 @@
   },
   "devDependencies": {
     "typescript": "^5.7.2",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   }
 }

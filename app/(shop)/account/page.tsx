@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { AccountAuth } from "@/components/account/AccountAuth";
+import { isLocalCustomerAuthEnabled } from "@/lib/auth/local-customer";
 import { getCustomerSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 
@@ -32,7 +33,10 @@ export default async function AccountPage({
             </Link>
             .
           </p>
-          <AccountAuth next={next} />
+          <AccountAuth
+            next={next}
+            localDev={isLocalCustomerAuthEnabled()}
+          />
         </Container>
       </section>
 

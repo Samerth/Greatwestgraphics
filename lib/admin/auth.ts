@@ -37,7 +37,7 @@ export async function getStaffSession(): Promise<{ username: string } | null> {
 /**
  * Guard for staff-only server actions.
  *
- * `middleware.ts` gates `/admin/*`, and a server action posts to the URL of the
+ * `proxy.ts` gates `/admin/*`, and a server action posts to the URL of the
  * page that invoked it, so admin pages are covered today. That stops being true
  * as soon as an action is reached from a page outside `/admin` — which is not
  * hypothetical here, since the pricing actions live under `app/portal`. Keeping

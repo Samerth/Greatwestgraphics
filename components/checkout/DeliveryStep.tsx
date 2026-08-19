@@ -19,7 +19,7 @@ export function DeliveryStep({
 
   return (
     <div>
-      <h2 className="font-display font-bold text-header mb-sp-4">Delivery Speed</h2>
+      <h2 className="font-display font-bold text-header mb-sp-4">Fulfilment</h2>
 
       {DELIVERY_OPTIONS.map((opt) => (
         <button
@@ -65,7 +65,49 @@ export function DeliveryStep({
         <Button variant="secondary" onClick={onBack}>
           ← Back
         </Button>
-        <Button onClick={() => onNext(selected)}>Review Submission →</Button>
+        <Button onClick={() => onNext(selected)}>Continue →        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function PickupStep({
+  defaultNotes,
+  onNext,
+  onBack,
+}: {
+  defaultNotes?: string;
+  onNext: (notes: string | undefined) => void;
+  onBack: () => void;
+}) {
+  const [notes, setNotes] = useState(defaultNotes ?? "");
+
+  return (
+    <div>
+      <h2 className="font-display font-bold text-header mb-sp-2">
+        Studio pickup
+      </h2>
+      <p className="text-sm text-text-secondary mt-0 mb-sp-4">
+        We will hold the finished order at our Vancouver studio. No shipping
+        address is needed.
+      </p>
+      <label className="block text-sm font-semibold">
+        Pickup notes (optional)
+        <textarea
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          rows={3}
+          placeholder="Who will collect, preferred window, etc."
+          className="block mt-1 w-full border border-border rounded-sm px-2 py-1 font-normal"
+        />
+      </label>
+      <div className="flex justify-between mt-sp-4">
+        <Button variant="secondary" onClick={onBack}>
+          ← Back
+        </Button>
+        <Button onClick={() => onNext(notes.trim() || undefined)}>
+          Review Submission →
+        </Button>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
-import { useCartStore, computeCartTotals, type CartItem } from "@/lib/store/cart";
+import { useCartStore, useVisibleCartItems, computeCartTotals, type CartItem } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
@@ -14,7 +14,7 @@ import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
 const SAVED_KEY = "gwg-cart-saved";
 
 export default function CartPage() {
-  const items = useCartStore((s) => s.items);
+  const items = useVisibleCartItems();
   const updateQty = useCartStore((s) => s.updateQty);
   const removeItem = useCartStore((s) => s.removeItem);
   const addItem = useCartStore((s) => s.addItem);

@@ -20,6 +20,67 @@ const context: NotificationContext = {
 };
 
 describe("notificationsForEvent", () => {
+  it("confirms a new submission to the customer and staff", () => {
+    const messages = notificationsForEvent(
+      { type: "commerce.job_request.submitted.v1", data: {} },
+      JOB_ID,
+      context,
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.to).toBe("buyer@example.test");
+    expect(messages[0]?.subject).toMatch(/we received your job request/i);
+    expect(messages[1]?.to).toBe("art@example.test");
+    expect(messages[1]?.text).toContain(`/admin/jobs/${JOB_ID}`);
+  });
+
+  it("tells staff when the customer replies to requested changes", () => {
+    const [message] = notificationsForEvent(
+      {
+        type: "commerce.job_request.changes_responded.v1",
+        data: { reason: "Updated the logo colours" },
+      },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("art@example.test");
+    expect(message.subject).toMatch(/revision/i);
+    expect(message.text).toContain("Updated the logo colours");
+  });
+
+  it("tells the customer when staff issue an invoice", () => {
+    const [message] = notificationsForEvent(
+      { type: "commerce.job_request.invoice.issued.v1", data: {} },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("buyer@example.test");
+    expect(message.subject).toMatch(/invoice is on the way/i);
+  });
+
+  it("tells the customer when staff record payment", () => {
+    const [message] = notificationsForEvent(
+      { type: "commerce.job_request.payment.recorded.v1", data: {} },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("buyer@example.test");
+    expect(message.subject).toMatch(/received your payment/i);
+  });
+
+  it("tells staff when the customer requests an invoice", () => {
+    const [message] = notificationsForEvent(
+      {
+        type: "commerce.job_request.invoice.requested.v1",
+        data: { amountMinor: 12_345, currency: "CAD" },
+      },
+      JOB_ID,
+      context,
+    );
+    expect(message.to).toBe("art@example.test");
+    expect(message.subject).toMatch(/requested an invoice/i);
+    expect(message.text).toContain("$123.45");
+  });
+
   it("tells the customer when a final quote is ready", () => {
     const [message] = notificationsForEvent(
       {

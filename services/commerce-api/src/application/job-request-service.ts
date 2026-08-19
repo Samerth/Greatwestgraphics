@@ -1,16 +1,23 @@
 import type {
   AcceptFinalQuote,
   Actor,
+  CommerceEventType,
   CreateFinalQuote,
   CreateJobRequest,
   CreateProofVersion,
   DecideProof,
   FinalQuoteResponse,
+  InventoryCheck,
+  InvoiceRequestResponse,
+  IssueInvoice,
   JobRequestDetailResponse,
   JobRequestLineInput,
   JobRequestResponse,
   JobRequestStatus,
   ProofVersionResponse,
+  RecordPayment,
+  RequestInvoice,
+  RespondToChanges,
   SourceMetadata,
   SubmitJobRequest,
   TransitionJobRequest,
@@ -36,6 +43,8 @@ import {
   people,
   pricingConfigs,
   proofVersions,
+  ssProducts,
+  ssVariants,
   stores,
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
@@ -46,7 +55,7 @@ import {
   defaultAudienceForAuthor,
   statusForProofDecision,
 } from "../domain/proof-decision.js";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { PricingConfigSchema } from "@gwg/contracts";
 
@@ -83,6 +92,14 @@ export class DataIntegrityError extends Error {
 
 export class QuoteAcceptanceError extends Error {
   readonly code = "QUOTE_ACCEPTANCE_ERROR";
+}
+
+export class CustomerActionError extends Error {
+  readonly code = "CUSTOMER_ACTION_ERROR";
+}
+
+export class JobActionError extends Error {
+  readonly code = "JOB_ACTION_ERROR";
 }
 
 function requestHash(value: unknown): string {
@@ -420,11 +437,11 @@ export class JobRequestService {
   /**
    * Moves a draft the customer owns to `submitted`.
    *
-   * Like `decideProof`, the person filter is derived from the actor rather
-   * than taken as an argument, so a caller cannot point this at a stranger's
-   * draft by forgetting to pass an id. Without it, tenant plus account matched
-   * every retail shopper: any signed-in customer could submit somebody else's
-   * draft and read the job back out of the response.
+   * The person filter is derived from the actor rather than taken as an
+   * argument, so a caller cannot point this at a stranger's draft by
+   * forgetting to pass an id. Without it, tenant plus account matched every
+   * retail shopper: any signed-in customer could submit somebody else's draft
+   * and read the job back out of the response.
    */
   async submit(
     jobRequestId: string,
@@ -488,7 +505,8 @@ export class JobRequestService {
       jobRequestId,
       customerPersonId,
     );
-    const [lines, history, quotes, proofs, snapshots] = await Promise.all([
+    const [lines, history, quotes, proofs, snapshots, obligations] =
+      await Promise.all([
       this.db
         .select()
         .from(jobRequestLines)
@@ -545,10 +563,31 @@ export class JobRequestService {
         )
         .orderBy(asc(jobRequestSnapshots.version))
         .limit(1),
+      this.db
+        .select()
+        .from(paymentObligations)
+        .where(
+          and(
+            eq(paymentObligations.tenantId, tenantId),
+            eq(paymentObligations.accountId, accountId),
+            eq(paymentObligations.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(desc(paymentObligations.updatedAt)),
     ]);
     const createdSnapshot = CreateJobRequestSchema.safeParse(
       snapshots[0]?.snapshot,
     );
+    const latestQuote = quotes[quotes.length - 1];
+    const invoiceObligation = latestQuote
+      ? obligations.find((row) => row.finalQuoteId === latestQuote.id)
+      : undefined;
+
+    const mappedLines = lines.map((line) => ({
+      id: line.id,
+      position: line.position,
+      snapshot: line.snapshot,
+    }));
 
     return {
       ...toResponse(row),
@@ -557,11 +596,12 @@ export class JobRequestService {
       fulfillment: createdSnapshot.success
         ? createdSnapshot.data.fulfillment
         : null,
-      lines: lines.map((line) => ({
-        id: line.id,
-        position: line.position,
-        snapshot: line.snapshot,
-      })),
+      invoiceRequestedAt:
+        invoiceObligation?.status === "invoice_requested"
+          ? invoiceObligation.updatedAt.toISOString()
+          : null,
+      inventory: await this.checkInventory(tenantId, mappedLines),
+      lines: mappedLines,
       timeline: history.map((entry) => ({
         id: entry.id,
         fromStatus: entry.fromStatus,
@@ -823,6 +863,326 @@ export class JobRequestService {
     });
   }
 
+  /**
+   * Customer reply when the job is parked on `changes_requested`.
+   *
+   * The state machine already allows `changes_requested → submitted`. This
+   * method is the customer-owned path: it requires a note, scopes to the
+   * signed-in person, appends the reply to the job note, and optionally
+   * attaches replacement artwork as a proof waiting on staff.
+   */
+  async respondToChanges(
+    jobRequestId: string,
+    command: RespondToChanges,
+    actor: Actor,
+    customerPersonId?: string,
+  ): Promise<JobRequestResponse> {
+    const { tenantId, accountId } = command.context;
+    if (actor.type !== "customer" || !actor.id) {
+      throw new ScopeMismatchError(
+        "Responding to requested changes requires an identified customer",
+      );
+    }
+    const note = command.note.trim();
+    if (!note) {
+      throw new CustomerActionError(
+        "Tell us what you changed so we can review the revision.",
+      );
+    }
+
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+        customerPersonId,
+      );
+      if (current.status !== "changes_requested") {
+        throw new CustomerActionError(
+          "This job is not waiting on a revision from you.",
+        );
+      }
+
+      const occurredAt = new Date();
+      const stamped = `Revision (${occurredAt.toISOString()}): ${note}`;
+      const customerNote = current.customerNote
+        ? `${current.customerNote}\n\n${stamped}`
+        : stamped;
+      const [noted] = await transaction
+        .update(jobRequests)
+        .set({ customerNote, updatedAt: occurredAt })
+        .where(
+          and(
+            eq(jobRequests.tenantId, tenantId),
+            eq(jobRequests.accountId, accountId),
+            eq(jobRequests.id, jobRequestId),
+            eq(jobRequests.version, current.version),
+          ),
+        )
+        .returning();
+      if (!noted) {
+        throw new DataIntegrityError("Concurrent job request update detected");
+      }
+
+      if (command.storageKey) {
+        const [latest] = await transaction
+          .select({ version: proofVersions.version })
+          .from(proofVersions)
+          .where(
+            and(
+              eq(proofVersions.tenantId, tenantId),
+              eq(proofVersions.accountId, accountId),
+              eq(proofVersions.jobRequestId, jobRequestId),
+            ),
+          )
+          .orderBy(desc(proofVersions.version))
+          .limit(1);
+        const version = (latest?.version ?? 0) + 1;
+        const [created] = await transaction
+          .insert(proofVersions)
+          .values({
+            tenantId,
+            accountId,
+            jobRequestId,
+            version,
+            storageKey: command.storageKey,
+            note,
+            decision: "pending",
+            awaitingDecisionFrom: "staff",
+            createdBy: actor,
+            source: command.source,
+          })
+          .returning();
+        if (!created) {
+          throw new DataIntegrityError("Failed to create proof version");
+        }
+      }
+
+      return this.applyTransition(
+        transaction,
+        { ...current, customerNote, updatedAt: occurredAt },
+        "submitted",
+        command.storageKey
+          ? `${note}\n\nReplacement artwork attached.`
+          : note,
+        actor,
+        command.source,
+        "commerce.job_request.changes_responded.v1",
+      );
+    });
+  }
+
+  /**
+   * Records that the customer asked staff to send a manual invoice.
+   *
+   * Online card payment is not connected. This is the honest customer action
+   * after quote acceptance: it marks the latest obligation and emails staff.
+   */
+  async requestInvoice(
+    jobRequestId: string,
+    command: RequestInvoice,
+    actor: Actor,
+    customerPersonId?: string,
+  ): Promise<InvoiceRequestResponse> {
+    const { tenantId, accountId } = command.context;
+    if (actor.type !== "customer" || !actor.id) {
+      throw new ScopeMismatchError(
+        "Requesting an invoice requires an identified customer",
+      );
+    }
+
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+        customerPersonId,
+      );
+      if (
+        current.status !== "awaiting_payment" &&
+        current.status !== "payment_failed"
+      ) {
+        throw new CustomerActionError(
+          "An invoice can be requested after you accept the final quote.",
+        );
+      }
+
+      const [latestQuote] = await transaction
+        .select()
+        .from(finalQuotes)
+        .where(
+          and(
+            eq(finalQuotes.tenantId, tenantId),
+            eq(finalQuotes.accountId, accountId),
+            eq(finalQuotes.jobRequestId, jobRequestId),
+          ),
+        )
+        .orderBy(desc(finalQuotes.version))
+        .limit(1);
+      if (!latestQuote?.acceptedAt) {
+        throw new CustomerActionError(
+          "Accept the final quote before requesting an invoice.",
+        );
+      }
+
+      const [obligation] = await transaction
+        .select()
+        .from(paymentObligations)
+        .where(
+          and(
+            eq(paymentObligations.tenantId, tenantId),
+            eq(paymentObligations.accountId, accountId),
+            eq(paymentObligations.finalQuoteId, latestQuote.id),
+          ),
+        )
+        .limit(1);
+      if (!obligation) {
+        throw new ResourceNotFoundError("Payment obligation not found");
+      }
+      if (obligation.status === "invoice_requested") {
+        return { invoiceRequestedAt: obligation.updatedAt.toISOString() };
+      }
+
+      const requestedAt = new Date();
+      const [updated] = await transaction
+        .update(paymentObligations)
+        .set({ status: "invoice_requested", updatedAt: requestedAt })
+        .where(
+          and(
+            eq(paymentObligations.id, obligation.id),
+            eq(paymentObligations.status, obligation.status),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        const [again] = await transaction
+          .select()
+          .from(paymentObligations)
+          .where(eq(paymentObligations.id, obligation.id))
+          .limit(1);
+        if (again?.status === "invoice_requested") {
+          return { invoiceRequestedAt: again.updatedAt.toISOString() };
+        }
+        throw new DataIntegrityError("Failed to record the invoice request");
+      }
+
+      const eventId = randomUUID();
+      await transaction.insert(outboxEvents).values({
+        id: eventId,
+        tenantId,
+        accountId,
+        aggregateType: "job_request",
+        aggregateId: jobRequestId,
+        eventType: "commerce.job_request.invoice.requested.v1",
+        occurredAt: requestedAt,
+        payload: {
+          id: eventId,
+          type: "commerce.job_request.invoice.requested.v1",
+          version: 1,
+          aggregateId: jobRequestId,
+          tenantId,
+          accountId,
+          occurredAt: requestedAt.toISOString(),
+          actor,
+          source: command.source,
+          data: {
+            finalQuoteId: latestQuote.id,
+            amountMinor: latestQuote.amountMinor,
+            currency: latestQuote.currency,
+            quoteVersion: latestQuote.version,
+          },
+        },
+      });
+
+      return { invoiceRequestedAt: requestedAt.toISOString() };
+    });
+  }
+
+  /**
+   * Staff confirm they sent a manual invoice. Moves the job to
+   * `payment_pending` and emails the customer.
+   */
+  async issueInvoice(
+    jobRequestId: string,
+    command: IssueInvoice,
+    actor: Actor,
+  ): Promise<JobRequestResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+      if (
+        current.status !== "awaiting_payment" &&
+        current.status !== "payment_failed" &&
+        current.status !== "payment_pending"
+      ) {
+        throw new JobActionError(
+          "An invoice can be issued after the customer accepts the final quote.",
+        );
+      }
+      if (current.status === "payment_pending") {
+        return toResponse(current);
+      }
+      return this.applyTransition(
+        transaction,
+        current,
+        "payment_pending",
+        command.note ?? "Manual invoice issued",
+        actor,
+        command.source,
+        "commerce.job_request.invoice.issued.v1",
+      );
+    });
+  }
+
+  /**
+   * Staff record that money arrived (e-transfer, cheque, card over the phone).
+   * This is the offline stand-in for a Stripe webhook.
+   */
+  async recordPayment(
+    jobRequestId: string,
+    command: RecordPayment,
+    actor: Actor,
+  ): Promise<JobRequestResponse> {
+    const note = command.note.trim();
+    if (!note) {
+      throw new JobActionError("Say how the payment was received.");
+    }
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+      if (
+        current.status !== "awaiting_payment" &&
+        current.status !== "payment_pending" &&
+        current.status !== "payment_failed"
+      ) {
+        throw new JobActionError(
+          "Payment can be recorded after the customer accepts the final quote.",
+        );
+      }
+      return this.applyTransition(
+        transaction,
+        current,
+        "paid",
+        note,
+        actor,
+        command.source,
+        "commerce.job_request.payment.recorded.v1",
+      );
+    });
+  }
+
   async createProof(
     jobRequestId: string,
     command: CreateProofVersion,
@@ -917,17 +1277,13 @@ export class JobRequestService {
     proofId: string,
     command: DecideProof,
     actor: Actor,
+    customerPersonId?: string,
   ): Promise<ProofVersionResponse> {
     const { tenantId, accountId } = command.context;
-    // A customer may only decide proofs on their own job. Staff decide through
-    // the admin router and are deliberately not narrowed to one customer.
-    const customerPersonId = requireCustomerScope(
-      actor,
-      () =>
-        new ScopeMismatchError(
-          "A customer proof decision requires an identified customer",
-        ),
-    );
+    // Staff decide through the admin router and are not narrowed to one
+    // customer. A private-store owner may decide a teammate's proof because
+    // the route passes the same whole-account visibility used by their
+    // portal; retail customers always arrive with their own person filter.
     return this.db.transaction(async (transaction) => {
       const current = await this.findScoped(
         transaction,
@@ -1070,12 +1426,37 @@ export class JobRequestService {
    */
   async listForStaff(tenantId: string): Promise<JobRequestResponse[]> {
     const rows = await this.db
-      .select()
+      .select({ job: jobRequests, placedBy: people.displayName })
       .from(jobRequests)
+      .leftJoin(people, eq(people.id, jobRequests.customerPersonId))
       .where(eq(jobRequests.tenantId, tenantId))
       .orderBy(desc(jobRequests.createdAt));
 
-    return rows.map(toResponse);
+    const jobIds = rows.map((row) => row.job.id);
+    const requested = jobIds.length
+      ? await this.db
+          .select({
+            jobRequestId: paymentObligations.jobRequestId,
+            updatedAt: paymentObligations.updatedAt,
+          })
+          .from(paymentObligations)
+          .where(
+            and(
+              eq(paymentObligations.tenantId, tenantId),
+              eq(paymentObligations.status, "invoice_requested"),
+              inArray(paymentObligations.jobRequestId, jobIds),
+            ),
+          )
+      : [];
+    const requestedAt = new Map(
+      requested.map((row) => [row.jobRequestId, row.updatedAt.toISOString()]),
+    );
+
+    return rows.map((row) => ({
+      ...toResponse(row.job),
+      customerName: row.placedBy,
+      invoiceRequestedAt: requestedAt.get(row.job.id) ?? null,
+    }));
   }
 
   /**
@@ -1193,8 +1574,24 @@ export class JobRequestService {
     reason: string | undefined,
     actor: Actor,
     source: SourceMetadata,
+    eventTypeOverride?: CommerceEventType,
   ): Promise<JobRequestResponse> {
+    if (toStatus === "cancelled" && !reason?.trim()) {
+      throw new JobActionError("A reason is required to cancel a job.");
+    }
     const occurredAt = new Date();
+    const paymentStatus =
+      toStatus === "awaiting_payment"
+        ? ("requires_payment" as const)
+        : toStatus === "payment_pending"
+          ? ("processing" as const)
+          : toStatus === "payment_failed"
+            ? ("failed" as const)
+            : toStatus === "paid"
+              ? ("succeeded" as const)
+              : toStatus === "cancelled" && current.paymentStatus !== "succeeded"
+                ? ("cancelled" as const)
+                : current.paymentStatus;
     const [updated] = await transaction
       .update(jobRequests)
       .set({
@@ -1202,6 +1599,8 @@ export class JobRequestService {
         version: current.version + 1,
         submittedAt:
           toStatus === "submitted" ? occurredAt : current.submittedAt,
+        paymentStatus,
+        paidAt: toStatus === "paid" ? occurredAt : current.paidAt,
         updatedAt: occurredAt,
       })
       .where(
@@ -1216,6 +1615,36 @@ export class JobRequestService {
 
     if (!updated) {
       throw new DataIntegrityError("Concurrent job request update detected");
+    }
+
+    if (toStatus === "payment_pending" || toStatus === "paid") {
+      const [latestQuote] = await transaction
+        .select({ id: finalQuotes.id })
+        .from(finalQuotes)
+        .where(
+          and(
+            eq(finalQuotes.tenantId, current.tenantId),
+            eq(finalQuotes.accountId, current.accountId),
+            eq(finalQuotes.jobRequestId, current.id),
+          ),
+        )
+        .orderBy(desc(finalQuotes.version))
+        .limit(1);
+      if (latestQuote) {
+        await transaction
+          .update(paymentObligations)
+          .set({
+            status: toStatus === "paid" ? "paid" : "invoiced",
+            updatedAt: occurredAt,
+          })
+          .where(
+            and(
+              eq(paymentObligations.tenantId, current.tenantId),
+              eq(paymentObligations.accountId, current.accountId),
+              eq(paymentObligations.finalQuoteId, latestQuote.id),
+            ),
+          );
+      }
     }
 
     await transaction.insert(jobRequestStatusHistory).values({
@@ -1258,9 +1687,10 @@ export class JobRequestService {
     }
 
     const eventType =
-      toStatus === "submitted"
+      eventTypeOverride ??
+      (toStatus === "submitted"
         ? "commerce.job_request.submitted.v1"
-        : "commerce.job_request.status_changed.v1";
+        : "commerce.job_request.status_changed.v1");
     const eventId = randomUUID();
     await transaction.insert(outboxEvents).values({
       id: eventId,
@@ -1290,6 +1720,77 @@ export class JobRequestService {
     });
 
     return toResponse(updated);
+  }
+
+  /**
+   * Re-checks catalog qty for each line. Missing SKUs stay `available: null`
+   * so staff see a warning instead of a hard block.
+   */
+  private async checkInventory(
+    tenantId: string,
+    lines: Array<{ id: string; snapshot: JobRequestLineInput }>,
+  ): Promise<InventoryCheck> {
+    const variantIds = [
+      ...new Set(
+        lines
+          .map((line) => line.snapshot.variantId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const productIds = [
+      ...new Set(
+        lines
+          .map((line) => line.snapshot.productId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const variants = variantIds.length
+      ? await this.db
+          .select({
+            id: ssVariants.id,
+            qty: ssVariants.qty,
+            sku: ssVariants.sku,
+          })
+          .from(ssVariants)
+          .where(
+            and(
+              eq(ssVariants.tenantId, tenantId),
+              inArray(ssVariants.id, variantIds),
+            ),
+          )
+      : [];
+    const products = productIds.length
+      ? await this.db
+          .select({ id: ssProducts.id, qty: ssProducts.qty })
+          .from(ssProducts)
+          .where(
+            and(
+              eq(ssProducts.tenantId, tenantId),
+              inArray(ssProducts.id, productIds),
+            ),
+          )
+      : [];
+    const variantById = new Map(variants.map((row) => [row.id, row]));
+    const productById = new Map(products.map((row) => [row.id, row]));
+
+    return {
+      lines: lines.map((line) => {
+        const variant = line.snapshot.variantId
+          ? variantById.get(line.snapshot.variantId)
+          : undefined;
+        const product = line.snapshot.productId
+          ? productById.get(line.snapshot.productId)
+          : undefined;
+        const available = variant?.qty ?? product?.qty ?? null;
+        return {
+          lineId: line.id,
+          description: line.snapshot.description,
+          requested: line.snapshot.quantity,
+          available,
+          sku: variant?.sku ?? null,
+        };
+      }),
+    };
   }
 
   /**

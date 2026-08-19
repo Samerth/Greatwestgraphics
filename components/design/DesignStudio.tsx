@@ -301,20 +301,31 @@ export function DesignStudio({
     front:
       productDetail?.product.colorFrontImageUrl || productDetail?.style.styleImageUrl || null,
     back:
-      productDetail?.product.colorBackImageUrl || productDetail?.style.styleImageUrl || null,
-    left: productDetail?.product.colorSideImageUrl || null,
-    right: productDetail?.product.colorSideImageUrl || null,
+      productDetail?.product.colorBackImageUrl ||
+      productDetail?.product.colorFrontImageUrl ||
+      productDetail?.style.styleImageUrl ||
+      null,
+    left:
+      productDetail?.product.colorSideImageUrl ||
+      productDetail?.product.colorFrontImageUrl ||
+      productDetail?.style.styleImageUrl ||
+      null,
+    right:
+      productDetail?.product.colorSideImageUrl ||
+      productDetail?.product.colorFrontImageUrl ||
+      productDetail?.style.styleImageUrl ||
+      null,
   };
   const currentPhoto = productDetail ? photoBySide[activeSide] : null;
   const mirrorPhoto = activeSide === "right";
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  // Canvas pixel reads require every image to be same-origin or CORS-enabled.
-  // The Next image endpoint fetches the configured supplier hosts server-side
-  // and returns a same-origin garment image, so the composed proof can include
-  // the garment instead of degrading to the raw uploaded logo.
+  // Canvas pixel reads require a same-origin garment. The Next image
+  // endpoint fetches the supplier host server-side. Quality must be one
+  // Next 16 allows (75 or 90 in next.config) — q=90 used to 400 and the
+  // stage stayed empty on the dark studio background.
   const canvasGarmentImageUrl = currentPhoto
-    ? `/_next/image?url=${encodeURIComponent(currentPhoto)}&w=640&q=90`
-    : "/images/t-shirt.png";
+    ? `/_next/image?url=${encodeURIComponent(currentPhoto)}&w=640&q=75`
+    : "";
 
   // All four views are always offered. A sleeve print is a real thing a
   // customer orders whether or not the vendor photographed that angle, and
@@ -555,8 +566,26 @@ export function DesignStudio({
     setCartError(null);
     setAddingToCart(true);
     let artworkProofUrl: string | undefined;
+    let designProjectId = savedDesignId ?? undefined;
     try {
       artworkProofUrl = (await uploadProofImage()) ?? undefined;
+      if (
+        artworkProofUrl &&
+        signedIn &&
+        (createUrl || (updateUrl && savedDesignId))
+      ) {
+        const name = designName.trim() || defaultDesignName();
+        if (!designName.trim()) setDesignName(name);
+        designProjectId = await persistDesign(name, artworkProofUrl);
+      }
+    } catch (caught) {
+      setAddingToCart(false);
+      setCartError(
+        caught instanceof Error
+          ? caught.message
+          : "The design could not be saved, so staff would not be able to reopen it. Try Save, then add to cart again.",
+      );
+      return;
     } finally {
       setAddingToCart(false);
     }
@@ -601,7 +630,7 @@ export function DesignStudio({
         unit: unitPriceMinor(priceVariant, roster.length) / 100,
         image: currentPhoto || "",
         artworkProofUrl,
-        designProjectId: savedDesignId ?? undefined,
+        designProjectId,
         roster: roster.map((r) => ({
           size: r.size,
           name: r.name.trim(),
@@ -626,7 +655,7 @@ export function DesignStudio({
       unit: unitPriceMinor(selectedVariant, designQty) / 100,
       image: currentPhoto || "",
       artworkProofUrl,
-      designProjectId: savedDesignId ?? undefined,
+      designProjectId,
     });
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
@@ -653,20 +682,25 @@ export function DesignStudio({
     }
   }
 
-  async function handleSaveDesign() {
-    if (!designName.trim()) {
-      setSaveError("Give this design a name first.");
-      return;
-    }
+  function defaultDesignName() {
+    const garment =
+      garmentOptions.find((option) => option.id === selectedGarmentId)?.label ??
+      "Custom design";
+    return `${garment} · ${new Date().toLocaleDateString("en-CA")}`;
+  }
+
+  async function persistDesign(
+    name: string,
+    proofImageUrl?: string | null,
+  ): Promise<string> {
     if (pendingUploads > 0) {
-      setSaveError("Hold on — artwork is still uploading.");
-      return;
+      throw new Error("Hold on — artwork is still uploading.");
     }
     // The guard that makes a save honest. Without it the design persists
     // object URLs, reports success, and reloads blank.
     const unsafeSides = ephemeralArtworkSides(design);
     if (unsafeSides.length > 0) {
-      setSaveError(
+      throw new Error(
         `Artwork on the ${unsafeSides
           .map((side) => DESIGN_SIDE_LABELS[side].toLowerCase())
           .join(" and ")} has not been uploaded yet, so it would not survive a reload. ${
@@ -675,33 +709,42 @@ export function DesignStudio({
             : "Sign in and re-add it to keep it."
         }`,
       );
+    }
+    const proof = proofImageUrl === undefined ? await uploadProofImage() : proofImageUrl;
+    const payload: Record<string, unknown> = {
+      name,
+      garmentProductId: selectedGarmentId,
+      design,
+    };
+    if (proof) payload.proofImageUrl = proof;
+    const currentId = savedDesignId;
+    const target = currentId ? `${updateUrl}/${currentId}` : createUrl;
+    if (!target) throw new Error("This design cannot be saved from here.");
+    const response = await fetch(target, {
+      method: currentId ? "PUT" : "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(body?.error?.message || "Could not save the design.");
+    }
+    const id = currentId ?? (body?.design?.id as string | undefined);
+    if (!id) throw new Error("The design saved without an id.");
+    if (!currentId) setSavedDesignId(id);
+    return id;
+  }
+
+  async function handleSaveDesign() {
+    if (!designName.trim()) {
+      setSaveError("Give this design a name first.");
       return;
     }
     setSaving(true);
     setSaveError(null);
     setSaveMessage(null);
     try {
-      const proofImageUrl = await uploadProofImage();
-      const payload = {
-        name: designName.trim(),
-        garmentProductId: selectedGarmentId,
-        design,
-        proofImageUrl,
-      };
-      const target = savedDesignId ? `${updateUrl}/${savedDesignId}` : createUrl;
-      if (!target) throw new Error("This design cannot be saved from here.");
-      const response = await fetch(target, {
-        method: savedDesignId ? "PUT" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(body?.error?.message || "Could not save the design.");
-      }
-      if (!savedDesignId && body?.design?.id) {
-        setSavedDesignId(body.design.id);
-      }
+      await persistDesign(designName.trim());
       setSaveMessage("Design saved ✓");
       setTimeout(() => setSaveMessage(null), 2500);
     } catch (caught) {

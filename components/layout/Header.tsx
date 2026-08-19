@@ -43,9 +43,7 @@ export function Header({
           href: `/products?category=${encodeURIComponent(c.slug)}`,
         }))
       : FALLBACK_CATEGORIES;
-  const rawPieceCount = useCartStore((s) =>
-    s.items.reduce((sum, i) => sum + i.qty, 0)
-  );
+  const rawPieceCount = useCartStore((s) => s.pieceCount());
   // Zustand's persist middleware only reads localStorage on the client, so
   // the server always renders an empty cart. Gate the real count behind a
   // post-mount flag so the first client render matches the server's, then

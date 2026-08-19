@@ -3,6 +3,7 @@ import {
   runSyncAction,
 } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -94,9 +95,9 @@ export default async function AdminSyncPage() {
           </li>
           <li>
             <b>After a good run</b> — open{" "}
-            <a href="/admin/catalog" className="text-accent font-bold">
+            <Link href="/admin/catalog" className="text-accent font-bold">
               Catalog
-            </a>
+            </Link>
             , filter by vendor, and confirm stock/cost look right. Soft-hide
             anything you do not want on the storefront.
           </li>
@@ -277,9 +278,9 @@ export default async function AdminSyncPage() {
         <p className="text-sm text-text-secondary m-0">
           Wait for <b>completed</b> (or read errors if{" "}
           <b>completed_with_errors</b>). Then verify results in{" "}
-          <a href="/admin/catalog" className="text-accent font-bold">
+          <Link href="/admin/catalog" className="text-accent font-bold">
             Catalog
-          </a>
+          </Link>
           .
         </p>
         {runs.length === 0 && (

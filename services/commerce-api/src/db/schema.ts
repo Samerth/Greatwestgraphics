@@ -47,6 +47,11 @@ export const jobRequestStatusEnum = pgEnum("job_request_status", [
   "payment_failed",
   "paid",
   "ready_for_production",
+  "in_production",
+  "ready_for_pickup",
+  "shipped",
+  "completed",
+  "cancelled",
 ]);
 
 export const paymentStatusEnum = pgEnum("payment_status", [

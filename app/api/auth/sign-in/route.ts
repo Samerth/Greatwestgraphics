@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { signInWithPassword, CognitoAuthError } from "@/lib/auth/cognito";
 import { completeSignIn } from "@/lib/auth/complete-sign-in";
+import { signInLocalCustomer } from "@/lib/auth/local-customer";
 
 const BodySchema = z.object({
   email: z.string().email(),
@@ -11,6 +12,8 @@ const BodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const { email, password } = BodySchema.parse(await request.json());
+    const local = await signInLocalCustomer(email, password);
+    if (local) return NextResponse.json(local);
     const outcome = await signInWithPassword(email, password);
     if (outcome.kind !== "authenticated") {
       return NextResponse.json(

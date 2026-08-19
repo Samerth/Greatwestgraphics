@@ -27,10 +27,17 @@ async function postJson(path: string, body: unknown) {
   return payload;
 }
 
-export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
+export function AccountAuth({
+  next = "/portal/jobs",
+  localDev = false,
+}: {
+  next?: string;
+  /** Cognito is not configured; only the seeded local customer can sign in. */
+  localDev?: boolean;
+}) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("sign-in");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(localDev ? "customer@example.test" : "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -403,6 +410,11 @@ export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
       <Button type="submit" className="w-full" disabled={submitting}>
         {submitting ? "Signing in…" : "Sign in"}
       </Button>
+      {localDev ? (
+        <p className="text-[13px] text-text-tertiary mt-sp-3 mb-0">
+          Local review login — Cognito is not configured in this environment.
+        </p>
+      ) : (
       <div className="flex flex-col gap-2 mt-sp-3">
         <button
           type="button"
@@ -426,6 +438,7 @@ export function AccountAuth({ next = "/portal/jobs" }: { next?: string }) {
           New here? Create an account
         </button>
       </div>
+      )}
     </form>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JobRequestStatuses } from "@gwg/contracts";
+import { isStaffOpenJob, JobRequestStatuses } from "@gwg/contracts";
 import {
   assertJobRequestTransition,
   InvalidJobRequestTransitionError,
@@ -7,7 +7,7 @@ import {
 } from "../src/domain/job-request-state.js";
 
 describe("job request state machine", () => {
-  it("allows the approval-first happy path", () => {
+  it("allows the approval-first happy path through fulfillment", () => {
     const path = [
       "draft",
       "submitted",
@@ -17,6 +17,9 @@ describe("job request state machine", () => {
       "payment_pending",
       "paid",
       "ready_for_production",
+      "in_production",
+      "shipped",
+      "completed",
     ] as const;
 
     for (let index = 0; index < path.length - 1; index += 1) {
@@ -50,5 +53,35 @@ describe("job request state machine", () => {
     expect(() =>
       assertJobRequestTransition("approved", "ready_for_production"),
     ).toThrow(InvalidJobRequestTransitionError);
+  });
+
+  it("lets staff record offline payment without visiting payment_pending", () => {
+    expect(() =>
+      assertJobRequestTransition("awaiting_payment", "paid"),
+    ).not.toThrow();
+  });
+
+  it("counts live staff work as open and hides drafts and terminals", () => {
+    expect(isStaffOpenJob("submitted")).toBe(true);
+    expect(isStaffOpenJob("awaiting_payment")).toBe(true);
+    expect(isStaffOpenJob("in_production")).toBe(true);
+    expect(isStaffOpenJob("draft")).toBe(false);
+    expect(isStaffOpenJob("completed")).toBe(false);
+    expect(isStaffOpenJob("cancelled")).toBe(false);
+    expect(isStaffOpenJob("rejected")).toBe(false);
+  });
+
+  it("allows pickup completion and cancellation from live jobs", () => {
+    expect(() =>
+      assertJobRequestTransition("in_production", "ready_for_pickup"),
+    ).not.toThrow();
+    expect(() =>
+      assertJobRequestTransition("ready_for_pickup", "completed"),
+    ).not.toThrow();
+    expect(() =>
+      assertJobRequestTransition("paid", "cancelled"),
+    ).not.toThrow();
+    expect(validNextStatuses("completed")).toEqual([]);
+    expect(validNextStatuses("cancelled")).toEqual([]);
   });
 });

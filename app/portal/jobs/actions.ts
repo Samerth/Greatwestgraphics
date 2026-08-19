@@ -1,8 +1,18 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
+import { CommerceApiError } from "@/lib/commerce/client";
+import { createPortalClientForJob } from "@/lib/commerce/portal-client";
 import { getCustomerSession } from "@/lib/auth/session";
+import { getImageStore } from "@/lib/storage";
+
+const ARTWORK_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/svg+xml": "svg",
+};
+const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
 
 export interface ProofDecisionState {
   error?: string;
@@ -44,7 +54,7 @@ export async function decideProofAction(
   }
 
   try {
-    await (await createCommerceClient()).decideProof(jobId, proofId, {
+    await (await createPortalClientForJob(jobId)).decideProof(jobId, proofId, {
       decision,
       note: note || undefined,
     });
@@ -74,13 +84,100 @@ export async function acceptFinalQuoteAction(
   }
 
   try {
-    await (await createCommerceClient()).acceptFinalQuote(jobId, finalQuoteId);
+    await (await createPortalClientForJob(jobId)).acceptFinalQuote(jobId, finalQuoteId);
   } catch (caught) {
     return {
       error:
         caught instanceof CommerceApiError
           ? caught.message
           : "We could not record your acceptance. Please try again.",
+    };
+  }
+
+  revalidatePath(`/portal/jobs/${jobId}`);
+  revalidatePath("/portal/jobs");
+  return { ok: true };
+}
+
+export interface ChangeReplyState {
+  error?: string;
+  ok?: boolean;
+}
+
+export interface InvoiceRequestState {
+  error?: string;
+  ok?: boolean;
+}
+
+export async function respondToChangesAction(
+  jobId: string,
+  _previous: ChangeReplyState,
+  formData: FormData,
+): Promise<ChangeReplyState> {
+  const session = await getCustomerSession();
+  if (!session) {
+    return { error: "Your session expired. Sign in again to reply." };
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+  if (!note) {
+    return { error: "Tell us what you changed so we can continue the review." };
+  }
+
+  const file = formData.get("file");
+  let storageKey: string | undefined;
+  if (file instanceof File && file.size > 0) {
+    const extension = ARTWORK_TYPES[file.type];
+    if (!extension) {
+      return { error: "Replacement artwork must be a PNG, JPG, or SVG." };
+    }
+    if (file.size > MAX_ARTWORK_BYTES) {
+      return { error: "Replacement artwork is too large — max 10MB." };
+    }
+    storageKey = await getImageStore().put(
+      `designs/${session.personId}/revision-${randomUUID()}.${extension}`,
+      Buffer.from(await file.arrayBuffer()),
+      file.type,
+    );
+  }
+
+  try {
+    await (await createPortalClientForJob(jobId)).respondToChanges(jobId, {
+      note,
+      storageKey,
+    });
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof CommerceApiError
+          ? caught.message
+          : "We could not send your revision. Please try again.",
+    };
+  }
+
+  revalidatePath(`/portal/jobs/${jobId}`);
+  revalidatePath("/portal/jobs");
+  return { ok: true };
+}
+
+export async function requestInvoiceAction(
+  jobId: string,
+  _previous: InvoiceRequestState,
+  _formData: FormData,
+): Promise<InvoiceRequestState> {
+  const session = await getCustomerSession();
+  if (!session) {
+    return { error: "Your session expired. Sign in again to request the invoice." };
+  }
+
+  try {
+    await (await createPortalClientForJob(jobId)).requestInvoice(jobId);
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof CommerceApiError
+          ? caught.message
+          : "We could not record the invoice request. Please try again.",
     };
   }
 

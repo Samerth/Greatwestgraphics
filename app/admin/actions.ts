@@ -1,7 +1,40 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
+import { requireStaff } from "@/lib/admin/auth";
+import { getImageStore } from "@/lib/storage";
+
+const PROOF_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/svg+xml": "svg",
+};
+const MAX_PROOF_BYTES = 10 * 1024 * 1024;
+const PERSON_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function issueInvoiceAction(formData: FormData) {
+  const jobId = String(formData.get("jobId") || "");
+  const note = String(formData.get("note") || "") || undefined;
+  if (!jobId) throw new Error("Job is required");
+  const client = await adminClient();
+  await client.issueInvoice(jobId, note, requireAdminToken());
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobId}`);
+}
+
+export async function recordPaymentAction(formData: FormData) {
+  const jobId = String(formData.get("jobId") || "");
+  const note = String(formData.get("note") || "").trim();
+  if (!jobId) throw new Error("Job is required");
+  if (!note) throw new Error("Say how the payment was received");
+  const client = await adminClient();
+  await client.recordPayment(jobId, note, requireAdminToken());
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobId}`);
+}
 
 export async function transitionJobAction(
   jobId: string,
@@ -43,11 +76,32 @@ export async function createFinalQuoteAction(formData: FormData) {
 }
 
 export async function createProofAction(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
-  const storageKey = String(formData.get("storageKey") || "").trim();
   const note = String(formData.get("note") || "") || undefined;
+  const personId = String(formData.get("customerPersonId") || "");
+  const file = formData.get("file");
+  let storageKey = String(formData.get("storageKey") || "").trim();
+
+  if (file instanceof File && file.size > 0) {
+    const extension = PROOF_TYPES[file.type];
+    if (!extension) {
+      throw new Error("Proof must be a PNG, JPG, or SVG");
+    }
+    if (file.size > MAX_PROOF_BYTES) {
+      throw new Error("Proof file is too large — max 10MB");
+    }
+    const owner = PERSON_ID_PATTERN.test(personId) ? personId : "staff";
+    const key = `designs/${owner}/staff-${randomUUID()}.${extension}`;
+    storageKey = await getImageStore().put(
+      key,
+      Buffer.from(await file.arrayBuffer()),
+      file.type,
+    );
+  }
+
   if (!jobId || !storageKey) {
-    throw new Error("Job and proof storage key/URL are required");
+    throw new Error("Job and a proof file are required");
   }
   const client = await adminClient();
   await client.createProof(

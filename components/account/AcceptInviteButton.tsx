@@ -22,6 +22,16 @@ export function AcceptInviteButton({ token }: { token: string }) {
       if (!response.ok) {
         throw new Error(payload?.error?.message || "Could not accept the invite.");
       }
+      const slug =
+        typeof payload?.storeSlug === "string" ? payload.storeSlug.trim() : "";
+      // Enter the team store so the portal lists that account's jobs, not
+      // the public shop the invitee was probably browsing when they clicked.
+      if (slug) {
+        window.location.assign(
+          `/s/${encodeURIComponent(slug)}?next=${encodeURIComponent("/portal/jobs")}`,
+        );
+        return;
+      }
       router.push("/portal/jobs");
       router.refresh();
     } catch (caught) {

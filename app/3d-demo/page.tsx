@@ -63,7 +63,8 @@ export default function Demo3DPage() {
                   <h3 className="font-semibold text-text-primary mb-1">2. Prepare Model</h3>
                   <p className="text-text-secondary">
                     Ensure the model is UV-mapped so textures apply correctly. Named meshes
-                    (e.g., "Front_Chest", "Back_Body") help with multi-surface designs.
+                    (e.g., &quot;Front_Chest&quot;, &quot;Back_Body&quot;) help with
+                    multi-surface designs.
                   </p>
                 </div>
 
@@ -77,7 +78,8 @@ export default function Demo3DPage() {
                 <div>
                   <h3 className="font-semibold text-text-primary mb-1">4. Integrate with Design Studio</h3>
                   <p className="text-text-secondary">
-                    Add a "3D Preview" button in DesignStudio that opens the viewer modal.
+                    Add a &quot;3D Preview&quot; button in DesignStudio that opens the
+                    viewer modal.
                   </p>
                 </div>
               </div>

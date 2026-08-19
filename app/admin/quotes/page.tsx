@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
-import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { lineSnapshotTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,10 @@ export default async function AdminQuotesPage() {
           const pricing = (
             line.snapshot.configuration as {
               pricing?: {
-                breakdown?: { totalMinor?: number };
+                breakdown?: {
+                  totalMinor?: number;
+                  totals?: { totalMinor?: number };
+                };
                 input?: {
                   garment?: { unitCostMinor?: number };
                   needsArtworkReview?: boolean;
@@ -53,7 +56,7 @@ export default async function AdminQuotesPage() {
             lineId: line.id,
             description: line.snapshot.description,
             quantity: line.snapshot.quantity,
-            totalMinor: pricing?.breakdown?.totalMinor,
+            totalMinor: lineSnapshotTotalMinor(pricing),
             needsArtworkReview: pricing?.input?.needsArtworkReview,
             unitCostMinor: pricing?.input?.garment?.unitCostMinor,
           });

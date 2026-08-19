@@ -27,3 +27,7 @@ infra/cloudshell/config.*.env
 .tmp-*
 
 .DS_Store
+
+# Playwright run artifacts (screenshots, videos, traces)
+test-results/
+playwright-report/

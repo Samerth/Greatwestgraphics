@@ -127,6 +127,13 @@
       "when": 1787040000000,
       "tag": "0017_final_quote_note",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787050000000,
+      "tag": "0018_job_fulfillment_statuses",
+      "breakpoints": true
     }
   ]
 }

@@ -3,12 +3,14 @@ import {
   createFinalQuoteAction,
   createProofAction,
   decideProofAction,
+  issueInvoiceAction,
+  recordPaymentAction,
   transitionJobAction,
 } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
-import { validNextStatuses } from "@gwg/contracts";
-import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { validNextStatuses, type JobRequestStatus } from "@gwg/contracts";
+import { lineSnapshotTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +60,14 @@ export default async function AdminJobDetailPage({
   }
 
   const presentation = jobStatusPresentation[detail.status];
-  const nextStatuses = validNextStatuses(detail.status);
+  const nextStatuses = suggestedNextStatuses(
+    detail.status,
+    detail.fulfillment?.method,
+  );
+  const canTakePayment =
+    detail.status === "awaiting_payment" ||
+    detail.status === "payment_pending" ||
+    detail.status === "payment_failed";
 
   return (
     <div className="space-y-sp-4 max-w-4xl">
@@ -76,6 +85,99 @@ export default async function AdminJobDetailPage({
           {presentation.label}
         </span>
       </div>
+
+      {detail.invoiceRequestedAt ? (
+        <p className="border border-accent bg-accent-tint rounded-md px-sp-3 py-sp-2 text-sm m-0">
+          Customer requested a manual invoice on{" "}
+          {new Date(detail.invoiceRequestedAt).toLocaleString("en-CA")}.
+        </p>
+      ) : null}
+
+      {canTakePayment ? (
+        <section className="grid gap-sp-3 md:grid-cols-2">
+          <form
+            action={issueInvoiceAction}
+            className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-2"
+          >
+            <input type="hidden" name="jobId" value={detail.id} />
+            <h2 className="font-display font-bold text-lg m-0">Issue invoice</h2>
+            <p className="text-sm text-text-secondary m-0">
+              Record that you sent payment instructions. The customer gets an
+              email.
+            </p>
+            <label className="block text-sm font-semibold">
+              Note
+              <input
+                name="note"
+                placeholder="Invoice #, e-transfer email…"
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+            >
+              Mark invoice sent
+            </button>
+          </form>
+          <form
+            action={recordPaymentAction}
+            className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-2"
+          >
+            <input type="hidden" name="jobId" value={detail.id} />
+            <h2 className="font-display font-bold text-lg m-0">Record payment</h2>
+            <p className="text-sm text-text-secondary m-0">
+              Use this when e-transfer, cheque, or a card over the phone lands.
+            </p>
+            <label className="block text-sm font-semibold">
+              How it was received
+              <input
+                name="note"
+                required
+                placeholder="E-transfer from Sam, 18 Aug"
+                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+              />
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
+            >
+              Mark paid
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      {detail.inventory && detail.inventory.lines.length > 0 ? (
+        <section className="border border-border rounded-md p-sp-3 bg-bg-raised">
+          <h2 className="font-display font-bold text-xl m-0 mb-2">
+            Inventory check
+          </h2>
+          <ul className="m-0 p-0 list-none space-y-2">
+            {detail.inventory.lines.map((line) => {
+              const short =
+                line.available != null && line.available < line.requested;
+              const unknown = line.available == null;
+              return (
+                <li
+                  key={line.lineId}
+                  className={`text-sm ${short ? "text-amber-800" : "text-text-secondary"}`}
+                >
+                  <span className="font-semibold text-text-primary">
+                    {line.description}
+                  </span>
+                  {line.sku ? ` · ${line.sku}` : ""}
+                  {" — "}
+                  {unknown
+                    ? `requested ${line.requested}; no catalog qty on file`
+                    : `${line.requested} requested, ${line.available} in stock`}
+                  {short ? " · short" : ""}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {nextStatuses.length > 0 ? (
         <form
@@ -102,7 +204,7 @@ export default async function AdminJobDetailPage({
               </option>
               {nextStatuses.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {jobStatusPresentation[status].label}
                 </option>
               ))}
             </select>
@@ -111,6 +213,7 @@ export default async function AdminJobDetailPage({
             Reason
             <input
               name="reason"
+              placeholder="Required to cancel"
               className="block mt-1 border border-border rounded-sm px-2 py-1"
             />
           </label>
@@ -167,21 +270,28 @@ export default async function AdminJobDetailPage({
               <p className="font-semibold capitalize mt-0 mb-1">
                 {detail.fulfillment.method.replace("_", " ")}
               </p>
-              <address className="not-italic text-text-secondary">
-                {detail.fulfillment.address.address1}
-                <br />
-                {detail.fulfillment.address.address2 && (
-                  <>
-                    {detail.fulfillment.address.address2}
-                    <br />
-                  </>
-                )}
-                {detail.fulfillment.address.city},{" "}
-                {detail.fulfillment.address.region}{" "}
-                {detail.fulfillment.address.postalCode}
-                <br />
-                {detail.fulfillment.address.country}
-              </address>
+              {detail.fulfillment.method === "pickup" &&
+              !detail.fulfillment.address ? (
+                <p className="text-text-secondary m-0">
+                  Hold at the Vancouver studio. No shipping address on file.
+                </p>
+              ) : detail.fulfillment.address ? (
+                <address className="not-italic text-text-secondary">
+                  {detail.fulfillment.address.address1}
+                  <br />
+                  {detail.fulfillment.address.address2 && (
+                    <>
+                      {detail.fulfillment.address.address2}
+                      <br />
+                    </>
+                  )}
+                  {detail.fulfillment.address.city},{" "}
+                  {detail.fulfillment.address.region}{" "}
+                  {detail.fulfillment.address.postalCode}
+                  <br />
+                  {detail.fulfillment.address.country}
+                </address>
+              ) : null}
               {detail.fulfillment.deliveryNotes && (
                 <p className="border-t border-fill-subtle mt-2 pt-2 mb-0 whitespace-pre-wrap">
                   Delivery note: {detail.fulfillment.deliveryNotes}
@@ -230,9 +340,9 @@ export default async function AdminJobDetailPage({
             storefrontProductId?: string;
             productMetadata?: string;
           };
-          const snapshotTotalMinor =
-            configuration?.pricing?.breakdown?.totals?.totalMinor ??
-            configuration?.pricing?.breakdown?.totalMinor;
+          const snapshotTotalMinor = lineSnapshotTotalMinor(
+            configuration?.pricing,
+          );
           const artworkProofUrl = configuration?.artworkProofUrl;
           const designProjectId = configuration?.designProjectId;
           const roster = configuration?.roster;
@@ -473,13 +583,19 @@ export default async function AdminJobDetailPage({
           )}
           <form action={createProofAction} className="space-y-2">
             <input type="hidden" name="jobId" value={detail.id} />
+            <input
+              type="hidden"
+              name="customerPersonId"
+              value={detail.customerPersonId}
+            />
             <label className="block text-sm font-semibold">
-              Storage key / URL
+              Proof file
               <input
-                name="storageKey"
+                name="file"
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml"
                 required
-                placeholder="local://proofs/job-v1.png or https://…"
-                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
+                className="block mt-1 w-full text-sm"
               />
             </label>
             <label className="block text-sm font-semibold">
@@ -507,7 +623,9 @@ export default async function AdminJobDetailPage({
               key={entry.id}
               className="text-sm border-l-2 border-border pl-3"
             >
-              <span className="font-semibold">{entry.toStatus}</span>
+              <span className="font-semibold">
+                {jobStatusPresentation[entry.toStatus].label}
+              </span>
               {entry.reason ? ` — ${entry.reason}` : ""}
               <span className="text-text-tertiary">
                 {" "}
@@ -519,4 +637,19 @@ export default async function AdminJobDetailPage({
       </section>
     </div>
   );
+}
+
+function suggestedNextStatuses(
+  status: JobRequestStatus,
+  method?: string,
+): readonly JobRequestStatus[] {
+  const next = validNextStatuses(status);
+  if (status !== "in_production") return next;
+  if (method === "pickup") {
+    return next.filter((value) => value !== "shipped");
+  }
+  if (method && method !== "pickup") {
+    return next.filter((value) => value !== "ready_for_pickup");
+  }
+  return next;
 }

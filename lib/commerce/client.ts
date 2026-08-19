@@ -3,6 +3,7 @@ import {
   CommerceHeaders,
   CreateJobRequestSchema,
   FinalQuoteResponseSchema,
+  InvoiceRequestResponseSchema,
   JobRequestDetailResponseSchema,
   JobRequestListResponseSchema,
   JobRequestResponseSchema,
@@ -16,6 +17,7 @@ import {
   PublishedPricingConfigV2ResponseSchema,
   SubmitJobRequestSchema,
   type FinalQuoteResponse,
+  type InvoiceRequestResponse,
   type JobRequestDetailResponse,
   type JobRequestListResponse,
   type JobRequestResponse,
@@ -231,10 +233,14 @@ export class CommerceClient {
     token: string,
     personId: string,
     personEmail: string,
-  ): Promise<{ accountId: string }> {
+  ): Promise<{ accountId: string; storeSlug?: string | null; storeName?: string | null }> {
     return this.request(
       `/v1/accounts/invites/${encodeURIComponent(token)}/accept`,
-      z.object({ accountId: z.string() }),
+      z.object({
+        accountId: z.string(),
+        storeSlug: z.string().nullable().optional(),
+        storeName: z.string().nullable().optional(),
+      }),
       {
         method: "POST",
         headers: this.headers(),
@@ -339,9 +345,10 @@ export class CommerceClient {
 
   saveDesignProject(body: {
     name: string;
-    garmentProductId: string | null;
-    artworksBySide: unknown;
-    proofImageUrl: string | null;
+    garmentProductId?: string | null;
+    design?: unknown;
+    artworksBySide?: unknown;
+    proofImageUrl?: string | null;
   }) {
     return this.request("/v1/design-projects", z.record(z.unknown()), {
       method: "POST",
@@ -355,6 +362,7 @@ export class CommerceClient {
     body: Partial<{
       name: string;
       garmentProductId: string | null;
+      design: unknown;
       artworksBySide: unknown;
       proofImageUrl: string | null;
     }>,
@@ -721,6 +729,54 @@ export class CommerceClient {
     );
   }
 
+  issueInvoice(
+    id: string,
+    note: string | undefined,
+    adminToken: string,
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/issue-invoice`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          note,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  recordPayment(
+    id: string,
+    note: string,
+    adminToken: string,
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/record-payment`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          note,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
   transitionJobRequest(
     id: string,
     toStatus: string,
@@ -852,6 +908,49 @@ export class CommerceClient {
     return this.request(
       `/v1/job-requests/${encodeURIComponent(id)}/final-quotes/${encodeURIComponent(finalQuoteId)}/accept`,
       FinalQuoteResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          source: { system: "storefront" },
+        }),
+      },
+    );
+  }
+
+  respondToChanges(
+    id: string,
+    input: { note: string; storageKey?: string },
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/v1/job-requests/${encodeURIComponent(id)}/respond`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          note: input.note,
+          storageKey: input.storageKey,
+          source: { system: "storefront" },
+        }),
+      },
+    );
+  }
+
+  requestInvoice(id: string): Promise<InvoiceRequestResponse> {
+    return this.request(
+      `/v1/job-requests/${encodeURIComponent(id)}/invoice-request`,
+      InvoiceRequestResponseSchema,
       {
         method: "POST",
         headers: this.headers(),
@@ -1164,12 +1263,14 @@ export class CommerceClient {
   }
 }
 
-export async function createCommerceClient(): Promise<CommerceClient> {
+export async function createCommerceClient(
+  storeOverride?: Pick<CommerceIdentity, "tenantId" | "accountId" | "storeId">,
+): Promise<CommerceClient> {
   const baseUrl = process.env.COMMERCE_API_BASE_URL;
   if (!baseUrl) {
     throw new Error("COMMERCE_API_BASE_URL is required");
   }
-  const store = await resolveStoreContext();
+  const store = storeOverride ?? (await resolveStoreContext());
   const session = await getCustomerSession();
   // The real signed-in customer's personId, when there is one. Falls back
   // to the dev fixture identity only in development with no session —

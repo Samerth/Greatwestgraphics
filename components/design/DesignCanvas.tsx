@@ -22,7 +22,12 @@ function GarmentLayer({
   canvasSize: number;
   mirrored: boolean;
 }) {
-  const [image] = useImage(src, "anonymous");
+  // Same-origin URLs (/_next/image, /api/uploads) must not request CORS.
+  // Next's optimizer does not send Access-Control-Allow-Origin, so
+  // crossOrigin=anonymous makes the garment fail to paint and the canvas
+  // reads as a black box. Same-origin pixels are already readable for proofs.
+  const sameOrigin = src.startsWith("/") && !src.startsWith("//");
+  const [image] = useImage(src, sameOrigin ? undefined : "anonymous");
   if (!image) return null;
 
   const scale = Math.min(
@@ -63,7 +68,7 @@ export default function DesignCanvas({
   canvasSize: number;
   garmentImageUrl: string;
   mirrorGarment: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   stageRef: React.RefObject<any>;
   onSelect: (id: string) => void;
   onChange: (next: PlacedArtwork) => void;
@@ -102,11 +107,13 @@ export default function DesignCanvas({
       >
         <Layer>
           <Group scaleX={displayScale} scaleY={displayScale}>
-            <GarmentLayer
-              src={garmentImageUrl}
-              canvasSize={canvasSize}
-              mirrored={mirrorGarment}
-            />
+            {garmentImageUrl ? (
+              <GarmentLayer
+                src={garmentImageUrl}
+                canvasSize={canvasSize}
+                mirrored={mirrorGarment}
+              />
+            ) : null}
             {artworks.map((a) => (
               <ArtworkLayer
                 key={a.id}

@@ -1,6 +1,6 @@
 /**
  * Edge-safe session HMAC helpers (Web Crypto).
- * Usable from Next.js middleware (Edge) and Node server actions.
+ * Usable from the Next.js proxy (Edge) and Node server actions.
  */
 
 const FALLBACK_DEV_SECRET = "dev-insecure-session-secret";

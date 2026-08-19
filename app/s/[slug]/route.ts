@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { STORE_COOKIE, storeCookieOptions } from "@/lib/commerce/store-cookie";
+import {
+  isStoreSlug,
+  safeInternalNextPath,
+  STORE_COOKIE,
+  storeCookieOptions,
+} from "@/lib/commerce/store-cookie";
 
 /**
  * Entry point for a branded storefront: `/s/acme` selects that store and drops
@@ -11,16 +16,19 @@ import { STORE_COOKIE, storeCookieOptions } from "@/lib/commerce/store-cookie";
  * that wasn't rewritten.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await context.params;
   const normalized = slug.trim().toLowerCase();
+  const nextPath = safeInternalNextPath(new URL(request.url).searchParams.get("next"));
 
   const base = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
-  const response = NextResponse.redirect(new URL("/", base || "http://localhost:3000"));
+  const response = NextResponse.redirect(
+    new URL(nextPath, base || "http://localhost:3000"),
+  );
 
-  if (!/^[a-z0-9-]{2,63}$/.test(normalized)) {
+  if (!isStoreSlug(normalized)) {
     response.cookies.delete(STORE_COOKIE);
     return response;
   }

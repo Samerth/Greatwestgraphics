@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { getCustomerSession } from "@/lib/auth/session";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
+import {
+  isStoreSlug,
+  STORE_COOKIE,
+  storeCookieOptions,
+} from "@/lib/commerce/store-cookie";
 
 const BodySchema = z.object({ token: z.string().min(1) });
 
@@ -17,7 +22,11 @@ export async function POST(request: Request) {
     const { token } = BodySchema.parse(await request.json());
     const client = await createCommerceClient();
     const result = await client.acceptAccountInvite(token, session.personId, session.email);
-    return NextResponse.json(result);
+    const response = NextResponse.json(result);
+    if (result.storeSlug && isStoreSlug(result.storeSlug)) {
+      response.cookies.set(STORE_COOKIE, result.storeSlug, storeCookieOptions());
+    }
+    return response;
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json(

@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Field, Textarea } from "./FormField";
 import { Button } from "@/components/shared/Button";
 import { cn } from "@/lib/utils/cn";
-import { useCartStore } from "@/lib/store/cart";
+import { useVisibleCartItems } from "@/lib/store/cart";
 import { DELIVERY_FEES, type DeliveryKey } from "@/lib/schemas/checkout";
 import { money } from "@/lib/utils/quote-pricing";
 
@@ -81,12 +81,12 @@ export function PaymentStep({
   error?: string;
   delivery?: DeliveryKey;
 }) {
-  const items = useCartStore((s) => s.items);
+  const items = useVisibleCartItems();
   const [tab, setTab] = useState<PayTab>("card");
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ReviewValues>({
     resolver: zodResolver(reviewSchema),
@@ -100,7 +100,7 @@ export function PaymentStep({
   const deliveryFee = DELIVERY_FEES[delivery] ?? 0;
   const estimated = subtotal + deliveryFee;
   const deposit = estimated * 0.5;
-  const depositNow = watch("depositNow");
+  const depositNow = useWatch({ control, name: "depositNow" });
 
   return (
     <form

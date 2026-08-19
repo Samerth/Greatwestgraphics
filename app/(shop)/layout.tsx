@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { loadStorefrontCategories } from "@/lib/commerce/catalog";
 import { createCommerceClient } from "@/lib/commerce/client";
 import {
-  isAccountManagementPath,
+  isPendingStoreAllowedPath,
   PATHNAME_HEADER,
 } from "@/lib/commerce/store-cookie";
 import { getCustomerSession } from "@/lib/auth/session";
@@ -16,8 +16,10 @@ import {
 } from "@/lib/commerce/store-context";
 import { brandColorVars } from "@/lib/utils/color";
 import { OrganizationJsonLd } from "@/components/shared/OrganizationJsonLd";
+import { StorefrontSync } from "@/components/store/StorefrontSync";
+import type { StoreMembershipState } from "@/lib/commerce/membership";
 
-type Membership = "n/a" | "signed-out" | "not-a-member" | "member";
+type Membership = StoreMembershipState;
 
 /**
  * Whether the visitor belongs to the store they are looking at.
@@ -68,15 +70,14 @@ export default async function ShopLayout({
   const membership = await storeMembership(store, customerSession?.personId);
 
   // A store awaiting approval must not be shoppable, but its owner still has
-  // to reach the pages that are about their account rather than about the
-  // shop -- inviting teammates above all, which is the one thing there is to
-  // do while waiting. Gating the whole route group sealed the owner out of the
-  // team page the moment they created the store it belongs to.
-  const managingAccount = isAccountManagementPath(
+  // to reach account pages (invites) and the design studio so the team can
+  // prepare artwork while they wait. Gating the whole route group sealed
+  // those out the moment they created the store.
+  const allowedWhilePending = isPendingStoreAllowedPath(
     (await headers()).get(PATHNAME_HEADER) ?? "",
   );
 
-  if (store.status !== "active" && !managingAccount) {
+  if (store.status !== "active" && !allowedWhilePending) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6 text-center">
         <div>
@@ -100,6 +101,7 @@ export default async function ShopLayout({
 
   return (
     <div style={brandVars as React.CSSProperties | undefined}>
+      <StorefrontSync slug={store.slug} isPublic={store.isPublic} />
       {!isBranded && <OrganizationJsonLd />}
       {isBranded && (
         <div className="bg-fill-subtle border-b border-border text-sm">
