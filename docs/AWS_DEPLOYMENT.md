@@ -66,7 +66,58 @@ export CONFIG_FILE=config.staging.env
 ./scripts/17-roll-ecs.sh
 ```
 
+Vercel is not part of this path. `vercel.json` turns off Git auto-deploys.
+Disconnect the GitHub integration in the Vercel project settings so it stops
+building at all. The storefront on AWS is the Next.js container behind
+CloudFront; Vercel cannot run the Fastify commerce API.
+
 Images run as non-root (`node`). Do not run migrations inside the app containers.
+
+## Staging vs production
+
+Both stacks are full copies: their own VPC, RDS, Cognito, S3, ECS, ALB, and
+CloudFront. They share only the ECR repos (`gwg-web`, `gwg-commerce-api`).
+That is the point — the image you tried on staging is the image you promote.
+
+| | Staging (`gwg-staging`) | Production (`gwg-prod`) |
+| --- | --- | --- |
+| Purpose | Break things. Client demos. Sign-off. | Live customers. |
+| How code gets there | Push to `main` builds images and rolls staging | A person chooses to promote. Never automatic. |
+| Data | Its own database and uploads | Its own database and uploads. Never copy live PII back. |
+| URL | `https://d1so4a0f4v7ki5.cloudfront.net` | Custom domain, once `14-create-cloudfront.sh` + DNS |
+
+Do not treat a Vercel URL as staging. It has no API.
+
+### How a “promote this SHA to prod” job would work
+
+ECR already tags every `main` build with the Git commit, e.g.
+`gwg-web:289b4002b977…` and `gwg-commerce-api:289b4002b977…`. Staging
+currently follows `:latest` (whatever `main` last built). Production should
+not.
+
+A manual promote is a GitHub Action you click — **Actions → Promote to
+production → Run workflow** — with one input: the commit SHA that staging
+already runs. The job does **not** rebuild. It points `gwg-prod-web` and
+`gwg-prod-api` at those two existing tags and starts a new deployment.
+
+That is different from bouncing `:latest`. If you bounce prod on `:latest` a
+week later, you may ship a newer `main` than the one you tested. Promoting a
+SHA ships exactly the pair of images you signed off.
+
+Before that job exists, the same move in CloudShell is:
+
+```sh
+export CONFIG_FILE=config.env          # production
+export IMAGE_TAG=<the-staging-sha>
+./scripts/09-create-ecs.sh             # registers task defs on that tag
+```
+
+Migrations stay a separate, reviewed step against the **prod** RDS
+(`02-migrate-drizzle.sh` with the prod config). Never migrate as a side
+effect of starting a container.
+
+This promote job is not wired yet. Staging auto-roll is. Do not add an
+automatic prod roll.
 
 ## Health checks
 

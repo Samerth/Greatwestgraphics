@@ -30,8 +30,8 @@ function withVisibility(payload: unknown): StoreContext {
 
 const DEV_HOST_PREFIXES = ["localhost", "127.0.0.1", "[::1]"];
 
-/** Public marketing-shell identity when no store can be resolved (e.g. Vercel
- * preview hosts without a `custom_domain` row). Catalog calls still require
+/** Public marketing-shell identity when no store can be resolved (hosts
+ * without a `custom_domain` row). Catalog calls still require
  * `COMMERCE_API_BASE_URL` + real tenant headers; loaders already degrade. */
 export const PUBLIC_STOREFRONT_FALLBACK: StoreContext = {
   tenantId: "",

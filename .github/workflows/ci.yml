@@ -73,16 +73,3 @@ jobs:
           CI: true
       - name: Dependency audit (high+)
         run: npm audit --audit-level=high
-
-  docker:
-    name: Docker images
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build web image
-        run: docker build -t gwg-web:ci .
-      - name: Build commerce-api image
-        run: docker build -f services/commerce-api/Dockerfile -t gwg-commerce-api:ci .
