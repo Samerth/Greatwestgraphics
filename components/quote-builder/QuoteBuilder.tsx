@@ -612,29 +612,29 @@ export function QuoteBuilder({
           </div>
 
           <div>
-            <div className="text-[13px] text-white/75 mb-1">Per shirt</div>
-            <div className="text-[28px] font-display font-bold text-white">
+            <div className="text-[13px] text-text-secondary mb-1">Per shirt</div>
+            <div className="text-[28px] font-display font-bold text-text-primary">
               <AnimatedNumber value={perPieceMinor / 100} />
             </div>
           </div>
 
-          <div className="border-t border-white/10 pt-sp-4">
-            <div className="text-[12px] text-white/70 mb-2">Order total</div>
+          <div className="border-t border-border pt-sp-4">
+            <div className="text-[12px] text-text-secondary mb-2">Order total</div>
             <div className="flex items-baseline gap-2">
               <span className="text-[24px] font-display font-bold text-accent">
                 <AnimatedNumber value={breakdown.totals.totalMinor / 100} />
               </span>
-              <span className="text-[12px] text-white/60">
+              <span className="text-[12px] text-text-tertiary">
                 for {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}
               </span>
             </div>
           </div>
 
           {oneTimeLines.length > 0 && (
-            <div className="border border-white/10 rounded-sm bg-white/5 overflow-hidden">
+            <div className="border border-border rounded-sm bg-bg-raised overflow-hidden">
               <button
                 type="button"
-                className="w-full flex justify-between items-center px-4 py-3 text-sm font-semibold hover:bg-white/10 transition-colors"
+                className="w-full flex justify-between items-center px-4 py-3 text-sm font-semibold hover:bg-fill-subtle-15 transition-colors"
                 onClick={() => setSetupOpen((v) => !v)}
               >
                 <span>
@@ -643,11 +643,11 @@ export function QuoteBuilder({
                 <span className="text-[12px]">{setupOpen ? "▲" : "▼"}</span>
               </button>
               {setupOpen && (
-                <ul className="px-4 pb-3 pt-2 text-[12px] text-white/75 space-y-1.5 border-t border-white/10">
+                <ul className="px-4 pb-3 pt-2 text-[12px] text-text-secondary space-y-1.5 border-t border-border">
                   {oneTimeLines.map((line) => (
                     <li key={line.label} className="flex justify-between gap-3">
                       <span>{line.label}</span>
-                      <span className="font-semibold text-white">
+                      <span className="font-semibold text-text-primary">
                         {moneyFromMinor(line.extendedAmountMinor)}
                       </span>
                     </li>
@@ -657,7 +657,7 @@ export function QuoteBuilder({
             </div>
           )}
 
-          <div className="text-[12px] text-white/70 space-y-1">
+          <div className="text-[12px] text-text-secondary space-y-1">
             <div>
               ⏱️{" "}
               {QB_METHOD_DAYS[methodKey as keyof typeof QB_METHOD_DAYS] ??
@@ -666,7 +666,7 @@ export function QuoteBuilder({
             <div>📦 {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}</div>
           </div>
 
-          <p className="text-[11px] text-white/60 italic">
+          <p className="text-[11px] text-text-tertiary italic">
             {needsArtworkReview
               ? "Estimated from a 1-colour print — final price confirmed by our team within 1 business day."
               : "Estimated from your selections — final price confirmed when we review your artwork."}

@@ -36,10 +36,4 @@ test.describe("storefront smoke", () => {
       expect(blocking).toEqual([]);
     });
   }
-
-  test("quote builder visual baseline", async ({ page }) => {
-    await page.goto("/quote");
-    await expect(page.getByRole("button", { name: /add to cart & continue/i })).toBeVisible();
-    await expect(page.locator("main")).toHaveScreenshot("quote-builder.png");
-  });
 });

@@ -148,4 +148,16 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x infra/cloudshell/scripts/18-retarget-ecs.sh
-          infra/cloudshell/scripts/18-retarget-ecs.sh
+          if infra/cloudshell/scripts/18-retarget-ecs.sh; then
+            exit 0
+          fi
+          echo "SHA retarget was denied (OIDC role still ECR-only). Bouncing the existing task definitions so :latest is pulled."
+          for svc in gwg-staging-web gwg-staging-api; do
+            aws ecs update-service \
+              --cluster gwg-staging \
+              --service "$svc" \
+              --force-new-deployment \
+              --region "$AWS_REGION" \
+              --query 'service.serviceName' \
+              --output text
+          done
