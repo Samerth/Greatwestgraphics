@@ -30,6 +30,10 @@ REPO_ID_PROBE="${GITHUB_REPO_ID:-2}"
 EXPECTED_SUBS=(
   "repo:$GITHUB_ORG/$GITHUB_REPO:ref:refs/heads/main"
   "repo:$GITHUB_ORG@$OWNER_ID_PROBE/$GITHUB_REPO@$REPO_ID_PROBE:ref:refs/heads/main"
+  "repo:$GITHUB_ORG/$GITHUB_REPO:environment:aws"
+  "repo:$GITHUB_ORG@$OWNER_ID_PROBE/$GITHUB_REPO@$REPO_ID_PROBE:environment:aws"
+  "repo:$GITHUB_ORG/$GITHUB_REPO:environment:production"
+  "repo:$GITHUB_ORG@$OWNER_ID_PROBE/$GITHUB_REPO@$REPO_ID_PROBE:environment:production"
 )
 
 problems=()

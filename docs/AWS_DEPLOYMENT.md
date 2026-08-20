@@ -57,16 +57,78 @@ docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/gwg-web:latest"
 docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/gwg-commerce-api:latest"
 ```
 
-A push to `main` runs `.github/workflows/aws-ecr.yml`, which moves `:latest`
-and force-deploys the `gwg-staging` ECS services. That roll does nothing for
-production. To bounce an environment by hand in CloudShell:
+A push to `main` runs `.github/workflows/aws-ecr.yml`, which pushes
+`gwg-web:<sha>` / `gwg-commerce-api:<sha>` (and `:latest`) then retargets
+**staging** to that SHA. Production does not move.
 
-```sh
-export CONFIG_FILE=config.staging.env
-./scripts/17-roll-ecs.sh
-```
+Vercel is not part of this path. `vercel.json` turns off Git auto-deploys.
+Disconnect the GitHub integration in the Vercel project settings so it stops
+building at all. The storefront on AWS is the Next.js container behind
+CloudFront; Vercel cannot run the Fastify commerce API.
 
 Images run as non-root (`node`). Do not run migrations inside the app containers.
+
+## Staging vs production
+
+Default CloudShell `config.env` is **prod** (`ENVIRONMENT=prod` → cluster
+`gwg-prod`). Staging is `CONFIG_FILE=config.staging.env`.
+
+Both stacks are full copies: their own VPC, RDS, Cognito, S3, ECS, ALB, and
+CloudFront. They share only the ECR repos (`gwg-web`, `gwg-commerce-api`).
+That is the point — the image you tried on staging is the image you promote.
+
+| | Staging (`gwg-staging`) | Production (`gwg-prod`) |
+| --- | --- | --- |
+| Purpose | Break things. Client demos. Sign-off. | Live customers. |
+| How code gets there | Push to `main` builds images and retargets staging to that SHA | **Actions → Promote to production** with that SHA. Never automatic. |
+| Data | Its own database and uploads | Its own database and uploads. Never copy live PII back. |
+| URL | `https://d1so4a0f4v7ki5.cloudfront.net` | Custom domain, once `14-create-cloudfront.sh` + DNS |
+
+Do not treat a Vercel URL as staging. It has no API.
+
+This environment cannot list your AWS account. Confirm prod from CloudShell:
+
+```sh
+export AWS_PAGER=""
+aws ecs describe-clusters --clusters gwg-prod --region ca-central-1 \
+  --query 'clusters[].{name:clusterName,status:status,services:activeServicesCount}'
+aws ecs describe-services --cluster gwg-prod --services gwg-prod-web gwg-prod-api \
+  --region ca-central-1 \
+  --query 'services[].{name:serviceName,td:taskDefinition,running:runningCount,desired:desiredCount}'
+```
+
+`activeServicesCount` should be 2. If the cluster is missing, run the
+CloudShell pack with default `config.env` (prod), not `config.staging.env`.
+
+### Promote this SHA to prod
+
+ECR tags every `main` build with the Git commit. Staging is pointed at that
+SHA automatically. Production stays put until someone promotes.
+
+1. Confirm staging is healthy on the SHA you want.
+2. GitHub → **Settings → Environments → production**: add a required reviewer
+   so one click cannot ship unattended. First run will create the environment
+   if it does not exist.
+3. Re-run `./scripts/07-create-ecr.sh` once (prod config is fine) so the OIDC
+   role trusts `environment:production` and can register task definitions.
+4. **Actions → Promote to production → Run workflow** → paste the **full
+   40-character SHA**. The job does not rebuild. It points `gwg-prod-web` and
+   `gwg-prod-api` at `gwg-web:<sha>` and `gwg-commerce-api:<sha>`.
+
+Same move in CloudShell:
+
+```sh
+export AWS_REGION=ca-central-1
+export CLUSTER=gwg-prod
+export IMAGE_TAG=<the-staging-sha>
+./scripts/18-retarget-ecs.sh
+```
+
+Rollback is the same job with the previous SHA.
+
+Migrations stay a separate, reviewed step against the **prod** RDS
+(`02-migrate-drizzle.sh` with default `config.env`). Never migrate as a side
+effect of starting a container. Never auto-roll production from `main`.
 
 ## Health checks
 
