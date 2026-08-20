@@ -106,11 +106,12 @@ ECR tags every `main` build with the Git commit. Staging is pointed at that
 SHA automatically. Production stays put until someone promotes.
 
 1. Confirm staging is healthy on the SHA you want.
-2. GitHub → **Settings → Environments → production**: add a required reviewer
-   so one click cannot ship unattended. First run will create the environment
-   if it does not exist.
-3. Re-run `./scripts/07-create-ecr.sh` once (prod config is fine) so the OIDC
-   role trusts `environment:production` and can register task definitions.
+2. Promote uses the existing GitHub Environment **aws** (the OIDC role already
+   trusts that subject). Vercel owns an environment named `Production`; do not
+   point this workflow at it.
+3. Re-run `./scripts/07-create-ecr.sh` once so the OIDC role can
+   `RegisterTaskDefinition` / `PassRole`. Until then, staging falls back to
+   bouncing `:latest`. Production promote will fail until that IAM refresh.
 4. **Actions → Promote to production → Run workflow** → paste the **full
    40-character SHA**. The job does not rebuild. It points `gwg-prod-web` and
    `gwg-prod-api` at `gwg-web:<sha>` and `gwg-commerce-api:<sha>`.
