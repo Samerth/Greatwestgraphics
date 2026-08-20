@@ -35,10 +35,17 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text --region
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
 for repo in gwg-web gwg-commerce-api; do
-  aws ecr describe-images \
+  # BatchGetImage is on the existing OIDC role; DescribeImages is not.
+  found="$(aws ecr batch-get-image \
     --repository-name "$repo" \
     --image-ids "imageTag=$IMAGE_TAG" \
-    --region "$AWS_REGION" >/dev/null
+    --region "$AWS_REGION" \
+    --query 'images[0].imageId.imageTag' \
+    --output text)"
+  if [[ -z "$found" || "$found" == "None" ]]; then
+    echo "No image $repo:$IMAGE_TAG in ECR" >&2
+    exit 1
+  fi
 done
 
 retarget() {
