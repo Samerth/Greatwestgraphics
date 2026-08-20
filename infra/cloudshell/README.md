@@ -32,7 +32,8 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 | 15 | `15-copy-database.sh` | Nothing. Copies catalogue and pricing rows from one environment into another. |
 | 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
-| 17 | `17-roll-ecs.sh` | Nothing new. Restarts the web and API tasks so they pull the `:latest` (or `IMAGE_TAG`) already on the task definition |
+| 17 | `17-roll-ecs.sh` | Nothing new. Restarts the web and API tasks so they pull the tag already on the task definition |
+| 18 | `18-retarget-ecs.sh` | Registers new task defs pointing at an existing ECR SHA and deploys. `CLUSTER=gwg-staging` or `gwg-prod` |
 
 ## Running more than one environment
 
@@ -278,10 +279,12 @@ step 7:
    `main`. Only `main` moves the `latest` tag, so a branch build publishes its
    commit SHA alone — deploy it by passing that SHA as `IMAGE_TAG`.
 4. Re-run `./scripts/09-create-ecs.sh` so desired count becomes 1
-5. Later deploys: a push to `main` builds `:latest` and the same workflow
-   force-deploys `gwg-staging`. If the roll step is skipped (the OIDC role
-   still lacks `ecs:UpdateService`), re-run `./scripts/07-create-ecr.sh` once,
-   or bounce now with `CONFIG_FILE=config.staging.env ./scripts/17-roll-ecs.sh`
+5. Later deploys: a push to `main` builds the commit SHA and `:latest`, then
+   retargets `gwg-staging` to that SHA. Production is never rolled from that
+   workflow. Promote with **Actions → Promote to production**, or
+   `CLUSTER=gwg-prod IMAGE_TAG=<sha> ./scripts/18-retarget-ecs.sh`. Re-run
+   `./scripts/07-create-ecr.sh` once so the OIDC role can
+   `RegisterTaskDefinition` / `UpdateService`.
 
 Use the workflow's OIDC role, not an access key. CloudShell credentials are
 temporary: they expire and need a session token, so pasting them into

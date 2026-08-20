@@ -137,21 +137,15 @@ jobs:
             docker push "$registry/gwg-commerce-api:latest"
           fi
 
-      # Task definitions now follow :latest. A push that only updates ECR leaves
-      # Fargate on the previous digest until a new deployment starts. Staging
-      # only — never prod. continue-on-error until the OIDC role has been
-      # re-run through 07-create-ecr.sh to pick up ecs:UpdateService.
+      # Pin staging to this commit's images. Production is never rolled here;
+      # use workflow "Promote to production". Fail the job if the OIDC role
+      # cannot UpdateService / RegisterTaskDefinition — re-run 07-create-ecr.sh.
       - name: Roll staging
         if: github.ref == 'refs/heads/main'
-        continue-on-error: true
+        env:
+          CLUSTER: gwg-staging
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for svc in gwg-staging-web gwg-staging-api; do
-            aws ecs update-service \
-              --cluster gwg-staging \
-              --service "$svc" \
-              --force-new-deployment \
-              --region "$AWS_REGION" \
-              --query 'service.serviceName' \
-              --output text
-          done
+          chmod +x infra/cloudshell/scripts/18-retarget-ecs.sh
+          infra/cloudshell/scripts/18-retarget-ecs.sh

@@ -1,0 +1,52 @@
+name: Promote to production
+
+# Ships the exact ECR images already built for a Git SHA onto gwg-prod.
+# Does not rebuild. Does not migrate RDS. Does not touch staging.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-character Git SHA whose images already run on staging
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  promote:
+    name: Point gwg-prod at the SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      AWS_REGION: ca-central-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deploy role secret
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::AWS_ROLE_TO_ASSUME is not set."
+            exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Retarget production
+        env:
+          CLUSTER: gwg-prod
+          IMAGE_TAG: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          sha="$(printf '%s' "$IMAGE_TAG" | tr 'A-F' 'a-f' | tr -d '[:space:]')"
+          export IMAGE_TAG="$sha"
+          chmod +x infra/cloudshell/scripts/18-retarget-ecs.sh
+          infra/cloudshell/scripts/18-retarget-ecs.sh

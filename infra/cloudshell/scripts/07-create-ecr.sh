@@ -54,19 +54,21 @@ ROLE_NAME="$NAME_PREFIX-github-ecr"
 # login nor a repository name may contain "@", so the wildcard can only ever
 # stand in for that trailing ID and cannot widen the match to another repo.
 TRUST="$(jq -nc --arg account "$ACCOUNT_ID" --arg org "$GITHUB_ORG" --arg repo "$GITHUB_REPO" \
-  '{Version:"2012-10-17",Statement:[{Effect:"Allow",Principal:{Federated:"arn:aws:iam::\($account):oidc-provider/token.actions.githubusercontent.com"},Action:["sts:AssumeRoleWithWebIdentity","sts:TagSession"],Condition:{StringEquals:{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},StringLike:{"token.actions.githubusercontent.com:sub":["repo:\($org)/\($repo):ref:refs/heads/main","repo:\($org)@*/\($repo)@*:ref:refs/heads/main","repo:\($org)/\($repo):environment:aws","repo:\($org)@*/\($repo)@*:environment:aws"]}}}]}')"
-# Staging is always granted: the GitHub secret is often the prod-named role
-# (gwg-prod-github-ecr), and that is the identity that must bounce staging
-# after :latest moves. Production services are included only when this run
-# is the prod prefix so a staging-only re-run cannot widen itself to prod.
-POLICY="$(jq -nc --arg account "$ACCOUNT_ID" --arg region "$AWS_REGION" --arg prefix "$NAME_PREFIX" \
+  '{Version:"2012-10-17",Statement:[{Effect:"Allow",Principal:{Federated:"arn:aws:iam::\($account):oidc-provider/token.actions.githubusercontent.com"},Action:["sts:AssumeRoleWithWebIdentity","sts:TagSession"],Condition:{StringEquals:{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},StringLike:{"token.actions.githubusercontent.com:sub":["repo:\($org)/\($repo):ref:refs/heads/main","repo:\($org)@*/\($repo)@*:ref:refs/heads/main","repo:\($org)/\($repo):environment:aws","repo:\($org)@*/\($repo)@*:environment:aws","repo:\($org)/\($repo):environment:production","repo:\($org)@*/\($repo)@*:environment:production"]}}}]}')"
+# GitHub's AWS_ROLE_TO_ASSUME is the prod-named role. It must be able to roll
+# staging on every main push and to retarget prod only when the promote
+# workflow runs. RegisterTaskDefinition + PassRole are required to change the
+# image; UpdateService alone restarts the previous tag.
+POLICY="$(jq -nc --arg account "$ACCOUNT_ID" --arg region "$AWS_REGION" \
   '{
     Version: "2012-10-17",
     Statement: [
       {Effect:"Allow",Action:["ecr:GetAuthorizationToken"],Resource:"*"},
-      {Effect:"Allow",Action:["ecr:BatchCheckLayerAvailability","ecr:CompleteLayerUpload","ecr:InitiateLayerUpload","ecr:PutImage","ecr:UploadLayerPart","ecr:BatchGetImage","ecr:DescribeRepositories"],Resource:["arn:aws:ecr:\($region):\($account):repository/gwg-web","arn:aws:ecr:\($region):\($account):repository/gwg-commerce-api"]},
-      {Effect:"Allow",Action:["ecs:DescribeClusters"],Resource:["arn:aws:ecs:\($region):\($account):cluster/gwg-staging","arn:aws:ecs:\($region):\($account):cluster/\($prefix)"]},
-      {Effect:"Allow",Action:["ecs:UpdateService","ecs:DescribeServices"],Resource:["arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-web","arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-api","arn:aws:ecs:\($region):\($account):service/\($prefix)/\($prefix)-web","arn:aws:ecs:\($region):\($account):service/\($prefix)/\($prefix)-api"]}
+      {Effect:"Allow",Action:["ecr:BatchCheckLayerAvailability","ecr:CompleteLayerUpload","ecr:InitiateLayerUpload","ecr:PutImage","ecr:UploadLayerPart","ecr:BatchGetImage","ecr:DescribeImages","ecr:DescribeRepositories"],Resource:["arn:aws:ecr:\($region):\($account):repository/gwg-web","arn:aws:ecr:\($region):\($account):repository/gwg-commerce-api"]},
+      {Effect:"Allow",Action:["ecs:RegisterTaskDefinition","ecs:DescribeTaskDefinition"],Resource:"*"},
+      {Effect:"Allow",Action:["ecs:DescribeClusters"],Resource:["arn:aws:ecs:\($region):\($account):cluster/gwg-staging","arn:aws:ecs:\($region):\($account):cluster/gwg-prod"]},
+      {Effect:"Allow",Action:["ecs:UpdateService","ecs:DescribeServices"],Resource:["arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-web","arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-api","arn:aws:ecs:\($region):\($account):service/gwg-prod/gwg-prod-web","arn:aws:ecs:\($region):\($account):service/gwg-prod/gwg-prod-api"]},
+      {Effect:"Allow",Action:["iam:PassRole"],Resource:["arn:aws:iam::\($account):role/gwg-staging-ecs-task","arn:aws:iam::\($account):role/gwg-staging-ecs-execution","arn:aws:iam::\($account):role/gwg-prod-ecs-task","arn:aws:iam::\($account):role/gwg-prod-ecs-execution"],Condition:{StringEquals:{"iam:PassedToService":"ecs-tasks.amazonaws.com"}}}
     ]
   }')"
 
@@ -84,5 +86,5 @@ echo "ECR web:  $WEB_REPO"
 echo "ECR api:  $API_REPO"
 echo "GitHub OIDC role: $GITHUB_ECR_ROLE_ARN"
 echo "Add GitHub Actions secret AWS_ROLE_TO_ASSUME with that ARN, then run workflow aws-ecr.yml"
-echo "This role may also force-deploy gwg-staging after :latest moves."
+echo "This role may retarget gwg-staging (main push) and gwg-prod (Promote to production)."
 echo "Do not docker build the Next.js image in CloudShell (2 GiB RAM is usually too small)."

@@ -56,12 +56,10 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck:all
-      - name: Unit tests
-        run: npm test
       - name: Migrate and seed test database
         run: npm run db:migrate && npm run db:seed
-      - name: PostgreSQL integration tests
-        run: npm test --workspace @gwg/commerce-api
+      - name: Tests
+        run: npm test
       - name: Production build
         run: npm run build:all
       - name: Install Playwright Chromium
