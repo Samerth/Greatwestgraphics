@@ -57,6 +57,15 @@ docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/gwg-web:latest"
 docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/gwg-commerce-api:latest"
 ```
 
+A push to `main` runs `.github/workflows/aws-ecr.yml`, which moves `:latest`
+and force-deploys the `gwg-staging` ECS services. That roll does nothing for
+production. To bounce an environment by hand in CloudShell:
+
+```sh
+export CONFIG_FILE=config.staging.env
+./scripts/17-roll-ecs.sh
+```
+
 Images run as non-root (`node`). Do not run migrations inside the app containers.
 
 ## Health checks

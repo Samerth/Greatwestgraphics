@@ -32,6 +32,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 14 | `14-create-cloudfront.sh` | CloudFront distribution with HTTPS on a `*.cloudfront.net` name |
 | 15 | `15-copy-database.sh` | Nothing. Copies catalogue and pricing rows from one environment into another. |
 | 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
+| 17 | `17-roll-ecs.sh` | Nothing new. Restarts the web and API tasks so they pull the `:latest` (or `IMAGE_TAG`) already on the task definition |
 
 ## Running more than one environment
 
@@ -277,6 +278,10 @@ step 7:
    `main`. Only `main` moves the `latest` tag, so a branch build publishes its
    commit SHA alone — deploy it by passing that SHA as `IMAGE_TAG`.
 4. Re-run `./scripts/09-create-ecs.sh` so desired count becomes 1
+5. Later deploys: a push to `main` builds `:latest` and the same workflow
+   force-deploys `gwg-staging`. If the roll step is skipped (the OIDC role
+   still lacks `ecs:UpdateService`), re-run `./scripts/07-create-ecr.sh` once,
+   or bounce now with `CONFIG_FILE=config.staging.env ./scripts/17-roll-ecs.sh`
 
 Use the workflow's OIDC role, not an access key. CloudShell credentials are
 temporary: they expire and need a session token, so pasting them into
