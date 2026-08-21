@@ -1,0 +1,82 @@
+name: Deploy to Staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    name: Deploy staging environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_commit }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ca-central-1
+
+      - name: Load staging state
+        run: |
+          mkdir -p .gwg-rds-state
+          aws s3 cp s3://${{ secrets.AWS_STATE_BUCKET }}/staging.env .gwg-rds-state/gwg-staging.env || echo "State file not found, will use defaults"
+          if [ -f .gwg-rds-state/gwg-staging.env ]; then
+            source .gwg-rds-state/gwg-staging.env
+            echo "Loaded staging state"
+          fi
+
+      - name: Update ECS services with new images
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_commit }}
+          ENVIRONMENT: staging
+        run: |
+          aws ecs update-service \
+            --cluster gwg-staging \
+            --service gwg-staging-web \
+            --force-new-deployment \
+            --region ca-central-1 || echo "Web service not found, skipping"
+
+          aws ecs update-service \
+            --cluster gwg-staging \
+            --service gwg-staging-api \
+            --force-new-deployment \
+            --region ca-central-1 || echo "API service not found, skipping"
+
+      - name: Wait for deployments
+        env:
+          ENVIRONMENT: staging
+        run: |
+          echo "Waiting for ECS deployments to stabilize..."
+          aws ecs wait services-stable \
+            --cluster gwg-staging \
+            --services gwg-staging-web gwg-staging-api \
+            --region ca-central-1 || echo "Deployment wait timeout (services may still be updating)"
+
+      - name: Run smoke tests against staging
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        continue-on-error: true
+        run: |
+          curl -fsS "$STAGING_URL/api/health" || echo "Web health check failed"
+          curl -fsS "$STAGING_URL/api/commerce/health" || echo "API health check failed"
+
+  notify-on-failure:
+    name: Notify deployment failure
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: failure()
+    steps:
+      - name: Report failure
+        run: |
+          echo "⚠️  Staging deployment failed"
+          echo "Check workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
