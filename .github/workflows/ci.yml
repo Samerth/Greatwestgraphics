@@ -52,14 +52,14 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Lint
+            - name: Lint
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck:all
-      - name: Unit tests
-        run: npm test
       - name: Migrate and seed test database
         run: npm run db:migrate && npm run db:seed
+      - name: Unit tests
+        run: npm test
       - name: PostgreSQL integration tests
         run: npm test --workspace @gwg/commerce-api
       - name: Production build
