@@ -624,7 +624,7 @@ export function QuoteBuilder({
               <span className="text-[24px] font-display font-bold text-accent">
                 <AnimatedNumber value={breakdown.totals.totalMinor / 100} />
               </span>
-              <span className="text-[12px] text-text-tertiary">
+              <span className="text-[12px] text-text-secondary">
                 for {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}
               </span>
             </div>
@@ -666,7 +666,7 @@ export function QuoteBuilder({
             <div>📦 {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"}</div>
           </div>
 
-          <p className="text-[11px] text-text-tertiary italic">
+          <p className="text-[11px] text-text-secondary italic">
             {needsArtworkReview
               ? "Estimated from a 1-colour print — final price confirmed by our team within 1 business day."
               : "Estimated from your selections — final price confirmed when we review your artwork."}

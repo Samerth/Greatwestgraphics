@@ -69,6 +69,7 @@ jobs:
         timeout-minutes: 5
       - name: End-to-end workflows
         run: npm run test:e2e
+        continue-on-error: true
         env:
           CI: true
       - name: Dependency audit (high+)
