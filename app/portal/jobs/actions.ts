@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { CommerceApiError } from "@/lib/commerce/client";
 import { createPortalClientForJob } from "@/lib/commerce/portal-client";
@@ -160,6 +161,46 @@ export async function respondToChangesAction(
   return { ok: true };
 }
 
+
+export interface CardPaymentState {
+  error?: string;
+}
+
+/**
+ * Sends the customer to Stripe Checkout for an accepted quote.
+ *
+ * The redirect is thrown outside the try block on purpose: Next implements
+ * `redirect()` by throwing, so catching it here would turn a successful
+ * checkout into "we could not start the payment".
+ */
+export async function startCardPaymentAction(
+  jobId: string,
+  _previous: CardPaymentState,
+  _formData: FormData,
+): Promise<CardPaymentState> {
+  const session = await getCustomerSession();
+  if (!session) {
+    return { error: "Your session expired. Sign in again to pay." };
+  }
+
+  let checkoutUrl: string;
+  try {
+    const created = await (
+      await createPortalClientForJob(jobId)
+    ).createCheckoutSession(jobId);
+    checkoutUrl = created.checkoutUrl;
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof CommerceApiError
+          ? caught.message
+          : "We could not start the card payment. Please try again, or request an invoice instead.",
+    };
+  }
+
+  revalidatePath(`/portal/jobs/${jobId}`);
+  redirect(checkoutUrl);
+}
 export async function requestInvoiceAction(
   jobId: string,
   _previous: InvoiceRequestState,

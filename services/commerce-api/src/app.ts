@@ -1,7 +1,11 @@
 import {
   AcceptFinalQuoteSchema,
   CanonicalIdSchema,
+  CheckoutSessionResponseSchema,
   CommerceHeaders,
+  CreateCheckoutSessionSchema,
+  StripeWebhookRelaySchema,
+  StripeWebhookResultSchema,
   InvoiceRequestResponseSchema,
   IssueInvoiceSchema,
   CreateFinalQuoteSchema,
@@ -51,6 +55,12 @@ import {
   ResourceNotFoundError,
   ScopeMismatchError,
 } from "./application/job-request-service.js";
+import {
+  PaymentConfigurationError,
+  PaymentReconciliationError,
+  StripePaymentService,
+} from "./application/stripe-payment-service.js";
+import { StripeApiError, StripeClient } from "./adapters/stripe/client.js";
 import { ProofDecisionError } from "./domain/proof-decision.js";
 import {
   orderVisibilityFor,
@@ -86,7 +96,7 @@ import {
   InvalidServiceTokenError,
   secretsMatch,
 } from "./auth.js";
-import { adminRoutesEnabled, type Environment } from "./config.js";
+import { adminRoutesEnabled, stripeEnabled, type Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
@@ -218,6 +228,25 @@ export function buildApp(input: {
   const personService = new PersonService(input.db);
   const accountService = new AccountService(input.db);
   const inviteService = new InviteService(input.db);
+  // Absent a key there is no payment service at all, rather than one that
+  // fails deep inside a checkout the customer already started.
+  const stripePaymentService = stripeEnabled(input.environment)
+    ? new StripePaymentService(
+        input.db,
+        new StripeClient(input.environment.STRIPE_SECRET_KEY!),
+        service,
+        input.environment.SITE_BASE_URL,
+      )
+    : null;
+
+  function requireStripe(): StripePaymentService {
+    if (!stripePaymentService) {
+      throw new PaymentConfigurationError(
+        "Card payment is not enabled for this environment.",
+      );
+    }
+    return stripePaymentService;
+  }
 
   function staffActor(auth: AuthContext) {
     return {
@@ -528,6 +557,47 @@ export function buildApp(input: {
       );
     },
   );
+
+ /**
+   * Opens (or re-opens) Stripe Checkout for an accepted final quote.
+   *
+   * Customer-authenticated on the same `/v1` surface as the manual invoice
+   * request it sits beside; the job does not change status here, only when
+   * Stripe tells us money moved.
+   */
+  app.post(
+    "/v1/job-requests/:jobRequestId/checkout-session",
+    async (request) => {
+      const auth = await input.auth.resolve(request);
+      const jobRequestId = CanonicalIdSchema.parse(
+        (request.params as { jobRequestId?: string }).jobRequestId,
+      );
+      const command = CreateCheckoutSessionSchema.parse(request.body);
+      assertScope(auth, command.context);
+      return CheckoutSessionResponseSchema.parse(
+        await requireStripe().createCheckoutSession(
+          jobRequestId,
+          command,
+          { ...auth.actor, type: "customer" as const },
+          await customerPersonFilter(auth),
+        ),
+      );
+    },
+  );
+
+  /**
+   * Settlement path for a Stripe event the web tier already verified.
+   *
+   * Guarded by the admin token rather than the storefront service token: this
+   * marks jobs paid, and a leaked storefront credential must not be able to.
+   * Registered outside the dev-admin block because production needs it.
+   */
+  app.post("/internal/payments/stripe/event", async (request, reply) => {
+    assertAdmin(request, input.environment);
+    const relay = StripeWebhookRelaySchema.parse(request.body);
+    const result = await requireStripe().applyWebhookEvent(relay);
+    return reply.code(200).send(StripeWebhookResultSchema.parse(result));
+  });
 
   app.get("/v1/catalog/products", async (request) => {
     const auth = await input.auth.resolve(request);
@@ -1619,6 +1689,23 @@ export function buildApp(input: {
       statusCode = 409;
       code = error.code;
       message = error.message;
+    } else if (error instanceof PaymentReconciliationError) {
+      // Not the customer's problem to retry: the amounts disagree and staff
+      // have to look at it, so it is reported rather than swallowed.
+      statusCode = 409;
+      code = error.code;
+      message =
+        "This payment could not be matched to the quoted amount. Our team has been notified.";
+      request.log.error({ error }, "Stripe payment reconciliation failed");
+    } else if (error instanceof PaymentConfigurationError) {
+      statusCode = 503;
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof StripeApiError) {
+      statusCode = error.status >= 500 ? 502 : 400;
+      code = error.code;
+      message = "Card payment could not be started. Please try again.";
+      request.log.error({ error, stripeCode: error.stripeCode }, error.message);
     } else if (error instanceof ResourceNotFoundError) {
       statusCode = 404;
       code = error.code;

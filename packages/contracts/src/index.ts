@@ -660,6 +660,66 @@ export type StorefrontJobSubmission = z.infer<
   typeof StorefrontJobSubmissionSchema
 >;
 
+/**
+ * Card payment for an accepted final quote.
+ *
+ * No new job status: Checkout is an automatic trigger for the same
+ * `awaiting_payment -> paid` path staff drive by hand today, so a shop that
+ * keeps taking e-transfers is unaffected by this existing.
+ */
+export const CreateCheckoutSessionSchema = z.object({
+  context: RequestContextSchema,
+  /** Where Stripe returns the customer. Defaults to the job's portal page. */
+  successPath: z.string().max(500).optional(),
+  cancelPath: z.string().max(500).optional(),
+  source: SourceMetadataSchema.default({ system: "storefront" }),
+});
+export type CreateCheckoutSession = z.infer<typeof CreateCheckoutSessionSchema>;
+
+export const CheckoutSessionResponseSchema = z.object({
+  checkoutUrl: z.string().url(),
+  sessionId: z.string().min(1),
+  amountMinor: MinorAmountSchema,
+  currency: z.string().length(3),
+  expiresAt: z.string().datetime().nullable().default(null),
+});
+export type CheckoutSessionResponse = z.infer<
+  typeof CheckoutSessionResponseSchema
+>;
+
+/**
+ * A Stripe event the web tier has already signature-verified.
+ *
+ * Only identifiers travel: the amount is re-checked against our own recorded
+ * obligation inside the service, so nothing here can talk the API into marking
+ * a job paid for the wrong number.
+ */
+export const StripeWebhookRelaySchema = z.object({
+  context: RequestContextSchema,
+  eventId: z.string().min(1).max(255),
+  eventType: z.string().min(1).max(120),
+  sessionId: z.string().min(1).max(255),
+  paymentIntentId: z.string().min(1).max(255).nullable().default(null),
+  amountTotalMinor: z.number().int().nonnegative().nullable().default(null),
+  currency: z.string().length(3).nullable().default(null),
+  paymentStatus: z.string().min(1).max(60),
+  failureReason: z.string().max(500).nullable().default(null),
+});
+export type StripeWebhookRelay = z.infer<typeof StripeWebhookRelaySchema>;
+
+export const StripeWebhookResultSchema = z.object({
+  handled: z.boolean(),
+  status: z.enum([
+    "paid",
+    "processing",
+    "failed",
+    "expired",
+    "ignored",
+    "duplicate",
+  ]),
+});
+export type StripeWebhookResult = z.infer<typeof StripeWebhookResultSchema>;
+
 export const CommerceErrorResponseSchema = z.object({
   error: z.object({
     code: z.string(),

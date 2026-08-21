@@ -1,4 +1,5 @@
 import {
+  CheckoutSessionResponseSchema,
   CommerceErrorResponseSchema,
   CommerceHeaders,
   CreateJobRequestSchema,
@@ -16,6 +17,7 @@ import {
   PublishedPricingConfigResponseSchema,
   PublishedPricingConfigV2ResponseSchema,
   SubmitJobRequestSchema,
+  type CheckoutSessionResponse,
   type FinalQuoteResponse,
   type InvoiceRequestResponse,
   type JobRequestDetailResponse,
@@ -951,6 +953,32 @@ export class CommerceClient {
     return this.request(
       `/v1/job-requests/${encodeURIComponent(id)}/invoice-request`,
       InvoiceRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          source: { system: "storefront" },
+        }),
+      },
+    );
+  }
+
+  /**
+   * Starts a Stripe Checkout Session for this job.
+   *
+   * Deliberately shaped like `requestInvoice`: same route family, same scope
+   * headers, same session actor. The only difference is what comes back — a
+   * URL the caller redirects to.
+   */
+  createCheckoutSession(id: string): Promise<CheckoutSessionResponse> {
+    return this.request(
+      `/v1/job-requests/${encodeURIComponent(id)}/checkout-session`,
+      CheckoutSessionResponseSchema,
       {
         method: "POST",
         headers: this.headers(),

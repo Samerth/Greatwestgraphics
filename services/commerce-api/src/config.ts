@@ -58,6 +58,19 @@ const EnvironmentSchema = z
       .default("true")
       .transform((value) => value === "true"),
     OUTBOX_POLL_MS: z.coerce.number().int().min(1_000).default(30_000),
+    /**
+     * Card payments. Absent, `/v1/job-requests/:id/checkout-session` answers
+     * 503 and the portal simply does not offer the card button — the manual
+     * invoice path keeps working, which is how this shop ran before Stripe.
+     */
+    STRIPE_SECRET_KEY: z.string().min(1).optional(),
+    /**
+     * Verifies the webhook. Verification lives in the web tier (it has the raw
+     * body), so this belongs to whichever process serves /api/stripe/webhook;
+     * it is declared here too so a deployment that moves the webhook onto this
+     * service does not need a schema change.
+     */
+    STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
     SS_ACCOUNT_NUMBER: z.string().optional(),
     SS_API_KEY: z.string().optional(),
     SS_API_BASE_URL: z
@@ -110,6 +123,17 @@ const EnvironmentSchema = z
       });
     }
     if (
+      environment.STRIPE_SECRET_KEY?.startsWith("sk_live_") &&
+      environment.NODE_ENV !== "production"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["STRIPE_SECRET_KEY"],
+        message:
+          "A live Stripe key cannot be used outside production — staging tests would take real money",
+      });
+    }
+    if (
       environment.ADMIN_API_TOKEN &&
       environment.ADMIN_API_TOKEN === environment.COMMERCE_SERVICE_TOKEN
     ) {
@@ -123,6 +147,11 @@ const EnvironmentSchema = z
   });
 
 export type Environment = z.infer<typeof EnvironmentSchema>;
+
+/** Whether card payment can be offered at all. */
+export function stripeEnabled(environment: Environment): boolean {
+  return Boolean(environment.STRIPE_SECRET_KEY);
+}
 
 /** Whether the admin API is served: development flag, or a production token. */
 export function adminRoutesEnabled(environment: Environment): boolean {
