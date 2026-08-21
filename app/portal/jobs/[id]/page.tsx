@@ -11,16 +11,22 @@ import { ProofReview } from "@/components/portal/ProofReview";
 import { FinalQuoteReview } from "@/components/portal/FinalQuoteReview";
 import { ChangesReply } from "@/components/portal/ChangesReply";
 import { InvoiceRequest } from "@/components/portal/InvoiceRequest";
+import { PayNowButton } from "@/components/portal/PayNowButton";
 import { OrderHandoff } from "@/components/portal/OrderHandoff";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ payment?: string }>;
 }) {
   const { id } = await params;
+  // Stripe sends the customer back here. The banner is cosmetic only — the
+  // job's real status comes from the webhook, never from this query string.
+  const paymentReturn = (await searchParams)?.payment;
   const session = await getCustomerSession();
   if (!session) {
     redirect(`/account?next=/portal/jobs/${id}`);
@@ -72,6 +78,18 @@ export default async function JobDetailPage({
     (a, b) => b.version - a.version,
   )[0];
   const quoteAccepted = Boolean(latestQuote?.acceptedAt);
+  // The response carries no payment column, so "already paid" is read off the
+  // statuses that can only be reached after money arrived.
+  const alreadyPaid = (
+    [
+      "paid",
+      "ready_for_production",
+      "in_production",
+      "ready_for_pickup",
+      "shipped",
+      "completed",
+    ] as const
+  ).includes(job.status as never);
 
   return (
     <section className="py-sp-8">
@@ -240,11 +258,34 @@ export default async function JobDetailPage({
                     ? "Review and accept the latest final quote before requesting an invoice."
                     : "Payment stays locked until design approval and final pricing are complete."}
             </div>
-            {quoteAccepted ? (
-              <InvoiceRequest
-                jobId={job.id}
-                alreadyRequested={Boolean(job.invoiceRequestedAt)}
-              />
+            {paymentReturn === "success" && !alreadyPaid ? (
+              <p className="text-sm border border-border rounded-md p-sp-3 bg-fill-subtle-15">
+                Thanks — your card payment is confirming. This page updates as
+                soon as the bank settles it, usually within a minute.
+              </p>
+            ) : null}
+            {paymentReturn === "cancelled" ? (
+              <p className="text-sm border border-border rounded-md p-sp-3">
+                Payment cancelled. Nothing was charged — you can pay by card
+                again or request an invoice.
+              </p>
+            ) : null}
+            {quoteAccepted && !alreadyPaid ? (
+              <>
+                <PayNowButton
+                  jobId={job.id}
+                  amountLabel={
+                    latestQuote ? money(latestQuote.amountMinor / 100) : undefined
+                  }
+                />
+                <p className="text-xs text-text-secondary text-center mb-sp-2">
+                  or
+                </p>
+                <InvoiceRequest
+                  jobId={job.id}
+                  alreadyRequested={Boolean(job.invoiceRequestedAt)}
+                />
+              </>
             ) : null}
           </aside>
         </div>
