@@ -38,3 +38,12 @@ export function schemaDriftMessage(error: unknown): string | undefined {
   }
   return "The database schema is behind the API. Apply pending Drizzle migrations.";
 }
+
+/**
+ * RDS managed passwords rotate. The API secret snapshots DATABASE_URL once,
+ * so ECS keeps the old password and Postgres answers 28P01.
+ */
+export function databaseAuthMessage(error: unknown): string | undefined {
+  if (postgresSqlState(error) !== "28P01") return undefined;
+  return "The API could not authenticate to the database. Refresh the API secret DATABASE_URL from the RDS master-user secret.";
+}

@@ -200,13 +200,44 @@ revoke_sg_ingress() {
   return 1
 }
 
+# RDS --manage-master-user-password rotates the master secret. State can
+# still point at an old ARN or a non-master secret (e.g. gwg-staging/api),
+# which produces 28P01 auth_failed. Prefer the instance's current secret.
+sync_rds_master_secret() {
+  require_state DB_INSTANCE_ID
+  local json endpoint secret_arn
+  json="$(aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE_ID" --output json)"
+  endpoint="$(jq -r '.DBInstances[0].Endpoint.Address // empty' <<< "$json")"
+  secret_arn="$(jq -r '.DBInstances[0].MasterUserSecret.SecretArn // empty' <<< "$json")"
+  [[ -n "$endpoint" && "$endpoint" != "None" ]] || {
+    echo "RDS instance $DB_INSTANCE_ID has no endpoint." >&2
+    return 1
+  }
+  save_state RDS_ENDPOINT "$endpoint"
+  if [[ -n "$secret_arn" && "$secret_arn" != "None" ]]; then
+    save_state DB_SECRET_ARN "$secret_arn"
+  fi
+}
+
 rds_database_url() {
   require_state DB_SECRET_ARN RDS_ENDPOINT DB_NAME DB_USERNAME
-  local secret password encoded
+  local secret password encoded username host dbname
   secret="$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" \
     --query SecretString --output text)"
-  password="$(jq -r .password <<< "$secret")"
+  # A missing key prints "null"; treat that as empty so we fail here instead
+  # of connecting as password "null" (28P01).
+  password="$(jq -r '.password // empty' <<< "$secret")"
+  if [[ -z "$password" || "$password" == "null" ]]; then
+    echo "Secret $DB_SECRET_ARN has no .password. Use the RDS master-user secret, not $NAME_PREFIX/api." >&2
+    return 1
+  fi
+  username="$(jq -r '.username // empty' <<< "$secret")"
+  [[ -n "$username" && "$username" != "null" ]] || username="$DB_USERNAME"
+  host="$(jq -r '.host // empty' <<< "$secret")"
+  [[ -n "$host" && "$host" != "null" ]] || host="$RDS_ENDPOINT"
+  dbname="$(jq -r '.dbname // empty' <<< "$secret")"
+  [[ -n "$dbname" && "$dbname" != "null" ]] || dbname="$DB_NAME"
   encoded="$(urlencode "$password")"
   printf 'postgresql://%s:%s@%s:5432/%s?sslmode=require' \
-    "$DB_USERNAME" "$encoded" "$RDS_ENDPOINT" "$DB_NAME"
+    "$username" "$encoded" "$host" "$dbname"
 }

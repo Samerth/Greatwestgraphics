@@ -75,7 +75,7 @@ import {
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
-import { schemaDriftMessage } from "./db/postgres-error.js";
+import { databaseAuthMessage, schemaDriftMessage } from "./db/postgres-error.js";
 import {
   designProjectPatch,
   DesignProjectService,
@@ -1724,8 +1724,12 @@ export function buildApp(input: {
       code = error.code;
       message = error.message;
     } else {
+      const authFailed = databaseAuthMessage(error);
       const drift = schemaDriftMessage(error);
-      if (drift) {
+      if (authFailed) {
+        code = "DATABASE_AUTH";
+        message = authFailed;
+      } else if (drift) {
         code = "SCHEMA_DRIFT";
         message = drift;
       }

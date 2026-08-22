@@ -34,6 +34,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
 | 17 | `17-roll-ecs.sh` | Nothing new. Restarts the web and API tasks so they pull the tag already on the task definition |
 | 18 | `18-retarget-ecs.sh` | Registers new task defs pointing at an existing ECR SHA and deploys. `CLUSTER=gwg-staging` or `gwg-prod` |
+| 20 | `20-refresh-database-url.sh` | Rewrites `$NAME_PREFIX/api` `DATABASE_URL` from the live RDS master-user secret and rolls the API. Fixes Postgres `28P01` after a managed password rotation |
 
 ## Running more than one environment
 

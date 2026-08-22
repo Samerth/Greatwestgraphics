@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  databaseAuthMessage,
   postgresSqlState,
   schemaDriftMessage,
 } from "../src/db/postgres-error.js";
@@ -25,6 +26,14 @@ describe("postgres error helpers", () => {
     expect(schemaDriftMessage(error)).toBe(
       "The database is missing column payment_status. Apply pending Drizzle migrations.",
     );
+  });
+
+  it("names a 28P01 as a stale API DATABASE_URL", () => {
+    const error = Object.assign(new Error("password authentication failed for user \"gwg_admin\""), {
+      code: "28P01",
+    });
+    expect(postgresSqlState(error)).toBe("28P01");
+    expect(databaseAuthMessage(error)).toMatch(/master-user secret/);
   });
 
   it("ignores application error codes that are not SQLSTATE", () => {
