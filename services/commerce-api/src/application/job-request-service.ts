@@ -58,6 +58,38 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { PricingConfigSchema } from "@gwg/contracts";
+import { postgresSqlState } from "../db/postgres-error.js";
+
+/** Columns the inbox / portal list actually return. Selecting the full
+ * `jobRequests` table also pulled CRM fields (`last_crm_sync_at`) that 0008
+ * never applied on staging, which took the whole list down with 42703. */
+const jobListColumns = {
+  id: jobRequests.id,
+  tenantId: jobRequests.tenantId,
+  accountId: jobRequests.accountId,
+  storeId: jobRequests.storeId,
+  customerPersonId: jobRequests.customerPersonId,
+  displayId: jobRequests.displayId,
+  status: jobRequests.status,
+  version: jobRequests.version,
+  submittedAt: jobRequests.submittedAt,
+  createdAt: jobRequests.createdAt,
+  updatedAt: jobRequests.updatedAt,
+};
+
+type JobListRow = {
+  id: string;
+  tenantId: string;
+  accountId: string;
+  storeId: string;
+  customerPersonId: string;
+  displayId: string;
+  status: (typeof jobRequests.$inferSelect)["status"];
+  version: number;
+  submittedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export class ResourceNotFoundError extends Error {
   readonly code = "RESOURCE_NOT_FOUND";
@@ -166,7 +198,7 @@ function repriceLine(
   };
 }
 
-function toResponse(row: typeof jobRequests.$inferSelect): JobRequestResponse {
+function toResponse(row: JobListRow): JobRequestResponse {
   return {
     id: row.id,
     displayId: row.displayId,
@@ -1396,7 +1428,7 @@ export class JobRequestService {
     customerPersonId?: string,
   ): Promise<JobRequestResponse[]> {
     const rows = await this.db
-      .select({ job: jobRequests, placedBy: people.displayName })
+      .select({ job: jobListColumns, placedBy: people.displayName })
       .from(jobRequests)
       .leftJoin(people, eq(people.id, jobRequests.customerPersonId))
       .where(
@@ -1426,15 +1458,17 @@ export class JobRequestService {
    */
   async listForStaff(tenantId: string): Promise<JobRequestResponse[]> {
     const rows = await this.db
-      .select({ job: jobRequests, placedBy: people.displayName })
+      .select({ job: jobListColumns, placedBy: people.displayName })
       .from(jobRequests)
       .leftJoin(people, eq(people.id, jobRequests.customerPersonId))
       .where(eq(jobRequests.tenantId, tenantId))
       .orderBy(desc(jobRequests.createdAt));
 
     const jobIds = rows.map((row) => row.job.id);
-    const requested = jobIds.length
-      ? await this.db
+    let requested: Array<{ jobRequestId: string; updatedAt: Date }> = [];
+    if (jobIds.length) {
+      try {
+        requested = await this.db
           .select({
             jobRequestId: paymentObligations.jobRequestId,
             updatedAt: paymentObligations.updatedAt,
@@ -1446,8 +1480,12 @@ export class JobRequestService {
               eq(paymentObligations.status, "invoice_requested"),
               inArray(paymentObligations.jobRequestId, jobIds),
             ),
-          )
-      : [];
+          );
+      } catch (error) {
+        const state = postgresSqlState(error);
+        if (state !== "42703" && state !== "42P01") throw error;
+      }
+    }
     const requestedAt = new Map(
       requested.map((row) => [row.jobRequestId, row.updatedAt.toISOString()]),
     );
