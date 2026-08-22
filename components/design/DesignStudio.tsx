@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -316,7 +316,10 @@ export function DesignStudio({
       isDark: false,
     });
   }, [productDetail, selectedGarmentId, garments]);
-  const garmentOptions = extraGarment ? [extraGarment, ...garments] : garments;
+  const garmentOptions = useMemo(
+    () => (extraGarment ? [extraGarment, ...garments] : garments),
+    [extraGarment, garments],
+  );
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {

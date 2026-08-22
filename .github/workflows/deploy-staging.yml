@@ -28,6 +28,35 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ca-central-1
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # ECS never migrates on boot. Design Studio writes placement_by_side;
+      # if 0015 never landed on RDS, every save/list is 42703.
+      - name: Apply staging database migrations
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          URL="${STAGING_DATABASE_URL:-}"
+          if [ -z "$URL" ]; then
+            if ! SECRET_JSON="$(aws secretsmanager get-secret-value \
+              --secret-id gwg-staging/api \
+              --region ca-central-1 \
+              --query SecretString \
+              --output text 2>/tmp/sm.err)"; then
+              echo "::warning::Cannot read gwg-staging/api (OIDC role needs secretsmanager:GetSecretValue). Re-run infra/cloudshell/scripts/07-create-ecr.sh or set GitHub secret STAGING_DATABASE_URL. Until then apply schema with CloudShell ./scripts/02-migrate-drizzle.sh — Design Studio needs design_projects.placement_by_side."
+              cat /tmp/sm.err || true
+              exit 0
+            fi
+            URL="$(printf '%s' "$SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["DATABASE_URL"])')"
+          fi
+          export DATABASE_URL="$URL"
+          npm ci
+          npm run db:migrate
+
       - name: Update ECS services with new images
         run: |
           set -euo pipefail

@@ -68,7 +68,8 @@ POLICY="$(jq -nc --arg account "$ACCOUNT_ID" --arg region "$AWS_REGION" \
       {Effect:"Allow",Action:["ecs:RegisterTaskDefinition","ecs:DescribeTaskDefinition"],Resource:"*"},
       {Effect:"Allow",Action:["ecs:DescribeClusters"],Resource:["arn:aws:ecs:\($region):\($account):cluster/gwg-staging","arn:aws:ecs:\($region):\($account):cluster/gwg-prod"]},
       {Effect:"Allow",Action:["ecs:UpdateService","ecs:DescribeServices"],Resource:["arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-web","arn:aws:ecs:\($region):\($account):service/gwg-staging/gwg-staging-api","arn:aws:ecs:\($region):\($account):service/gwg-prod/gwg-prod-web","arn:aws:ecs:\($region):\($account):service/gwg-prod/gwg-prod-api"]},
-      {Effect:"Allow",Action:["iam:PassRole"],Resource:["arn:aws:iam::\($account):role/gwg-staging-ecs-task","arn:aws:iam::\($account):role/gwg-staging-ecs-execution","arn:aws:iam::\($account):role/gwg-prod-ecs-task","arn:aws:iam::\($account):role/gwg-prod-ecs-execution"],Condition:{StringEquals:{"iam:PassedToService":"ecs-tasks.amazonaws.com"}}}
+      {Effect:"Allow",Action:["iam:PassRole"],Resource:["arn:aws:iam::\($account):role/gwg-staging-ecs-task","arn:aws:iam::\($account):role/gwg-staging-ecs-execution","arn:aws:iam::\($account):role/gwg-prod-ecs-task","arn:aws:iam::\($account):role/gwg-prod-ecs-execution"],Condition:{StringEquals:{"iam:PassedToService":"ecs-tasks.amazonaws.com"}}},
+      {Effect:"Allow",Action:["secretsmanager:GetSecretValue"],Resource:["arn:aws:secretsmanager:\($region):\($account):secret:gwg-staging/api*","arn:aws:secretsmanager:\($region):\($account):secret:gwg-prod/api*"]}
     ]
   }')"
 

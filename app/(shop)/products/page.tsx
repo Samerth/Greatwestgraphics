@@ -5,6 +5,7 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { ProductsGrid } from "@/components/products/ProductsGrid";
 import { Pagination } from "@/components/products/Pagination";
+import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 import { cn } from "@/lib/utils/cn";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
 
