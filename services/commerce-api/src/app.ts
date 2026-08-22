@@ -75,6 +75,7 @@ import {
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
 import { CatalogService } from "./application/catalog-service.js";
+import { schemaDriftMessage } from "./db/postgres-error.js";
 import {
   designProjectPatch,
   DesignProjectService,
@@ -1722,6 +1723,12 @@ export function buildApp(input: {
       statusCode = 401;
       code = error.code;
       message = error.message;
+    } else {
+      const drift = schemaDriftMessage(error);
+      if (drift) {
+        code = "SCHEMA_DRIFT";
+        message = drift;
+      }
     }
 
     if (statusCode >= 500) {
