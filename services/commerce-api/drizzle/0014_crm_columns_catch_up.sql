@@ -51,6 +51,33 @@ CREATE TABLE IF NOT EXISTS crm_status_updates (
 ALTER TABLE job_requests
   ADD COLUMN IF NOT EXISTS cod_crm_job_id text;
 
+-- 0008 was recorded on some databases without applying its payment ALTER
+-- TABLEs. This file then created job_requests_payment_status_idx and
+-- Postgres answered 42703 (column does not exist), which is the CloudShell
+-- migrate failure. Add the columns before the index.
+DO $$ BEGIN
+  CREATE TYPE payment_status AS ENUM (
+    'not_started',
+    'requires_payment',
+    'processing',
+    'succeeded',
+    'failed',
+    'cancelled',
+    'refunded'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE job_requests
+  ADD COLUMN IF NOT EXISTS payment_status payment_status DEFAULT 'not_started';
+ALTER TABLE job_requests
+  ADD COLUMN IF NOT EXISTS stripe_checkout_session_id uuid;
+ALTER TABLE job_requests
+  ADD COLUMN IF NOT EXISTS final_quote_amount_minor bigint;
+ALTER TABLE job_requests
+  ADD COLUMN IF NOT EXISTS paid_at timestamp with time zone;
+
 ALTER TABLE crm_order_syncs
   ADD COLUMN IF NOT EXISTS cod_crm_job_id text;
 
