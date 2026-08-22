@@ -185,6 +185,10 @@ Map these from `.env.example` (values never committed):
 | `SANMAR_ACCOUNT_ID` / `SANMAR_LOGIN_EMAIL` (or `SANMAR_API_PASSWORD`) | API | If SanMar sync is used |
 | `RESEND_API_KEY` / `CONTACT_FROM_EMAIL` / `CONTACT_TO_EMAIL` | Web | If contact form sends mail |
 | `DEV_ADMIN_TOKEN` | — | **Do not set in production** |
+| `STRIPE_SECRET_KEY` | API (`$NAME_PREFIX/api`) | If card checkout is offered (`sk_test_` on staging) |
+| `STRIPE_WEBHOOK_SECRET` | Web (`$NAME_PREFIX/web`) | If Stripe webhooks are received (`whsec_`) |
+| `ADMIN_API_TOKEN` | Web + API (`ADMIN_TOKEN_SECRET_ARN`) | Yes for staff admin and payment relay. Reuse the existing token |
+| `SITE_BASE_URL` | API (plain env from `SITE_URL`) | Set by `09-create-ecs.sh` / CloudFront — do not duplicate in a secret |
 
 Leave development-only IDs unset in production (`COMMERCE_DEV_*`). Production
 commerce scope must come from real auth / store resolution — not fixture headers.

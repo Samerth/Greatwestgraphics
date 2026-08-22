@@ -216,6 +216,19 @@ secret_ref() {
   printf '%s:%s::' "$arn" "$key"
 }
 
+# Stripe keys live in the existing web/api JSON secrets. Only reference them
+# when the key is already present — ECS fails to start if valueFrom points at
+# a missing JSON field.
+secret_has_key() {
+  local arn="$1" key="$2"
+  aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text \
+    | jq -e --arg key "$key" '.[$key] | type == "string" and length > 0' >/dev/null
+}
+WEB_HAS_STRIPE_WEBHOOK=false
+API_HAS_STRIPE_SECRET=false
+secret_has_key "$WEB_SECRET_ARN" STRIPE_WEBHOOK_SECRET && WEB_HAS_STRIPE_WEBHOOK=true
+secret_has_key "$API_SECRET_ARN" STRIPE_SECRET_KEY && API_HAS_STRIPE_SECRET=true
+
 WEB_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-web" \
   --arg exec "$EXEC_ROLE_ARN" \
@@ -236,6 +249,7 @@ WEB_TASK="$(jq -nc \
   --arg service_token "${SERVICE_TOKEN_SECRET_ARN:-}" \
   --arg admin_token "${ADMIN_TOKEN_SECRET_ARN:-}" \
   --arg email_secret "${EMAIL_SECRET_ARN:-}" \
+  --arg stripe_webhook "$WEB_HAS_STRIPE_WEBHOOK" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -282,7 +296,8 @@ WEB_TASK="$(jq -nc \
       + (if $admin_token   != "" then [{name:"ADMIN_API_TOKEN",valueFrom:($admin_token+":ADMIN_API_TOKEN::")}]                 else [] end)
       # Absent this the contact form silently logs submissions instead of
       # sending them, which reads as success to the customer.
-      + (if $email_secret  != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}]                  else [] end)),
+      + (if $email_secret  != "" then [{name:"RESEND_API_KEY",valueFrom:($email_secret+":RESEND_API_KEY::")}]                  else [] end)
+      + (if $stripe_webhook == "true" then [{name:"STRIPE_WEBHOOK_SECRET",valueFrom:($web_secret+":STRIPE_WEBHOOK_SECRET::")}] else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"web"}
@@ -308,6 +323,7 @@ API_TASK="$(jq -nc \
   --arg staff_email "${STAFF_NOTIFICATION_EMAIL:-}" \
   --arg from_email "${NOTIFICATIONS_FROM_EMAIL:-}" \
   --arg store_base_domain "${COMMERCE_STOREFRONT_BASE_DOMAIN:-}" \
+  --arg stripe_secret "$API_HAS_STRIPE_SECRET" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -343,6 +359,7 @@ API_TASK="$(jq -nc \
       secrets:([
         {name:"DATABASE_URL",valueFrom:($api_secret+":DATABASE_URL::")}
       ]
+      + (if $stripe_secret == "true" then [{name:"STRIPE_SECRET_KEY",valueFrom:($api_secret+":STRIPE_SECRET_KEY::")}] else [] end)
       # Admin routes are only mounted when ADMIN_API_TOKEN is present, which is
       # what replaces the development-only flag in production.
       + (if $service_token  != "" then [{name:"COMMERCE_SERVICE_TOKEN",valueFrom:($service_token+":COMMERCE_SERVICE_TOKEN::")}] else [] end)
