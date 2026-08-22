@@ -38,6 +38,21 @@ export function Pagination({
 
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
+  const summary = (
+    <p className="text-[13px] text-text-tertiary m-0">
+      Showing {total === 0 ? "0" : start.toLocaleString()}
+      {total === 0 ? "" : `–${end.toLocaleString()}`} of {total.toLocaleString()}
+    </p>
+  );
+
+  if (pageCount <= 1) {
+    if (total <= 0) return null;
+    return (
+      <nav aria-label="Product pages" className="mt-sp-4">
+        {summary}
+      </nav>
+    );
+  }
 
   // Compact page-number window: first, last, current ±1, with ellipses.
   const pages = new Set<number>([1, pageCount, page - 1, page, page + 1]);
@@ -48,9 +63,7 @@ export function Pagination({
       aria-label="Product pages"
       className="mt-sp-4 flex flex-wrap items-center justify-between gap-sp-3"
     >
-      <p className="text-[13px] text-text-tertiary m-0">
-        Showing {start.toLocaleString()}–{end.toLocaleString()} of {total.toLocaleString()}
-      </p>
+      {summary}
       <div className="flex items-center gap-1.5">
         <PageLink href={hrefFor(page - 1)} disabled={page <= 1} label="← Prev" />
         {numbers.map((n, i) => (

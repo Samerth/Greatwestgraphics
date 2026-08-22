@@ -304,6 +304,14 @@ export function DesignStudio({
   }, [productDetail, selectedGarmentId, garments]);
   const garmentOptions = extraGarment ? [extraGarment, ...garments] : garments;
 
+  useEffect(() => {
+    for (const option of garmentOptions.slice(0, 4)) {
+      if (!option.imageUrl) continue;
+      const img = new window.Image();
+      img.src = option.imageUrl;
+    }
+  }, [garmentOptions]);
+
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
@@ -334,7 +342,10 @@ export function DesignStudio({
       productDetail?.style.styleImageUrl ||
       null,
   };
-  const currentPhoto = productDetail ? photoBySide[activeSide] : null;
+  const catalogGarmentImage =
+    garmentOptions.find((g) => g.id === selectedGarmentId)?.imageUrl ?? null;
+  const currentPhoto =
+    (productDetail ? photoBySide[activeSide] : null) || catalogGarmentImage;
   const mirrorPhoto = activeSide === "right";
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
   // Canvas pixel reads require a same-origin garment. The Next image
@@ -1030,7 +1041,15 @@ export function DesignStudio({
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {isLoadingGarment && (
+              {catalogGarmentImage && (
+                // eslint-disable-next-line @next/next/no-img-element -- paint the CDN file immediately; Konva still waits on /_next/image
+                <img
+                  src={catalogGarmentImage}
+                  alt=""
+                  className="absolute inset-0 m-auto h-full w-full object-contain pointer-events-none"
+                />
+              )}
+              {isLoadingGarment && !catalogGarmentImage && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>

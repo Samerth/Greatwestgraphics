@@ -34,6 +34,8 @@ type Props = {
   dbProducts?: StorefrontCatalogProduct[];
   dbCategories?: StorefrontCategory[];
   dbBrands?: string[];
+  /** Full match count from the API, not the current page length. */
+  resultTotal?: number;
   activeCategorySlug?: string | null;
   activeBrands?: string[];
   activePriceMinMinor?: number | null;
@@ -45,6 +47,7 @@ export function ProductsGrid({
   dbProducts = [],
   dbCategories = [],
   dbBrands = [],
+  resultTotal,
   activeCategorySlug = null,
   activeBrands = [],
   activePriceMinMinor = null,
@@ -156,7 +159,9 @@ export function ProductsGrid({
           <FacetCheck
             key={c.slug}
             label={c.name}
-            checked={activeCategory === c.slug}
+            checked={
+              activeCategory.toLowerCase() === c.slug.toLowerCase()
+            }
             onChange={() => {
               setActiveCategory(c.slug);
               navigate({ category: c.slug });
@@ -267,7 +272,18 @@ export function ProductsGrid({
             {mobileFiltersOpen ? "Hide filters" : "Show filters"}
           </button>
           <p className="text-sm text-text-secondary m-0">
-            {tiles.length} product{tiles.length === 1 ? "" : "s"}
+            {(resultTotal ?? tiles.length).toLocaleString()} product
+            {(resultTotal ?? tiles.length) === 1 ? "" : "s"}
+            {activeCategorySlug ? (
+              <>
+                {" "}
+                in{" "}
+                <b className="text-text-primary">
+                  {dbCategories.find((c) => c.slug === activeCategorySlug)?.name ??
+                    activeCategorySlug}
+                </b>
+              </>
+            ) : null}
             {activeSearch ? (
               <>
                 {" "}
