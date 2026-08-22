@@ -898,9 +898,11 @@ export const jobRequests = pgTable(
     ),
     finalQuoteAmountMinor: bigint("final_quote_amount_minor", { mode: "number" }), // Approved quote amount in cents
     paidAt: timestamp("paid_at", { withTimezone: true }),
-    // CRM columns
-    codCrmJobId: text("cod_crm_job_id"), // COD CRM's ServiceJob ID
-    lastCrmSyncAt: timestamp("last_crm_sync_at", { withTimezone: true }),
+    // CRM ServiceJob id. Do not add last_crm_sync_at here: Drizzle
+    // select()/returning() emit every schema column, and staging journaled
+    // 0008 without applying that ALTER. The staff inbox 500'd on 42703.
+    // 0020/0021 create the column; COD CRM records sync time on crm_order_syncs.
+    codCrmJobId: text("cod_crm_job_id"),
     ...auditColumns,
   },
   (table) => [

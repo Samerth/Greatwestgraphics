@@ -107,7 +107,6 @@ export class CodCRMService {
         .update(jobRequests)
         .set({
           codCrmJobId: serviceJob.id,
-          lastCrmSyncAt: new Date(),
         })
         .where(eq(jobRequests.id, jobRequestId));
 
@@ -188,11 +187,12 @@ export class CodCRMService {
         });
 
         await this.db
-          .update(jobRequests)
+          .update(crmOrderSyncs)
           .set({
-            lastCrmSyncAt: new Date(),
+            lastSyncedAt: new Date(),
+            updatedAt: new Date(),
           })
-          .where(eq(jobRequests.id, jobRequestId));
+          .where(eq(crmOrderSyncs.jobRequestId, jobRequestId));
       }
 
       return statusChanged;
