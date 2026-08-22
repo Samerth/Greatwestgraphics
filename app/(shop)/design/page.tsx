@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { normalizeDesignDocument } from "@gwg/contracts";
 import { Container } from "@/components/shared/Container";
 import { DesignStudio, type SavedDesignProject } from "@/components/design/DesignStudio";
-import { CrossSellGrid } from "@/components/shared/CrossSellGrid";
-import { loadStorefrontCatalog, toCrossSellItems } from "@/lib/commerce/catalog";
+import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 
@@ -39,8 +38,8 @@ export default async function DesignPage({
       colorName: p.colorName,
       imageUrl: p.imageUrl,
       isDark: p.isDark,
+      slug: p.slug,
     }));
-  const crossSellItems = toCrossSellItems(catalog.products);
 
   let initialDesign: SavedDesignProject | null = null;
   if (loadDesignId && session) {
@@ -89,15 +88,6 @@ export default async function DesignPage({
             signedIn={Boolean(session)}
             initialDesign={initialDesign}
             garmentIdOverride={garmentId ?? null}
-          />
-        </Container>
-      </section>
-
-      <section className="py-sp-8">
-        <Container>
-          <CrossSellGrid
-            title="Pair it with these Products!"
-            items={crossSellItems}
           />
         </Container>
       </section>

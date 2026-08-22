@@ -20,6 +20,8 @@ export interface CartItem {
   image: string;
   /** Canonical `ss_products` UUID, present when added from the live catalog. */
   productId?: string;
+  /** Catalog slug for `/product/<slug>?id=` links. Never use `id` as the slug. */
+  productSlug?: string;
   /** Canonical `ss_styles` UUID, present when added from the live catalog. */
   styleId?: string;
   /** Canonical `ss_variants` UUID (specific size), present when added from the live catalog. */
@@ -67,6 +69,59 @@ export function visibleCartItems(
   return items.filter((item) => cartItemBelongsToStore(item, store));
 }
 
+/** A decorated line must never fold into a blank garment of the same SKU. */
+export function cartLineIsCustomized(
+  item: Pick<CartItem, "artworkProofUrl" | "designProjectId" | "roster">,
+): boolean {
+  return Boolean(item.artworkProofUrl || item.designProjectId || item.roster);
+}
+
+export function blankGarmentMergeTarget(
+  items: CartItem[],
+  incoming: CartItem,
+  store: ActiveCartStore,
+): CartItem | undefined {
+  if (cartLineIsCustomized(incoming)) return undefined;
+  return items.find(
+    (candidate) =>
+      !cartLineIsCustomized(candidate) &&
+      candidate.id === incoming.id &&
+      candidate.color === incoming.color &&
+      candidate.variantId === incoming.variantId &&
+      cartItemBelongsToStore(candidate, store),
+  );
+}
+
+/** Cart "Edit" must reopen the studio for decorated lines — never a UUID as a PDP slug. */
+export function cartItemEditHref(
+  item: Pick<
+    CartItem,
+    | "id"
+    | "productId"
+    | "productSlug"
+    | "designProjectId"
+    | "artworkProofUrl"
+    | "roster"
+  >,
+): string {
+  const garmentId = item.productId || item.id;
+  if (item.designProjectId) {
+    const params = new URLSearchParams({ loadDesignId: item.designProjectId });
+    if (garmentId) params.set("garmentId", garmentId);
+    return `/design?${params.toString()}`;
+  }
+  if (item.artworkProofUrl || item.roster) {
+    const params = new URLSearchParams();
+    if (garmentId) params.set("garmentId", garmentId);
+    return `/design?${params.toString()}`;
+  }
+  if (item.productId) {
+    const slug = item.productSlug || item.productId;
+    return `/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(item.productId)}`;
+  }
+  return "/products";
+}
+
 interface CartState {
   items: CartItem[];
   activeStore: ActiveCartStore;
@@ -108,19 +163,15 @@ export const useCartStore = create<CartState>()(
             ...item,
             storeSlug: item.storeSlug ?? (state.activeStore.slug || undefined),
           };
-          // Roster (team/group order) lines always add as their own line —
-          // merging two separate roster submissions into one qty would lose
-          // which names/numbers came from which submission.
-          const existing = stamped.roster
-            ? undefined
-            : state.items.find(
-                (c) =>
-                  c.id === stamped.id &&
-                  c.color === stamped.color &&
-                  c.variantId === stamped.variantId &&
-                  !c.roster &&
-                  cartItemBelongsToStore(c, state.activeStore),
-              );
+          // Blank catalog lines of the same SKU can stack. A studio design
+          // (proof, saved project, or roster) is its own line — merging it
+          // into a blank tee dropped the artwork and left "Edit" pointing at
+          // a catalog PDP instead of the customized item.
+          const existing = blankGarmentMergeTarget(
+            state.items,
+            stamped,
+            state.activeStore,
+          );
           if (existing) {
             return {
               items: state.items.map((c) =>

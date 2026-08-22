@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
-import { useCartStore, useVisibleCartItems, computeCartTotals, type CartItem } from "@/lib/store/cart";
+import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, type CartItem } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
@@ -178,7 +178,7 @@ export default function CartPage() {
           <div className="space-y-sp-3">
             {items.map((item) => (
               <div
-                key={`${item.id}-${item.color}`}
+                key={`${item.id}-${item.color}-${item.variantId ?? ""}-${item.designProjectId ?? item.artworkProofUrl ?? "blank"}`}
                 className="flex flex-col sm:flex-row gap-sp-4 border border-border rounded-md p-sp-4 bg-bg-raised"
               >
                 <div className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle">
@@ -249,11 +249,7 @@ export default function CartPage() {
 
                     <div className="mt-sp-3 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] font-semibold">
                       <Link
-                        href={
-                          item.productId
-                            ? `/product/${encodeURIComponent(item.id)}?id=${item.productId}`
-                            : `/products`
-                        }
+                        href={cartItemEditHref(item)}
                         className="text-text-tertiary hover:text-accent transition-colors"
                       >
                         Edit

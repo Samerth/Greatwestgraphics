@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   DESIGN_CANVAS_SIZE,
   DESIGN_PLACEMENT_ZONES,
@@ -34,6 +35,7 @@ export type DesignGarmentOption = {
   colorName: string;
   imageUrl: string | null;
   isDark: boolean;
+  slug?: string;
 };
 
 type ProductDetailVariant = {
@@ -69,6 +71,7 @@ function unitPriceMinor(
 type ProductDetail = {
   product: {
     id: string;
+    slug?: string;
     colorName: string;
     colorFrontImageUrl: string | null;
     colorSideImageUrl: string | null;
@@ -84,6 +87,16 @@ type ProductDetail = {
 };
 
 const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
+
+function firstDurableArtworkUrl(document: DesignDocument): string | undefined {
+  for (const side of DesignSides) {
+    const found = document.artworksBySide[side].find((layer) =>
+      isDurableArtworkSrc(layer.src),
+    );
+    if (found) return found.src;
+  }
+  return undefined;
+}
 
 // react-konva touches the DOM directly — must be client-only, no SSR. The
 // whole canvas (Stage + Layer + artwork layers) is lazy-loaded as ONE unit,
@@ -159,6 +172,7 @@ export function DesignStudio({
   endpoints?: DesignStudioEndpoints;
 }) {
   const isStaff = mode === "staff";
+  const router = useRouter();
   const createUrl = endpoints?.create ?? (isStaff ? undefined : CUSTOMER_ENDPOINTS.create);
   const updateUrl = endpoints?.update ?? CUSTOMER_ENDPOINTS.update;
   const uploadUrl = endpoints?.upload ?? CUSTOMER_ENDPOINTS.upload;
@@ -187,7 +201,6 @@ export function DesignStudio({
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [designQty, setDesignQty] = useState(48);
-  const [addedToCart, setAddedToCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [groupOrder, setGroupOrder] = useState(false);
@@ -296,6 +309,7 @@ export function DesignStudio({
     }
     setExtraGarment({
       id: String(productDetail.product.id),
+      slug: productDetail.product.slug,
       label: `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim(),
       colorName: productDetail.product.colorName,
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
@@ -605,7 +619,18 @@ export function DesignStudio({
   }
 
   async function addDesignToCart() {
-    if (!productDetail) return;
+    if (!productDetail) {
+      setCartError("Pick a garment first.");
+      return;
+    }
+
+    const decorated = DesignSides.filter(
+      (side) => artworksBySide[side].length > 0,
+    );
+    if (decorated.length === 0) {
+      setCartError("Place artwork on the garment first.");
+      return;
+    }
 
     // Validate before uploading: an upload spent on a roster that is about to
     // be rejected is a round trip nobody asked for.
@@ -620,108 +645,112 @@ export function DesignStudio({
       }
       setRosterError(null);
     } else if (!selectedVariant) {
+      setCartError("Select a size first.");
       return;
     }
 
     // The proof has to end up somewhere staff can open. Carrying the canvas as
     // a data: URL looked like it worked and then died on the way to checkout,
     // which is how orders reached production with no artwork attached.
+    // Canvas export also fails when the garment photo is cross-origin; in
+    // that case the uploaded layer URLs are still enough to add the line.
     setCartError(null);
     setAddingToCart(true);
-    let artworkProofUrl: string | undefined;
-    let designProjectId = savedDesignId ?? undefined;
     try {
-      artworkProofUrl = (await uploadProofImage()) ?? undefined;
-      if (
-        artworkProofUrl &&
-        signedIn &&
-        (createUrl || (updateUrl && savedDesignId))
-      ) {
-        const name = designName.trim() || defaultDesignName();
-        if (!designName.trim()) setDesignName(name);
-        designProjectId = await persistDesign(name, artworkProofUrl);
+      const artworkProofUrl: string | undefined =
+        (await uploadProofImage()) ?? firstDurableArtworkUrl(design);
+      let designProjectId = savedDesignId ?? undefined;
+      if (signedIn && (createUrl || (updateUrl && savedDesignId))) {
+        try {
+          const name = designName.trim() || defaultDesignName();
+          if (!designName.trim()) setDesignName(name);
+          designProjectId = await persistDesign(name, artworkProofUrl ?? null);
+        } catch (caught) {
+          if (!artworkProofUrl) throw caught;
+        }
       }
+      if (!artworkProofUrl && !designProjectId) {
+        setCartError(
+          signedIn
+            ? "Your artwork could not be attached, so the order would reach us blank. Try again."
+            : "Sign in first — otherwise your artwork does not travel with the order.",
+        );
+        return;
+      }
+
+      const printLabel = decorated
+        .map(
+          (side) =>
+            `${placementBySide[side]} (${DESIGN_SIDE_LABELS[side].toLowerCase()})`,
+        )
+        .join(" + ");
+      const productName =
+        `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
+      const productSlug =
+        productDetail.product.slug ??
+        garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
+
+      if (groupOrder) {
+        const priceVariant =
+          productDetail.variants.find((v) => v.sizeName === roster[0]!.size) ??
+          selectedVariant;
+        if (!priceVariant) {
+          setCartError("Select a size for the first roster row.");
+          return;
+        }
+        addItem({
+          id: productDetail.product.id,
+          productId: productDetail.product.id,
+          productSlug,
+          styleId: productDetail.style.id,
+          variantId: priceVariant.id,
+          name: productName,
+          meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
+          color: productDetail.product.colorName,
+          qty: roster.length,
+          unit: unitPriceMinor(priceVariant, roster.length) / 100,
+          image: artworkProofUrl || currentPhoto || "",
+          artworkProofUrl,
+          designProjectId,
+          roster: roster.map((r) => ({
+            size: r.size,
+            name: r.name.trim(),
+            number: r.number.trim() || undefined,
+          })),
+        });
+        router.push("/cart");
+        return;
+      }
+
+      if (!selectedVariant) {
+        setCartError("Select a size first.");
+        return;
+      }
+      addItem({
+        id: productDetail.product.id,
+        productId: productDetail.product.id,
+        productSlug,
+        styleId: productDetail.style.id,
+        variantId: selectedVariant.id,
+        name: productName,
+        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
+        color: productDetail.product.colorName,
+        qty: designQty,
+        unit: unitPriceMinor(selectedVariant, designQty) / 100,
+        image: artworkProofUrl || currentPhoto || "",
+        artworkProofUrl,
+        designProjectId,
+      });
+      router.push("/cart");
     } catch (caught) {
-      setAddingToCart(false);
       setCartError(
         caught instanceof Error
           ? caught.message
           : "The design could not be saved, so staff would not be able to reopen it. Try Save, then add to cart again.",
       );
-      return;
     } finally {
       setAddingToCart(false);
     }
-    if (!artworkProofUrl) {
-      setCartError(
-        signedIn
-          ? "Your artwork could not be attached, so the order would reach us blank. Try again."
-          : "Sign in first — otherwise your artwork does not travel with the order.",
-      );
-      return;
-    }
-
-    // Every decorated view earns a line on the order. The old label only
-    // ever mentioned two of them, so a sleeve print reached production
-    // undescribed even when the customer had placed one.
-    const decorated = DesignSides.filter(
-      (side) => artworksBySide[side].length > 0,
-    );
-    const printLabel = (decorated.length > 0 ? decorated : [activeSide])
-      .map(
-        (side) =>
-          `${placementBySide[side]} (${DESIGN_SIDE_LABELS[side].toLowerCase()})`,
-      )
-      .join(" + ");
-    const productName =
-      `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
-
-    if (groupOrder) {
-      const priceVariant =
-        productDetail.variants.find((v) => v.sizeName === roster[0]!.size) ??
-        selectedVariant;
-      if (!priceVariant) return;
-      addItem({
-        id: productDetail.product.id,
-        productId: productDetail.product.id,
-        styleId: productDetail.style.id,
-        variantId: priceVariant.id,
-        name: productName,
-        meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
-        color: productDetail.product.colorName,
-        qty: roster.length,
-        unit: unitPriceMinor(priceVariant, roster.length) / 100,
-        image: currentPhoto || "",
-        artworkProofUrl,
-        designProjectId,
-        roster: roster.map((r) => ({
-          size: r.size,
-          name: r.name.trim(),
-          number: r.number.trim() || undefined,
-        })),
-      });
-      setAddedToCart(true);
-      setTimeout(() => setAddedToCart(false), 2000);
-      return;
-    }
-
-    if (!selectedVariant) return;
-    addItem({
-      id: productDetail.product.id,
-      productId: productDetail.product.id,
-      styleId: productDetail.style.id,
-      variantId: selectedVariant.id,
-      name: productName,
-      meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
-      color: productDetail.product.colorName,
-      qty: designQty,
-      unit: unitPriceMinor(selectedVariant, designQty) / 100,
-      image: currentPhoto || "",
-      artworkProofUrl,
-      designProjectId,
-    });
-    setAddedToCart(true);
-    setTimeout(() => setAddedToCart(false), 2000);
   }
 
   /**
@@ -1237,6 +1266,7 @@ export function DesignStudio({
               )}
 
               <Button
+                type="button"
                 className="w-full"
                 variant="primary"
                 disabled={
@@ -1250,16 +1280,12 @@ export function DesignStudio({
                 {addingToCart
                   ? "Attaching artwork…"
                   : groupOrder
-                    ? addedToCart
-                      ? "Added ✓"
-                      : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
+                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
-                      : addedToCart
-                        ? "Added ✓"
-                        : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
-                            unitPriceMinor(selectedVariant, designQty) * designQty,
-                          )}`}
+                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
+                          unitPriceMinor(selectedVariant, designQty) * designQty,
+                        )}`}
               </Button>
             </div>
           )}

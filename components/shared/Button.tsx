@@ -35,10 +35,15 @@ export function Button({
   size = "default",
   className,
   children,
+  type = "button",
   ...props
 }: CommonProps & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button className={cn(base, variants[variant], sizes[size], className)} {...props}>
+    <button
+      type={type}
+      className={cn(base, variants[variant], sizes[size], className)}
+      {...props}
+    >
       {children}
     </button>
   );
