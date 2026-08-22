@@ -47,6 +47,7 @@ export function DbProductActions({
   color,
   image,
   variants,
+  productSlug,
 }: {
   productId: string;
   styleId: string;
@@ -54,6 +55,7 @@ export function DbProductActions({
   color: string;
   image: string | null;
   variants: DbVariantOption[];
+  productSlug?: string;
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
@@ -265,6 +267,7 @@ export function DbProductActions({
             addItem({
               id: productId,
               productId,
+              productSlug,
               styleId,
               variantId: priceVariant.id,
               name,
@@ -287,6 +290,7 @@ export function DbProductActions({
           addItem({
             id: productId,
             productId,
+            productSlug,
             styleId,
             variantId: selectedVariant.id,
             name,

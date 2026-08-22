@@ -318,6 +318,7 @@ export default async function ProductPage({
                   </p>
                   <DbProductActions
                     productId={String(product.id)}
+                    productSlug={String(product.slug || slug)}
                     styleId={String(style.id)}
                     name={title}
                     color={String(product.colorName || "")}
