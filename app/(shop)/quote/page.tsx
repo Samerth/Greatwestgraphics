@@ -2,10 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
-import {
-  CommerceApiError,
-  createCommerceClient,
-} from "@/lib/commerce/client";
+import { createCommerceClient } from "@/lib/commerce/client";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { PRICING_MASTER_V2 } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
@@ -61,7 +58,6 @@ export default async function QuotePage({
 }) {
   const params = await searchParams;
   let pricingConfig: PricingConfigV2 = PRICING_MASTER_V2;
-  let pricingNote: string | undefined;
 
   try {
     const published = await (
@@ -69,10 +65,10 @@ export default async function QuotePage({
     ).getPublishedPricingV2Config();
     pricingConfig = published.config;
   } catch (caught) {
-    pricingNote =
-      caught instanceof CommerceApiError
-        ? "Showing bundled pricing defaults — connect commerce-api for the published config."
-        : "Showing bundled pricing defaults.";
+    console.error(
+      "[storefront] published pricing unavailable; using bundled defaults",
+      caught instanceof Error ? caught.message : caught,
+    );
   }
 
   // Sorted brand-then-style alphabetically, and Adidas alone has 170
@@ -116,9 +112,6 @@ export default async function QuotePage({
             Choose a product, quantity and decoration placement to see a live
             estimate. Final pricing is confirmed after artwork review.
           </p>
-          {pricingNote && (
-            <p className="text-xs text-text-tertiary mt-sp-2">{pricingNote}</p>
-          )}
           {unpricedMethod && (
             <p
               role="status"

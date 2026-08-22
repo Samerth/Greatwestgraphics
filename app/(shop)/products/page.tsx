@@ -5,7 +5,7 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { ProductsGrid } from "@/components/products/ProductsGrid";
 import { Pagination } from "@/components/products/Pagination";
-import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
+import { cn } from "@/lib/utils/cn";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
 
 /** Copy and photography for the "Shop by Category" tiles, keyed by real
@@ -168,11 +168,18 @@ export default async function ProductsPage({
           <Container>
             <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
             <div className="mt-sp-3 grid grid-cols-2 lg:grid-cols-4 gap-sp-3">
-              {overlayTiles.map((tile) => (
+              {overlayTiles.map((tile) => {
+                const selected =
+                  category?.toLowerCase() === tile.slug.toLowerCase();
+                return (
                 <Link
                   key={tile.slug}
                   href={`/products?category=${encodeURIComponent(tile.slug)}`}
-                  className="group relative overflow-hidden rounded-md border border-border min-h-[140px] flex items-end p-sp-3 text-white"
+                  aria-current={selected ? "page" : undefined}
+                  className={cn(
+                    "group relative overflow-hidden rounded-md border min-h-[140px] flex items-end p-sp-3 text-white",
+                    selected ? "border-accent ring-2 ring-accent/40" : "border-border",
+                  )}
                 >
                   {/* Previously a flat accent-to-black gradient on every tile.
                       We already ship a real photo for each of these categories
@@ -181,19 +188,20 @@ export default async function ProductsPage({
                     src={tile.image}
                     alt=""
                     fill
-                    className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+                    className="object-cover transition-transform duration-700 group-hover:scale-[1.05] pointer-events-none"
                     sizes="(max-width: 1024px) 50vw, 25vw"
                   />
                   <span
-                    className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,.7))]"
+                    className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,.7))] pointer-events-none"
                     aria-hidden
                   />
-                  <span className="relative">
+                  <span className="relative pointer-events-none">
                     <span className="block font-display font-bold text-base">{tile.name}</span>
                     <span className="block text-xs text-white/80 mt-1">{tile.blurb}</span>
                   </span>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           </Container>
         </section>
@@ -206,9 +214,11 @@ export default async function ProductsPage({
           ) : (
             <>
               <ProductsGrid
+                key={retryQuery || "all"}
                 dbProducts={catalog.products}
                 dbCategories={catalog.categories}
                 dbBrands={catalog.brands}
+                resultTotal={catalog.total}
                 activeCategorySlug={category || null}
                 activeBrands={brands}
                 activePriceMinMinor={priceMinMinor}

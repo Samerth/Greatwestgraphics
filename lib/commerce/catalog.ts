@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { resolveCategoryId } from "./category-slug";
 
 /**
  * Next signals control flow by throwing: notFound() and redirect() raise
@@ -45,6 +46,8 @@ export type StorefrontCategory = {
   name: string;
   slug: string;
 };
+
+export { resolveCategoryId } from "./category-slug";
 
 export type StorefrontFilters = {
   /** Free-text query matched against brand, style, colour and slug. */
@@ -102,9 +105,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       slug: String(row.slug),
     }));
 
-    const categoryId =
-      options?.categorySlug &&
-      allCategories.find((c) => c.slug === options.categorySlug)?.id;
+    const categoryId = resolveCategoryId(allCategories, options?.categorySlug);
 
     // A category slug was requested but didn't resolve to a real category
     // — most likely a stale cached category list (categories.listCategories

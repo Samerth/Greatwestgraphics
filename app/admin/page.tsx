@@ -24,16 +24,26 @@ export default async function AdminDashboardPage() {
       href: "/admin/catalog",
     },
     {
-      label: "Needs category review",
+      label: "Unmapped supplier categories",
+      hint: "S&S categories with no storefront mapping — not a product count",
       value: String(dash?.unmappedCount ?? "—"),
       href: "/admin/categories/mappings",
     },
   ];
 
   const lastSync = dash?.lastSync as
-    | { status?: string; type?: string; finishedAt?: string; startedAt?: string }
+    | {
+        status?: string;
+        type?: string;
+        finishedAt?: string;
+        startedAt?: string;
+        errorSummary?: string | null;
+        error_summary?: string | null;
+      }
     | null
     | undefined;
+  const syncError =
+    lastSync?.errorSummary || lastSync?.error_summary || null;
 
   return (
     <div className="space-y-sp-5 max-w-5xl">
@@ -63,6 +73,9 @@ export default async function AdminDashboardPage() {
             <p className="font-display font-bold text-3xl m-0 mt-2">
               {card.value}
             </p>
+            {"hint" in card && card.hint ? (
+              <p className="text-xs text-text-tertiary m-0 mt-2">{card.hint}</p>
+            ) : null}
           </Link>
         ))}
       </div>
@@ -75,14 +88,28 @@ export default async function AdminDashboardPage() {
           </Link>
         </div>
         {lastSync ? (
-          <p className="text-sm text-text-secondary mt-2 mb-0">
-            {lastSync.type} · {lastSync.status}
-            {lastSync.finishedAt || lastSync.startedAt
-              ? ` · ${new Date(
-                  lastSync.finishedAt || lastSync.startedAt || "",
-                ).toLocaleString("en-CA")}`
-              : ""}
-          </p>
+          <div className="mt-2">
+            <p className="text-sm text-text-secondary m-0">
+              {lastSync.type} · {lastSync.status}
+              {lastSync.finishedAt || lastSync.startedAt
+                ? ` · ${new Date(
+                    lastSync.finishedAt || lastSync.startedAt || "",
+                  ).toLocaleString("en-CA")}`
+                : ""}
+            </p>
+            {lastSync.status === "completed_with_errors" && (
+              <p className="text-sm text-text-secondary m-0 mt-2">
+                The run finished, but some styles or prices did not update.
+                Open Sync for the full log
+                {syncError ? " — the latest error is below." : "."}
+              </p>
+            )}
+            {syncError ? (
+              <pre className="mt-2 mb-0 max-h-40 overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-bg p-sp-3 text-xs text-text-secondary">
+                {syncError}
+              </pre>
+            ) : null}
+          </div>
         ) : (
           <p className="text-sm text-text-secondary mt-2 mb-0">
             No sync runs yet. Configure S&S credentials and run a full sync.
