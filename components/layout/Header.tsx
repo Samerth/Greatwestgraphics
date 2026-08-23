@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { ShoppingBag } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
@@ -395,8 +396,10 @@ export function Header({
           )}
           <Link
             href="/cart"
+            aria-label="Cart"
             className="relative inline-flex items-center gap-sp-2 px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
           >
+            <ShoppingBag className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Cart</span>
             <span className="absolute -top-2 -right-2 bg-text-primary text-white text-[11px] font-bold min-w-[18px] h-[18px] rounded-full grid place-items-center px-1">
               {pieceCount}

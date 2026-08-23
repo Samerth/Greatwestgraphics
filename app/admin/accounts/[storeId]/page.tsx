@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  setStoreCategoryVisibilityAction,
-  setStorePricingAdjustmentAction,
-} from "@/app/admin/actions";
+import { setStoreCategoryVisibilityAction } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
+import { StorePricingAdjustmentForm } from "@/components/admin/StorePricingAdjustmentForm";
 
 export const dynamic = "force-dynamic";
 
@@ -89,33 +87,10 @@ export default async function AdminStoreDetailPage({
                 blank for no adjustment.
               </p>
             </div>
-            <form
-              action={async (formData) => {
-                "use server";
-                await setStorePricingAdjustmentAction(storeId, formData);
-              }}
-              className="flex items-end gap-3"
-            >
-              <label className="text-sm font-bold">
-                Adjustment %
-                <input
-                  type="number"
-                  step="0.1"
-                  min={-90}
-                  max={200}
-                  name="percent"
-                  defaultValue={currentAdjustment}
-                  placeholder="0"
-                  className="block mt-1.5 w-32 rounded-md border border-border bg-bg-page px-3 py-2 text-sm outline-none focus:border-accent"
-                />
-              </label>
-              <button
-                type="submit"
-                className="text-sm font-bold px-3 py-2 rounded-sm bg-accent text-white"
-              >
-                Save
-              </button>
-            </form>
+            <StorePricingAdjustmentForm
+              storeId={storeId}
+              defaultValue={currentAdjustment}
+            />
           </section>
 
           <section className="border border-border rounded-md p-sp-4 bg-bg-raised space-y-sp-3">
