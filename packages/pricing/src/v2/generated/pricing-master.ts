@@ -7,7 +7,7 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
   "version": 1,
   "status": "published",
   "effectiveFrom": "2026-08-01",
-  "notes": "Imported from GWG Pricing Master Formula.xlsx on the Aug 2026 pricing review.",
+  "notes": "Imported from GWG_Pricing_Master_Formula__1___1__792f.xlsx.",
   "settings": {
     "currency": "CAD",
     "minimumOrderQty": 1,
@@ -2121,13 +2121,22 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
       },
       "setup": {
         "label": "Screen setup",
-        "description": "One screen burned per colour, per location.",
+        "description": "One screen burned per colour, per location. Charged every job.",
         "newFeeMinor": 3500,
         "repeatFeeMinor": 3000,
         "per": "colour",
+        "frequency": "perJob",
         "shareAcrossGarments": true,
         "multiplierApplies": false,
         "repeatRequiresVerification": true
+      },
+      "threadFee": {
+        "enabled": false,
+        "label": "Thread fee",
+        "description": "",
+        "kind": "flatPerJob",
+        "amountMinor": 0,
+        "multiplierApplies": false
       },
       "minimumChargePerLocationMinor": 0,
       "surcharges": [
@@ -2136,7 +2145,7 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
           "label": "Dark garment",
           "description": "Extra underbase ink on anything but white.",
           "kind": "percent",
-          "value": 0.1,
+          "value": 0.10000000000000009,
           "appliesWhen": "garmentIsDark",
           "enabled": true
         },
@@ -2204,13 +2213,22 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
       },
       "setup": {
         "label": "Digitizing",
-        "description": "Converting artwork to a stitch file. Once per logo.",
+        "description": "Converting artwork to a stitch file. Once per customer per logo.",
         "newFeeMinor": 6500,
         "repeatFeeMinor": 0,
         "per": "design",
+        "frequency": "perCustomer",
         "shareAcrossGarments": true,
         "multiplierApplies": false,
         "repeatRequiresVerification": true
+      },
+      "threadFee": {
+        "enabled": true,
+        "label": "Thread fee",
+        "description": "Optional one-time thread charge on embroidery. Leave at $0 to hide it.",
+        "kind": "flatPerJob",
+        "amountMinor": 0,
+        "multiplierApplies": false
       },
       "minimumChargePerLocationMinor": 0,
       "surcharges": [
@@ -2315,9 +2333,18 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
         "newFeeMinor": 0,
         "repeatFeeMinor": 0,
         "per": "design",
+        "frequency": "perJob",
         "shareAcrossGarments": true,
         "multiplierApplies": false,
         "repeatRequiresVerification": false
+      },
+      "threadFee": {
+        "enabled": false,
+        "label": "Thread fee",
+        "description": "",
+        "kind": "flatPerJob",
+        "amountMinor": 0,
+        "multiplierApplies": false
       },
       "minimumChargePerLocationMinor": 4000,
       "surcharges": [
@@ -2336,5 +2363,15 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
         "setupCostRatio": 0.0
       }
     }
-  ]
+  ],
+  "storefront": {
+    "unitPriceIncludes": "blank",
+    "defaultMethodKey": "screenPrint",
+    "defaultLocation": "front",
+    "defaultColours": 1,
+    "defaultStitchCount": 5000,
+    "defaultOptionKey": "medium",
+    "assumeNewArtwork": true,
+    "assumeDarkGarment": false
+  }
 } as PricingConfigV2;

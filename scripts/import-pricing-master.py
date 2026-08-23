@@ -10,6 +10,7 @@ cell is linear between the quantity anchors, so only the anchors are exported.
 
 Writes:
   docs/pricing/gwg-pricing-master.json                    (reference / diffable)
+  docs/pricing/workbook-dump.json                         (sheets + formulas)
   packages/pricing/src/v2/generated/pricing-master.ts     (engine default config)
 
 Usage:
@@ -19,9 +20,16 @@ Usage:
 import json
 import math
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
+
+
+def json_default(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return str(value)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 JSON_OUT = REPO_ROOT / "docs" / "pricing" / "gwg-pricing-master.json"
@@ -29,12 +37,13 @@ TS_OUT = REPO_ROOT / "packages" / "pricing" / "src" / "v2" / "generated" / "pric
 
 QTY_ANCHORS_SCREEN = [1, 6, 12, 24, 48, 72, 144, 288, 500, 1000]
 QTY_ANCHORS_RUN = [1, 6, 12, 24, 48, 72, 144, 288]
+DUMP_OUT = REPO_ROOT / "docs" / "pricing" / "workbook-dump.json"
 
-# Client-directed values that differ from the workbook's current cells. The
-# workbook still charges $30 for new artwork (same as repeat) and applies rush
-# to shipping; both were corrected in the Aug 2026 pricing review.
-SETUP_NEW_PER_COLOUR_MINOR = 3500
-DARK_GARMENT_PREMIUM_PERCENT = 0.10
+
+def dark_premium_fraction(raw):
+    """Settings!E5 is stored as 1.10 (a multiplier). Convert to +10%."""
+    value = float(raw)
+    return value - 1.0 if value > 1 else value
 
 
 def cents(value):
@@ -114,13 +123,24 @@ def load(xlsx_path):
                 },
                 "setup": {
                     "label": "Screen setup",
-                    "description": "One screen burned per colour, per location.",
-                    "newFeeMinor": SETUP_NEW_PER_COLOUR_MINOR,
+                    "description": "One screen burned per colour, per location. Charged every job.",
+                    # Settings!B5 / B6. Staff can raise these in admin after import.
+                    # Workbook B5 is still $30; live rule is $35 new-artwork setup.
+                    "newFeeMinor": 3500,
                     "repeatFeeMinor": cents(s["B6"].value),
                     "per": "colour",
+                    "frequency": "perJob",
                     "shareAcrossGarments": True,
                     "multiplierApplies": False,
                     "repeatRequiresVerification": True,
+                },
+                "threadFee": {
+                    "enabled": False,
+                    "label": "Thread fee",
+                    "description": "",
+                    "kind": "flatPerJob",
+                    "amountMinor": 0,
+                    "multiplierApplies": False,
                 },
                 "minimumChargePerLocationMinor": 0,
                 "surcharges": [
@@ -129,7 +149,7 @@ def load(xlsx_path):
                         "label": "Dark garment",
                         "description": "Extra underbase ink on anything but white.",
                         "kind": "percent",
-                        "value": DARK_GARMENT_PREMIUM_PERCENT,
+                        "value": dark_premium_fraction(s["E5"].value),
                         "appliesWhen": "garmentIsDark",
                         "enabled": True,
                     },
@@ -167,13 +187,22 @@ def load(xlsx_path):
                 },
                 "setup": {
                     "label": "Digitizing",
-                    "description": "Converting artwork to a stitch file. Once per logo.",
+                    "description": "Converting artwork to a stitch file. Once per customer per logo.",
                     "newFeeMinor": digitizing,
                     "repeatFeeMinor": 0,
                     "per": "design",
+                    "frequency": "perCustomer",
                     "shareAcrossGarments": True,
                     "multiplierApplies": False,
                     "repeatRequiresVerification": True,
+                },
+                "threadFee": {
+                    "enabled": True,
+                    "label": "Thread fee",
+                    "description": "Optional one-time thread charge on embroidery. Leave at $0 to hide it.",
+                    "kind": "flatPerJob",
+                    "amountMinor": 0,
+                    "multiplierApplies": False,
                 },
                 "minimumChargePerLocationMinor": 0,
                 "surcharges": [
@@ -213,9 +242,18 @@ def load(xlsx_path):
                     "newFeeMinor": 0,
                     "repeatFeeMinor": 0,
                     "per": "design",
+                    "frequency": "perJob",
                     "shareAcrossGarments": True,
                     "multiplierApplies": False,
                     "repeatRequiresVerification": False,
+                },
+                "threadFee": {
+                    "enabled": False,
+                    "label": "Thread fee",
+                    "description": "",
+                    "kind": "flatPerJob",
+                    "amountMinor": 0,
+                    "multiplierApplies": False,
                 },
                 "minimumChargePerLocationMinor": cents(s["B13"].value),
                 "surcharges": [
@@ -235,18 +273,81 @@ def load(xlsx_path):
     }
 
 
-def to_typescript(data):
-    config = {
+STOREFRONT_DEFAULTS = {
+    "unitPriceIncludes": "blank",
+    "defaultMethodKey": "screenPrint",
+    "defaultLocation": "front",
+    "defaultColours": 1,
+    "defaultStitchCount": 5000,
+    "defaultOptionKey": "medium",
+    "assumeNewArtwork": True,
+    "assumeDarkGarment": False,
+}
+
+
+def formula_text(value):
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if hasattr(value, "text"):
+        return value.text
+    return value
+
+
+def dump_workbook(xlsx_path):
+    """Record every sheet, settings cell, and formula (not the 150x1000 grid)."""
+    wb = openpyxl.load_workbook(xlsx_path, data_only=False)
+    sheets = {}
+    for name in wb.sheetnames:
+        ws = wb[name]
+        cells = {}
+        if name == "Garment Markup":
+            for row in ws.iter_rows(min_row=1, max_row=3, max_col=12):
+                for cell in row:
+                    if cell.value is not None:
+                        cells[cell.coordinate] = formula_text(cell.value)
+            note = ws["A155"].value
+            if note:
+                cells["A155"] = note
+        else:
+            for row in ws.iter_rows(
+                min_row=1,
+                max_row=min(ws.max_row or 1, 80),
+                max_col=min(ws.max_column or 1, 16),
+            ):
+                for cell in row:
+                    if cell.value is not None:
+                        cells[cell.coordinate] = formula_text(cell.value)
+        sheets[name] = {
+            "maxRow": ws.max_row,
+            "maxCol": ws.max_column,
+            "cells": cells,
+        }
+    return {
+        "source": Path(xlsx_path).name,
+        "sheets": list(wb.sheetnames),
+        "printTypes": ["screenPrint", "embroidery", "dtf"],
+        "bySheet": sheets,
+    }
+
+
+def to_config(data):
+    return {
         "schemaVersion": 2,
         "version": 1,
         "status": "published",
         "effectiveFrom": "2026-08-01",
-        "notes": f"Imported from {data['source']} on the Aug 2026 pricing review.",
+        "notes": f"Imported from {data['source']}.",
         "settings": data["settings"],
         "garment": data["garment"],
         "methods": data["methods"],
+        "storefront": STOREFRONT_DEFAULTS,
     }
-    body = json.dumps(config, indent=2)
+
+
+def to_typescript(data):
+    body = json.dumps(to_config(data), indent=2, default=json_default)
     return (
         "// Generated by scripts/import-pricing-master.py — do not edit by hand.\n"
         "// Re-run the importer to pick up a new version of the estimator workbook.\n"
@@ -259,11 +360,16 @@ def to_typescript(data):
 
 def main(xlsx_path):
     data = load(xlsx_path)
+    dump = dump_workbook(xlsx_path)
     JSON_OUT.parent.mkdir(parents=True, exist_ok=True)
-    JSON_OUT.write_text(json.dumps(data, indent=2) + "\n")
+    JSON_OUT.write_text(
+        json.dumps(to_config(data), indent=2, default=json_default) + "\n"
+    )
+    DUMP_OUT.write_text(json.dumps(dump, indent=2, default=json_default) + "\n")
     TS_OUT.parent.mkdir(parents=True, exist_ok=True)
     TS_OUT.write_text(to_typescript(data))
     print(f"wrote {JSON_OUT.relative_to(REPO_ROOT)}")
+    print(f"wrote {DUMP_OUT.relative_to(REPO_ROOT)}")
     print(f"wrote {TS_OUT.relative_to(REPO_ROOT)}")
 
 

@@ -82,9 +82,18 @@ function newMethodTemplate(index: number): DecorationMethodConfig {
       newFeeMinor: 3000,
       repeatFeeMinor: 0,
       per: "design",
+      frequency: "perJob",
       shareAcrossGarments: true,
       multiplierApplies: false,
       repeatRequiresVerification: true,
+    },
+    threadFee: {
+      enabled: false,
+      label: "Thread fee",
+      description: "",
+      kind: "flatPerJob",
+      amountMinor: 0,
+      multiplierApplies: false,
     },
     minimumChargePerLocationMinor: 0,
     surcharges: [],
@@ -337,6 +346,11 @@ function MethodEditor({
           <SetupEditor
             method={method}
             onChange={(setup) => onChange({ ...method, setup })}
+          />
+
+          <ThreadFeeEditor
+            method={method}
+            onChange={(threadFee) => onChange({ ...method, threadFee })}
           />
 
           <SurchargeEditor
@@ -646,6 +660,17 @@ function SetupEditor({
           ]}
           onChange={(value) => onChange({ ...setup, per: value })}
         />
+        <SelectField
+          label="When it is charged"
+          hint="Screen setup is every job. Digitizing is once per customer."
+          value={setup.frequency ?? "perJob"}
+          options={[
+            { value: "perJob", label: "Every job" },
+            { value: "perCustomer", label: "Once per customer" },
+            { value: "once", label: "Once ever" },
+          ]}
+          onChange={(value) => onChange({ ...setup, frequency: value })}
+        />
         <MoneyField
           label="New artwork fee"
           valueMinor={setup.newFeeMinor}
@@ -682,6 +707,59 @@ function SetupEditor({
           onChange={(checked) =>
             onChange({ ...setup, repeatRequiresVerification: checked })
           }
+        />
+      </div>
+    </div>
+  );
+}
+
+function ThreadFeeEditor({
+  method,
+  onChange,
+}: {
+  method: DecorationMethodConfig;
+  onChange: (threadFee: DecorationMethodConfig["threadFee"]) => void;
+}) {
+  const thread = method.threadFee ?? {
+    enabled: false,
+    label: "Thread fee",
+    description: "",
+    kind: "flatPerJob" as const,
+    amountMinor: 0,
+    multiplierApplies: false,
+  };
+  return (
+    <div className="space-y-sp-3">
+      <h4 className="font-display font-bold m-0">Thread fee</h4>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-sp-3">
+        <ToggleField
+          label="Charge a thread fee"
+          hint="Used on embroidery. Leave the amount at $0 to keep the control without charging."
+          checked={thread.enabled}
+          onChange={(checked) => onChange({ ...thread, enabled: checked })}
+        />
+        <Field label="Fee name">
+          <input
+            className="mt-1 w-full border border-border rounded-sm px-3 py-2 bg-bg"
+            value={thread.label}
+            onChange={(event) =>
+              onChange({ ...thread, label: event.target.value })
+            }
+          />
+        </Field>
+        <SelectField
+          label="Charged as"
+          value={thread.kind}
+          options={[
+            { value: "flatPerJob", label: "Once per job" },
+            { value: "flatPerPiece", label: "Per piece" },
+          ]}
+          onChange={(value) => onChange({ ...thread, kind: value })}
+        />
+        <MoneyField
+          label="Amount"
+          valueMinor={thread.amountMinor}
+          onChange={(minor) => onChange({ ...thread, amountMinor: minor })}
         />
       </div>
     </div>

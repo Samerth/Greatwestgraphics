@@ -117,18 +117,28 @@ describe("imported config", () => {
     expect(embroidery.setup.multiplierApplies).toBe(false);
   });
 
-  it("carries the client-directed fee changes", () => {
+  it("imports workbook fees and the three print methods", () => {
     const screen = config.methods.find((m) => m.key === "screenPrint")!;
+    const embroidery = config.methods.find((m) => m.key === "embroidery")!;
+    const dtf = config.methods.find((m) => m.key === "dtf")!;
+    expect(config.methods.map((m) => m.key)).toEqual([
+      "screenPrint",
+      "embroidery",
+      "dtf",
+    ]);
     expect(screen.setup.newFeeMinor).toBe(3500);
     expect(screen.setup.repeatFeeMinor).toBe(3000);
+    expect(screen.setup.frequency).toBe("perJob");
+    expect(embroidery.setup.frequency).toBe("perCustomer");
+    expect(embroidery.threadFee.enabled).toBe(true);
+    expect(dtf.setup.newFeeMinor).toBe(0);
     expect(
       screen.surcharges.find((s) => s.key === "darkGarment")?.value,
     ).toBeCloseTo(0.1);
     expect(config.settings.rushFeePercent).toBeCloseTo(0.3);
     expect(config.settings.rushAppliesTo).toBe("productionExcludingShipping");
-    expect(
-      config.methods.find((m) => m.key === "dtf")!.minimumChargePerLocationMinor,
-    ).toBe(4000);
+    expect(dtf.minimumChargePerLocationMinor).toBe(4000);
+    expect(config.storefront.unitPriceIncludes).toBe("blank");
   });
 });
 
@@ -652,5 +662,158 @@ describe("overrides", () => {
     );
     expect(result.totals.totalMinor).toBe(50000);
     expect(result.warnings.some((w) => w.includes("overridden"))).toBe(true);
+  });
+});
+
+describe("thread fee", () => {
+  it("adds a per-job thread line on embroidery when configured", () => {
+    const withThread = structuredClone(config);
+    const embroidery = withThread.methods.find((m) => m.key === "embroidery")!;
+    embroidery.threadFee = {
+      enabled: true,
+      label: "Thread fee",
+      description: "",
+      kind: "flatPerJob",
+      amountMinor: 1500,
+      multiplierApplies: false,
+    };
+
+    const result = calculateQuoteV2(
+      quote({
+        decorations: [
+          {
+            id: "d1",
+            garmentId: "g1",
+            methodKey: "embroidery",
+            location: "front",
+            logoGroup: "",
+            variableValue: 5000,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+        ],
+      }),
+      withThread,
+    );
+
+    const thread = result.lines.find((line) => line.kind === "thread")!;
+    expect(thread.extendedAmountMinor).toBe(1500);
+    expect(result.totals.threadMinor).toBe(1500);
+    expect(
+      result.lines.reduce((sum, line) => sum + line.extendedAmountMinor, 0),
+    ).toBe(result.totals.totalMinor);
+  });
+
+  it("skips a $0 thread fee even when the control is enabled", () => {
+    const result = calculateQuoteV2(
+      quote({
+        decorations: [
+          {
+            id: "d1",
+            garmentId: "g1",
+            methodKey: "embroidery",
+            location: "front",
+            logoGroup: "",
+            variableValue: 5000,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+        ],
+      }),
+      config,
+    );
+    expect(result.lines.some((line) => line.kind === "thread")).toBe(false);
+    expect(result.totals.threadMinor).toBe(0);
+  });
+});
+
+describe("setup frequency", () => {
+  it("does not charge a per-customer setup on a verified repeat", () => {
+    const result = calculateQuoteV2(
+      quote({
+        decorations: [
+          {
+            id: "d1",
+            garmentId: "g1",
+            methodKey: "embroidery",
+            location: "front",
+            logoGroup: "",
+            variableValue: 5000,
+            isOversized: false,
+            artwork: { isRepeat: true, verifiedByStaff: true },
+          },
+        ],
+      }),
+      config,
+    );
+    expect(result.totals.setupMinor).toBe(0);
+  });
+
+  it("still charges a per-job setup on a verified repeat", () => {
+    const result = calculateQuoteV2(
+      quote({
+        decorations: [
+          {
+            id: "d1",
+            garmentId: "g1",
+            methodKey: "screenPrint",
+            location: "front",
+            logoGroup: "",
+            colours: 1,
+            isOversized: false,
+            artwork: { isRepeat: true, verifiedByStaff: true },
+          },
+        ],
+      }),
+      config,
+    );
+    expect(result.totals.setupMinor).toBe(3000);
+  });
+});
+
+describe("thread fee once per job", () => {
+  it("charges a per-job thread fee once even with two locations", () => {
+    const withThread = structuredClone(config);
+    const embroidery = withThread.methods.find((m) => m.key === "embroidery")!;
+    embroidery.threadFee = {
+      enabled: true,
+      label: "Thread fee",
+      description: "",
+      kind: "flatPerJob",
+      amountMinor: 1500,
+      multiplierApplies: false,
+    };
+
+    const result = calculateQuoteV2(
+      quote({
+        decorations: [
+          {
+            id: "d1",
+            garmentId: "g1",
+            methodKey: "embroidery",
+            location: "front",
+            logoGroup: "",
+            variableValue: 5000,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+          {
+            id: "d2",
+            garmentId: "g1",
+            methodKey: "embroidery",
+            location: "back",
+            logoGroup: "",
+            variableValue: 5000,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+        ],
+      }),
+      withThread,
+    );
+
+    const threads = result.lines.filter((line) => line.kind === "thread");
+    expect(threads).toHaveLength(1);
+    expect(result.totals.threadMinor).toBe(1500);
   });
 });

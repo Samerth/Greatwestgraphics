@@ -220,6 +220,16 @@ export function CalculatorTab({ config, publishedConfig }: Props) {
                       })
                     }
                   />
+                  <MoneyField
+                    label="Vendor MAP"
+                    hint="Optional. Used when MAP policy is floor or warn."
+                    valueMinor={garment.mapPriceMinor ?? 0}
+                    onChange={(minor) =>
+                      updateGarment(index, {
+                        mapPriceMinor: minor > 0 ? minor : undefined,
+                      })
+                    }
+                  />
                 </div>
                 {quote.garments.length > 1 && (
                   <button
@@ -435,6 +445,7 @@ export function CalculatorTab({ config, publishedConfig }: Props) {
           {result.breakdown && (
             <QuoteResult
               breakdown={result.breakdown}
+              quote={quote}
               config={config}
               openLine={openLine}
               onToggleLine={(id) => setOpenLine(openLine === id ? null : id)}
@@ -535,11 +546,13 @@ function capitalize(value: string) {
 
 function QuoteResult({
   breakdown,
+  quote,
   config,
   openLine,
   onToggleLine,
 }: {
   breakdown: QuoteBreakdownV2;
+  quote: QuoteInputV2;
   config: PricingConfigV2;
   openLine: string | null;
   onToggleLine: (id: string) => void;
@@ -553,6 +566,59 @@ function QuoteResult({
       title="What the customer pays"
       description={`Priced with version ${breakdown.pricingConfigVersion}. Valid ${breakdown.expiresInDays} days.`}
     >
+      <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm m-0 mb-sp-3">
+        {breakdown.garments.map((garment) => (
+          <div key={garment.garmentId} className="contents">
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">Cost</dt>
+              <dd className="m-0">{formatMoney(garment.unitCostMinor)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">Markup</dt>
+              <dd className="m-0">
+                {garment.unitCostMinor > 0
+                  ? `${(garment.sellPerPieceMinor / garment.unitCostMinor).toFixed(3)}×`
+                  : "—"}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">Garment after markup</dt>
+              <dd className="m-0">{formatMoney(garment.sellPerPieceMinor)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">Decoration / piece</dt>
+              <dd className="m-0">
+                {formatMoney(garment.decorationPerPieceMinor)}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">Quantity</dt>
+              <dd className="m-0">{garment.quantity}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-text-secondary">MAP</dt>
+              <dd className="m-0">
+                {quote.garments.find((row) => row.id === garment.garmentId)
+                  ?.mapPriceMinor
+                  ? formatMoney(
+                      quote.garments.find((row) => row.id === garment.garmentId)!
+                        .mapPriceMinor!,
+                    )
+                  : "—"}
+              </dd>
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between gap-3">
+          <dt className="text-text-secondary">Setup</dt>
+          <dd className="m-0">{formatMoney(totals.setupMinor)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-text-secondary">Thread</dt>
+          <dd className="m-0">{formatMoney(totals.threadMinor ?? 0)}</dd>
+        </div>
+      </dl>
+
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <div>
           <p className="text-xs uppercase tracking-wide text-text-secondary m-0">
@@ -617,6 +683,9 @@ function QuoteResult({
         <TotalRow label="Garments" minor={totals.merchandiseMinor} />
         <TotalRow label="Decoration" minor={totals.decorationMinor} />
         <TotalRow label="Setup and artwork" minor={totals.setupMinor} />
+        {(totals.threadMinor ?? 0) > 0 && (
+          <TotalRow label="Thread" minor={totals.threadMinor} />
+        )}
         {totals.packingMinor > 0 && (
           <TotalRow label="Packing" minor={totals.packingMinor} />
         )}
@@ -739,6 +808,7 @@ function ComparisonTable({
     ["Garments", draft.totals.merchandiseMinor, published.totals.merchandiseMinor],
     ["Decoration", draft.totals.decorationMinor, published.totals.decorationMinor],
     ["Setup", draft.totals.setupMinor, published.totals.setupMinor],
+    ["Thread", draft.totals.threadMinor ?? 0, published.totals.threadMinor ?? 0],
     ["Rush", draft.totals.rushMinor, published.totals.rushMinor],
     ["Total", draft.totals.totalMinor, published.totals.totalMinor],
   ];

@@ -25,6 +25,7 @@ import {
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 import type { GarmentPriceCurve } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -337,6 +338,10 @@ export default async function ProductPage({
                     name={title}
                     color={String(product.colorName || "")}
                     image={imageUrl}
+                    pricingConfig={
+                      (detail as { pricingConfig?: PricingConfigV2 })
+                        .pricingConfig ?? null
+                    }
                     variants={variants.map((v) => ({
                       id: String(v.id),
                       sizeName: String(v.sizeName || ""),

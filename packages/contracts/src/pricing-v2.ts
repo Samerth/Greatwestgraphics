@@ -86,6 +86,9 @@ export const SurchargeSchema = z.object({
 });
 export type Surcharge = z.infer<typeof SurchargeSchema>;
 
+export const SetupFrequencySchema = z.enum(["perJob", "perCustomer", "once"]);
+export type SetupFrequency = z.infer<typeof SetupFrequencySchema>;
+
 export const MethodSetupSchema = z.object({
   label: z.string().min(1),
   description: z.string().default(""),
@@ -93,6 +96,13 @@ export const MethodSetupSchema = z.object({
   repeatFeeMinor: MinorAmount,
   /** What the fee is charged per: colour count, whole design, or location. */
   per: z.enum(["colour", "design", "location"]),
+  /**
+   * How often the fee is collected.
+   * perJob — every order (screen burn).
+   * perCustomer — first time this customer uses the artwork (digitizing).
+   * once — first time this artwork is set up, ever.
+   */
+  frequency: SetupFrequencySchema.default("perJob"),
   /**
    * When true the fee is charged once per logo group and split across the
    * garments using it, pro-rata by quantity (matches the estimator workbook).
@@ -104,6 +114,16 @@ export const MethodSetupSchema = z.object({
   repeatRequiresVerification: z.boolean().default(true),
 });
 export type MethodSetup = z.infer<typeof MethodSetupSchema>;
+
+export const ThreadFeeSchema = z.object({
+  enabled: z.boolean().default(false),
+  label: z.string().min(1).default("Thread fee"),
+  description: z.string().default(""),
+  kind: z.enum(["flatPerJob", "flatPerPiece"]).default("flatPerJob"),
+  amountMinor: MinorAmount.default(0),
+  multiplierApplies: z.boolean().default(false),
+});
+export type ThreadFee = z.infer<typeof ThreadFeeSchema>;
 
 export const DecorationMethodConfigSchema = z.object({
   key: z
@@ -118,6 +138,14 @@ export const DecorationMethodConfigSchema = z.object({
   multiplier: Multiplier,
   rateModel: RateModelSchema,
   setup: MethodSetupSchema,
+  threadFee: ThreadFeeSchema.default({
+    enabled: false,
+    label: "Thread fee",
+    description: "",
+    kind: "flatPerJob",
+    amountMinor: 0,
+    multiplierApplies: false,
+  }),
   /** Floor on the run charge for one location, before surcharges. */
   minimumChargePerLocationMinor: MinorAmount.default(0),
   surcharges: z.array(SurchargeSchema).default([]),
@@ -173,6 +201,30 @@ export const PricingSettingsV2Schema = z.object({
 });
 export type PricingSettingsV2 = z.infer<typeof PricingSettingsV2Schema>;
 
+/**
+ * How the storefront turns the same quote math into a shopper-facing unit
+ * price. Admin picks the strategy; PDP, studio, quote and cart all call the
+ * same helper with this block.
+ */
+export const StorefrontPricingSchema = z.object({
+  /**
+   * blank — garment only.
+   * decorated — garment + run + per-piece thread (setup stays off the unit).
+   * landed — decorated plus amortized setup and per-job thread.
+   */
+  unitPriceIncludes: z
+    .enum(["blank", "decorated", "landed"])
+    .default("blank"),
+  defaultMethodKey: z.string().min(1).default("screenPrint"),
+  defaultLocation: z.string().min(1).default("front"),
+  defaultColours: z.number().int().positive().max(12).default(1),
+  defaultStitchCount: z.number().nonnegative().default(5000),
+  defaultOptionKey: z.string().min(1).default("medium"),
+  assumeNewArtwork: z.boolean().default(true),
+  assumeDarkGarment: z.boolean().default(false),
+});
+export type StorefrontPricing = z.infer<typeof StorefrontPricingSchema>;
+
 export const PricingConfigV2Schema = z.object({
   schemaVersion: z.literal(2),
   version: z.number().int().positive(),
@@ -182,6 +234,16 @@ export const PricingConfigV2Schema = z.object({
   settings: PricingSettingsV2Schema,
   garment: GarmentPricingSchema,
   methods: z.array(DecorationMethodConfigSchema).min(1),
+  storefront: StorefrontPricingSchema.default({
+    unitPriceIncludes: "blank",
+    defaultMethodKey: "screenPrint",
+    defaultLocation: "front",
+    defaultColours: 1,
+    defaultStitchCount: 5000,
+    defaultOptionKey: "medium",
+    assumeNewArtwork: true,
+    assumeDarkGarment: false,
+  }),
 });
 export type PricingConfigV2 = z.infer<typeof PricingConfigV2Schema>;
 
@@ -403,6 +465,7 @@ export const QuoteLineKindSchema = z.enum([
   "decoration",
   "surcharge",
   "setup",
+  "thread",
   "design",
   "artworkMinimum",
   "packing",
@@ -431,6 +494,7 @@ export const QuoteTotalsV2Schema = z.object({
   merchandiseMinor: z.number().int(),
   decorationMinor: z.number().int(),
   setupMinor: z.number().int(),
+  threadMinor: z.number().int().default(0),
   packingMinor: z.number().int(),
   shippingMinor: z.number().int(),
   rushMinor: z.number().int(),

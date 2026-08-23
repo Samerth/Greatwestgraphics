@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
-import { createCommerceClient } from "@/lib/commerce/client";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
-import { PRICING_MASTER_V2 } from "@gwg/pricing";
+import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
@@ -57,19 +56,7 @@ export default async function QuotePage({
   searchParams: Promise<{ method?: string; type?: string }>;
 }) {
   const params = await searchParams;
-  let pricingConfig: PricingConfigV2 = PRICING_MASTER_V2;
-
-  try {
-    const published = await (
-      await createCommerceClient()
-    ).getPublishedPricingV2Config();
-    pricingConfig = published.config;
-  } catch (caught) {
-    console.error(
-      "[storefront] published pricing unavailable; using bundled defaults",
-      caught instanceof Error ? caught.message : caught,
-    );
-  }
+  const pricingConfig = await loadPublishedPricingV2();
 
   // Sorted brand-then-style alphabetically, and Adidas alone has 170
   // colourways — a small limit would silently only ever offer Adidas.
@@ -141,11 +128,7 @@ export default async function QuotePage({
             initialQty={initialQty}
           />
           <p className="text-xs text-text-tertiary mt-sp-3 max-w-[72ch]">
-            Estimates use pricing config v{pricingConfig.version} and exclude tax
-            unless noted. One-time setup fees are itemized in the estimate panel.
-            {catalogProducts.length > 0
-              ? " Garment cost and dark premium come from the local catalog."
-              : ""}
+            Estimates exclude tax. Final price is confirmed after artwork review.
           </p>
         </Container>
       </section>

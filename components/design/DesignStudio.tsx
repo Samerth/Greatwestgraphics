@@ -15,6 +15,7 @@ import {
   type DesignDocument,
   type DesignSide,
   type PlacedArtwork,
+  type PricingConfigV2,
 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
@@ -26,7 +27,22 @@ import {
   filenameForArtworkBlob,
 } from "@/lib/store/design-draft";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
-import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
+import { shopperUnitMinor } from "@/lib/utils/shopper-price";
+import {
+  PRICING_MASTER_V2,
+  priceGarmentFromCurve,
+  priceShopperQuote,
+  type GarmentPriceCurve,
+} from "@gwg/pricing";
+import {
+  STITCH_PRESETS,
+  colourOptions,
+  defaultOptionKey,
+  enabledDecorationMethods,
+  methodVariableInputs,
+  stitchCountForPreset,
+  type StitchPresetId,
+} from "@/lib/utils/shop-quote";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import {
   framedBackdropStyles,
@@ -49,6 +65,8 @@ export type DesignGarmentOption = {
   backImageUrl?: string | null;
   isDark: boolean;
   slug?: string;
+  /** Vendor cost; used when the size-level cost has not loaded yet. */
+  costMinor?: number;
 };
 
 type ProductDetailVariant = {
@@ -69,8 +87,18 @@ type ProductDetailVariant = {
 function unitPriceMinor(
   variant: ProductDetailVariant | undefined,
   quantity: number,
+  detail?: ProductDetail | null,
 ): number {
   if (!variant) return 0;
+  if (detail?.pricingConfig && variant.customerPriceMinor) {
+    return shopperUnitMinor(detail.pricingConfig, {
+      unitCostMinor: variant.customerPriceMinor,
+      quantity: Math.max(1, quantity),
+      mapPriceMinor: variant.mapPriceMinor ?? null,
+      colourName: detail.product.colorName,
+      isDark: detail.product.isDark,
+    });
+  }
   if (!variant.priceCurve || !variant.customerPriceMinor) {
     return variant.retailMinor;
   }
@@ -89,6 +117,7 @@ type ProductDetail = {
     colorFrontImageUrl: string | null;
     colorSideImageUrl: string | null;
     colorBackImageUrl: string | null;
+    isDark?: boolean;
   };
   style: {
     id: string;
@@ -97,6 +126,7 @@ type ProductDetail = {
     styleImageUrl: string | null;
   };
   variants: ProductDetailVariant[];
+  pricingConfig?: PricingConfigV2;
 };
 
 const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
@@ -174,6 +204,7 @@ export function DesignStudio({
   garmentIdOverride = null,
   mode = "customer",
   endpoints,
+  pricingConfig = PRICING_MASTER_V2,
 }: {
   garments?: DesignGarmentOption[];
   signedIn?: boolean;
@@ -183,6 +214,8 @@ export function DesignStudio({
   /** Staff mode drops the buying controls: nobody checks out from the admin. */
   mode?: "customer" | "staff";
   endpoints?: DesignStudioEndpoints;
+  /** Published v2 config — same rates the quote builder and admin preview use. */
+  pricingConfig?: PricingConfigV2;
 }) {
   const isStaff = mode === "staff";
   const router = useRouter();
@@ -214,6 +247,23 @@ export function DesignStudio({
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [designQty, setDesignQty] = useState(48);
+  const quoteMethods = useMemo(
+    () => enabledDecorationMethods(pricingConfig),
+    [pricingConfig],
+  );
+  const [methodKey, setMethodKey] = useState(
+    () =>
+      quoteMethods.find(
+        (method) => method.key === pricingConfig.storefront?.defaultMethodKey,
+      )?.key ??
+      quoteMethods[0]?.key ??
+      "screenPrint",
+  );
+  const [colours, setColours] = useState(
+    pricingConfig.storefront?.defaultColours ?? 1,
+  );
+  const [stitchPreset, setStitchPreset] = useState<StitchPresetId>("medium");
+  const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [groupOrder, setGroupOrder] = useState(false);
@@ -328,7 +378,8 @@ export function DesignStudio({
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
       sideImageUrl: productDetail.product.colorSideImageUrl,
       backImageUrl: productDetail.product.colorBackImageUrl,
-      isDark: false,
+      isDark: Boolean(productDetail.product.isDark),
+      costMinor: productDetail.variants[0]?.customerPriceMinor,
     });
   }, [productDetail, selectedGarmentId, garments]);
   const garmentOptions = useMemo(
@@ -350,6 +401,63 @@ export function DesignStudio({
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
+  const selectedMethod =
+    quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
+  const decoratedSides = decoratedDesignSides(artworksBySide);
+
+  const quoted = useMemo(() => {
+    const unitCostMinor =
+      selectedVariant?.customerPriceMinor ?? selectedGarment?.costMinor ?? 0;
+    if (unitCostMinor <= 0) return null;
+    const locations = (
+      decoratedSides.length > 0 ? decoratedSides : [activeSide]
+    ).map((side) => placementBySide[side] || side);
+    try {
+      return priceShopperQuote(pricingConfig, {
+        unitCostMinor,
+        quantity: groupOrder ? Math.max(1, roster.length) : designQty,
+        mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
+        colourName:
+          selectedGarment?.colorName ?? productDetail?.product.colorName ?? "",
+        isDark: selectedGarment?.isDark,
+        methodKey: selectedMethod?.key,
+        colours: methodVariableInputs(selectedMethod).colours
+          ? colours
+          : undefined,
+        stitchCount: methodVariableInputs(selectedMethod).stitches
+          ? stitchCountForPreset(stitchPreset)
+          : undefined,
+        optionKey: methodVariableInputs(selectedMethod).option
+          ? optionKey || defaultOptionKey(selectedMethod)
+          : undefined,
+        locations,
+        shareSetup: false,
+        description: selectedGarment?.label ?? "Custom design",
+        decorated: true,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    activeSide,
+    colours,
+    decoratedSides,
+    designQty,
+    groupOrder,
+    optionKey,
+    placementBySide,
+    pricingConfig,
+    productDetail?.product.colorName,
+    roster.length,
+    selectedGarment?.colorName,
+    selectedGarment?.costMinor,
+    selectedGarment?.isDark,
+    selectedGarment?.label,
+    selectedMethod,
+    selectedVariant,
+    stitchPreset,
+  ]);
+
   // Front/back can use the list photo while detail loads. Sleeves use a
   // vendor side shot when the catalog has one (the dedicated garment
   // angle), otherwise a framed sleeve-on-shirt crop of that colorway —
@@ -717,10 +825,13 @@ export function DesignStudio({
           meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
           color: productDetail.product.colorName,
           qty: roster.length,
-          unit: unitPriceMinor(priceVariant, roster.length) / 100,
+          unit:
+            quoted?.cartUnit ??
+            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
           image: artworkProofUrl || currentPhoto || "",
           artworkProofUrl,
           designProjectId,
+          pricingSnapshot: quoted?.snapshot,
           roster: roster.map((r) => ({
             size: r.size,
             name: r.name.trim(),
@@ -745,10 +856,13 @@ export function DesignStudio({
         meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
         color: productDetail.product.colorName,
         qty: designQty,
-        unit: unitPriceMinor(selectedVariant, designQty) / 100,
+        unit:
+          quoted?.cartUnit ??
+          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
         image: artworkProofUrl || currentPhoto || "",
         artworkProofUrl,
         designProjectId,
+        pricingSnapshot: quoted?.snapshot,
       });
       router.push("/cart");
     } catch (caught) {
@@ -857,7 +971,6 @@ export function DesignStudio({
     }
   }
 
-  const decoratedSides = decoratedDesignSides(artworksBySide);
   const placementSuffix = cartPlacementSuffix(
     decoratedSides,
     placementBySide,
@@ -1271,6 +1384,95 @@ export function DesignStudio({
                 </>
               )}
 
+              <div className="mb-sp-3">
+                <span className="text-xs font-bold block mb-1.5">Print method</span>
+                <StudioSelect
+                  tone="panel"
+                  ariaLabel="Print method"
+                  value={selectedMethod?.key ?? methodKey}
+                  onChange={(value) => {
+                    const next = quoteMethods.find((method) => method.key === value);
+                    setMethodKey(value);
+                    setOptionKey(defaultOptionKey(next));
+                  }}
+                  options={quoteMethods.map((method) => ({
+                    value: method.key,
+                    label: method.label,
+                  }))}
+                />
+              </div>
+              {methodVariableInputs(selectedMethod).colours && (
+                <div className="mb-sp-3">
+                  <span className="text-xs font-bold block mb-1.5">
+                    Colours in the design
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {colourOptions(selectedMethod).map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        onClick={() => setColours(count)}
+                        className={cn(
+                          "min-w-8 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
+                          colours === count
+                            ? "bg-accent text-white border-accent"
+                            : "border-border bg-bg-raised hover:border-text-tertiary",
+                        )}
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {methodVariableInputs(selectedMethod).stitches && (
+                <div className="mb-sp-3">
+                  <span className="text-xs font-bold block mb-1.5">Logo size</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {STITCH_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setStitchPreset(preset.id)}
+                        className={cn(
+                          "px-2 h-8 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
+                          stitchPreset === preset.id
+                            ? "bg-accent text-white border-accent"
+                            : "border-border bg-bg-raised hover:border-text-tertiary",
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selectedMethod?.rateModel.kind === "matrixByOption" && (
+                <div className="mb-sp-3">
+                  <span className="text-xs font-bold block mb-1.5">
+                    Transfer size
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {selectedMethod.rateModel.options.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setOptionKey(option.key)}
+                        className={cn(
+                          "px-2 h-8 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
+                          (optionKey || defaultOptionKey(selectedMethod)) ===
+                          option.key
+                            ? "bg-accent text-white border-accent"
+                            : "border-border bg-bg-raised hover:border-text-tertiary",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {cartError && (
                 <p className="text-sm text-danger mt-2 mb-0" role="alert">
                   {cartError}
@@ -1296,7 +1498,9 @@ export function DesignStudio({
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
                       : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
-                          unitPriceMinor(selectedVariant, designQty) * designQty,
+                          quoted?.totalMinor ??
+                            unitPriceMinor(selectedVariant, designQty, productDetail) *
+                              designQty,
                         )}`}
               </Button>
             </div>
