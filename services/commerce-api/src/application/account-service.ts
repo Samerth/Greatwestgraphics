@@ -260,12 +260,48 @@ export class AccountService {
     tenantId: string,
     storeId: string,
     status: "active" | "suspended",
-  ) {
+  ): Promise<{
+    id: string;
+    status: string;
+    slug: string;
+    name: string;
+    accountId: string;
+    ownerEmail: string | null;
+    ownerName: string | null;
+  } | null> {
     const [updated] = await this.db
       .update(stores)
       .set({ status, updatedAt: new Date() })
       .where(and(eq(stores.tenantId, tenantId), eq(stores.id, storeId)))
-      .returning();
-    return updated;
+      .returning({
+        id: stores.id,
+        status: stores.status,
+        slug: stores.slug,
+        name: stores.name,
+        accountId: stores.accountId,
+      });
+    if (!updated) return null;
+
+    const [owner] = await this.db
+      .select({
+        email: people.email,
+        name: people.displayName,
+      })
+      .from(accountPeople)
+      .innerJoin(people, eq(people.id, accountPeople.personId))
+      .where(
+        and(
+          eq(accountPeople.tenantId, tenantId),
+          eq(accountPeople.accountId, updated.accountId),
+          eq(accountPeople.role, "owner"),
+        ),
+      )
+      .limit(1);
+
+    return {
+      ...updated,
+      ownerEmail: owner?.email ?? null,
+      ownerName: owner?.name ?? null,
+    };
   }
 }
