@@ -205,8 +205,19 @@ export default async function ProductPage({
     );
     const gallery = [
       { label: "Front", url: imageUrl },
-      { label: "Side", url: sideImageUrl },
-      { label: "Back", url: backImageUrl },
+      {
+        label: "Side",
+        url:
+          sideImageUrl &&
+          sideImageUrl !== imageUrl &&
+          sideImageUrl !== backImageUrl
+            ? sideImageUrl
+            : null,
+      },
+      {
+        label: "Back",
+        url: backImageUrl && backImageUrl !== imageUrl ? backImageUrl : null,
+      },
     ].filter((item): item is { label: string; url: string } => Boolean(item.url));
 
     return (

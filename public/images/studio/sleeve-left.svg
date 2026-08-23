@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 340" fill="none">
-  <rect width="340" height="340" fill="#1a1a1a"/>
-  <path d="M118 36h92c18 0 30 14 34 36l28 176c4 24-10 44-34 44H128c-24 0-38-20-34-44l28-176c4-22 16-36 34-36z" fill="#d8d4cc"/>
-  <path d="M122 48h84c12 0 20 10 23 26l6 36H93l6-36c3-16 11-26 23-26z" fill="#c4bfb6"/>
-  <path d="M108 268h124c14 0 22-10 20-22l-4-20H92l-4 20c-2 12 6 22 20 22z" fill="#c4bfb6"/>
-  <path d="M148 72h44v168h-44z" fill="#ece9e3" opacity=".35"/>
-  <text x="170" y="318" text-anchor="middle" fill="#8a8680" font-family="system-ui,sans-serif" font-size="13" font-weight="700" letter-spacing="0.12em">LEFT SLEEVE</text>
-</svg>

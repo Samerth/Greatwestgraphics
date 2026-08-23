@@ -59,6 +59,8 @@ export default async function AdminDesignEditPage({
       label: p.name,
       colorName: p.colorName,
       imageUrl: p.imageUrl,
+      sideImageUrl: p.sideImageUrl,
+      backImageUrl: p.backImageUrl,
       isDark: p.isDark,
     }));
 

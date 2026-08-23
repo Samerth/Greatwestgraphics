@@ -4,7 +4,11 @@ import {
   type DesignDocument,
   type DesignSide,
 } from "@gwg/contracts";
-import { garmentBackdropForSide } from "@/lib/commerce/garment-backdrop";
+import {
+  backdropImageStyle,
+  garmentBackdropForSide,
+  type PhotoCrop,
+} from "@/lib/commerce/garment-backdrop";
 
 /**
  * A read-only rendering of one garment view, faithful to what the customer
@@ -26,6 +30,7 @@ export function DesignSidePreview({
   design,
   garmentImageUrl,
   mirrorGarment,
+  garmentCrop,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
@@ -33,6 +38,7 @@ export function DesignSidePreview({
   design: DesignDocument;
   garmentImageUrl?: string | null;
   mirrorGarment?: boolean;
+  garmentCrop?: PhotoCrop;
   size?: number;
   className?: string;
 }) {
@@ -40,6 +46,7 @@ export function DesignSidePreview({
   const fallback = garmentBackdropForSide(side, {});
   const imageUrl = garmentImageUrl || fallback.url;
   const mirrored = mirrorGarment ?? fallback.mirror;
+  const crop = garmentCrop ?? (garmentImageUrl ? undefined : fallback.crop);
 
   return (
     <div
@@ -62,13 +69,8 @@ export function DesignSidePreview({
           src={imageUrl}
           alt=""
           style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
+            ...backdropImageStyle(crop, Boolean(mirrored && !crop)),
             opacity: garmentImageUrl ? 1 : 0.9,
-            transform: mirrored ? "scaleX(-1)" : undefined,
           }}
         />
 
