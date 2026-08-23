@@ -38,6 +38,8 @@ export type StorefrontCatalogProduct = {
   isDark: boolean;
   available: boolean;
   imageUrl: string | null;
+  sideImageUrl: string | null;
+  backImageUrl: string | null;
   priceFrom: string;
 };
 
@@ -173,6 +175,8 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
           (row.colorFrontImageUrl as string | null) ||
           (row.styleImageUrl as string | null) ||
           null,
+        sideImageUrl: (row.colorSideImageUrl as string | null) || null,
+        backImageUrl: (row.colorBackImageUrl as string | null) || null,
         priceFrom: available
           ? `from ${moneyFromMinor(retailMinor)}`
           : "Unavailable",

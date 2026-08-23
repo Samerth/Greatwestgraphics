@@ -282,7 +282,15 @@ export class CommerceClient {
   ) {
     return this.request(
       `/admin/accounts/stores/${encodeURIComponent(storeId)}/status`,
-      z.record(z.unknown()),
+      z.object({
+        id: z.string(),
+        status: z.string(),
+        slug: z.string(),
+        name: z.string(),
+        accountId: z.string(),
+        ownerEmail: z.string().nullable().optional(),
+        ownerName: z.string().nullable().optional(),
+      }),
       {
         method: "POST",
         headers: this.headers(undefined, adminToken),

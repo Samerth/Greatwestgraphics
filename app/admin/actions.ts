@@ -2,8 +2,16 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { requireStaff } from "@/lib/admin/auth";
+import { mappingListHref, parseMappingTab } from "@/lib/admin/mapping-list";
+import { parsePage } from "@/lib/admin/paged-list";
+import {
+  buildStoreApprovedEmail,
+  publicSiteOrigin,
+} from "@/lib/commerce/store-approved-email";
+import { sendEmail } from "@/lib/email/send";
 import { getImageStore } from "@/lib/storage";
 
 const PROOF_TYPES: Record<string, string> = {
@@ -258,6 +266,26 @@ export async function reorderCategoryAction(orderedIds: string[]) {
   revalidatePath("/admin/categories");
 }
 
+export async function moveCategoryAction(
+  categoryId: string,
+  direction: "up" | "down",
+) {
+  const client = await adminClient();
+  const token = requireAdminToken();
+  const categories = await client.listCategories(token);
+  const ids = categories.map((row) => String(row.id));
+  const index = ids.indexOf(categoryId);
+  if (index < 0) throw new Error("Category not found");
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= ids.length) return;
+  const next = [...ids];
+  const tmp = next[swapWith]!;
+  next[swapWith] = next[index]!;
+  next[index] = tmp;
+  await client.reorderCategories(next, token);
+  revalidatePath("/admin/categories");
+}
+
 export async function saveMappingAction(formData: FormData) {
   const ssCategoryKey = String(formData.get("ssCategoryKey") || "");
   const ssCategoryLabel = String(formData.get("ssCategoryLabel") || "");
@@ -273,6 +301,13 @@ export async function saveMappingAction(formData: FormData) {
   );
   revalidatePath("/admin/categories/mappings");
   revalidatePath("/admin/catalog");
+  redirect(
+    mappingListHref({
+      tab: parseMappingTab(String(formData.get("returnTab") || "")),
+      q: String(formData.get("returnQ") || ""),
+      page: parsePage(String(formData.get("returnPage") || "")),
+    }),
+  );
 }
 
 export async function patchProductAction(
@@ -347,10 +382,54 @@ export async function setStoreStatusAction(
   storeId: string,
   status: "active" | "suspended",
 ) {
-  const client = await adminClient();
-  await client.setStoreStatus(storeId, status, requireAdminToken());
+  let mailed = "0";
+  let slug = "";
+  try {
+    const client = await adminClient();
+    const updated = await client.setStoreStatus(
+      storeId,
+      status,
+      requireAdminToken(),
+    );
+    slug = updated.slug;
+    if (status === "active" && updated.ownerEmail) {
+      const origin = publicSiteOrigin();
+      if (origin) {
+        const mail = buildStoreApprovedEmail({
+          storeName: updated.name,
+          slug: updated.slug,
+          origin,
+          ownerName: updated.ownerName,
+        });
+        try {
+          await sendEmail({
+            to: updated.ownerEmail,
+            subject: mail.subject,
+            text: mail.text,
+          });
+          mailed = "1";
+        } catch (sendFailure) {
+          const detail =
+            sendFailure instanceof Error
+              ? sendFailure.message
+              : "unknown email error";
+          console.error(
+            `[store-approve] Store ${updated.slug} is live but the owner was not emailed: ${detail}`,
+          );
+        }
+      }
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not update the store.";
+    redirect(`/admin/accounts?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath("/admin/accounts");
   revalidatePath(`/admin/accounts/${storeId}`);
+  const notice = status === "active" ? "approved" : "rejected";
+  redirect(
+    `/admin/accounts?notice=${notice}&mailed=${mailed}&slug=${encodeURIComponent(slug)}`,
+  );
 }
 
 export async function setStoreCategoryVisibilityAction(

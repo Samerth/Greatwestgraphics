@@ -333,7 +333,13 @@ export default async function AdminJobDetailPage({
                   ? ` · total ${moneyFromMinor(lineTotalMinor)}`
                   : ""}
               </p>
-              {catalogHint && (
+              {configuration?.productMetadata && (
+                <p className="text-sm text-text-primary mt-2 mb-0">
+                  <span className="font-bold">Print placement. </span>
+                  {configuration.productMetadata}
+                </p>
+              )}
+              {catalogHint && catalogHint !== configuration?.productMetadata && (
                 <p className="text-xs text-text-tertiary mt-1 mb-0">
                   {catalogHint}
                 </p>
