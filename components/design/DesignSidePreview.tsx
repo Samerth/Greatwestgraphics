@@ -5,7 +5,7 @@ import {
   type DesignSide,
 } from "@gwg/contracts";
 import {
-  backdropImageStyle,
+  framedBackdropStyles,
   garmentBackdropForSide,
   type PhotoCrop,
 } from "@/lib/commerce/garment-backdrop";
@@ -31,6 +31,7 @@ export function DesignSidePreview({
   garmentImageUrl,
   mirrorGarment,
   garmentCrop,
+  garmentPlate,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
@@ -39,6 +40,7 @@ export function DesignSidePreview({
   garmentImageUrl?: string | null;
   mirrorGarment?: boolean;
   garmentCrop?: PhotoCrop;
+  garmentPlate?: boolean;
   size?: number;
   className?: string;
 }) {
@@ -47,6 +49,12 @@ export function DesignSidePreview({
   const imageUrl = garmentImageUrl || fallback.url;
   const mirrored = mirrorGarment ?? fallback.mirror;
   const crop = garmentCrop ?? (garmentImageUrl ? undefined : fallback.crop);
+  const plate = garmentPlate ?? (garmentImageUrl ? undefined : fallback.plate);
+  const framed = framedBackdropStyles({
+    crop,
+    mirror: Boolean(mirrored),
+    plate,
+  });
 
   return (
     <div
@@ -64,15 +72,17 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt=""
-          style={{
-            ...backdropImageStyle(crop, Boolean(mirrored && !crop)),
-            opacity: garmentImageUrl ? 1 : 0.9,
-          }}
-        />
+        <div style={framed.frame}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            style={{
+              ...framed.image,
+              opacity: garmentImageUrl ? 1 : 0.9,
+            }}
+          />
+        </div>
 
         {artworks.map((artwork) => (
           // eslint-disable-next-line @next/next/no-img-element

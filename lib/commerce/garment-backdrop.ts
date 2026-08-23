@@ -15,11 +15,24 @@ export type PhotoCrop = {
   height: number;
 };
 
+export type PlateRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type GarmentBackdrop = {
   url: string;
   source: "photo" | "template";
   mirror: boolean;
   crop?: PhotoCrop;
+  /**
+   * Sleeve views sit as a contained product plate (padding around the
+   * garment), not a crop stretched to fill the square. Matches the
+   * Coastal Reign designer: L/R sleeve is its own framed garment angle.
+   */
+  plate?: boolean;
 };
 
 export type BackdropImageStyle = {
@@ -37,22 +50,26 @@ export type BackdropImageStyle = {
 
 export const GARMENT_FALLBACK = "/images/t-shirt.png";
 
+/** Padding around a sleeve plate, as a fraction of the square canvas. */
+export const SLEEVE_PLATE_INSET = 0.08;
+
 /**
- * Half of a front-facing colorway photo. Viewer-right is the garment's
- * left sleeve; viewer-left is the right sleeve. Used only when the vendor
- * did not send a distinct side shot — never the full chest frame.
+ * Sleeve-on-shirt crop of a front-facing colorway. Viewer-right is the
+ * garment's left sleeve. Keeps the shoulder, collar edge, and a band of
+ * the body so the plate still reads as a shirt — not a half-torso zoom.
+ * Used only when the vendor did not send a distinct side shot.
  */
 export const SLEEVE_CROP_LEFT: PhotoCrop = {
-  x: 0.5,
-  y: 0.08,
-  width: 0.46,
-  height: 0.8,
+  x: 0.46,
+  y: 0.02,
+  width: 0.52,
+  height: 0.7,
 };
 export const SLEEVE_CROP_RIGHT: PhotoCrop = {
-  x: 0.04,
-  y: 0.08,
-  width: 0.46,
-  height: 0.8,
+  x: 0.02,
+  y: 0.02,
+  width: 0.52,
+  height: 0.7,
 };
 
 function photoUrl(url: string | null | undefined): string | null {
@@ -111,9 +128,9 @@ function sleeveFromColorway(
   crop: PhotoCrop,
 ): GarmentBackdrop {
   if (photos.front) {
-    return { url: photos.front, source: "photo", mirror: false, crop };
+    return { url: photos.front, source: "photo", mirror: false, crop, plate: true };
   }
-  return { url: GARMENT_FALLBACK, source: "template", mirror: false, crop };
+  return { url: GARMENT_FALLBACK, source: "template", mirror: false, crop, plate: true };
 }
 
 /**
@@ -121,9 +138,11 @@ function sleeveFromColorway(
  *
  * Neither S&S nor SanMar ships a dedicated left/right sleeve close-up.
  * Sleeves use a vendor side photo when one exists and is not the chest
- * or back shot. Otherwise they crop the sleeve from that colorway's real
- * front photo — never the full chest frame, never a fake heather mock,
- * never a cartoon shell. Front/back still use the vendor photos.
+ * or back shot — that 3/4 plate is the Coastal Reign L/R sleeve idea.
+ * Otherwise they crop the sleeve from that colorway's real front photo
+ * and frame it as a contained plate. Never the full chest frame, never
+ * a fake heather mock, never a cartoon shell. Front/back still use the
+ * vendor photos uncropped.
  */
 export function garmentBackdropForSide(
   side: DesignSide,
@@ -158,11 +177,15 @@ export function garmentBackdropForSide(
   }
 
   if (side === "left") {
-    if (sidePhoto) return { url: sidePhoto, source: "photo", mirror: false };
+    if (sidePhoto) {
+      return { url: sidePhoto, source: "photo", mirror: false, plate: true };
+    }
     return sleeveFromColorway({ front }, SLEEVE_CROP_LEFT);
   }
 
-  if (sidePhoto) return { url: sidePhoto, source: "photo", mirror: true };
+  if (sidePhoto) {
+    return { url: sidePhoto, source: "photo", mirror: true, plate: true };
+  }
   return sleeveFromColorway({ front }, SLEEVE_CROP_RIGHT);
 }
 
@@ -181,7 +204,42 @@ export function studioCanvasImageUrl(backdrop: GarmentBackdrop): string {
   return `/_next/image?url=${encodeURIComponent(backdrop.url)}&w=640&q=75`;
 }
 
-/** CSS that matches the Konva crop: the crop rect fills the box. */
+/**
+ * Where a (cropped) photo sits in the square canvas.
+ * `sourceAspect` is naturalWidth / naturalHeight. CSS callers pass 1 —
+ * vendor colorway photos are square.
+ */
+export function plateContainRect(
+  crop: PhotoCrop | undefined,
+  sourceAspect: number,
+  inset: number,
+): PlateRect {
+  const safeAspect = sourceAspect > 0 ? sourceAspect : 1;
+  const plate = Math.max(0.1, 1 - 2 * Math.max(0, inset));
+  const plateX = (1 - plate) / 2;
+  const plateY = (1 - plate) / 2;
+  const aspect = crop
+    ? (crop.width / crop.height) * safeAspect
+    : safeAspect;
+  if (aspect >= 1) {
+    const height = plate / aspect;
+    return {
+      x: plateX,
+      y: plateY + (plate - height) / 2,
+      width: plate,
+      height,
+    };
+  }
+  const width = plate * aspect;
+  return {
+    x: plateX + (plate - width) / 2,
+    y: plateY,
+    width,
+    height: plate,
+  };
+}
+
+/** CSS that maps a crop rect onto its parent box. */
 export function backdropImageStyle(
   crop: PhotoCrop | undefined,
   mirror: boolean,
@@ -206,6 +264,45 @@ export function backdropImageStyle(
     maxWidth: "none",
     objectFit: "fill",
     transform: mirror ? "scaleX(-1)" : undefined,
+  };
+}
+
+/**
+ * Frame + image styles so CSS and Konva share the same plate geometry.
+ * Sleeve plates letterbox inside an inset; front/back still fill the canvas.
+ */
+export function framedBackdropStyles(
+  backdrop: Pick<GarmentBackdrop, "crop" | "mirror" | "plate">,
+  sourceAspect = 1,
+): {
+  frame: {
+    position: "absolute";
+    left: string;
+    top: string;
+    width: string;
+    height: string;
+    overflow: "hidden";
+  };
+  image: BackdropImageStyle;
+} {
+  const inset = backdrop.plate ? SLEEVE_PLATE_INSET : 0;
+  const box =
+    backdrop.plate || backdrop.crop
+      ? plateContainRect(backdrop.crop, sourceAspect, inset)
+      : { x: 0, y: 0, width: 1, height: 1 };
+  return {
+    frame: {
+      position: "absolute",
+      left: `${box.x * 100}%`,
+      top: `${box.y * 100}%`,
+      width: `${box.width * 100}%`,
+      height: `${box.height * 100}%`,
+      overflow: "hidden",
+    },
+    image: backdropImageStyle(
+      backdrop.crop,
+      Boolean(backdrop.mirror && !backdrop.crop),
+    ),
   };
 }
 

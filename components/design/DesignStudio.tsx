@@ -29,7 +29,7 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import {
-  backdropImageStyle,
+  framedBackdropStyles,
   garmentBackdropForSide,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
@@ -350,8 +350,9 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   // Front/back can use the list photo while detail loads. Sleeves use a
-  // vendor side shot when the catalog has one, otherwise a crop of that
-  // colorway — never the full chest frame.
+  // vendor side shot when the catalog has one (the dedicated garment
+  // angle), otherwise a framed sleeve-on-shirt crop of that colorway —
+  // never the full chest frame, never a zoomed torso fill.
   const backdrop = garmentBackdropForSide(activeSide, {
     colorFrontImageUrl:
       productDetail?.product.colorFrontImageUrl ||
@@ -371,6 +372,7 @@ export function DesignStudio({
   const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
   const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
+  const framedBackdrop = framedBackdropStyles(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
   // customer orders whether or not the vendor photographed that angle, and
@@ -1075,15 +1077,14 @@ export function DesignStudio({
             >
               {currentPhoto && (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
-                  <img
-                    src={currentPhoto}
-                    alt=""
-                    style={backdropImageStyle(
-                      backdrop.crop,
-                      Boolean(mirrorPhoto && !backdrop.crop),
-                    )}
-                  />
+                  <div style={framedBackdrop.frame}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
+                    <img
+                      src={currentPhoto}
+                      alt=""
+                      style={framedBackdrop.image}
+                    />
+                  </div>
                 </div>
               )}
               {isLoadingGarment && !currentPhoto && (
@@ -1102,6 +1103,7 @@ export function DesignStudio({
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
                 garmentCrop={backdrop.crop}
+                garmentPlate={backdrop.plate}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChange={(next) =>

@@ -12,18 +12,25 @@ import { useEffect, useRef, useState } from "react";
 import { Group, Image as KonvaImage, Stage, Layer } from "react-konva";
 import useImage from "use-image";
 import { ArtworkLayer, type PlacedArtwork } from "@/components/design/ArtworkLayer";
-import { cropPixels, type PhotoCrop } from "@/lib/commerce/garment-backdrop";
+import {
+  SLEEVE_PLATE_INSET,
+  cropPixels,
+  plateContainRect,
+  type PhotoCrop,
+} from "@/lib/commerce/garment-backdrop";
 
 function GarmentLayer({
   src,
   canvasSize,
   mirrored,
   crop,
+  plate,
 }: {
   src: string;
   canvasSize: number;
   mirrored: boolean;
   crop?: PhotoCrop;
+  plate?: boolean;
 }) {
   // Same-origin URLs (/_next/image, /api/uploads) must not request CORS.
   // Next's optimizer does not send Access-Control-Allow-Origin, so
@@ -41,16 +48,23 @@ function GarmentLayer({
         width: image.naturalWidth,
         height: image.naturalHeight,
       };
-  const scale = Math.min(canvasSize / source.width, canvasSize / source.height);
-  const width = source.width * scale;
-  const height = source.height * scale;
+  const sourceAspect = image.naturalWidth / image.naturalHeight;
+  const box = plateContainRect(
+    crop,
+    sourceAspect,
+    plate ? SLEEVE_PLATE_INSET : 0,
+  );
+  const width = box.width * canvasSize;
+  const height = box.height * canvasSize;
+  const x = box.x * canvasSize;
+  const y = box.y * canvasSize;
 
   return (
     <KonvaImage
       image={image}
       crop={crop ? source : undefined}
-      x={mirrored ? (canvasSize + width) / 2 : (canvasSize - width) / 2}
-      y={(canvasSize - height) / 2}
+      x={mirrored ? x + width : x}
+      y={y}
       width={width}
       height={height}
       scaleX={mirrored ? -1 : 1}
@@ -68,6 +82,7 @@ export default function DesignCanvas({
   garmentImageUrl,
   mirrorGarment,
   garmentCrop,
+  garmentPlate,
   stageRef,
   onSelect,
   onChange,
@@ -79,7 +94,7 @@ export default function DesignCanvas({
   garmentImageUrl: string;
   mirrorGarment: boolean;
   garmentCrop?: PhotoCrop;
-   
+  garmentPlate?: boolean;
   stageRef: React.RefObject<any>;
   onSelect: (id: string) => void;
   onChange: (next: PlacedArtwork) => void;
@@ -124,6 +139,7 @@ export default function DesignCanvas({
                 canvasSize={canvasSize}
                 mirrored={mirrorGarment}
                 crop={garmentCrop}
+                plate={garmentPlate}
               />
             ) : null}
             {artworks.map((a) => (
