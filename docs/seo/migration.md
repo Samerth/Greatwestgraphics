@@ -34,6 +34,67 @@ Until then:
 
 Flagged pages stay `noindex` even after launch.
 
+## Analytics (existing GA4 property)
+
+The rebuild reuses **G-0M446YCNS9** (GreatWestGraphics, account 267559730 / property 374646781). Do not create a new GA4 property.
+
+### Why `@next/third-parties/google`
+
+Default `gtag.js` only fires `page_view` on a full document load. App Router `next/link` navigations would go untracked. The official Next.js component (`<GoogleAnalytics gaId="G-0M446YCNS9" />` in `app/layout.tsx`) listens for those client navigations and sends pageviews. Do not add a second manual gtag snippet — that would double-count.
+
+Tel/mailto clicks are captured by `components/analytics/AnalyticsClickTracker.tsx` (document-level delegation from the root layout). Conversion events are sent with `lib/analytics/gtag.ts` (`gtag('event', …)` and a safe `window.gtag` guard).
+
+### Events fired in code
+
+| Event | When |
+| --- | --- |
+| `page_view` | Every route, including App Router client navigations |
+| `ads_conversion_Contact_Us_1` | Successful contact form submit (`ContactForm`) |
+| `Shopping_Cart_1` | Any add-to-cart (`useCartStore.addItem`: PDP, Design Studio, quote builder, move-from-saved) |
+| `Checkout_1` | Checkout wizard starts with items in the cart |
+| `purchase` | Job request submitted successfully (`transaction_id`, `value`, `currency: CAD`) |
+| `tel` | Click on `a[href^="tel:"]` |
+| `mailto` | Click on `a[href^="mailto:"]` |
+
+There is no separate callback-request form. The quote builder adds a line to the cart (so it fires `Shopping_Cart_1`, then `Checkout_1` / `purchase` in checkout). Card payment later in the portal is not a second `purchase`.
+
+### Mark them as key events (human, in GA4 Admin)
+
+Code cannot flip the “key event” switch. After the first hits land in the property:
+
+1. Open [analytics.google.com](https://analytics.google.com) → the **existing** GWG property (`G-0M446YCNS9`).
+2. Admin → Data display → **Events**.
+3. Find `tel`, `mailto`, `ads_conversion_Contact_Us_1`, `Shopping_Cart_1`, `Checkout_1`, and `purchase`.
+4. Toggle **Mark as key event** on each.
+5. Optional: Admin → Data display → **Key events** → confirm they appear. If Google Ads is linked, map those key events to conversions there — still the same property, no new Measurement ID.
+
+Keep Enhanced Measurement “Page changes based on browser history events” on as a backup. The `@next/third-parties` component is what makes App Router pageviews reliable.
+
+## Google Search Console (DNS TXT — human only)
+
+This environment cannot publish a real DNS TXT record. WordPress HTML-tag or file verification **will break at cutover** when the WP theme goes away. Use a DNS TXT so verification survives the platform change.
+
+1. Sign in to [Google Search Console](https://search.google.com/search-console) as the property owner.
+2. Add a property if one is not already there:
+   - Preferred: **Domain** property `greatwestgraphics.com` (covers apex + `www`).
+   - Or **URL prefix** `https://www.greatwestgraphics.com`.
+3. Choose **DNS record** verification. Google shows a TXT record. Copy it exactly — do not invent a token. It looks like:
+   - **Type:** `TXT`
+   - **Host / Name:** `@` on the zone for `greatwestgraphics.com` (some hosts want the bare hostname `greatwestgraphics.com` instead of `@`)
+   - **Value:** `google-site-verification=TOKEN_FROM_GSC`
+4. Create that TXT record at the DNS host that currently answers for `greatwestgraphics.com`.
+5. Wait for propagation (minutes to 48 hours). Click **Verify** in Search Console.
+6. If the domain property was already verified via DNS, skip 3–5.
+
+### Sitemap after the robots flip
+
+`app/robots.ts` lists `sitemap.xml` only when `SEO_ALLOW_INDEX=true` and the site URL is not staging/localhost. Do **not** submit the sitemap while robots is `Disallow: /`.
+
+After the launch flip below:
+
+1. Search Console → Sitemaps → Add `https://www.greatwestgraphics.com/sitemap.xml`
+2. Confirm it is fetched.
+
 ## Launch flip
 
 On the cutover deploy (same change that points DNS at this app):
@@ -41,7 +102,9 @@ On the cutover deploy (same change that points DNS at this app):
 1. Set `SEO_ALLOW_INDEX=true`
 2. Set `NEXT_PUBLIC_SITE_URL=https://www.greatwestgraphics.com` (or the live apex you are launching)
 3. Redeploy the web task
-4. Submit `https://www.greatwestgraphics.com/sitemap.xml` in Search Console
+4. Confirm `https://www.greatwestgraphics.com/robots.txt` allows `/` and lists the sitemap
+5. Submit `https://www.greatwestgraphics.com/sitemap.xml` in Search Console
+6. Mark `tel`, `mailto`, `ads_conversion_Contact_Us_1`, `Shopping_Cart_1`, `Checkout_1`, and `purchase` as key events in GA4 (if not already)
 
 The sitemap always lists the 154 location URLs plus the 37 general-content URLs (and the live catalogue). It omits retired, flagged, and transactional URLs.
 

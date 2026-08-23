@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { trackContactSubmit } from "@/lib/analytics/gtag";
 import { Container } from "@/components/shared/Container";
 import { Button } from "@/components/shared/Button";
 
@@ -92,6 +93,10 @@ export function ContactForm() {
                       );
                     }
                     setSent(true);
+                    trackContactSubmit({
+                      method: "contact_form",
+                      topic: payload.topic,
+                    });
                     form.reset();
                   } catch (caught) {
                     setError(

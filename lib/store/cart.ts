@@ -7,6 +7,7 @@ import type {
   LinePricingSnapshot,
   LinePricingSnapshotV2,
 } from "@gwg/contracts";
+import { trackAddToCart } from "@/lib/analytics/gtag";
 
 export interface CartItem {
   id: string;
@@ -157,7 +158,7 @@ export const useCartStore = create<CartState>()(
       items: [],
       activeStore: { slug: "", isPublic: true },
       setActiveStore: (activeStore) => set({ activeStore }),
-      addItem: (item) =>
+      addItem: (item) => {
         set((state) => {
           const stamped: CartItem = {
             ...item,
@@ -180,7 +181,15 @@ export const useCartStore = create<CartState>()(
             };
           }
           return { items: [...state.items, stamped] };
-        }),
+        });
+        trackAddToCart({
+          item_id: item.productId ?? item.id,
+          item_name: item.name,
+          quantity: item.qty,
+          value: Number((item.qty * item.unit).toFixed(2)),
+          currency: "CAD",
+        });
+      },
       removeItem: (id, color, variantId) =>
         set((state) => ({
           items: state.items.filter(
