@@ -185,6 +185,7 @@ export default async function AdminDesignDetailPage({
                     garmentImageUrl={garmentBackdropsBySide[side].url}
                     mirrorGarment={garmentBackdropsBySide[side].mirror}
                     garmentCrop={garmentBackdropsBySide[side].crop}
+                    garmentPlate={garmentBackdropsBySide[side].plate}
                     size={200}
                   />
                 </div>
