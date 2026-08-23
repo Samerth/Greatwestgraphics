@@ -854,6 +854,19 @@ export function buildApp(input: {
     }
   });
 
+    app.post("/v1/accounts/:accountId/join", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const accountId = CanonicalIdSchema.parse(
+      (request.params as { accountId?: string }).accountId,
+    );
+    const body = z.object({ personId: CanonicalIdSchema }).parse(request.body);
+    assertActorIsPerson(auth, body.personId);
+    return inviteService.joinAsMember(auth.tenantId, accountId, body.personId, {
+      type: "customer",
+      id: body.personId,
+    });
+  });
+
   // Resolving a token to the address it was sent to is a disclosure, so it
   // needs the same service credential as everything else. This was the one
   // /v1 route that never authenticated at all, and the API answers on a public

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 
@@ -7,29 +8,25 @@ const METHODS = [
     title: "Embroidery",
     body: "Stitched, durable, premium finish for logos and text.",
     href: "/quote?method=embroidery",
-    image:
-      "linear-gradient(160deg, var(--color-accent) 0%, var(--color-accent-hover) 40%, #0D0D0D 100%)",
+    image: "/images/shop-embroidery.jpg",
   },
   {
     title: "Screen Printing",
     body: "Long-lasting quality, favoured for bulk apparel runs.",
     href: "/quote?method=screen",
-    image:
-      "linear-gradient(160deg, #0b1f4a 0%, var(--color-accent) 45%, #0D0D0D 100%)",
+    image: "/images/shop-ink.jpg",
   },
   {
     title: "Direct to Film (DTF)",
     body: "Versatile, high-quality prints on nearly any fabric.",
     href: "/quote?method=dtf",
-    image:
-      "linear-gradient(160deg, #1a3a2a 0%, var(--color-accent) 50%, #0D0D0D 100%)",
+    image: "/images/shop-press.jpg",
   },
   {
     title: "Sublimation Printing",
     body: "All-over, full-colour prints for jerseys and uniforms.",
     href: "/quote?method=sublimation",
-    image:
-      "linear-gradient(160deg, #3a2216 0%, var(--color-accent) 45%, #0D0D0D 100%)",
+    image: "/images/printing_2.jpg",
   },
 ];
 
@@ -50,11 +47,15 @@ export function PrintMethods() {
               href={method.href}
               className="group block rounded-md overflow-hidden border border-border bg-bg hover:border-accent transition-colors"
             >
-              <div
-                className="aspect-[260/200] sm:aspect-[260/250] opacity-95"
-                style={{ background: method.image }}
-                aria-hidden
-              />
+              <div className="relative aspect-[260/200] sm:aspect-[260/250] opacity-95">
+                <Image
+                  src={method.image}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                />
+              </div>
               <div className="p-sp-3 text-center">
                 <h3 className="font-display font-bold text-base m-0 text-text-primary group-hover:text-accent transition-colors">
                   {method.title}

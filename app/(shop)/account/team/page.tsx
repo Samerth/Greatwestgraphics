@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import { InviteForm } from "@/components/account/InviteForm";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { teamMemberships } from "@/lib/commerce/membership";
@@ -61,7 +60,22 @@ export default async function AccountTeamPage() {
                     </p>
                   </div>
                 </div>
-                {m.role === "owner" && <InviteForm accountId={m.accountId} />}
+                {m.role === "owner" && (
+                  <div className="max-w-md">
+                    <p className="text-sm font-bold mb-1">Add teammates</p>
+                    <p className="text-[13px] text-text-secondary m-0">
+                      Anyone who signs in at{" "}
+                      <a
+                        href={`/s/${m.storeSlug}`}
+                        className="underline hover:text-accent"
+                      >
+                        /s/{m.storeSlug}
+                      </a>{" "}
+                      joins {m.storeName} automatically — just share that
+                      link, no invite required.
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -10,8 +10,8 @@ const TRUST_LOGOS = [
   { name: "Marriott", src: "/images/marriott.png" },
   { name: "Fujitsu", src: "/images/fujitsu.png" },
   { name: "Grande West", src: "/images/grande_west.png" },
-  { name: "Unity Collective", src: null },
-  { name: "St. George's", src: null },
+  { name: "Unity Collective", src: "/images/company_logo.png" },
+  { name: "St. George's", src: "/images/company_logo_2.png" },
 ];
 
 export function TrustStrip() {

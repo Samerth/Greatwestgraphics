@@ -17,20 +17,18 @@ import type { StorefrontCategory } from "@/lib/commerce/catalog";
  */
 const TILE_IMAGES: Record<string, string> = {
   "t-shirts": "/images/prod-tee.jpg",
-  "hoodies-and-crewnecks": "/images/prod-hoodie.jpg",
-  hats: "/images/caps.jpg",
-  "tote-bags": "/images/prod-tote.jpg",
-  jackets: "/images/hoodie-blank.jpg",
+  "hoodies-sweatshirts": "/images/hoodie-display.png",
+  polos: "/images/d19c5a181cda45a6341fe8feb0a6926fbb833cd2.jpg",
+  jackets: "/images/wardrobe_2.jpg",
   vests: "/images/prod-safety.jpg",
-  jerseys: "/images/tshirt_2.jpg",
-  drinkware: "/images/cups.jpg",
-  "made-in-canada": "/images/display.jpg",
-  "swag-boxes": "/images/prod-promo.jpg",
+  workwear: "/images/wardrobe.jpg",
+  hats: "/images/caps.jpg",
+  "pants-shorts": "/images/t-shirt_3.jpg",
+  "athletic-wear": "/images/tshirt_2.jpg",
+  bags: "/images/prod-tote.jpg",
+  safety: "/images/wardrobe-3.jpg",
+  accessories: "/images/accessories.jpg",
   "eco-friendly": "/images/accessories.jpg",
-  notebooks: "/images/customize_set.jpg",
-  technology: "/images/printing.jpg",
-  socks: "/images/customize_set-2.jpg",
-  patches: "/images/cap-printing.jpg",
   all: "/images/caps-display.jpg",
 };
 
@@ -39,13 +37,19 @@ export function CategoryBrowse({
 }: {
   categories?: StorefrontCategory[];
 }) {
-  // No categories means we could not reach the catalogue. The heading, the
-  // "All" pill and the "can't find it?" panel below still give a way forward,
-  // so the grid removes itself rather than inventing departments.
+  // Only top-level categories on the homepage grid — subcategories (Aprons,
+  // Beanies, Bomber Jackets, etc.) live one click deeper via the mega menu.
+  // "hoodies-and-crewnecks" is excluded: the seed script created it as a
+  // separate top-level category alongside "Hoodies & Sweatshirts" (known
+  // collision, see seed-categories.ts), and showing both is redundant.
+  const topLevel = categories.filter(
+    (c) => !c.parentId && c.slug !== "hoodies-and-crewnecks",
+  );
+
   const tiles =
-    categories.length > 0
+    topLevel.length > 0
       ? [
-          ...categories.slice(0, 15).map((c) => ({
+          ...topLevel.slice(0, 15).map((c) => ({
             name: c.name,
             slug: c.slug,
             image: TILE_IMAGES[c.slug],
@@ -63,7 +67,7 @@ export function CategoryBrowse({
   // exist for a category that has something in it.
   const pills = [
     { label: "All", href: "/products" },
-    ...categories.slice(0, 8).map((c) => ({
+    ...topLevel.slice(0, 8).map((c) => ({
       label: c.name,
       href: `/products?category=${encodeURIComponent(c.slug)}`,
     })),

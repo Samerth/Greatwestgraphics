@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { headers } from "next/headers";
 import { loadCommerceWebEnvironment } from "./config";
-import { STORE_SLUG_HEADER } from "./store-cookie";
+import { STORE_COOKIE, STORE_SLUG_HEADER } from "./store-cookie";
 
 export type StoreContext = {
   tenantId: string;
@@ -81,7 +81,17 @@ async function selectedStore(tenantId?: string): Promise<StoreContext | null> {
   if (!tenantId || !baseUrl) return null;
   try {
     const requestHeaders = await headers();
-    const slug = requestHeaders.get(STORE_SLUG_HEADER);
+    let slug = requestHeaders.get(STORE_SLUG_HEADER);
+
+    // The proxy-injected header is an optimisation, not a guarantee: route
+    // handlers (e.g. POST /api/commerce/job-requests) are exactly the
+    // requests proxy matchers tend to skip, and a missed header here means a
+    // storefront order silently lands on the retail store. The cookie itself
+    // is still on the request, so read it directly as the fallback.
+    if (!slug) {
+      const { cookies } = await import("next/headers");
+      slug = (await cookies()).get(STORE_COOKIE)?.value ?? null;
+    }
     if (!slug) return null;
 
     const response = await fetch(
