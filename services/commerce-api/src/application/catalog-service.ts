@@ -743,9 +743,8 @@ export class CatalogService {
     // per-row post-filter) so `limit` is honoured correctly and the
     // category check doesn't cost a round trip per row. A stable order
     // (brand, style, id) keeps pagination deterministic across pages.
-    const rows = categoryIds
     const styleColumns = ssStyleColumnsWithoutSizeSpecs();
-    const rows = query?.categoryId
+    const rows = categoryIds
       ? await this.db
           .select({ product: ssProducts, style: styleColumns })
           .from(ssProducts)
