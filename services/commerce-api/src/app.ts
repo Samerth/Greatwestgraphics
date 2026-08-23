@@ -61,6 +61,7 @@ import {
   StripePaymentService,
 } from "./application/stripe-payment-service.js";
 import { StripeApiError, StripeClient } from "./adapters/stripe/client.js";
+import { isAllowedLogoUrl } from "./domain/logo-url.js";
 import { ProofDecisionError } from "./domain/proof-decision.js";
 import {
   orderVisibilityFor,
@@ -787,7 +788,11 @@ export function buildApp(input: {
           .max(63)
           .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
         accentColor: z.string().max(20).optional(),
-        logoUrl: z.string().url().max(2000).optional(),
+        logoUrl: z
+          .string()
+          .max(2000)
+          .refine(isAllowedLogoUrl, "Upload a logo file or provide a valid image URL.")
+          .optional(),
         tagline: z.string().max(200).optional(),
       })
       .parse(request.body);

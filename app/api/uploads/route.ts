@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomerSession } from "@/lib/auth/session";
 import { getImageStore } from "@/lib/storage";
+import { parseUploadPurpose, uploadObjectKey } from "@/lib/storage/upload-access";
 
 const ALLOWED_TYPES: Record<string, string> = {
   "image/png": "png",
@@ -20,6 +21,13 @@ export async function POST(request: NextRequest) {
   }
 
   const form = await request.formData();
+  const purpose = parseUploadPurpose(form.get("purpose"));
+  if (!purpose) {
+    return NextResponse.json(
+      { error: { message: "Unknown upload purpose." } },
+      { status: 400 },
+    );
+  }
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json(
@@ -41,7 +49,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const key = `designs/${session.personId}/${randomUUID()}.${extension}`;
+  const key = uploadObjectKey(purpose, session.personId, randomUUID(), extension);
   const buffer = Buffer.from(await file.arrayBuffer());
   const url = await getImageStore().put(key, buffer, file.type);
 
