@@ -195,7 +195,19 @@ export class CatalogService {
             eq(ssProducts.storefrontVisible, true),
           ),
         );
-      const nonEmpty = new Set(withProducts.map((row) => row.categoryId));
+      const directlyNonEmpty = new Set(withProducts.map((row) => row.categoryId));
+
+      // A parent counts as non-empty if a direct child has products, even
+      // with nothing tagged to the parent itself — mirrors
+      // expandCategoryIds' one-level browsing behaviour so the nav never
+      // hides a category that browsing would actually return results for.
+      const nonEmpty = new Set(directlyNonEmpty);
+      for (const row of rows) {
+        if (row.parentId && directlyNonEmpty.has(row.id)) {
+          nonEmpty.add(row.parentId);
+        }
+      }
+
       rows = rows.filter((row) => nonEmpty.has(row.id));
     }
 
@@ -663,6 +675,23 @@ export class CatalogService {
     }
   }
 
+  /** A category filter also matches products tagged to any direct
+   * subcategory, so browsing "T-Shirts" surfaces "Short Sleeve" products
+   * too without every product needing the parent tag as well. Only one
+   * level deep — the admin UI only allows two levels of nesting. */
+  private async expandCategoryIds(
+    tenantId: string,
+    categoryId: string,
+  ): Promise<string[]> {
+    const children = await this.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(eq(categories.tenantId, tenantId), eq(categories.parentId, categoryId)),
+      );
+    return [categoryId, ...children.map((c) => c.id)];
+  }
+
   async countProducts(
     tenantId: string,
     query?: ProductFilterQuery,
@@ -670,7 +699,11 @@ export class CatalogService {
     const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
     if (empty) return 0;
 
-    const [row] = query?.categoryId
+    const categoryIds = query?.categoryId
+      ? await this.expandCategoryIds(tenantId, query.categoryId)
+      : null;
+
+    const [row] = categoryIds
       ? await this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(ssProducts)
@@ -679,7 +712,7 @@ export class CatalogService {
             ssProductCategories,
             and(
               eq(ssProductCategories.productUuid, ssProducts.id),
-              eq(ssProductCategories.categoryId, query.categoryId),
+              inArray(ssProductCategories.categoryId, categoryIds),
             ),
           )
           .where(whereClause)
@@ -704,10 +737,15 @@ export class CatalogService {
 
     const orderBy = this.productOrderBy(query?.sort);
 
+    const categoryIds = query?.categoryId
+      ? await this.expandCategoryIds(tenantId, query.categoryId)
+      : null;
+
     // Category filtering is done as a join in the same query (not a
     // per-row post-filter) so `limit` is honoured correctly and the
     // category check doesn't cost a round trip per row. A stable order
     // (brand, style, id) keeps pagination deterministic across pages.
+    const rows = categoryIds
     const styleColumns = ssStyleColumnsWithoutSizeSpecs();
     const rows = query?.categoryId
       ? await this.db
@@ -718,7 +756,7 @@ export class CatalogService {
             ssProductCategories,
             and(
               eq(ssProductCategories.productUuid, ssProducts.id),
-              eq(ssProductCategories.categoryId, query.categoryId),
+              inArray(ssProductCategories.categoryId, categoryIds),
             ),
           )
           .where(whereClause)

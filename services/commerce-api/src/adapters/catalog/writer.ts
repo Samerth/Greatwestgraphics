@@ -34,12 +34,213 @@ import type { CatalogSkuRow, InventoryRow, SyncRunResult } from "./types.js";
  * under tote bags.
  */
 export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }> = [
-  // Safety first: hi-vis outerwear names itself after the garment it replaces,
-  // so "safety vest" and "hi-vis jacket" would otherwise land in vests/jackets.
+  // --- New taxonomy: specific compound patterns must come before any
+  // generic single-word rule below, or the generic rule wins first. ---
+
+  // Hi-vis garment types (specific before the generic "safety" catch-all)
+  { pattern: /\b(hi[- ]?vis|high[- ]?visibility|reflective|ansi)\b.*\b(shirt|tee|t-shirt)\b/i, categorySlug: "hi-vis-shirts" },
+  { pattern: /\b(hi[- ]?vis|high[- ]?visibility|reflective|ansi)\b.*\bhoodie\b/i, categorySlug: "hi-vis-hoodies" },
+  { pattern: /\b(hi[- ]?vis|high[- ]?visibility|reflective|ansi)\b.*\bjacket\b/i, categorySlug: "hi-vis-jackets" },
+
+  // Workwear
+  { pattern: /\bcoverall(s)?\b/i, categorySlug: "coveralls" },
+  { pattern: /\b(fr|flame[- ]resistant)\b.*\b(shirt|apparel|coverall)\b/i, categorySlug: "fr-apparel" },
+  { pattern: /\bwork\s?shirt(s)?\b/i, categorySlug: "work-shirts" },
+
+  // Safety catch-all (kept, now runs after the specific hi-vis rules above)
   {
     pattern: /\b(hi[- ]?vis|high[- ]?visibility|reflective|ansi|safety)\b/i,
     categorySlug: "safety",
   },
+
+  // T-Shirts sub-attributes
+  { pattern: /\bshort[- ]sleeve\b/i, categorySlug: "short-sleeve" },
+  { pattern: /\blong[- ]sleeve\b/i, categorySlug: "long-sleeve" },
+  { pattern: /\btri[- ]blend\b/i, categorySlug: "tri-blend" },
+  { pattern: /\bpocket\s?tee(s)?\b/i, categorySlug: "pocket-tees" },
+  { pattern: /\borganic\b.*\b(tee|t-shirt|cotton)\b/i, categorySlug: "organic" },
+  { pattern: /\btall\b/i, categorySlug: "tall" },
+
+  // Hoodies & Sweatshirts sub-attributes (compound: modifier + hoodie context)
+  { pattern: /\bpullover\s?hoodie(s)?\b/i, categorySlug: "pullover-hoodies" },
+  { pattern: /\bzip[- ]?up\s?hoodie(s)?|\bfull[- ]zip\s?hoodie(s)?/i, categorySlug: "zip-hoodies" },
+  { pattern: /\bcrewneck(s)?\b/i, categorySlug: "crewnecks" },
+  { pattern: /\bquarter[- ]?zip|1\/4[- ]?zip/i, categorySlug: "quarter-zips" },
+  { pattern: /\bheavyweight\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-heavyweight" },
+  { pattern: /\blightweight\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-lightweight" },
+  { pattern: /\bperformance\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-performance" },
+  { pattern: /\byouth\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-youth" },
+  { pattern: /\bwomen'?s\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-women-s" },
+
+  // Polos sub-attributes
+  { pattern: /\bperformance\b.*\bpolo\b/i, categorySlug: "polos-performance" },
+  { pattern: /\blong[- ]sleeve\b.*\bpolo\b/i, categorySlug: "polos-long-sleeve" },
+  { pattern: /\byouth\b.*\bpolo\b/i, categorySlug: "polos-youth" },
+  { pattern: /\bwomen'?s\b.*\bpolo\b/i, categorySlug: "polos-women-s" },
+  { pattern: /\bcotton\b.*\bpolo\b/i, categorySlug: "cotton" },
+
+  // Jackets sub-attributes
+  { pattern: /\bsoftshell\b.*\bjacket\b/i, categorySlug: "softshell" },
+  { pattern: /\brain\s?jacket(s)?\b/i, categorySlug: "rain-jackets" },
+  { pattern: /\bwindbreaker(s)?\b/i, categorySlug: "windbreakers" },
+  { pattern: /\bwinter\s?jacket(s)?\b/i, categorySlug: "winter-jackets" },
+  { pattern: /\bbomber\s?jacket(s)?\b/i, categorySlug: "bomber-jackets" },
+  { pattern: /\binsulated\b.*\bjacket\b/i, categorySlug: "insulated" },
+  { pattern: /\bfleece\s?jacket(s)?\b/i, categorySlug: "fleece-jackets" },
+  { pattern: /\bpackable\s?jacket(s)?\b/i, categorySlug: "packable-jackets" },
+
+  // Vests sub-attributes
+  { pattern: /\bsoftshell\b.*\bvest\b/i, categorySlug: "vests-softshell" },
+  { pattern: /\bfleece\b.*\bvest\b/i, categorySlug: "vests-fleece" },
+  { pattern: /\binsulated\b.*\bvest\b/i, categorySlug: "vests-insulated" },
+  { pattern: /\bpuffy\b|\bpuffer\b/i, categorySlug: "puffy" },
+
+  // Hats sub-attributes
+  { pattern: /\bsnapback(s)?\b/i, categorySlug: "snapbacks" },
+  { pattern: /\btrucker\s?hat(s)?\b/i, categorySlug: "trucker-hats" },
+  { pattern: /\bdad\s?hat(s)?\b/i, categorySlug: "dad-hats" },
+  { pattern: /\bfitted\s?hat(s)?\b/i, categorySlug: "fitted-hats" },
+  { pattern: /\bflexfit\b/i, categorySlug: "flexfit" },
+  { pattern: /\bnew\s?era\b/i, categorySlug: "new-era" },
+  { pattern: /\btoque(s)?\b/i, categorySlug: "toques" },
+  { pattern: /\bbeanie(s)?\b/i, categorySlug: "beanies" },
+  { pattern: /\bbucket\s?hat(s)?\b/i, categorySlug: "bucket-hats" },
+  { pattern: /\bvisor(s)?\b/i, categorySlug: "visors" },
+
+  // Pants & Shorts
+  { pattern: /\bjogger(s)?\b/i, categorySlug: "joggers" },
+  { pattern: /\bsweatpant(s)?\b/i, categorySlug: "sweatpants" },
+  { pattern: /\bathletic\s?pant(s)?\b/i, categorySlug: "athletic-pants" },
+  { pattern: /\bwork\s?pant(s)?\b/i, categorySlug: "pants-shorts-work-pants" },
+  { pattern: /\bcargo\s?short(s)?\b/i, categorySlug: "cargo-shorts" },
+  { pattern: /\bshort(s)?\b/i, categorySlug: "shorts" },
+
+  // Athletic Wear
+  { pattern: /\bteamwear\b/i, categorySlug: "teamwear" },
+  { pattern: /\bperformance\s?shirt(s)?\b/i, categorySlug: "performance-shirts" },
+  { pattern: /\bcompression\b/i, categorySlug: "compression" },
+  { pattern: /\bwarm[- ]?up(s)?\b/i, categorySlug: "warm-ups" },
+
+  // Bags
+  { pattern: /\bbackpack(s)?\b/i, categorySlug: "backpacks" },
+  { pattern: /\bduffel|duffle\b/i, categorySlug: "duffel-bags" },
+  { pattern: /\btote\s?bag(s)?\b/i, categorySlug: "tote-bags" },
+  { pattern: /\bdrawstring\b/i, categorySlug: "drawstring-bags" },
+  { pattern: /\bmessenger\s?bag(s)?\b/i, categorySlug: "messenger-bags" },
+  { pattern: /\blaptop\s?bag(s)?\b/i, categorySlug: "laptop-bags" },
+  { pattern: /\bgrocery\s?bag(s)?\b/i, categorySlug: "grocery-bags" },
+  { pattern: /\bcooler\s?bag(s)?\b/i, categorySlug: "cooler-bags" },
+
+  // Accessories
+  { pattern: /\bapron(s)?\b/i, categorySlug: "aprons" },
+  { pattern: /\btowel(s)?\b/i, categorySlug: "towels" },
+  { pattern: /\bglove(s)?\b/i, categorySlug: "gloves" },
+  { pattern: /\bscarf|scarves\b/i, categorySlug: "scarves" },
+  { pattern: /\bumbrella(s)?\b/i, categorySlug: "umbrellas" },
+  { pattern: /\bblanket(s)?\b/i, categorySlug: "blankets" },
+
+  // Drinkware
+  { pattern: /\bwater\s?bottle(s)?\b/i, categorySlug: "water-bottles" },
+  { pattern: /\btumbler(s)?\b/i, categorySlug: "tumblers" },
+  { pattern: /\btravel\s?mug(s)?\b/i, categorySlug: "travel-mugs" },
+  { pattern: /\bcoffee\s?mug(s)?\b/i, categorySlug: "coffee-mugs" },
+  { pattern: /\bglassware\b/i, categorySlug: "glassware" },
+
+  // Office
+  { pattern: /\bpen(s)?\b/i, categorySlug: "pens" },
+  { pattern: /\bjournal(s)?\b/i, categorySlug: "journals" },
+  { pattern: /\bcalendar(s)?\b/i, categorySlug: "calendars" },
+  { pattern: /\bmouse\s?pad(s)?\b/i, categorySlug: "mouse-pads" },
+
+  // Technology
+  { pattern: /\busb\s?drive(s)?|flash\s?drive(s)?\b/i, categorySlug: "usb-drives" },
+  { pattern: /\bcharger(s)?\b/i, categorySlug: "chargers" },
+  { pattern: /\bpower\s?bank(s)?\b/i, categorySlug: "power-banks" },
+  { pattern: /\bspeaker(s)?\b/i, categorySlug: "speakers" },
+  { pattern: /\bheadphone(s)?|earbud(s)?\b/i, categorySlug: "headphones" },
+
+  // Awards
+  { pattern: /\bplaque(s)?\b/i, categorySlug: "plaques" },
+  { pattern: /\bcrystal\s?award(s)?\b/i, categorySlug: "crystal-awards" },
+  { pattern: /\btrophy|trophies\b/i, categorySlug: "trophies" },
+  { pattern: /\bmedal(s)?\b/i, categorySlug: "medals" },
+
+  // Trade Show / Displays
+  { pattern: /\blanyard(s)?\b/i, categorySlug: "lanyards" },
+  { pattern: /\bname\s?badge(s)?\b/i, categorySlug: "name-badges" },
+  { pattern: /\btable\s?cover(s)?\b/i, categorySlug: "table-covers" },
+  { pattern: /\bretractable\s?banner\s?stand(s)?\b/i, categorySlug: "retractable-banner-stands" },
+  { pattern: /\bx[- ]banner(s)?\b/i, categorySlug: "x-banners" },
+  { pattern: /\bl[- ]banner(s)?\b/i, categorySlug: "l-banners" },
+  { pattern: /\bpop[- ]?up\s?display(s)?\b/i, categorySlug: "pop-up-displays" },
+  { pattern: /\bfabric\s?display(s)?\b/i, categorySlug: "fabric-displays" },
+  { pattern: /\bbackdrop(s)?\b/i, categorySlug: "backdrops" },
+  { pattern: /\bkiosk(s)?\b/i, categorySlug: "kiosks" },
+
+  // Outdoor
+  { pattern: /\bcooler(s)?\b/i, categorySlug: "coolers" },
+  { pattern: /\bbbq\b|barbecue\b/i, categorySlug: "bbq-sets" },
+  { pattern: /\bchair(s)?\b/i, categorySlug: "chairs" },
+
+  // Health & Wellness
+  { pattern: /\bfirst\s?aid\b/i, categorySlug: "first-aid" },
+  { pattern: /\bsanitizer(s)?\b/i, categorySlug: "sanitizer" },
+
+  // Eco-Friendly
+  { pattern: /\bbamboo\b/i, categorySlug: "bamboo" },
+  { pattern: /\brecycled\b/i, categorySlug: "recycled-products" },
+  { pattern: /\bwheat\s?straw\b/i, categorySlug: "wheat-straw-products" },
+
+  // Signs & Displays
+  { pattern: /\bfoam\s?board\b/i, categorySlug: "foam-board" },
+  { pattern: /\bacrylic\b/i, categorySlug: "acrylic" },
+  { pattern: /\baluminum\s?composite\b/i, categorySlug: "aluminum-composite" },
+  { pattern: /\baluminum\b/i, categorySlug: "aluminum" },
+  { pattern: /\bsintra\b/i, categorySlug: "sintra" },
+  { pattern: /\bdibond\b/i, categorySlug: "dibond" },
+  { pattern: /\bcoroplast\b/i, categorySlug: "coroplast" },
+  { pattern: /\byard\s?sign(s)?\b/i, categorySlug: "yard-signs" },
+  { pattern: /\bparking\s?sign(s)?\b/i, categorySlug: "parking-signs" },
+  { pattern: /\bconstruction\s?sign(s)?\b/i, categorySlug: "construction-signs" },
+  { pattern: /\bvinyl\s?banner(s)?\b/i, categorySlug: "vinyl-banners" },
+  { pattern: /\bmesh\s?banner(s)?\b/i, categorySlug: "mesh-banners" },
+  { pattern: /\bpole\s?banner(s)?\b/i, categorySlug: "pole-banners" },
+  { pattern: /\bwindow\s?decal(s)?\b/i, categorySlug: "window-decals" },
+  { pattern: /\bperforated\s?vinyl\b/i, categorySlug: "perforated-vinyl" },
+  { pattern: /\bfrosted\s?vinyl\b/i, categorySlug: "frosted-vinyl" },
+  { pattern: /\bwall\s?mural(s)?\b/i, categorySlug: "wall-murals" },
+  { pattern: /\bwall\s?decal(s)?\b/i, categorySlug: "wall-decals" },
+  { pattern: /\bwallpaper\b/i, categorySlug: "wallpaper" },
+  { pattern: /\bvehicle\s?decal(s)?\b/i, categorySlug: "vehicle-decals" },
+  { pattern: /\bvehicle\s?magnet(s)?\b/i, categorySlug: "vehicle-magnets" },
+  { pattern: /\bfleet\s?graphic(s)?\b/i, categorySlug: "fleet-graphics" },
+  { pattern: /\bdie\s?cut\b/i, categorySlug: "die-cut" },
+  { pattern: /\bkiss\s?cut\b/i, categorySlug: "kiss-cut" },
+  { pattern: /\broll\s?label(s)?\b/i, categorySlug: "roll-labels" },
+  { pattern: /\bwindow\s?sticker(s)?\b/i, categorySlug: "window-stickers" },
+  { pattern: /\bbumper\s?sticker(s)?\b/i, categorySlug: "bumper-stickers" },
+  { pattern: /\bfeather\s?flag(s)?\b/i, categorySlug: "feather-flags" },
+  { pattern: /\bteardrop\s?flag(s)?\b/i, categorySlug: "teardrop-flags" },
+  { pattern: /\bpole\s?flag(s)?\b/i, categorySlug: "pole-flags" },
+  { pattern: /\btent(s)?\b|\bcanopy|canopies\b/i, categorySlug: "tents-canopies" },
+  { pattern: /\ba[- ]?frame\s?sign(s)?\b/i, categorySlug: "a-frame-signs" },
+  { pattern: /\bposter(s)?\b/i, categorySlug: "posters" },
+  { pattern: /\bcanvas\s?print(s)?\b/i, categorySlug: "canvas-prints" },
+
+  // Print Products
+  { pattern: /\bbusiness\s?card(s)?\b/i, categorySlug: "business-cards" },
+  { pattern: /\bflyer(s)?\b/i, categorySlug: "flyers" },
+  { pattern: /\bbrochure(s)?\b/i, categorySlug: "brochures" },
+  { pattern: /\bbooklet(s)?\b/i, categorySlug: "booklets" },
+  { pattern: /\bpostcard(s)?\b/i, categorySlug: "postcards" },
+  { pattern: /\bpresentation\s?folder(s)?\b/i, categorySlug: "presentation-folders" },
+  { pattern: /\bletterhead\b/i, categorySlug: "letterhead" },
+  { pattern: /\benvelope(s)?\b/i, categorySlug: "envelopes" },
+  { pattern: /\bncr\s?form(s)?\b/i, categorySlug: "ncr-forms" },
+  { pattern: /\bnotepad(s)?\b/i, categorySlug: "notepads" },
+  { pattern: /\bmenu(s)?\b/i, categorySlug: "menus" },
+  { pattern: /\binvitation(s)?\b/i, categorySlug: "invitations" },
+  { pattern: /\bgreeting\s?card(s)?\b/i, categorySlug: "greeting-cards" },
   {
     pattern:
       /\b(hoodie|hooded|crewneck|sweatshirt|sweater|fleece|pullover|quarter[- ]?zip|1\/4[- ]?zip|half[- ]?zip|1\/2[- ]?zip)\b/i,

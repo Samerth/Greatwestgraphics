@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { transitionJobAction } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
+import { JobTransitionForm } from "@/components/admin/JobTransitionForm";
 import {
   isStaffOpenJob,
   validNextStatuses,
@@ -181,43 +181,7 @@ export default async function AdminJobsPage({
                   Open
                 </Link>
                 {nextStatuses.length > 0 ? (
-                  <form
-                    action={async (formData) => {
-                      "use server";
-                      const toStatus = String(formData.get("toStatus") || "");
-                      const reason =
-                        String(formData.get("reason") || "") || undefined;
-                      await transitionJobAction(job.id, toStatus, reason);
-                    }}
-                    className="flex flex-wrap gap-2 items-center"
-                  >
-                    <select
-                      name="toStatus"
-                      className="border border-border rounded-sm px-2 py-1 text-sm"
-                      defaultValue=""
-                      required
-                    >
-                      <option value="" disabled>
-                        Transition to…
-                      </option>
-                      {nextStatuses.map((status) => (
-                        <option key={status} value={status}>
-                          {jobStatusPresentation[status].label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      name="reason"
-                      placeholder="Reason (required to cancel)"
-                      className="border border-border rounded-sm px-2 py-1 text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="bg-accent text-white text-sm font-bold px-3 py-1 rounded-sm"
-                    >
-                      Apply
-                    </button>
-                  </form>
+                  <JobTransitionForm jobId={job.id} nextStatuses={[...nextStatuses]} compact />
                 ) : (
                   <span className="text-xs text-text-tertiary">
                     No further transitions

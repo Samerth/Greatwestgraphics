@@ -4,7 +4,8 @@ export type StripeRelayInput = {
   context: { tenantId: string; accountId: string; storeId: string };
   eventId: string;
   eventType: string;
-  sessionId: string;
+  sessionId: string | null;
+  jobRequestId: string | null;
   paymentIntentId: string | null;
   amountTotalMinor: number | null;
   currency: string | null;

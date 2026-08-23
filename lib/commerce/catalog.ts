@@ -47,6 +47,7 @@ export type StorefrontCategory = {
   id: string;
   name: string;
   slug: string;
+  parentId: string | null;
 };
 
 export { resolveCategoryId } from "./category-slug";
@@ -97,6 +98,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       id: String(row.id),
       name: String(row.name),
       slug: String(row.slug),
+      parentId: row.parentId ? String(row.parentId) : null,
     }));
 
     // The chips shown to the user only list categories that actually have
@@ -105,6 +107,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       id: String(row.id),
       name: String(row.name),
       slug: String(row.slug),
+      parentId: row.parentId ? String(row.parentId) : null,
     }));
 
     const categoryId = resolveCategoryId(allCategories, options?.categorySlug);
@@ -265,6 +268,7 @@ export async function loadStorefrontCategories(
       id: String(row.id),
       name: String(row.name),
       slug: String(row.slug),
+      parentId: row.parentId ? String(row.parentId) : null,
     }));
   } catch (caught) {
     if (isFrameworkControlFlow(caught)) throw caught;

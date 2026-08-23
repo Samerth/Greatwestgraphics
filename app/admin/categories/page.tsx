@@ -2,7 +2,7 @@ import Link from "next/link";
 import {
   createCategoryAction,
   deleteCategoryAction,
-  moveCategoryAction,
+  reorderCategoryAction,
   updateCategoryAction,
 } from "@/app/admin/actions";
 import { AdminPager } from "@/components/admin/AdminPager";
@@ -16,6 +16,28 @@ import { paginate, parsePage, textMatchesQuery } from "@/lib/admin/paged-list";
 
 export const dynamic = "force-dynamic";
 
+type AdminCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  sortOrder: number;
+};
+
+function toAdminCategory(row: Record<string, unknown>): AdminCategory {
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    slug: String(row.slug ?? ""),
+    parentId: row.parentId ? String(row.parentId) : null,
+    sortOrder: Number(row.sortOrder ?? 0),
+  };
+}
+
+function categoryMatches(cat: AdminCategory, q: string) {
+  return textMatchesQuery([cat.name, cat.slug], q);
+}
+
 export default async function AdminCategoriesPage({
   searchParams,
 }: {
@@ -25,23 +47,79 @@ export default async function AdminCategoriesPage({
   const q = (sp.q || "").trim();
   const requestedPage = parsePage(sp.page);
 
-  let categories: Record<string, unknown>[] = [];
+  let categories: AdminCategory[] = [];
   let error: string | undefined;
   try {
-    categories = await (await adminClient()).listCategories(requireAdminToken());
+    const raw = await (await adminClient()).listCategories(requireAdminToken());
+    categories = raw.map(toAdminCategory);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Categories unavailable";
   }
 
-  const storefrontIndex = new Map(
-    categories.map((cat, index) => [String(cat.id), index]),
-  );
-  const filtered = categories.filter((cat) =>
-    textMatchesQuery([String(cat.name || ""), String(cat.slug || "")], q),
-  );
-  const paged = paginate(filtered, requestedPage, CATEGORY_PAGE_SIZE);
-  const storefrontCount = categories.length;
-  const isEmpty = !error && storefrontCount === 0;
+  const totalCount = categories.length;
+  const isEmpty = !error && totalCount === 0;
+
+  // Only top-level categories can be picked as a parent — keeps the taxonomy
+  // to two levels (category → subcategory) rather than infinite nesting.
+  const topLevelCategories = categories
+    .filter((cat) => !cat.parentId)
+    .map((cat) => ({ id: cat.id, name: cat.name }));
+
+  const parentCategories = categories.filter((cat) => !cat.parentId);
+  const childrenByParent = new Map<string, AdminCategory[]>();
+  for (const cat of categories) {
+    if (!cat.parentId) continue;
+    const key = cat.parentId;
+    const existing = childrenByParent.get(key) ?? [];
+    existing.push(cat);
+    childrenByParent.set(key, existing);
+  }
+
+  // Search matches a parent directly, or matches through one of its
+  // children — a subcategory hit still needs its parent's row for context.
+  const visibleParents = q
+    ? parentCategories.filter((parent) => {
+        if (categoryMatches(parent, q)) return true;
+        const kids = childrenByParent.get(parent.id) ?? [];
+        return kids.some((child) => categoryMatches(child, q));
+      })
+    : parentCategories;
+
+  // Pagination runs over parents only, so a parent's children are never
+  // split across pages — the whole group always renders together.
+  const paged = paginate(visibleParents, requestedPage, CATEGORY_PAGE_SIZE);
+
+  function childrenFor(parent: AdminCategory): AdminCategory[] {
+    const kids = childrenByParent.get(parent.id) ?? [];
+    if (!q) return kids;
+    // If the parent itself matched, show all its children for full context.
+    // Otherwise only the children that actually matched brought it here.
+    if (categoryMatches(parent, q)) return kids;
+    return kids.filter((child) => categoryMatches(child, q));
+  }
+
+  // Rebuilds the full id order (parents with their children nested beneath,
+  // in display order) after a same-level swap, so reorderCategoryAction gets
+  // a single consistent ordering for the whole category set.
+  function buildFullOrder(reorderedParents: AdminCategory[]): string[] {
+    return reorderedParents.flatMap((parent) => [
+      parent.id,
+      ...(childrenByParent.get(parent.id) ?? []).map((child) => child.id),
+    ]);
+  }
+
+  function buildFullOrderWithChildren(
+    parentId: string,
+    reorderedChildren: AdminCategory[],
+  ): string[] {
+    return parentCategories.flatMap((parent) => [
+      parent.id,
+      ...(parent.id === parentId
+        ? reorderedChildren
+        : childrenByParent.get(parent.id) ?? []
+      ).map((child) => child.id),
+    ]);
+  }
 
   return (
     <div className="space-y-sp-5 max-w-4xl">
@@ -122,7 +200,11 @@ export default async function AdminCategoriesPage({
           </p>
         </div>
         <form action={createCategoryAction} className="space-y-sp-3">
-          <CategoryNameFields mode="create" nameId="new-category-name" />
+          <CategoryNameFields
+            mode="create"
+            nameId="new-category-name"
+            parentOptions={topLevelCategories}
+          />
           <button
             type="submit"
             className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
@@ -135,7 +217,7 @@ export default async function AdminCategoriesPage({
       <section className="space-y-sp-3">
         <div>
           <h2 className="font-display font-bold text-xl m-0">
-            Your categories ({storefrontCount})
+            Your categories ({totalCount})
           </h2>
           <p className="text-sm text-text-secondary mt-1 mb-0">
             Edit a name and click Save changes. Use Move up / Move down to set
@@ -146,7 +228,7 @@ export default async function AdminCategoriesPage({
           </p>
         </div>
 
-        {storefrontCount > 0 && (
+        {totalCount > 0 && (
           <form
             className="border border-border rounded-md p-sp-3 bg-bg-raised flex flex-wrap gap-3 items-end"
             action="/admin/categories"
@@ -169,98 +251,247 @@ export default async function AdminCategoriesPage({
           </form>
         )}
 
-        {(paged.total > 0 || q || (!error && storefrontCount === 0)) && (
+        {(paged.total > 0 || q || (!error && totalCount === 0)) && (
           <p className="text-sm text-text-tertiary m-0">
             {paged.total === 0
               ? q
                 ? `No categories match “${q}”.`
                 : "No categories yet. Add your first one above."
-              : `Showing ${paged.start}–${paged.end} of ${paged.total.toLocaleString()}${
+              : `Showing ${paged.start}–${paged.end} of ${paged.total.toLocaleString()} top-level categories${
                   q ? ` matching “${q}”` : ""
                 }.`}
           </p>
         )}
 
         <ol className="space-y-2 m-0 p-0 list-none">
-          {paged.items.map((cat) => {
-            const id = String(cat.id);
-            const index = storefrontIndex.get(id) ?? 0;
+          {paged.items.map((parent, parentIndex) => {
+            const kids = childrenFor(parent);
             return (
-              <li
-                key={id}
-                className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised"
-              >
-                <div className="flex flex-wrap justify-between gap-2 items-center">
-                  <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
-                    Position {index + 1} of {storefrontCount}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {index > 0 && (
-                      <form
-                        action={moveCategoryAction.bind(null, id, "up")}
-                      >
-                        <button
-                          type="submit"
-                          className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
-                          title="Move earlier in the storefront list"
-                        >
-                          ↑ Move up
-                        </button>
-                      </form>
-                    )}
-                    {index < storefrontCount - 1 && (
-                      <form
-                        action={moveCategoryAction.bind(null, id, "down")}
-                      >
-                        <button
-                          type="submit"
-                          className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
-                          title="Move later in the storefront list"
-                        >
-                          ↓ Move down
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                </div>
-
-                <form
-                  action={updateCategoryAction.bind(null, id)}
-                  className="space-y-sp-3"
-                >
-                  <CategoryNameFields
-                    mode="edit"
-                    defaultName={String(cat.name || "")}
-                    defaultSlug={String(cat.slug || "")}
-                  />
-                  <div className="flex flex-wrap gap-3 items-center">
-                    <button
-                      type="submit"
-                      className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
-                    >
-                      Save changes
-                    </button>
-                    <p className="text-xs text-text-tertiary m-0">
-                      Tip: rename for shoppers anytime; only touch the URL name
-                      if an old link must stay the same.
+              <li key={parent.id} className="space-y-2">
+                <div className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised">
+                  <div className="flex flex-wrap justify-between gap-2 items-center">
+                    <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
+                      Category · Position {parentIndex + 1} of {paged.total}
                     </p>
+                    <div className="flex flex-wrap gap-2">
+                      {parentIndex > 0 && (
+                        <form
+                          action={async () => {
+                            "use server";
+                            const globalIndex = parentCategories.findIndex(
+                              (c) => c.id === parent.id,
+                            );
+                            if (globalIndex <= 0) return;
+                            const next = [...parentCategories];
+                            const tmp = next[globalIndex - 1]!;
+                            next[globalIndex - 1] = next[globalIndex]!;
+                            next[globalIndex] = tmp;
+                            await reorderCategoryAction(buildFullOrder(next));
+                          }}
+                        >
+                          <button
+                            type="submit"
+                            className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                            title="Move earlier in the storefront list"
+                          >
+                            ↑ Move up
+                          </button>
+                        </form>
+                      )}
+                      {parentIndex < paged.items.length - 1 && (
+                        <form
+                          action={async () => {
+                            "use server";
+                            const globalIndex = parentCategories.findIndex(
+                              (c) => c.id === parent.id,
+                            );
+                            if (
+                              globalIndex < 0 ||
+                              globalIndex >= parentCategories.length - 1
+                            )
+                              return;
+                            const next = [...parentCategories];
+                            const tmp = next[globalIndex + 1]!;
+                            next[globalIndex + 1] = next[globalIndex]!;
+                            next[globalIndex] = tmp;
+                            await reorderCategoryAction(buildFullOrder(next));
+                          }}
+                        >
+                          <button
+                            type="submit"
+                            className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                            title="Move later in the storefront list"
+                          >
+                            ↓ Move down
+                          </button>
+                        </form>
+                      )}
+                    </div>
                   </div>
-                </form>
 
-                <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
-                  <p className="text-xs text-text-tertiary m-0">
-                    Website path uses:{" "}
-                    <span className="font-mono">{String(cat.slug || "—")}</span>
-                  </p>
-                  <form action={deleteCategoryAction.bind(null, id)}>
-                    <button
-                      type="submit"
-                      className="text-sm font-bold text-red-700 px-2 py-1 hover:underline"
-                    >
-                      Delete category
-                    </button>
+                  <form
+                    action={async (formData) => {
+                      "use server";
+                      await updateCategoryAction(parent.id, formData);
+                    }}
+                    className="space-y-sp-3"
+                  >
+                    <CategoryNameFields
+                      mode="edit"
+                      defaultName={parent.name}
+                      defaultSlug={parent.slug}
+                      defaultParentId=""
+                      parentOptions={topLevelCategories.filter(
+                        (opt) => opt.id !== parent.id,
+                      )}
+                    />
+                    <div className="flex flex-wrap gap-3 items-center">
+                      <button
+                        type="submit"
+                        className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
+                      >
+                        Save changes
+                      </button>
+                      <p className="text-xs text-text-tertiary m-0">
+                        Tip: rename for shoppers anytime; only touch the URL
+                        name if an old link must stay the same.
+                      </p>
+                    </div>
                   </form>
+
+                  <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
+                    <p className="text-xs text-text-tertiary m-0">
+                      Website path uses:{" "}
+                      <span className="font-mono">{parent.slug || "—"}</span>
+                    </p>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await deleteCategoryAction(parent.id);
+                      }}
+                    >
+                      <button
+                        type="submit"
+                        className="text-sm font-bold text-red-700 px-2 py-1 hover:underline"
+                      >
+                        Delete category
+                      </button>
+                    </form>
+                  </div>
                 </div>
+
+                {kids.map((child, childIndex) => {
+                  const siblings = childrenByParent.get(parent.id) ?? [];
+                  return (
+                    <div
+                      key={child.id}
+                      className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised ml-6 sm:ml-10"
+                    >
+                      <div className="flex flex-wrap justify-between gap-2 items-center">
+                        <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
+                          Subcategory · Position {childIndex + 1} of{" "}
+                          {siblings.length}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {childIndex > 0 && (
+                            <form
+                              action={async () => {
+                                "use server";
+                                const next = [...siblings];
+                                const tmp = next[childIndex - 1]!;
+                                next[childIndex - 1] = next[childIndex]!;
+                                next[childIndex] = tmp;
+                                await reorderCategoryAction(
+                                  buildFullOrderWithChildren(parent.id, next),
+                                );
+                              }}
+                            >
+                              <button
+                                type="submit"
+                                className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                                title="Move earlier among subcategories"
+                              >
+                                ↑ Move up
+                              </button>
+                            </form>
+                          )}
+                          {childIndex < siblings.length - 1 && (
+                            <form
+                              action={async () => {
+                                "use server";
+                                const next = [...siblings];
+                                const tmp = next[childIndex + 1]!;
+                                next[childIndex + 1] = next[childIndex]!;
+                                next[childIndex] = tmp;
+                                await reorderCategoryAction(
+                                  buildFullOrderWithChildren(parent.id, next),
+                                );
+                              }}
+                            >
+                              <button
+                                type="submit"
+                                className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                                title="Move later among subcategories"
+                              >
+                                ↓ Move down
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      </div>
+
+                      <form
+                        action={async (formData) => {
+                          "use server";
+                          await updateCategoryAction(child.id, formData);
+                        }}
+                        className="space-y-sp-3"
+                      >
+                        <CategoryNameFields
+                          mode="edit"
+                          defaultName={child.name}
+                          defaultSlug={child.slug}
+                          defaultParentId={child.parentId ?? ""}
+                          parentOptions={topLevelCategories.filter(
+                            (opt) => opt.id !== child.id,
+                          )}
+                        />
+                        <div className="flex flex-wrap gap-3 items-center">
+                          <button
+                            type="submit"
+                            className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
+                          >
+                            Save changes
+                          </button>
+                          <p className="text-xs text-text-tertiary m-0">
+                            Tip: rename for shoppers anytime; only touch the
+                            URL name if an old link must stay the same.
+                          </p>
+                        </div>
+                      </form>
+
+                      <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
+                        <p className="text-xs text-text-tertiary m-0">
+                          Website path uses:{" "}
+                          <span className="font-mono">{child.slug || "—"}</span>
+                        </p>
+                        <form
+                          action={async () => {
+                            "use server";
+                            await deleteCategoryAction(child.id);
+                          }}
+                        >
+                          <button
+                            type="submit"
+                            className="text-sm font-bold text-red-700 px-2 py-1 hover:underline"
+                          >
+                            Delete category
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  );
+                })}
               </li>
             );
           })}
