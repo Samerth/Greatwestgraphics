@@ -169,7 +169,6 @@ function ShopperPreview({ config }: { config: PricingConfigV2 }) {
       quantity,
       stitchCount,
       storefront.assumeDarkGarment,
-      storefront.unitPriceIncludes,
       unitCostMinor,
     ],
   );
