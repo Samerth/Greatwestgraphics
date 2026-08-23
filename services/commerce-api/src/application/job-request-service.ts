@@ -29,6 +29,8 @@ import {
   QuoteInputV2Schema,
 } from "@gwg/contracts";
 import { calculateQuote, calculateQuoteV2 } from "@gwg/pricing";
+import { applyStorePricingAdjustment } from "./pricing-config-service.js";
+import { applyStorePricingAdjustmentV2 } from "./pricing-config-v2-service.js";
 import type { CommerceDatabase } from "../db/client.js";
 import {
   accountPeople,
@@ -145,17 +147,28 @@ type PublishedConfigRow = { version: number; config: unknown };
  * cart can never lock in an old price. A line is priced with the engine that
  * matches its own snapshot: v2 lines need a published v2 config, v1 lines a
  * v1 one. Without a matching config the line is left as the customer saw it.
+ *
+ * `storePricingAdjustmentPercent` mirrors what the storefront-facing
+ * `/pricing-config/published` and `/pricing/v2/published` endpoints already
+ * apply before the customer ever sees a number. Without it here, a job
+ * request's authoritative price silently reverts to full tenant pricing the
+ * moment it's actually created — the discount shown while building the quote
+ * would not be the discount that gets locked in.
  */
 function repriceLine(
   line: JobRequestLineInput,
   published: { v1: PublishedConfigRow | null; v2: PublishedConfigRow | null },
+  storePricingAdjustmentPercent: number | null,
 ): JobRequestLineInput {
   const snapshot = line.configuration?.pricing;
   if (!snapshot) return line;
 
   if ("schemaVersion" in snapshot && snapshot.schemaVersion === 2) {
     if (!published.v2) return line;
-    const config = PricingConfigV2Schema.parse(published.v2.config);
+    const config = applyStorePricingAdjustmentV2(
+      PricingConfigV2Schema.parse(published.v2.config),
+      storePricingAdjustmentPercent,
+    );
     const input = QuoteInputV2Schema.parse(snapshot.input);
     const breakdown = calculateQuoteV2(input, config);
     const quantity = breakdown.totalQuantity;
@@ -179,7 +192,10 @@ function repriceLine(
   }
 
   if (!published.v1) return line;
-  const config = PricingConfigSchema.parse(published.v1.config);
+  const config = applyStorePricingAdjustment(
+    PricingConfigSchema.parse(published.v1.config),
+    storePricingAdjustmentPercent,
+  );
   const input = QuoteInputSchema.parse(snapshot.input);
   const breakdown = calculateQuote(input, config);
   return {
@@ -327,7 +343,10 @@ export class JobRequestService {
       }
 
       const [store] = await transaction
-        .select({ id: stores.id })
+        .select({
+          id: stores.id,
+          pricingAdjustmentPercent: stores.pricingAdjustmentPercent,
+        })
         .from(stores)
         .where(
           and(

@@ -451,9 +451,21 @@ export async function setStorePricingAdjustmentAction(
   formData: FormData,
 ) {
   const raw = String(formData.get("percent") ?? "").trim();
-  const percent = raw === "" ? null : Number(raw);
-  if (percent != null && !Number.isFinite(percent)) {
+  const enteredPercent = raw === "" ? null : Number(raw);
+  if (enteredPercent != null && !Number.isFinite(enteredPercent)) {
     throw new Error("Pricing adjustment must be a number");
+  }
+  // The form takes whole percentage points (the label and placeholder say
+  // "-10 for 10% off"), but the API stores and applies a decimal fraction
+  // (-0.1 for 10% off) — that's the unit `applyStorePricingAdjustment` and
+  // `applyStorePricingAdjustmentV2` multiply straight into the pricing
+  // config's multipliers. Convert here, once, at the boundary where the
+  // human-facing number becomes the API's number.
+  const percent = enteredPercent == null ? null : enteredPercent / 100;
+  if (percent != null && (percent < -0.9 || percent > 2)) {
+    throw new Error(
+      "Pricing adjustment must be between -90 and 200 (percent).",
+    );
   }
   const client = await adminClient();
   await client.setStorePricingAdjustment(
