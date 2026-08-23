@@ -53,6 +53,22 @@ export function trackAddToCart(params?: GtagEventParams): boolean {
   });
 }
 
+export function trackCartItemAdded(item: {
+  id: string;
+  productId?: string;
+  name: string;
+  qty: number;
+  unit: number;
+}): boolean {
+  return trackAddToCart({
+    item_id: item.productId ?? item.id,
+    item_name: item.name,
+    quantity: item.qty,
+    value: Number((item.qty * item.unit).toFixed(2)),
+    currency: "CAD",
+  });
+}
+
 export function trackBeginCheckout(params?: GtagEventParams): boolean {
   return sendGtagEvent(GA4_EVENTS.checkout, {
     currency: "CAD",
@@ -83,7 +99,6 @@ export function trackContactLinkClick(href: string): boolean {
 
 declare global {
   interface Window {
-    dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
   }
 }

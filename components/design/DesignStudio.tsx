@@ -20,6 +20,7 @@ import {
 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
+import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import {
@@ -888,6 +889,15 @@ export function DesignStudio({
             number: r.number.trim() || undefined,
           })),
         });
+        trackCartItemAdded({
+          id: productDetail.product.id,
+          productId: productDetail.product.id,
+          name: productName,
+          qty: roster.length,
+          unit:
+            quoted?.cartUnit ??
+            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
+        });
         router.push("/cart");
         return;
       }
@@ -913,6 +923,15 @@ export function DesignStudio({
         artworkProofUrl,
         designProjectId,
         pricingSnapshot: quoted?.snapshot,
+      });
+      trackCartItemAdded({
+        id: productDetail.product.id,
+        productId: productDetail.product.id,
+        name: productName,
+        qty: designQty,
+        unit:
+          quoted?.cartUnit ??
+          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
       });
       router.push("/cart");
     } catch (caught) {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
+import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, type CartItem } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
@@ -89,6 +90,7 @@ export default function CartPage() {
 
   function moveSavedToCart(item: CartItem) {
     addItem(item);
+    trackCartItemAdded(item);
     setSaved((prev) =>
       prev.filter(
         (p) =>

@@ -8,6 +8,7 @@ import { OptionalImage } from "@/components/shared/OptionalImage";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { AnimatedNumber } from "@/components/shared/AnimatedNumber";
+import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import {
   QB_METHOD_DAYS,
@@ -232,7 +233,7 @@ export function QuoteBuilder({
 
   function addQuoteToCart() {
     const label = useCatalog && selectedCatalog ? selectedCatalog.label : product;
-    addItem({
+    const cartLine = {
       id:
         useCatalog && selectedCatalog
           ? selectedCatalog.id
@@ -247,7 +248,9 @@ export function QuoteBuilder({
       unit: quoted.cartUnit,
       image: "",
       pricingSnapshot: quoted.snapshot,
-    });
+    };
+    addItem(cartLine);
+    trackCartItemAdded(cartLine);
     setAddedToCart(true);
     setTimeout(() => {
       setAddedToCart(false);

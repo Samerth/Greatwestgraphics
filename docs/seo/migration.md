@@ -50,7 +50,7 @@ Tel/mailto clicks are captured by `components/analytics/AnalyticsClickTracker.ts
 | --- | --- |
 | `page_view` | Every route, including App Router client navigations |
 | `ads_conversion_Contact_Us_1` | Successful contact form submit (`ContactForm`) |
-| `Shopping_Cart_1` | Any add-to-cart (`useCartStore.addItem`: PDP, Design Studio, quote builder, move-from-saved) |
+| `Shopping_Cart_1` | Add to cart from the catalog PDP, Design Studio, quote builder, or cart “move to cart” |
 | `Checkout_1` | Checkout wizard starts with items in the cart |
 | `purchase` | Job request submitted successfully (`transaction_id`, `value`, `currency: CAD`) |
 | `tel` | Click on `a[href^="tel:"]` |

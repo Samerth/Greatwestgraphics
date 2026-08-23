@@ -6,6 +6,7 @@ import {
   sendGtagEvent,
   trackAddToCart,
   trackBeginCheckout,
+  trackCartItemAdded,
   trackContactLinkClick,
   trackContactSubmit,
   trackPurchase,
@@ -52,6 +53,15 @@ describe("GA4 gtag helper", () => {
     expect(trackAddToCart({ item_name: "Tee", quantity: 24, value: 240 })).toBe(
       true,
     );
+    expect(
+      trackCartItemAdded({
+        id: "tee",
+        productId: "prod-1",
+        name: "Tee",
+        qty: 24,
+        unit: 10,
+      }),
+    ).toBe(true);
     expect(trackBeginCheckout({ value: 252 })).toBe(true);
     expect(
       trackPurchase({
@@ -74,6 +84,15 @@ describe("GA4 gtag helper", () => {
       "event",
       "Shopping_Cart_1",
       expect.objectContaining({ currency: "CAD", quantity: 24 }),
+    );
+    expect(gtag).toHaveBeenCalledWith(
+      "event",
+      "Shopping_Cart_1",
+      expect.objectContaining({
+        item_id: "prod-1",
+        item_name: "Tee",
+        value: 240,
+      }),
     );
     expect(gtag).toHaveBeenCalledWith(
       "event",
