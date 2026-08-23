@@ -25,9 +25,9 @@ describe("parseUploadPurpose", () => {
 });
 
 describe("uploadObjectKey", () => {
-  it("files store logos under the public prefix", () => {
+  it("files store logos under designs/ so the staging task role can PutObject", () => {
     expect(uploadObjectKey("store-logo", PERSON, OBJECT, "png")).toBe(
-      `store-logos/${PERSON}/${OBJECT}.png`,
+      `designs/${PERSON}/store-logo-${OBJECT}.png`,
     );
   });
 
@@ -50,10 +50,15 @@ describe("upload key access", () => {
     ).toBe(false);
   });
 
-  it("lets anyone read a store logo", () => {
-    const key = `store-logos/${PERSON}/${OBJECT}.png`;
+  it("lets anyone read a store logo, including the original store-logos/ prefix", () => {
+    const key = `designs/${PERSON}/store-logo-${OBJECT}.png`;
     expect(isPublicUploadKey(key)).toBe(true);
     expect(canReadUploadedObject(key, { isStaff: false })).toBe(true);
+    expect(
+      canReadUploadedObject(`store-logos/${PERSON}/${OBJECT}.png`, {
+        isStaff: false,
+      }),
+    ).toBe(true);
   });
 
   it("keeps customer artwork private to the owner or staff", () => {
