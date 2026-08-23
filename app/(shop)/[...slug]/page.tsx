@@ -17,6 +17,9 @@ export function generateStaticParams() {
   }));
 }
 
+/** Unknown slugs 404 at the router. Inventoried paths are in generateStaticParams; retired URLs 301 in next.config / proxy before this runs. */
+export const dynamicParams = false;
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
