@@ -1077,8 +1077,8 @@ export function DesignStudio({
             >
               {currentPhoto && (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
                   <div style={framedBackdrop.frame}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
                     <img
                       src={currentPhoto}
                       alt=""

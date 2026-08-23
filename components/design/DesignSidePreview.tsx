@@ -72,8 +72,8 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <div style={framed.frame}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl}
             alt=""
