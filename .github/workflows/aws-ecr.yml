@@ -19,6 +19,13 @@ permissions:
   id-token: write
   contents: read
 
+# One in-progress + one pending per group. Sharing a group with Deploy to
+# Staging would cancel the queued SHA retarget when CI later enqueues a wait.
+# Two main pushes still serialize here so the newer SHA pins after the older.
+concurrency:
+  group: gwg-ecr-main
+  cancel-in-progress: false
+
 jobs:
   push:
     name: Build and push images
@@ -161,3 +168,13 @@ jobs:
               --query 'service.serviceName' \
               --output text
           done
+
+      - name: Wait for staging to stabilize
+        if: github.ref == 'refs/heads/main'
+        env:
+          CLUSTER: gwg-staging
+          TIMEOUT_SECONDS: "1200"
+        run: |
+          set -euo pipefail
+          chmod +x infra/cloudshell/scripts/22-wait-ecs.sh
+          infra/cloudshell/scripts/22-wait-ecs.sh

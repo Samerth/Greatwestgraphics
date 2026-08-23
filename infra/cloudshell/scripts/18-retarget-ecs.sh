@@ -101,4 +101,4 @@ PY
 echo "Retargeting $CLUSTER web+api to $IMAGE_TAG"
 retarget "$CLUSTER-web" "$REGISTRY/gwg-web:$IMAGE_TAG" "$CLUSTER-web"
 retarget "$CLUSTER-api" "$REGISTRY/gwg-commerce-api:$IMAGE_TAG" "$CLUSTER-api"
-echo "Deployments started. Wait until running=desired and pending=0."
+echo "Deployments started. Wait until running=desired and pending=0, or run 22-wait-ecs.sh."
