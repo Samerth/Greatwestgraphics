@@ -29,6 +29,7 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import {
+  backdropImageStyle,
   garmentBackdropForSide,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
@@ -349,7 +350,8 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   // Front/back can use the list photo while detail loads. Sleeves use a
-  // vendor side shot when the catalog has one — never the chest photo.
+  // vendor side shot when the catalog has one, otherwise a crop of that
+  // colorway — never the full chest frame.
   const backdrop = garmentBackdropForSide(activeSide, {
     colorFrontImageUrl:
       productDetail?.product.colorFrontImageUrl ||
@@ -1072,14 +1074,17 @@ export function DesignStudio({
               }}
             >
               {currentPhoto && (
-                // eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL
-                <img
-                  src={currentPhoto}
-                  alt=""
-                  className={`absolute inset-0 m-auto h-full w-full object-contain pointer-events-none ${
-                    mirrorPhoto ? "-scale-x-100" : ""
-                  }`}
-                />
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
+                  <img
+                    src={currentPhoto}
+                    alt=""
+                    style={backdropImageStyle(
+                      backdrop.crop,
+                      Boolean(mirrorPhoto && !backdrop.crop),
+                    )}
+                  />
+                </div>
               )}
               {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
@@ -1096,6 +1101,7 @@ export function DesignStudio({
                 canvasSize={CANVAS_SIZE}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
+                garmentCrop={backdrop.crop}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChange={(next) =>

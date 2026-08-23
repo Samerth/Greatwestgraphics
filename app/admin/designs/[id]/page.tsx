@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 /**
  * The garment photo is backdrop only — the print zone lives in
  * `placementBySide` plus the artwork transforms — so a catalog lookup that
- * fails degrades to the sleeve/tee templates rather than taking the page down.
+ * fails degrades to the generic tee rather than taking the page down.
  */
 async function loadGarmentBackdrops(
   garmentProductId: string | null,
@@ -184,6 +184,7 @@ export default async function AdminDesignDetailPage({
                     design={design.design}
                     garmentImageUrl={garmentBackdropsBySide[side].url}
                     mirrorGarment={garmentBackdropsBySide[side].mirror}
+                    garmentCrop={garmentBackdropsBySide[side].crop}
                     size={200}
                   />
                 </div>
