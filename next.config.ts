@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { nextSeoRedirects } from "./lib/seo/redirects";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -24,6 +25,9 @@ const nextConfig: NextConfig = {
         hostname: "cdn.ssactivewear.com",
       },
     ],
+  },
+  async redirects() {
+    return nextSeoRedirects();
   },
 };
 

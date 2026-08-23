@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { publicRobots } from "@/lib/seo/indexing";
 import "./globals.css";
 
 // Self-hosted rather than next/font/google: fetching these at build time made
@@ -35,6 +36,7 @@ export const metadata: Metadata = {
   },
   description: DEFAULT_DESCRIPTION,
   alternates: { canonical: "/" },
+  robots: publicRobots(),
   openGraph: {
     type: "website",
     siteName: SITE_NAME,

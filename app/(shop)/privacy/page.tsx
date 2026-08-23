@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
     "What Great West Graphics collects when you request a quote, save a design or create an account, why we hold it, who processes it, and how to ask for a copy or its deletion.",
-  alternates: { canonical: "/privacy" },
+  alternates: { canonical: "/privacy-policy" },
 };
 
 /**

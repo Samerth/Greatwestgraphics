@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { TickBar } from "@/components/layout/TickBar";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -20,6 +21,23 @@ import { StorefrontSync } from "@/components/store/StorefrontSync";
 import type { StoreMembershipState } from "@/lib/commerce/membership";
 
 type Membership = StoreMembershipState;
+
+/** Hits the Route Handler that clears the branded-store cookie. Must be a
+ *  full document navigation — `<Link>` would land on the SEO catch-all. */
+function LeaveStoreLink({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-html-link-for-pages -- route.ts, not a page
+    <a href="/leave-store" className={className}>
+      {children}
+    </a>
+  );
+}
 
 /**
  * Whether the visitor belongs to the store they are looking at.
@@ -89,9 +107,9 @@ export default async function ShopLayout({
               ? "This store is still being reviewed. Check back shortly."
               : "This store isn't currently available."}
           </p>
-          <a href="/leave-store" className="text-sm underline">
+          <LeaveStoreLink className="text-sm underline">
             Go to the main Great West Graphics shop
-          </a>
+          </LeaveStoreLink>
         </div>
       </div>
     );
@@ -109,9 +127,9 @@ export default async function ShopLayout({
             <span>
               You are shopping the <b>{store.name}</b> team store.
             </span>
-            <a href="/leave-store" className="underline whitespace-nowrap">
+            <LeaveStoreLink className="underline whitespace-nowrap">
               Shop the main site instead
-            </a>
+            </LeaveStoreLink>
           </div>
         </div>
       )}
@@ -146,9 +164,9 @@ export default async function ShopLayout({
               owner to send an invitation to{" "}
               <b>{customerSession?.email}</b>.
             </span>
-            <a href="/leave-store" className="underline whitespace-nowrap">
+            <LeaveStoreLink className="underline whitespace-nowrap">
               Shop the main site
-            </a>
+            </LeaveStoreLink>
           </div>
         </div>
       )}

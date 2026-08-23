@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: "Get an Instant Print Quote",
   description:
     "Build a live custom print quote — choose a product, quantity and decoration method (screen printing, embroidery or DTF) and see instant estimated pricing.",
-  alternates: { canonical: "/quote" },
+  alternates: { canonical: "/get-a-quote" },
 };
 
 /**

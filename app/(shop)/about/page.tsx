@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "About Us",
   description:
     "Great West Graphics has been screen printing and embroidering in Vancouver since 1980 — custom apparel, promotional products and signage, proofed before every print run.",
-  alternates: { canonical: "/about" },
+  alternates: { canonical: "/about-us-great-west-graphics" },
 };
 
 const TIMELINE = [

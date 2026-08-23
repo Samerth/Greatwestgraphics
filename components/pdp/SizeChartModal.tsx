@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { SizeChartTable } from "./SizeChartTable";
 
 export interface SizeChartModalProps {
@@ -57,7 +58,7 @@ export function SizeChartModal({ styleKey, productName, onClose }: SizeChartModa
 
           {/* Footer */}
           <div className="border-t border-border px-sp-5 py-sp-4 bg-bg-raised/50 text-xs text-text-tertiary">
-            <p>💡 Still unsure about your size? <a href="/contact" className="text-accent hover:underline">Contact us</a></p>
+            <p>💡 Still unsure about your size? <Link href="/contact" className="text-accent hover:underline">Contact us</Link></p>
           </div>
         </div>
       </div>
