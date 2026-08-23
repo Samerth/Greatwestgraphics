@@ -45,6 +45,23 @@ describe("resolveLegacyRedirect", () => {
     expect(resolveLegacyRedirect("/checkout")).toBeNull();
   });
 
+  it("does not redirect working commerce prefixes", () => {
+    for (const path of [
+      "/products",
+      "/product/gildan-64000",
+      "/quote",
+      "/design",
+      "/faq",
+      "/contact",
+      "/account",
+      "/admin",
+      "/api/health",
+      "/shop",
+    ]) {
+      expect(resolveLegacyRedirect(path)).toBeNull();
+    }
+  });
+
   it("never falls through to the homepage", () => {
     expect(resolveLegacyRedirect("/this-url-was-never-in-the-sitemap")).toBeNull();
     expect(resolveLegacyRedirect("/screen-printing-tsawwassen")).toBeNull();

@@ -57,7 +57,31 @@ describe("WordPress URL inventory", () => {
       expect(page.description.length).toBeGreaterThan(0);
       expect(page.city.length).toBeGreaterThan(0);
     }
-    expect(LOCATION_PAGES.filter((page) => page.thin)).toHaveLength(10);
+    const specThin = [
+      "/screen-printing-and-embroidery-twin-falls",
+      "/screen-printing-and-embroidery-nampa",
+      "/screen-printing-and-embroidery-swift-current",
+      "/screen-printing-and-embroidery-sherbrooke",
+      "/screen-printing-and-embroidery-richland",
+      "/screen-printing-and-embroidery-idaho-falls",
+      "/t-shirt-design-richmond",
+      "/t-shirt-design-vancouver",
+      "/custom-screen-printing-everett",
+      "/screen-printing-delta-free-shipping",
+      "/screen-printing-in-saskatoon",
+      "/screen-printing-medicine-hat",
+      "/screen-printing-prince-albert",
+      "/custom-t-shirt-printing-maple-ridge",
+    ];
+    for (const path of specThin) {
+      expect(
+        LOCATION_PAGES.find((page) => page.path === path)?.thin,
+        path,
+      ).toBe(true);
+    }
+    expect(LOCATION_PAGES.filter((page) => page.thin).length).toBeGreaterThanOrEqual(
+      specThin.length,
+    );
   });
 
   it("builds catch-all params for nested location paths", () => {

@@ -4,9 +4,19 @@ import { Gallery } from "@/components/home/StaticSections";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
 import type { ContentPage } from "@/lib/seo/content-pages";
-import type { LocationPage } from "@/lib/seo/location-pages";
-import { locationIntro, locationPlaceLabel } from "@/lib/seo/location-pages";
-import { GWG_ADDRESS, GWG_EMAIL, GWG_PHONE_DISPLAY, GWG_PHONE_TEL } from "@/lib/seo/phone";
+import {
+  locationIntro,
+  locationPlaceLabel,
+  locationSections,
+  relatedLocationPages,
+  type LocationPage,
+} from "@/lib/seo/location-pages";
+import {
+  GWG_ADDRESS,
+  GWG_EMAIL,
+  GWG_PHONE_DISPLAY,
+  GWG_PHONE_TEL,
+} from "@/lib/seo/phone";
 import {
   breadcrumbJsonLd,
   locationBreadcrumb,
@@ -16,7 +26,11 @@ import {
 type LandingPage = LocationPage | (ContentPage & { city?: string });
 
 function isLocation(page: LandingPage): page is LocationPage {
-  return "city" in page && Boolean(page.city);
+  return "city" in page && Boolean(page.city) && "thin" in page;
+}
+
+function isContent(page: LandingPage): page is ContentPage {
+  return "mode" in page;
 }
 
 function shopHref(page: LandingPage): string {
@@ -29,26 +43,51 @@ function quoteHref(page: LandingPage): string {
   return page.method ? `/quote?method=${encodeURIComponent(page.method)}` : "/quote";
 }
 
-function introFor(page: LandingPage): string {
-  if (isLocation(page)) return locationIntro(page);
-  return page.intro ?? "";
-}
-
 export function SeoLanding({ page }: { page: LandingPage }) {
-  const intro = introFor(page);
-  const place = isLocation(page) ? locationPlaceLabel(page) : null;
+  const location = isLocation(page) ? page : null;
+  const content = isContent(page) ? page : null;
+  const sections = location ? locationSections(location) : [];
+  const intro = location
+    ? locationIntro(location)
+    : (content?.intro ?? "");
+  const bodySections = location
+    ? sections.map((section, index) =>
+        index === 0
+          ? {
+              ...section,
+              paragraphs: section.paragraphs.slice(1),
+            }
+          : section,
+      ).filter((section) => section.paragraphs.length > 0 || section.heading)
+    : [];
+  const place = location ? locationPlaceLabel(location) : null;
+  const related = location
+    ? [
+        ...(location.relatedLinks ?? []),
+        ...relatedLocationPages(location).map((item) => ({
+          path: item.path,
+          label: item.h1,
+        })),
+      ]
+        .filter(
+          (link, index, list) =>
+            list.findIndex((entry) => entry.path === link.path) === index,
+        )
+        .slice(0, 6)
+    : [];
+
   const jsonLd = [
     serviceJsonLd({
       h1: page.h1,
       description: page.description,
       path: page.path,
-      city: isLocation(page) ? page.city : "",
-      region: isLocation(page) ? page.region : "",
-      country: isLocation(page) ? page.country : "CA",
+      city: location?.city ?? "",
+      region: location?.region ?? "",
+      country: location?.country ?? "CA",
       service: page.service ?? page.h1,
     }),
-    isLocation(page)
-      ? locationBreadcrumb(page)
+    location
+      ? locationBreadcrumb(location)
       : breadcrumbJsonLd([{ name: page.h1, path: page.path }]),
   ];
 
@@ -61,6 +100,8 @@ export function SeoLanding({ page }: { page: LandingPage }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
         />
       ))}
+
+      {content?.mode === "flag" ? <FlaggedReviewBanner /> : null}
 
       <section className="py-sp-6 border-b border-border">
         <Container>
@@ -86,26 +127,72 @@ export function SeoLanding({ page }: { page: LandingPage }) {
           ) : null}
           <div className="mt-sp-4 flex flex-wrap gap-2.5">
             <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            <ButtonLink href="/contact" variant="secondary">
+              Contact the team
+            </ButtonLink>
             <ButtonLink href={shopHref(page)} variant="secondary">
               Shop the catalogue
-            </ButtonLink>
-            <ButtonLink href="/design" variant="secondary">
-              Design studio
             </ButtonLink>
           </div>
         </Container>
       </section>
 
+      {bodySections.length > 0 ? (
+        <section className="py-sp-8">
+          <Container className="max-w-[72ch] space-y-sp-5">
+            {bodySections.map((section, index) => (
+              <div key={`${section.heading ?? "body"}-${index}`}>
+                {section.heading ? (
+                  <h2 className="font-display font-bold text-lg m-0 mb-sp-3">
+                    {section.heading}
+                  </h2>
+                ) : null}
+                {section.paragraphs.map((paragraph) => (
+                  <p
+                    key={paragraph.slice(0, 48)}
+                    className="text-text-secondary mb-sp-3 last:mb-0"
+                  >
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </Container>
+        </section>
+      ) : null}
+
       {page.path === "/how-to-order" ? <HowToSteps /> : null}
       {page.path === "/gallery" ? <Gallery /> : null}
-      {page.path === "/services" || page.path.startsWith("/decoration-processes") ? (
+      {page.path === "/services" ||
+      page.path === "/decoration-processes" ||
+      page.path === "/decoration-processes/embroidery" ||
+      page.path === "/decoration-processes/custom-screen-printing" ? (
         <>
           <PrintMethods />
           <ServicesBreakdown />
         </>
-      ) : (
-        <PrintMethods />
-      )}
+      ) : null}
+
+      <ShopTeaser page={page} />
+
+      {related.length > 0 ? (
+        <section className="py-sp-6 border-t border-border">
+          <Container>
+            <h2 className="font-display font-bold text-lg m-0 mb-sp-3">
+              Related pages
+            </h2>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {related.map((link) => (
+                <li key={link.path}>
+                  <Link href={link.path} className="text-sm hover:text-accent">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Container>
+        </section>
+      ) : null}
 
       <section className="py-sp-8 bg-bg-raised border-t border-border">
         <Container className="flex flex-wrap items-end justify-between gap-sp-4">
@@ -125,12 +212,58 @@ export function SeoLanding({ page }: { page: LandingPage }) {
               </a>
             </p>
           </div>
-          <ButtonLink href="/contact" variant="secondary">
-            Contact the team
-          </ButtonLink>
+          <div className="flex flex-wrap gap-2.5">
+            <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            <ButtonLink href="/contact" variant="secondary">
+              Contact the team
+            </ButtonLink>
+          </div>
         </Container>
       </section>
     </>
+  );
+}
+
+function FlaggedReviewBanner() {
+  return (
+    <div
+      role="status"
+      className="bg-amber-50 border-b border-amber-300 text-amber-950 text-sm"
+    >
+      <Container className="py-sp-3">
+        <p className="m-0">
+          <b>Flagged for review — client / Codsphere.</b> This address is held
+          from the old WordPress site so it does not 404. Confirm whether it
+          should stay, redirect, or be rewritten before launch. It stays{" "}
+          <code>noindex</code> until that decision.
+        </p>
+      </Container>
+    </div>
+  );
+}
+
+function ShopTeaser({ page }: { page: LandingPage }) {
+  return (
+    <section className="py-sp-8 border-t border-border">
+      <Container>
+        <h2 className="font-display font-bold text-header m-0">
+          Browse the catalogue
+        </h2>
+        <p className="text-text-secondary mt-sp-2 mb-sp-4 max-w-[64ch]">
+          The old product widgets on this URL were a shop module, not article
+          copy. Use the live catalogue, the quote builder, or the design studio.
+        </p>
+        <div className="flex flex-wrap gap-2.5">
+          <ButtonLink href={shopHref(page)}>Open the shop</ButtonLink>
+          <ButtonLink href={quoteHref(page)} variant="secondary">
+            Get a quote
+          </ButtonLink>
+          <ButtonLink href="/design" variant="secondary">
+            Design studio
+          </ButtonLink>
+        </div>
+      </Container>
+    </section>
   );
 }
 

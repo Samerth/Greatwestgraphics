@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
@@ -448,5 +448,7 @@ export default async function ProductPage({
     );
   }
 
-  notFound();
+  // Old WooCommerce slugs are inventoried URLs. Send them to the live
+  // catalogue instead of a 404 or the homepage.
+  permanentRedirect("/products");
 }

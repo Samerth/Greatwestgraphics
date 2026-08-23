@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cleanSeoText } from "./clean";
 import {
   contentCanonicalPath,
   getContentPage,
@@ -17,23 +18,25 @@ export function seoPageMetadata(
 ): Metadata {
   const canonical = page.canonicalPath ?? page.path;
   const indexable = page.indexable !== false;
+  const title = cleanSeoText(page.title);
+  const description = cleanSeoText(page.description);
 
   return {
-    title: { absolute: page.title },
-    description: page.description,
+    title: { absolute: title },
+    description,
     alternates: { canonical },
     robots: publicRobots(indexable),
     openGraph: {
       type: "website",
-      title: page.title,
-      description: page.description,
+      title,
+      description,
       url: canonical,
       images: [{ url: DEFAULT_OG_IMAGE }],
     },
     twitter: {
       card: "summary_large_image",
-      title: page.title,
-      description: page.description,
+      title,
+      description,
       images: [DEFAULT_OG_IMAGE],
     },
   };

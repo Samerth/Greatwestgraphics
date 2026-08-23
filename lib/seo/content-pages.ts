@@ -86,7 +86,6 @@ export const CONTENT_PAGES: ContentPage[] = [
     h1: "Shop All Products",
     mode: "reuse",
     reuse: "products",
-    canonicalPath: "/shop",
   },
   {
     path: "/customer-service",

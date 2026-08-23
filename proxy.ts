@@ -6,6 +6,7 @@ import {
   STORE_COOKIE,
   STORE_SLUG_HEADER,
 } from "@/lib/commerce/store-cookie";
+import { isProtectedAppPath } from "@/lib/seo/protected-paths";
 import { resolveLegacyRedirect } from "@/lib/seo/redirects";
 
 const COOKIE = "gwg_staff_session";
@@ -13,11 +14,15 @@ const COOKIE = "gwg_staff_session";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const seoRedirect = resolveLegacyRedirect(pathname);
-  if (seoRedirect) {
-    const url = request.nextUrl.clone();
-    url.pathname = seoRedirect;
-    return NextResponse.redirect(url, 301);
+  // Allowlist only — never 301 a working commerce prefix. Unknown paths
+  // fall through and 404 rather than bounce to the homepage.
+  if (!isProtectedAppPath(pathname)) {
+    const seoRedirect = resolveLegacyRedirect(pathname);
+    if (seoRedirect) {
+      const url = request.nextUrl.clone();
+      url.pathname = seoRedirect;
+      return NextResponse.redirect(url, 301);
+    }
   }
 
   if (pathname.startsWith("/admin")) {
@@ -54,6 +59,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|txt|xml)$).*)",
+    // Skip API, Next internals, and static files. Shop/admin prefixes stay
+    // in the matcher so store cookies and staff auth still run; SEO
+    // redirects never apply to those prefixes (see isProtectedAppPath).
+    "/((?!_next/|api/|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|txt|xml|woff2?)$).*)",
   ],
 };

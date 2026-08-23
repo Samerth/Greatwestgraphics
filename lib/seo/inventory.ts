@@ -1,6 +1,10 @@
 import { canonicalizePath } from "./paths";
 import { CONTENT_PAGES, getContentPage } from "./content-pages";
 import { getLocationPage, LOCATION_PAGES } from "./location-pages";
+import {
+  isProtectedAppPath,
+  isProtectedFirstSegment,
+} from "./protected-paths";
 import { resolveLegacyRedirect } from "./redirects";
 
 export type LegacyRoute =
@@ -28,12 +32,13 @@ export function resolveLegacyRoute(path: string): LegacyRoute {
   const canonical = canonicalizePath(path);
   if (canonical === "/") return { type: "home" };
 
-  const to = resolveLegacyRedirect(canonical);
-  if (to) return { type: "redirect", to };
-
-  if ((EXISTING_APP_PATHS as readonly string[]).includes(canonical)) {
+  // Working commerce routes win over any inventory row or redirect source.
+  if (isProtectedAppPath(canonical)) {
     return { type: "existing", path: canonical };
   }
+
+  const to = resolveLegacyRedirect(canonical);
+  if (to) return { type: "redirect", to };
 
   if (getLocationPage(canonical)) {
     return { type: "location", path: canonical };
@@ -66,5 +71,7 @@ export function catchAllStaticPaths(): string[] {
     ...CONTENT_PAGES.filter(
       (page) => !reuse.has(canonicalizePath(page.path)),
     ).map((page) => page.path),
-  ];
+  ].filter(
+    (path) => !isProtectedAppPath(path) && !isProtectedFirstSegment(path),
+  );
 }

@@ -1,4 +1,6 @@
+import { LEFTOVER_REDIRECTS, PREFIX_REDIRECTS } from "./leftovers";
 import { canonicalizePath, withTrailingSlash } from "./paths";
+import { isProtectedAppPath, isProtectedRedirectSource } from "./protected-paths";
 
 /**
  * Section 2d — the only "-2" URLs that still have a live unsuffixed original.
@@ -30,10 +32,18 @@ export const PRESERVED_ODD_SLUGS = [
   "/t-shirt-printing-2",
 ] as const;
 
-const REDIRECTS: Record<string, string> = { ...RETIRED, ...TRANSACTIONAL };
+const REDIRECTS: Record<string, string> = {
+  ...RETIRED,
+  ...TRANSACTIONAL,
+  ...LEFTOVER_REDIRECTS,
+};
 
 export function resolveLegacyRedirect(path: string): string | null {
   const canonical = canonicalizePath(path);
+  // Nested /faq/* rows are WordPress leftovers, not the live /faq page.
+  if (isProtectedAppPath(canonical) && !canonical.startsWith("/faq/")) {
+    return null;
+  }
   if ((PRESERVED_ODD_SLUGS as readonly string[]).includes(canonical)) {
     return null;
   }
@@ -50,10 +60,22 @@ export type SeoRedirect = {
 export function nextSeoRedirects(): SeoRedirect[] {
   const entries: SeoRedirect[] = [];
   for (const [from, to] of Object.entries(REDIRECTS)) {
+    if (isProtectedRedirectSource(from)) continue;
     entries.push({ source: from, destination: to, statusCode: 301 });
+    const slashed = withTrailingSlash(from);
+    if (slashed !== from) {
+      entries.push({
+        source: slashed,
+        destination: to,
+        statusCode: 301,
+      });
+    }
+  }
+  for (const rule of PREFIX_REDIRECTS) {
+    if (isProtectedRedirectSource(rule.source)) continue;
     entries.push({
-      source: withTrailingSlash(from),
-      destination: to,
+      source: rule.source,
+      destination: rule.destination,
       statusCode: 301,
     });
   }

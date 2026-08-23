@@ -6,7 +6,11 @@ import type { Metadata } from "next";
  * DNS cuts over and the new sitemap is submitted).
  */
 export function allowSearchIndexing(): boolean {
-  return process.env.SEO_ALLOW_INDEX === "true";
+  if (process.env.SEO_ALLOW_INDEX !== "true") return false;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+  // Staging hostnames stay closed even if someone flips the launch flag early.
+  if (/staging|localhost|127\.0\.0\.1/i.test(siteUrl)) return false;
+  return true;
 }
 
 export function publicRobots(indexable = true): Metadata["robots"] {

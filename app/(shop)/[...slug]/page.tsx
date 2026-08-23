@@ -17,7 +17,11 @@ export function generateStaticParams() {
   }));
 }
 
-/** Unknown slugs 404 at the router. Inventoried paths are in generateStaticParams; retired URLs 301 in next.config / proxy before this runs. */
+/**
+ * Only inventoried SEO slugs render here. Unknown paths 404 — they are not
+ * 301'd to a guessed page or the homepage. Retired/transactional URLs 301
+ * from the explicit allowlist in next.config / proxy before this runs.
+ */
 export const dynamicParams = false;
 
 export async function generateMetadata({
