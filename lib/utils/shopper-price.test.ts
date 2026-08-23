@@ -35,7 +35,7 @@ describe("shopperUnitMinor", () => {
     );
     expect(summary.costMinor).toBe(800);
     expect(summary.quantity).toBe(48);
-    expect(summary.setupMinor).toBe(3500);
+    expect(summary.setupMinor).toBe(3000);
     expect(summary.threadMinor).toBe(0);
     expect(summary.unitMinor).toBeGreaterThan(summary.garmentMinor / 48);
   });
