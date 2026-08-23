@@ -29,6 +29,10 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import {
+  garmentBackdropForSide,
+  studioCanvasImageUrl,
+} from "@/lib/commerce/garment-backdrop";
+import {
   cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
