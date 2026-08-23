@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
+import { ProductSizeSpecs } from "@/components/pdp/ProductSizeSpecs";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
 import {
   PdpEnrichmentSections,
@@ -22,6 +23,7 @@ import {
   toCrossSellItems,
 } from "@/lib/commerce/catalog";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { readProductSizeChart } from "@/lib/utils/size-specs";
 import type { GarmentPriceCurve } from "@gwg/pricing";
 
 export const dynamic = "force-dynamic";
@@ -191,6 +193,7 @@ export default async function ProductPage({
     const style = detail.style as Record<string, unknown>;
     const variants = (detail.variants as Record<string, unknown>[]) || [];
     const colorways = (detail.colorways as Record<string, unknown>[]) || [];
+    const sizeChart = readProductSizeChart(detail);
     const imageUrl =
       (product.colorFrontImageUrl as string | null) ||
       (style.styleImageUrl as string | null);
@@ -371,6 +374,8 @@ export default async function ProductPage({
             </div>
           </Container>
         </section>
+
+        <ProductSizeSpecs chart={sizeChart} />
 
         <PdpEnrichmentSections
           brandName={String(style.brandName || "")}

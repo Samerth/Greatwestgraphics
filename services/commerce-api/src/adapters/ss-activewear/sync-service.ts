@@ -18,14 +18,22 @@ import {
   SsAuthError,
   SsNotFoundError,
   dollarsToMinor,
+  groupSpecsByStyleId,
   isDarkHex,
   parseSizeOrder,
   slugify,
   type SsProductSku,
+  type SsSizeSpecRow,
   type SsStyle,
 } from "./client.js";
 import { fallbackCategorySlugs } from "../catalog/writer.js";
+import { isMissingColumn } from "../../db/postgres-error.js";
 import { LocalSsImageStore } from "./image-store.js";
+
+type SpecsIndex = {
+  loaded: boolean;
+  byStyle: Map<number, SsSizeSpecRow[]>;
+};
 
 const VENDOR = "ss_activewear";
 
@@ -90,16 +98,23 @@ export class SsSyncService {
       const allowlist = new Set(
         (settings?.brandAllowlist ?? []).map((brand) => brand.toLowerCase()),
       );
+      const allowedStyles = styles.filter(
+        (style) =>
+          allowlist.size === 0 ||
+          allowlist.has((style.brandName ?? "").toLowerCase()),
+      );
+      const specsIndex = await this.loadSpecsIndex(
+        allowedStyles.map((style) => style.styleID),
+      );
 
-      for (const style of styles) {
-        if (
-          allowlist.size > 0 &&
-          !allowlist.has((style.brandName ?? "").toLowerCase())
-        ) {
-          continue;
-        }
+      for (const style of allowedStyles) {
         try {
-          const result = await this.upsertStyleTree(tenantId, style, actor);
+          const result = await this.upsertStyleTree(
+            tenantId,
+            style,
+            actor,
+            specsIndex,
+          );
           stylesProcessed += 1;
           skusUpserted += result.skusUpserted;
           imagesDownloaded += result.imagesDownloaded;
@@ -186,7 +201,13 @@ export class SsSyncService {
 
     try {
       const style = await this.client.getStyle(styleId);
-      const result = await this.upsertStyleTree(tenantId, style, actor);
+      const specsIndex = await this.loadSpecsIndex([styleId]);
+      const result = await this.upsertStyleTree(
+        tenantId,
+        style,
+        actor,
+        specsIndex,
+      );
       await this.db
         .update(syncRuns)
         .set({
@@ -392,10 +413,50 @@ export class SsSyncService {
       );
   }
 
+  /**
+   * Bulk `/v2/specs/` first (one request). If that fails, batch by style id.
+   * Inventory sync does not call this. A total miss leaves `loaded: false`
+   * so we do not wipe specs that were stored on a previous run.
+   */
+  private async loadSpecsIndex(styleIds: number[]): Promise<SpecsIndex> {
+    const empty: SpecsIndex = { loaded: false, byStyle: new Map() };
+    if (styleIds.length === 0) return { loaded: true, byStyle: new Map() };
+    try {
+      return { loaded: true, byStyle: groupSpecsByStyleId(await this.client.listSpecs()) };
+    } catch {
+      try {
+        return {
+          loaded: true,
+          byStyle: groupSpecsByStyleId(
+            await this.client.listSpecsByStyles(styleIds),
+          ),
+        };
+      } catch {
+        return empty;
+      }
+    }
+  }
+
+  private async persistStyleSizeSpecs(
+    styleUuid: string,
+    rows: SsSizeSpecRow[],
+  ) {
+    try {
+      await this.db
+        .update(ssStyles)
+        .set({ sizeSpecs: rows, updatedAt: new Date() })
+        .where(eq(ssStyles.id, styleUuid));
+    } catch (error) {
+      if (isMissingColumn(error, "size_specs")) return;
+      throw error;
+    }
+  }
+
   private async upsertStyleTree(
     tenantId: string,
     style: SsStyle,
     actor: Actor,
+    specsIndex?: SpecsIndex,
   ) {
     const ssCategories = normalizeCategories(style.categories, style.baseCategory);
     const brandImageUrl = await this.images.ensure(style.brandImage);
@@ -405,7 +466,10 @@ export class SsSyncService {
     if (styleImageUrl) imagesDownloaded += 1;
 
     const [existing] = await this.db
-      .select()
+      .select({
+        id: ssStyles.id,
+        modelStatus: ssStyles.modelStatus,
+      })
       .from(ssStyles)
       .where(
         and(
@@ -445,13 +509,13 @@ export class SsSyncService {
         .update(ssStyles)
         .set(styleValues)
         .where(eq(ssStyles.id, existing.id))
-        .returning();
+        .returning({ id: ssStyles.id, modelStatus: ssStyles.modelStatus });
       styleRow = updated ?? existing;
     } else {
       const [created] = await this.db
         .insert(ssStyles)
         .values(styleValues)
-        .returning();
+        .returning({ id: ssStyles.id, modelStatus: ssStyles.modelStatus });
       styleRow = created!;
       await this.db.insert(vendorMappings).values({
         tenantId,
@@ -464,6 +528,13 @@ export class SsSyncService {
         source: { system: "vendor" },
       });
       // Phase 2: leave model_status none (no-op enqueue)
+    }
+
+    if (specsIndex?.loaded) {
+      await this.persistStyleSizeSpecs(
+        styleRow!.id,
+        specsIndex.byStyle.get(style.styleID) ?? [],
+      );
     }
 
     let skus: SsProductSku[] = [];

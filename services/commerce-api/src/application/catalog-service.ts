@@ -15,6 +15,7 @@ import {
   ssCategoryMap,
   ssProductCategories,
   ssProducts,
+  ssStyleColumnsWithoutSizeSpecs,
   ssStyles,
   ssUnmappedCategories,
   ssVariants,
@@ -22,10 +23,12 @@ import {
   syncRuns,
 } from "../db/schema.js";
 import { retailFromCost } from "../adapters/ss-activewear/client.js";
+import { isMissingColumn } from "../db/postgres-error.js";
 import {
   DataIntegrityError,
   ResourceNotFoundError,
 } from "./job-request-service.js";
+import { mapSizeSpecsToChart, parseSizeSpecRows } from "./size-specs.js";
 
 /** S&S sells its own printed catalogue through the same styles feed.
  * These are not garment brands and are hidden from shopper-facing lists. */
@@ -705,9 +708,10 @@ export class CatalogService {
     // per-row post-filter) so `limit` is honoured correctly and the
     // category check doesn't cost a round trip per row. A stable order
     // (brand, style, id) keeps pagination deterministic across pages.
+    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
     const rows = query?.categoryId
       ? await this.db
-          .select({ product: ssProducts, style: ssStyles })
+          .select({ product: ssProducts, style: styleColumns })
           .from(ssProducts)
           .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
           .innerJoin(
@@ -722,7 +726,7 @@ export class CatalogService {
           .limit(limit)
           .offset(offset)
       : await this.db
-          .select({ product: ssProducts, style: ssStyles })
+          .select({ product: ssProducts, style: styleColumns })
           .from(ssProducts)
           .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
           .where(whereClause)
@@ -780,10 +784,11 @@ export class CatalogService {
     productUuid: string,
     options?: { includeHiddenColorways?: boolean },
   ) {
+    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
     const [row] = await this.db
       .select({
         product: ssProducts,
-        style: ssStyles,
+        style: styleColumns,
       })
       .from(ssProducts)
       .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
@@ -795,6 +800,8 @@ export class CatalogService {
       )
       .limit(1);
     if (!row) throw new ResourceNotFoundError("Product not found");
+    const sizeSpecRows = await this.loadStyleSizeSpecs(row.style.id);
+    const sizeSpecs = mapSizeSpecsToChart(sizeSpecRows);
     const variants = await this.db
       .select()
       .from(ssVariants)
@@ -844,7 +851,8 @@ export class CatalogService {
 
     return {
       product: row.product,
-      style: row.style,
+      style: { ...row.style, sizeSpecs: sizeSpecRows },
+      sizeSpecs,
       variants: variants.map((variant) => ({
         ...variant,
         retailMinor: garmentPricing.price(
@@ -892,12 +900,34 @@ export class CatalogService {
     };
   }
 
+  /**
+   * Isolated so a staging DB that has not applied 0022 still serves PDPs.
+   * Missing `size_specs` is treated as "vendor sent nothing".
+   */
+  private async loadStyleSizeSpecs(styleUuid: string) {
+    try {
+      const [row] = await this.db
+        .select({ sizeSpecs: ssStyles.sizeSpecs })
+        .from(ssStyles)
+        .where(eq(ssStyles.id, styleUuid))
+        .limit(1);
+      return parseSizeSpecRows(row?.sizeSpecs);
+    } catch (error) {
+      if (isMissingColumn(error, "size_specs")) return [];
+      throw error;
+    }
+  }
+
   private async refileProductsForSsCategory(
     tenantId: string,
     ssCategoryKey: string,
   ) {
     const products = await this.db
-      .select()
+      .select({
+        productId: ssProducts.id,
+        ssCategories: ssStyles.ssCategories,
+        baseCategory: ssStyles.baseCategory,
+      })
       .from(ssProducts)
       .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
       .where(eq(ssProducts.tenantId, tenantId));
@@ -914,17 +944,17 @@ export class CatalogService {
     if (maps.length === 0) return;
 
     for (const row of products) {
-      const styleCats = row.ss_styles.ssCategories ?? [];
+      const styleCats = row.ssCategories ?? [];
       if (
         !styleCats.includes(ssCategoryKey) &&
-        row.ss_styles.baseCategory !== ssCategoryKey
+        row.baseCategory !== ssCategoryKey
       ) {
         continue;
       }
       const overrides = await this.db
         .select()
         .from(categoryOverrides)
-        .where(eq(categoryOverrides.productUuid, row.ss_products.id));
+        .where(eq(categoryOverrides.productUuid, row.productId));
       if (overrides.length > 0) continue;
 
       for (const map of maps) {
@@ -932,7 +962,7 @@ export class CatalogService {
           .insert(ssProductCategories)
           .values({
             tenantId,
-            productUuid: row.ss_products.id,
+            productUuid: row.productId,
             categoryId: map.categoryId,
             assignmentSource: "map",
             source: { system: "commerce_api" },

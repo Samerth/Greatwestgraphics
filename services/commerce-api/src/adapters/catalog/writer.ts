@@ -7,6 +7,7 @@ import {
   ssCategoryMap,
   ssProductCategories,
   ssProducts,
+  ssStyleColumnsWithoutSizeSpecs,
   ssStyles,
   ssUnmappedCategories,
   ssVariants,
@@ -804,8 +805,9 @@ export class CatalogWriter {
       ? sample.category.split(/[,|;]/).map((c) => c.trim()).filter(Boolean)
       : [];
 
+    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
     const [existing] = await this.db
-      .select()
+      .select(styleColumns)
       .from(ssStyles)
       .where(
         and(
@@ -842,13 +844,13 @@ export class CatalogWriter {
         .update(ssStyles)
         .set(styleValues)
         .where(eq(ssStyles.id, existing.id))
-        .returning();
+        .returning(styleColumns);
       styleRow = updated ?? existing;
     } else {
       const [created] = await this.db
         .insert(ssStyles)
         .values(styleValues)
-        .returning();
+        .returning(styleColumns);
       styleRow = created!;
       await this.ensureMapping(
         tenantId,
