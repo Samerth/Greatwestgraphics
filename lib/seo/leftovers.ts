@@ -1,3 +1,9 @@
+import { canonicalizePath } from "./paths";
+import {
+  isProtectedRedirectSource,
+  patternPrefix,
+} from "./protected-paths";
+
 /**
  * Inventoried WordPress URLs that are not in the 154 + 37 + 3 keep-list.
  * Each 301s to the closest relevant live page — never the homepage.
@@ -72,3 +78,26 @@ export const PREFIX_REDIRECTS: Array<{
   { source: "/slider/:path*", destination: "/rush-t-shirts-printing" },
   { source: "/pd_template/:path*", destination: "/custom-t-shirts" },
 ];
+
+/**
+ * Apply an explicit leftover prefix rule. Used by the proxy because Next 16
+ * config redirects with `:slug` / `:path*` were not matching in `next dev`
+ * (exact allowlist entries still 301). Never matches a protected tree.
+ */
+export function matchPrefixRedirect(path: string): string | null {
+  const canonical = canonicalizePath(path);
+  for (const rule of PREFIX_REDIRECTS) {
+    if (isProtectedRedirectSource(rule.source)) continue;
+    const prefix = canonicalizePath(patternPrefix(rule.source));
+    if (rule.source.includes(":path*")) {
+      if (canonical === prefix || canonical.startsWith(`${prefix}/`)) {
+        return rule.destination;
+      }
+      continue;
+    }
+    if (rule.source.includes("/:") && canonical.startsWith(`${prefix}/`)) {
+      return rule.destination;
+    }
+  }
+  return null;
+}

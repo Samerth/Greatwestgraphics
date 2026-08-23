@@ -62,6 +62,21 @@ describe("resolveLegacyRedirect", () => {
     }
   });
 
+  it("applies leftover WordPress prefix aliases without stealing live trees", () => {
+    expect(resolveLegacyRedirect("/product-category/t-shirts")).toBe(
+      "/products",
+    );
+    expect(resolveLegacyRedirect("/product-tag/hoodies")).toBe("/products");
+    expect(resolveLegacyRedirect("/tag/heat-transfer")).toBe(
+      "/blogs-screen-printing",
+    );
+    expect(resolveLegacyRedirect("/faq/unknown-old-question")).toBe("/faqs");
+    expect(resolveLegacyRedirect("/product/gildan-64000")).toBeNull();
+    expect(resolveLegacyRedirect("/products/t-shirts")).toBeNull();
+    expect(resolveLegacyRedirect("/category/t-shirts")).toBeNull();
+    expect(resolveLegacyRedirect("/faq")).toBeNull();
+  });
+
   it("never falls through to the homepage", () => {
     expect(resolveLegacyRedirect("/this-url-was-never-in-the-sitemap")).toBeNull();
     expect(resolveLegacyRedirect("/screen-printing-tsawwassen")).toBeNull();

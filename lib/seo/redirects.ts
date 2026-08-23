@@ -1,4 +1,8 @@
-import { LEFTOVER_REDIRECTS, PREFIX_REDIRECTS } from "./leftovers";
+import {
+  LEFTOVER_REDIRECTS,
+  PREFIX_REDIRECTS,
+  matchPrefixRedirect,
+} from "./leftovers";
 import { canonicalizePath, withTrailingSlash } from "./paths";
 import { isProtectedAppPath, isProtectedRedirectSource } from "./protected-paths";
 
@@ -47,7 +51,7 @@ export function resolveLegacyRedirect(path: string): string | null {
   if ((PRESERVED_ODD_SLUGS as readonly string[]).includes(canonical)) {
     return null;
   }
-  return REDIRECTS[canonical] ?? null;
+  return REDIRECTS[canonical] ?? matchPrefixRedirect(canonical);
 }
 
 export type SeoRedirect = {
