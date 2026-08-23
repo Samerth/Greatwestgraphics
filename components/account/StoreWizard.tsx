@@ -148,6 +148,9 @@ export function StoreWizard() {
 
       <Field label="Your store address">
         <div className="flex items-center border border-border rounded-sm bg-bg-raised overflow-hidden focus-within:border-accent">
+          <span className="px-3 py-2.5 text-sm text-text-tertiary bg-fill-subtle-15 whitespace-nowrap">
+            /s/
+          </span>
           <input
             value={slug}
             onChange={(e) => {
@@ -157,14 +160,11 @@ export function StoreWizard() {
             required
             className="flex-1 min-w-0 px-3 py-2.5 bg-transparent focus:outline-none"
           />
-          <span className="px-3 py-2.5 text-sm text-text-tertiary bg-fill-subtle-15 whitespace-nowrap">
-            .greatwestgraphics.com
-          </span>
         </div>
         {slug && (
           <p className="text-[12.5px] text-text-tertiary mt-1.5">
             Your store will be at{" "}
-            <b className="text-text-primary">{slug}.greatwestgraphics.com</b>
+            <b className="text-text-primary">/s/{slug}</b>
           </p>
         )}
       </Field>

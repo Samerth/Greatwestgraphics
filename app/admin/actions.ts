@@ -2,8 +2,14 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { requireStaff } from "@/lib/admin/auth";
+import {
+  buildStoreApprovedEmail,
+  publicSiteOrigin,
+} from "@/lib/commerce/store-approved-email";
+import { sendEmail } from "@/lib/email/send";
 import { getImageStore } from "@/lib/storage";
 
 const PROOF_TYPES: Record<string, string> = {
@@ -323,10 +329,54 @@ export async function setStoreStatusAction(
   storeId: string,
   status: "active" | "suspended",
 ) {
-  const client = await adminClient();
-  await client.setStoreStatus(storeId, status, requireAdminToken());
+  let mailed = "0";
+  let slug = "";
+  try {
+    const client = await adminClient();
+    const updated = await client.setStoreStatus(
+      storeId,
+      status,
+      requireAdminToken(),
+    );
+    slug = updated.slug;
+    if (status === "active" && updated.ownerEmail) {
+      const origin = publicSiteOrigin();
+      if (origin) {
+        const mail = buildStoreApprovedEmail({
+          storeName: updated.name,
+          slug: updated.slug,
+          origin,
+          ownerName: updated.ownerName,
+        });
+        try {
+          await sendEmail({
+            to: updated.ownerEmail,
+            subject: mail.subject,
+            text: mail.text,
+          });
+          mailed = "1";
+        } catch (sendFailure) {
+          const detail =
+            sendFailure instanceof Error
+              ? sendFailure.message
+              : "unknown email error";
+          console.error(
+            `[store-approve] Store ${updated.slug} is live but the owner was not emailed: ${detail}`,
+          );
+        }
+      }
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not update the store.";
+    redirect(`/admin/accounts?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath("/admin/accounts");
   revalidatePath(`/admin/accounts/${storeId}`);
+  const notice = status === "active" ? "approved" : "rejected";
+  redirect(
+    `/admin/accounts?notice=${notice}&mailed=${mailed}&slug=${encodeURIComponent(slug)}`,
+  );
 }
 
 export async function setStoreCategoryVisibilityAction(
