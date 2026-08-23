@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStaffSession } from "@/lib/admin/auth";
 import { getCustomerSession } from "@/lib/auth/session";
 import { getImageStore } from "@/lib/storage";
+import {
+  canReadUploadedObject,
+  isPublicUploadKey,
+} from "@/lib/storage/upload-access";
 
 export async function GET(
   _request: NextRequest,
@@ -14,16 +18,22 @@ export async function GET(
   // them to anonymous callers is not defensible. Staff are allowed anything in
   // the store, because reviewing customer artwork is what proofing is; a
   // customer is allowed only what the upload route filed under their own id.
+  // Store logos are the exception: the branded header and pending-review list
+  // render them for people who are not signed in as the owner.
   //
   // This is the read side for every backing store, not just the local one: a
   // private S3 bucket cannot be fetched from the browser directly, so uploads
   // come back through here and this check is the access control for them.
-  if (!(await getStaffSession())) {
-    const session = await getCustomerSession();
-    const owned = session
-      ? relative.startsWith(`designs/${session.personId}/`)
-      : false;
-    if (!owned) {
+  const publicLogo = isPublicUploadKey(relative);
+  if (!publicLogo) {
+    const staff = Boolean(await getStaffSession());
+    const session = staff ? null : await getCustomerSession();
+    if (
+      !canReadUploadedObject(relative, {
+        isStaff: staff,
+        personId: session?.personId,
+      })
+    ) {
       return NextResponse.json(
         { error: { message: "Not found" } },
         { status: 404 },
@@ -39,7 +49,9 @@ export async function GET(
   return new NextResponse(new Uint8Array(stored.data), {
     headers: {
       "content-type": stored.contentType,
-      "cache-control": "private, max-age=31536000, immutable",
+      "cache-control": isPublicUploadKey(relative)
+        ? "public, max-age=31536000, immutable"
+        : "private, max-age=31536000, immutable",
     },
   });
 }

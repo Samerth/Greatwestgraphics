@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { getCustomerSession } from "@/lib/auth/session";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
+import { OptionalLogoUrlSchema } from "@/lib/commerce/logo-url";
 
 const BodySchema = z.object({
   accountName: z.string().min(1).max(200),
@@ -12,7 +13,7 @@ const BodySchema = z.object({
     .max(63)
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
   accentColor: z.string().max(20).optional(),
-  logoUrl: z.string().url().max(2000).optional().or(z.literal("")),
+  logoUrl: OptionalLogoUrlSchema,
   tagline: z.string().max(200).optional(),
 });
 
