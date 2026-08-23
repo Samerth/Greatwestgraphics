@@ -21,14 +21,14 @@ const tones: Record<
 > = {
   canvas: {
     trigger:
-      "min-h-8 rounded-md border-white/15 bg-transparent px-2.5 py-1 text-[12px] font-semibold text-white/70 hover:bg-white/5 focus:ring-white/20",
+      "min-h-8 rounded-md border-white/15 bg-transparent px-2.5 py-1 text-[12px] font-semibold text-white/70 hover:bg-white/5 focus:ring-1 focus:ring-white/20",
     menu: "border-white/15 bg-[#1c1c1c] text-white/80",
     option: "text-white/75 hover:bg-white/10",
     optionActive: "bg-white/15 text-white",
   },
   panel: {
     trigger:
-      "min-h-11 rounded-sm border-border bg-bg-raised px-3 py-2.5 text-base font-body font-semibold text-text-primary hover:border-text-tertiary focus:border-accent focus:ring-accent/20",
+      "min-h-11 rounded-sm border-border bg-bg-raised px-3 py-2.5 text-base font-body font-semibold text-text-primary hover:border-text-tertiary focus:border-accent focus:ring-2 focus:ring-accent/20",
     menu: "border-border bg-bg-raised text-text-primary shadow-[0_12px_28px_rgba(0,0,0,0.12)]",
     option: "text-[13px] text-text-primary hover:bg-fill-subtle-15 hover:text-accent",
     optionActive: "text-[13px] bg-accent-tint text-accent",
@@ -93,7 +93,7 @@ export function StudioSelect({
         aria-controls={listId}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex w-full min-w-0 cursor-pointer items-center gap-2 border appearance-none focus:outline-none focus:ring-1",
+          "flex w-full min-w-0 cursor-pointer items-center gap-2 border appearance-none focus:outline-none",
           skin.trigger,
         )}
       >
