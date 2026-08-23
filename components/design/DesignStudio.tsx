@@ -341,42 +341,24 @@ export function DesignStudio({
   // front/back photo of its own — otherwise the canvas showed a blank
   // silhouette even though a usable photo existed (same gap as the
   // catalog grid had before its listProducts fix).
-  // Vendors supply at most one side photo and never say which sleeve it is.
-  // Rather than hide the sleeves behind that gap, both sleeve views reuse it
-  // and the right one is mirrored, so a customer can always place a sleeve
-  // print and the mockup at least faces the right way.
-  const photoBySide: Record<DesignSide, string | null> = {
-    front:
-      productDetail?.product.colorFrontImageUrl || productDetail?.style.styleImageUrl || null,
-    back:
-      productDetail?.product.colorBackImageUrl ||
+  // Sleeves never reuse the chest photo. Vendors rarely shoot a sleeve, so
+  // those views use a side photo or a labeled template instead.
+  const backdrop = garmentBackdropForSide(activeSide, {
+    colorFrontImageUrl:
       productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
+      garmentOptions.find((g) => g.id === selectedGarmentId)?.imageUrl ||
       null,
-    left:
-      productDetail?.product.colorSideImageUrl ||
-      productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
-      null,
-    right:
-      productDetail?.product.colorSideImageUrl ||
-      productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
-      null,
-  };
-  const catalogGarmentImage =
-    garmentOptions.find((g) => g.id === selectedGarmentId)?.imageUrl ?? null;
-  const currentPhoto =
-    (productDetail ? photoBySide[activeSide] : null) || catalogGarmentImage;
-  const mirrorPhoto = activeSide === "right";
+    colorSideImageUrl: productDetail?.product.colorSideImageUrl,
+    colorBackImageUrl: productDetail?.product.colorBackImageUrl,
+    styleImageUrl: productDetail?.style.styleImageUrl,
+  });
+  const currentPhoto = backdrop.url;
+  const mirrorPhoto = backdrop.mirror;
+  const sleeveUsesTemplate =
+    backdrop.source === "template" &&
+    (activeSide === "left" || activeSide === "right");
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  // Canvas pixel reads require a same-origin garment. The Next image
-  // endpoint fetches the supplier host server-side. Quality must be one
-  // Next 16 allows (75 or 90 in next.config) — q=90 used to 400 and the
-  // stage stayed empty on the dark studio background.
-  const canvasGarmentImageUrl = currentPhoto
-    ? `/_next/image?url=${encodeURIComponent(currentPhoto)}&w=640&q=75`
-    : "";
+  const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
   // customer orders whether or not the vendor photographed that angle, and
@@ -1079,15 +1061,17 @@ export function DesignStudio({
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {catalogGarmentImage && (
-                // eslint-disable-next-line @next/next/no-img-element -- paint the CDN file immediately; Konva still waits on /_next/image
+              {currentPhoto && (
+                // eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL
                 <img
-                  src={catalogGarmentImage}
+                  src={currentPhoto}
                   alt=""
-                  className="absolute inset-0 m-auto h-full w-full object-contain pointer-events-none"
+                  className={`absolute inset-0 m-auto h-full w-full object-contain pointer-events-none ${
+                    mirrorPhoto ? "-scale-x-100" : ""
+                  }`}
                 />
               )}
-              {isLoadingGarment && !catalogGarmentImage && (
+              {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
@@ -1114,9 +1098,10 @@ export function DesignStudio({
           </div>
         </div>
 
-        <p className="px-sp-3 pb-sp-3 text-[12px] text-white/50">
-          Drag to move, use the corner handles to scale, and the top handle to
-          rotate a selected layer. Front and back layers are saved separately.
+        <p id="placement-help" className="px-sp-3 pb-sp-3 text-[12px] text-white/50">
+          {sleeveUsesTemplate
+            ? "No sleeve photo for this garment. Place the logo on the template — we print it on this sleeve. Left / center / full front is a note for the press, not a different camera."
+            : "Left chest, center, and full front tell the press where to print. They do not change the photo. Drag to move, use the corner handles to scale, and the top handle to rotate."}
         </p>
       </div>
 
@@ -1320,9 +1305,9 @@ export function DesignStudio({
         </div>
       </div>
       <p className="lg:col-start-2 text-xs text-text-tertiary">
-        Sleeve views reuse the vendor&apos;s side photo where one exists and a
-        representative silhouette where it does not. Your artwork and placement
-        are saved separately for every view.
+        Sleeve views use the vendor side photo when they have one, otherwise a
+        sleeve template. Your artwork and the placement name are saved for
+        every view so staff can print the right location.
       </p>
     </div>
   );

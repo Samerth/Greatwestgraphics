@@ -4,6 +4,7 @@ import {
   type DesignDocument,
   type DesignSide,
 } from "@gwg/contracts";
+import { garmentBackdropForSide } from "@/lib/commerce/garment-backdrop";
 
 /**
  * A read-only rendering of one garment view, faithful to what the customer
@@ -36,10 +37,9 @@ export function DesignSidePreview({
   className?: string;
 }) {
   const artworks = design.artworksBySide[side] ?? [];
-  // Back and right views reuse the front and left photos when the vendor
-  // supplied nothing better, so they are flipped to at least face the right
-  // way — the same fallback the studio itself draws.
-  const mirrored = mirrorGarment ?? (side === "back" || side === "right");
+  const fallback = garmentBackdropForSide(side, {});
+  const imageUrl = garmentImageUrl || fallback.url;
+  const mirrored = mirrorGarment ?? fallback.mirror;
 
   return (
     <div
@@ -57,36 +57,20 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        {garmentImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={garmentImageUrl}
-            alt=""
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              transform: mirrored ? "scaleX(-1)" : undefined,
-            }}
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src="/images/t-shirt.png"
-            alt=""
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              opacity: 0.18,
-              transform: mirrored ? "scaleX(-1)" : undefined,
-            }}
-          />
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imageUrl}
+          alt=""
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            opacity: garmentImageUrl ? 1 : 0.9,
+            transform: mirrored ? "scaleX(-1)" : undefined,
+          }}
+        />
 
         {artworks.map((artwork) => (
           // eslint-disable-next-line @next/next/no-img-element

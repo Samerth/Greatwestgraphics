@@ -2,15 +2,29 @@ import Link from "next/link";
 import {
   createCategoryAction,
   deleteCategoryAction,
-  reorderCategoryAction,
+  moveCategoryAction,
   updateCategoryAction,
 } from "@/app/admin/actions";
+import { AdminPager } from "@/components/admin/AdminPager";
 import { CategoryNameFields } from "@/components/admin/CategoryNameFields";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
+import {
+  CATEGORY_PAGE_SIZE,
+  categoryListHref,
+} from "@/lib/admin/mapping-list";
+import { paginate, parsePage, textMatchesQuery } from "@/lib/admin/paged-list";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminCategoriesPage() {
+export default async function AdminCategoriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; page?: string }>;
+}) {
+  const sp = await searchParams;
+  const q = (sp.q || "").trim();
+  const requestedPage = parsePage(sp.page);
+
   let categories: Record<string, unknown>[] = [];
   let error: string | undefined;
   try {
@@ -19,7 +33,15 @@ export default async function AdminCategoriesPage() {
     error = caught instanceof Error ? caught.message : "Categories unavailable";
   }
 
-  const isEmpty = !error && categories.length === 0;
+  const storefrontIndex = new Map(
+    categories.map((cat, index) => [String(cat.id), index]),
+  );
+  const filtered = categories.filter((cat) =>
+    textMatchesQuery([String(cat.name || ""), String(cat.slug || "")], q),
+  );
+  const paged = paginate(filtered, requestedPage, CATEGORY_PAGE_SIZE);
+  const storefrontCount = categories.length;
+  const isEmpty = !error && storefrontCount === 0;
 
   return (
     <div className="space-y-sp-5 max-w-4xl">
@@ -113,126 +135,142 @@ export default async function AdminCategoriesPage() {
       <section className="space-y-sp-3">
         <div>
           <h2 className="font-display font-bold text-xl m-0">
-            Your categories ({categories.length})
+            Your categories ({storefrontCount})
           </h2>
           <p className="text-sm text-text-secondary mt-1 mb-0">
             Edit a name and click Save changes. Use Move up / Move down to set
             storefront order (top of the list appears first). Delete only if
             you’re sure — products mapped only to that category may need a new
-            home.
+            home. Showing {CATEGORY_PAGE_SIZE} at a time so this page stays
+            usable as the list grows.
           </p>
         </div>
 
-        {categories.length === 0 && !error && (
-          <p className="text-sm text-text-secondary border border-dashed border-border rounded-md p-sp-4 m-0">
-            No categories yet. Add your first one above.
+        {storefrontCount > 0 && (
+          <form
+            className="border border-border rounded-md p-sp-3 bg-bg-raised flex flex-wrap gap-3 items-end"
+            action="/admin/categories"
+          >
+            <label className="text-sm font-semibold flex-1 min-w-[16rem]">
+              Search categories
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Name or URL…"
+                className="block mt-1 w-full border border-border rounded-sm px-3 py-2 text-sm font-normal"
+              />
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm text-sm"
+            >
+              Search
+            </button>
+          </form>
+        )}
+
+        {(paged.total > 0 || q || (!error && storefrontCount === 0)) && (
+          <p className="text-sm text-text-tertiary m-0">
+            {paged.total === 0
+              ? q
+                ? `No categories match “${q}”.`
+                : "No categories yet. Add your first one above."
+              : `Showing ${paged.start}–${paged.end} of ${paged.total.toLocaleString()}${
+                  q ? ` matching “${q}”` : ""
+                }.`}
           </p>
         )}
 
         <ol className="space-y-2 m-0 p-0 list-none">
-          {categories.map((cat, index) => (
-            <li
-              key={String(cat.id)}
-              className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised"
-            >
-              <div className="flex flex-wrap justify-between gap-2 items-center">
-                <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
-                  Position {index + 1} of {categories.length}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {index > 0 && (
-                    <form
-                      action={async () => {
-                        "use server";
-                        const ids = categories.map((c) => String(c.id));
-                        const next = [...ids];
-                        const tmp = next[index - 1]!;
-                        next[index - 1] = next[index]!;
-                        next[index] = tmp;
-                        await reorderCategoryAction(next);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
-                        title="Move earlier in the storefront list"
-                      >
-                        ↑ Move up
-                      </button>
-                    </form>
-                  )}
-                  {index < categories.length - 1 && (
-                    <form
-                      action={async () => {
-                        "use server";
-                        const ids = categories.map((c) => String(c.id));
-                        const next = [...ids];
-                        const tmp = next[index + 1]!;
-                        next[index + 1] = next[index]!;
-                        next[index] = tmp;
-                        await reorderCategoryAction(next);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
-                        title="Move later in the storefront list"
-                      >
-                        ↓ Move down
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </div>
-
-              <form
-                action={async (formData) => {
-                  "use server";
-                  await updateCategoryAction(String(cat.id), formData);
-                }}
-                className="space-y-sp-3"
+          {paged.items.map((cat) => {
+            const id = String(cat.id);
+            const index = storefrontIndex.get(id) ?? 0;
+            return (
+              <li
+                key={id}
+                className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised"
               >
-                <CategoryNameFields
-                  mode="edit"
-                  defaultName={String(cat.name || "")}
-                  defaultSlug={String(cat.slug || "")}
-                />
-                <div className="flex flex-wrap gap-3 items-center">
-                  <button
-                    type="submit"
-                    className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
-                  >
-                    Save changes
-                  </button>
-                  <p className="text-xs text-text-tertiary m-0">
-                    Tip: rename for shoppers anytime; only touch the URL name if
-                    an old link must stay the same.
+                <div className="flex flex-wrap justify-between gap-2 items-center">
+                  <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
+                    Position {index + 1} of {storefrontCount}
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    {index > 0 && (
+                      <form
+                        action={moveCategoryAction.bind(null, id, "up")}
+                      >
+                        <button
+                          type="submit"
+                          className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                          title="Move earlier in the storefront list"
+                        >
+                          ↑ Move up
+                        </button>
+                      </form>
+                    )}
+                    {index < storefrontCount - 1 && (
+                      <form
+                        action={moveCategoryAction.bind(null, id, "down")}
+                      >
+                        <button
+                          type="submit"
+                          className="text-sm font-bold px-3 py-1.5 border border-border rounded-sm hover:bg-fill-subtle-15"
+                          title="Move later in the storefront list"
+                        >
+                          ↓ Move down
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </div>
-              </form>
 
-              <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
-                <p className="text-xs text-text-tertiary m-0">
-                  Website path uses:{" "}
-                  <span className="font-mono">{String(cat.slug || "—")}</span>
-                </p>
                 <form
-                  action={async () => {
-                    "use server";
-                    await deleteCategoryAction(String(cat.id));
-                  }}
+                  action={updateCategoryAction.bind(null, id)}
+                  className="space-y-sp-3"
                 >
-                  <button
-                    type="submit"
-                    className="text-sm font-bold text-red-700 px-2 py-1 hover:underline"
-                  >
-                    Delete category
-                  </button>
+                  <CategoryNameFields
+                    mode="edit"
+                    defaultName={String(cat.name || "")}
+                    defaultSlug={String(cat.slug || "")}
+                  />
+                  <div className="flex flex-wrap gap-3 items-center">
+                    <button
+                      type="submit"
+                      className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
+                    >
+                      Save changes
+                    </button>
+                    <p className="text-xs text-text-tertiary m-0">
+                      Tip: rename for shoppers anytime; only touch the URL name
+                      if an old link must stay the same.
+                    </p>
+                  </div>
                 </form>
-              </div>
-            </li>
-          ))}
+
+                <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
+                  <p className="text-xs text-text-tertiary m-0">
+                    Website path uses:{" "}
+                    <span className="font-mono">{String(cat.slug || "—")}</span>
+                  </p>
+                  <form action={deleteCategoryAction.bind(null, id)}>
+                    <button
+                      type="submit"
+                      className="text-sm font-bold text-red-700 px-2 py-1 hover:underline"
+                    >
+                      Delete category
+                    </button>
+                  </form>
+                </div>
+              </li>
+            );
+          })}
         </ol>
+
+        <AdminPager
+          page={paged.page}
+          pageCount={paged.pageCount}
+          hrefFor={(nextPage) => categoryListHref({ q, page: nextPage })}
+        />
       </section>
 
       {!isEmpty && (
