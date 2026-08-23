@@ -65,6 +65,7 @@ export function breadcrumbJsonLd(
 
 export function locationBreadcrumb(page: LocationPage) {
   return breadcrumbJsonLd([
+    { name: "Locations we serve", path: "/locations" },
     { name: locationPlaceLabel(page), path: page.path },
   ]);
 }

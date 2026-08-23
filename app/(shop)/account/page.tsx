@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { Container } from "@/components/shared/Container";
 import { AccountAuth } from "@/components/account/AccountAuth";
+import { BackToSite } from "@/components/shared/BackToSite";
+import { Container } from "@/components/shared/Container";
 import { isLocalCustomerAuthEnabled } from "@/lib/auth/local-customer";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { destinationAfterSignIn } from "@/lib/commerce/membership";
+import { backToSiteHref } from "@/lib/navigation/back-to-site";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +36,12 @@ export default async function AccountPage({
     <div className="grid lg:grid-cols-[minmax(320px,560px)_1fr] min-h-[70vh]">
       <section className="flex flex-col justify-center px-sp-5 sm:px-sp-7 py-sp-8">
         <Container className="max-w-xl !px-0">
+          <BackToSite
+            href={backToSiteHref(next)}
+            label={
+              next?.startsWith("/s/") ? "Back to store" : "Continue shopping"
+            }
+          />
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent m-0">
             {next?.startsWith("/start") ? "Corporate & institutional" : "Customer login"}
           </p>

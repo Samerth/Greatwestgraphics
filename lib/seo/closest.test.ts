@@ -41,6 +41,7 @@ describe("closestRelevantPath", () => {
     expect(closestRelevantPath("/category/t-shirts")).toBe("/category/t-shirts");
     expect(closestRelevantPath("/store/demo")).toBe("/store/demo");
     expect(closestRelevantPath("/account/team")).toBe("/account/team");
+    expect(closestRelevantPath("/locations")).toBe("/locations");
   });
 
   it("keeps the two retire 301s and the four live -2 slugs distinct", () => {

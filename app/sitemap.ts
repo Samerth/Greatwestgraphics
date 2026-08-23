@@ -6,6 +6,7 @@ import { sitemapLegacyPaths } from "@/lib/seo/inventory";
 const STATIC_ROUTES = [
   { path: "/", priority: 1, frequency: "daily" as const },
   { path: "/design", priority: 0.8, frequency: "weekly" as const },
+  { path: "/locations", priority: 0.7, frequency: "weekly" as const },
   { path: "/start", priority: 0.6, frequency: "monthly" as const },
 ];
 

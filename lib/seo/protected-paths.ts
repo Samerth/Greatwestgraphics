@@ -8,6 +8,7 @@ import { canonicalizePath } from "./paths";
 export const PROTECTED_EXACT = [
   "/contact",
   "/faq",
+  "/locations",
   "/shop",
 ] as const;
 

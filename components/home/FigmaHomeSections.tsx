@@ -114,6 +114,15 @@ export function ServicesBreakdown() {
             </div>
           ))}
         </div>
+        <p className="text-center text-sm text-text-secondary mt-sp-5 mb-0">
+          <Link href="/services" className="font-bold text-accent hover:underline">
+            See all services
+          </Link>
+          {" · "}
+          <Link href="/locations" className="font-bold text-accent hover:underline">
+            Locations we serve
+          </Link>
+        </p>
       </Container>
     </section>
   );

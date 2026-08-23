@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Facebook, Instagram, Linkedin } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
+import { featuredLocationLinks } from "@/lib/seo/location-hub";
 
 const SOCIAL_LINKS = [
   {
@@ -54,11 +55,20 @@ export function Footer({
       : FALLBACK_SHOP_LINKS;
 
   const serviceLinks = [
+    ...(isBranded ? [] : [{ label: "All print services", href: "/services" }]),
     { label: "Embroidery", href: "/quote?method=embroidery" },
     { label: "Screen Printing", href: "/quote?method=screen" },
     { label: "DTF Printing", href: "/quote?method=dtf" },
     { label: "Sublimation Printing", href: "/quote?method=sublimation" },
     { label: "Design Studio", href: "/design" },
+  ];
+
+  const locationLinks = [
+    { label: "Locations we serve", href: "/locations" },
+    ...featuredLocationLinks().map((link) => ({
+      label: link.label,
+      href: link.href,
+    })),
   ];
 
   // "Privacy Policy" used to point at /shipping#privacy, an anchor that does
@@ -86,7 +96,11 @@ export function Footer({
 
   return (
     <footer className="bg-text-primary text-white/70 pt-sp-7 pb-sp-4">
-      <Container className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-sp-4">
+      <Container
+        className={`grid grid-cols-1 sm:grid-cols-2 gap-sp-4 ${
+          isBranded ? "lg:grid-cols-5" : "lg:grid-cols-6"
+        }`}
+      >
         <div className="sm:col-span-2 lg:col-span-1">
           <div className="font-display font-bold text-white text-lg">
             {isBranded ? storeName : "Great West Graphics"}
@@ -120,6 +134,7 @@ export function Footer({
 
         <FooterCol title="Shop" links={shopLinks} />
         <FooterCol title="Services" links={serviceLinks} />
+        {!isBranded && <FooterCol title="Locations" links={locationLinks} />}
         <FooterCol title="Important Pages" links={importantLinks} />
         <FooterCol title="About Us" links={aboutLinks} />
       </Container>

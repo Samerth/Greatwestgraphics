@@ -4,11 +4,11 @@ import { Gallery } from "@/components/home/StaticSections";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
 import type { ContentPage } from "@/lib/seo/content-pages";
+import { relatedLandingLinks } from "@/lib/seo/location-hub";
 import {
   locationIntro,
   locationPlaceLabel,
   locationSections,
-  relatedLocationPages,
   type LocationPage,
 } from "@/lib/seo/location-pages";
 import {
@@ -61,20 +61,7 @@ export function SeoLanding({ page }: { page: LandingPage }) {
       ).filter((section) => section.paragraphs.length > 0 || section.heading)
     : [];
   const place = location ? locationPlaceLabel(location) : null;
-  const related = location
-    ? [
-        ...(location.relatedLinks ?? []),
-        ...relatedLocationPages(location).map((item) => ({
-          path: item.path,
-          label: item.h1,
-        })),
-      ]
-        .filter(
-          (link, index, list) =>
-            list.findIndex((entry) => entry.path === link.path) === index,
-        )
-        .slice(0, 6)
-    : [];
+  const related = relatedLandingLinks(page);
 
   const jsonLd = [
     serviceJsonLd({
@@ -109,6 +96,23 @@ export function SeoLanding({ page }: { page: LandingPage }) {
             <Link href="/" className="hover:text-accent">
               Home
             </Link>
+            {location ? (
+              <>
+                {" "}
+                /{" "}
+                <Link href="/locations" className="hover:text-accent">
+                  Locations we serve
+                </Link>
+              </>
+            ) : page.path !== "/services" ? (
+              <>
+                {" "}
+                /{" "}
+                <Link href="/services" className="hover:text-accent">
+                  Services
+                </Link>
+              </>
+            ) : null}
             {place ? (
               <>
                 {" "}
@@ -172,6 +176,8 @@ export function SeoLanding({ page }: { page: LandingPage }) {
           <ServicesBreakdown />
         </>
       ) : null}
+
+      {page.path === "/services" ? <ServicesLocationTeaser /> : null}
 
       <ShopTeaser page={page} />
 
@@ -262,6 +268,25 @@ function ShopTeaser({ page }: { page: LandingPage }) {
             Design studio
           </ButtonLink>
         </div>
+      </Container>
+    </section>
+  );
+}
+
+function ServicesLocationTeaser() {
+  return (
+    <section className="py-sp-6 border-t border-border">
+      <Container>
+        <h2 className="font-display font-bold text-lg m-0 mb-sp-2">
+          Locations we serve
+        </h2>
+        <p className="text-text-secondary mt-0 mb-sp-3 max-w-[64ch]">
+          Same Vancouver floor, city pages for Metro Vancouver and the rest of
+          the territory we already print for.
+        </p>
+        <ButtonLink href="/locations" variant="secondary">
+          Browse all locations
+        </ButtonLink>
       </Container>
     </section>
   );
