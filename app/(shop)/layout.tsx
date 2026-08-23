@@ -140,8 +140,8 @@ export default async function ShopLayout({
         >
           <div className="mx-auto max-w-[1280px] px-4 py-2 flex flex-wrap items-center justify-between gap-2">
             <span>
-              <b>{store.name}</b> is a private team store. Sign in with the
-              address its owner invited to place an order.
+              <b>{store.name}</b> is a team store. Sign in to join it and
+              place an order.
             </span>
             <a
               href={`/account?next=${encodeURIComponent(`/s/${store.slug}`)}`}
@@ -159,10 +159,9 @@ export default async function ShopLayout({
         >
           <div className="mx-auto max-w-[1280px] px-4 py-2 flex flex-wrap items-center justify-between gap-2">
             <span>
-              You can browse <b>{store.name}</b>, but you are not one of its
-              members, so you cannot order from it yet. Ask the store&apos;s
-              owner to send an invitation to{" "}
-              <b>{customerSession?.email}</b>.
+              You are browsing <b>{store.name}</b> as a guest. You can order right
+              away — checking out adds you to the store automatically, no invitation
+              needed.
             </span>
             <LeaveStoreLink className="underline whitespace-nowrap">
               Shop the main site

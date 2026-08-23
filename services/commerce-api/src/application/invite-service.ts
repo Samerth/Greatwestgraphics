@@ -179,6 +179,53 @@ export class InviteService {
     };
   }
 
+    /**
+   * Adds the signed-in person to an account with no invite token at all.
+   *
+   * Team stores no longer gate on an accepted invite — anyone who signs in
+   * while looking at the storefront link becomes a member. Idempotent: a
+   * second call for someone already in the account is a no-op, not an error.
+   */
+  async joinAsMember(
+    tenantId: string,
+    accountId: string,
+    personId: string,
+    actor: Actor,
+  ): Promise<{ accountId: string; storeSlug: string | null; storeName: string | null }> {
+    const [existing] = await this.db
+      .select({ id: accountPeople.id })
+      .from(accountPeople)
+      .where(
+        and(
+          eq(accountPeople.tenantId, tenantId),
+          eq(accountPeople.accountId, accountId),
+          eq(accountPeople.personId, personId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      await this.db.insert(accountPeople).values({
+        tenantId,
+        accountId,
+        personId,
+        role: "member",
+        createdBy: actor,
+      });
+    }
+
+    const [store] = await this.db
+      .select({ slug: stores.slug, name: stores.name })
+      .from(stores)
+      .where(and(eq(stores.tenantId, tenantId), eq(stores.accountId, accountId)))
+      .limit(1);
+
+    return {
+      accountId,
+      storeSlug: store?.slug ?? null,
+      storeName: store?.name ?? null,
+    };
+  }
+
   async listForAccount(tenantId: string, accountId: string, requesterPersonId: string) {
     await this.assertOwner(tenantId, accountId, requesterPersonId);
     return this.db

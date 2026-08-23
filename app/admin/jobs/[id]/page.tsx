@@ -37,11 +37,18 @@ export default async function AdminJobDetailPage({
     ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequest"]>
   > | null = null;
 
+  let storeName: string | null = null;
   try {
-    detail = await (await adminClient()).getJobRequestAsStaff(
-      id,
-      requireAdminToken(),
-    );
+    const client = await adminClient();
+    const token = requireAdminToken();
+    const [d, stores] = await Promise.all([
+      client.getJobRequestAsStaff(id, token),
+      client.listAllStores(token).catch(() => []),
+    ]);
+    detail = d;
+    storeName =
+      (stores.find((s) => String(s.id) === String(d.context.storeId))
+        ?.name as string | undefined) ?? null;
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -79,7 +86,9 @@ export default async function AdminJobDetailPage({
           <h1 className="font-display font-bold text-3xl m-0">
             {detail.displayId}
           </h1>
-          <p className="text-sm text-text-tertiary mt-1 mb-0">Job detail</p>
+          <p className="text-sm text-text-tertiary mt-1 mb-0">
+            Ordered from <b>{storeName ?? "Main store"}</b>
+          </p>
         </div>
         <span className="text-sm font-bold bg-accent-tint text-accent px-3 py-1 rounded-full h-fit">
           {presentation.label}

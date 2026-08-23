@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
-import { CommerceApiError } from "@/lib/commerce/client";
+import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { resolvePortalScope } from "@/lib/commerce/portal-client";
 import { teamMemberships } from "@/lib/commerce/membership";
 import { jobStatusPresentation } from "@/lib/commerce/status";
@@ -21,10 +21,56 @@ export default async function JobsPage() {
     (membership) => membership.storeId !== scope.store.storeId,
   );
 
-  let jobs: JobRequestListResponse | undefined;
+  type JobWithStore = JobRequestListResponse[number] & { storeName: string };
+
+  const storeNameById = new Map<string, string>();
+  storeNameById.set(scope.store.storeId, scope.store.name);
+  for (const m of scope.memberships) storeNameById.set(m.storeId, m.storeName);
+
+  let jobs: JobWithStore[] | undefined;
   let error: string | undefined;
   try {
-    jobs = await scope.client.listJobRequests();
+    // Every store this person belongs to — the picked portal store plus each
+    // other membership, team stores and the public retail shop alike — so a
+    // storefront order and a main-site order land in one list. Each store is
+    // queried independently: one failing store must not hide the rest.
+    const targets = [
+      {
+        storeId: scope.store.storeId,
+        promise: scope.client.listJobRequests(),
+      },
+      ...scope.memberships
+        .filter((m) => m.storeId !== scope.store.storeId)
+        .map((m) => ({
+          storeId: m.storeId,
+          promise: createCommerceClient({
+            tenantId: scope.store.tenantId,
+            accountId: m.accountId,
+            storeId: m.storeId,
+          }).then((client) => client.listJobRequests()),
+        })),
+    ];
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        try {
+          return { storeId: target.storeId, jobs: await target.promise };
+        } catch {
+          return { storeId: target.storeId, jobs: [] as JobRequestListResponse };
+        }
+      }),
+    );
+    const merged = new Map<string, JobWithStore>();
+    for (const { storeId, jobs: list } of results) {
+      for (const job of list) {
+        merged.set(job.id, {
+          ...job,
+          storeName: storeNameById.get(storeId) ?? "Main store",
+        });
+      }
+    }
+    jobs = Array.from(merged.values()).sort((a, b) =>
+      (b.submittedAt ?? b.createdAt).localeCompare(a.submittedAt ?? a.createdAt),
+    );
   } catch (caught) {
     error =
       caught instanceof CommerceApiError
@@ -50,8 +96,8 @@ export default async function JobsPage() {
           {showingTeam ? "Your Team's Jobs" : "Your Jobs"}
         </h1>
         <p className="text-text-secondary mb-sp-5 max-w-[60ch]">
-          Signed in as {session.name || session.email}.
-          {scope.usingTeam && ` Showing jobs for ${scope.store.name}.`}
+          Signed in as {session.name || session.email}. All your jobs — main site and
+          team stores — appear here.
           {showingTeam &&
             " As the account owner you can see every job placed in your store."}
         </p>
@@ -105,6 +151,7 @@ export default async function JobsPage() {
                       {job.displayId}
                     </p>
                     <p className="text-sm text-text-tertiary mt-1 mb-0">
+                      {job.storeName} ·{" "}
                       {showingTeam &&
                         `${
                           job.customerPersonId === session.personId

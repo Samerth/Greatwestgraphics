@@ -16,36 +16,22 @@ export default async function CheckoutPage() {
 
   const store = await resolveStoreContext();
   if (!store.isPublic) {
-    let isMember = false;
+    // Checkout is the only place that auto-joins on arrival — the shop
+    // layout never did, despite what an earlier comment here claimed.
+    // This repeat exists so checkout is never the odd one out if it's ever
+    // reached by some other path. The commerce API still
+    // enforces membership server-side on submission either way.
     try {
-      const memberships = await (
-        await createCommerceClient()
-      ).listMyMemberships(session.personId);
-      isMember = memberships.some((membership) => membership.accountId === store.accountId);
-    } catch {
-      isMember = false;
-    }
-    if (!isMember) {
-      return (
-        <section className="py-sp-8">
-          <Container className="max-w-xl">
-            <h1 className="font-display font-bold text-header mb-sp-3">
-              {store.name} is invitation-only
-            </h1>
-            <p className="text-text-secondary mb-sp-4">
-              You can browse this team store, but checkout is reserved for
-              people the owner has invited. Ask them to send an invitation to{" "}
-              <b>{session.email}</b>.
-            </p>
-            <div className="flex flex-wrap gap-sp-2">
-              <ButtonLink href="/cart" variant="secondary">
-                Back to cart
-              </ButtonLink>
-              <ButtonLink href="/leave-store">Shop the main site</ButtonLink>
-            </div>
-          </Container>
-        </section>
+      const client = await createCommerceClient();
+      const memberships = await client.listMyMemberships(session.personId);
+      const isMember = memberships.some(
+        (membership) => membership.accountId === store.accountId,
       );
+      if (!isMember) {
+        await client.joinAccount(store.accountId, session.personId);
+      }
+    } catch {
+      // Not fatal here — see comment above.
     }
   }
 

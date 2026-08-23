@@ -63,5 +63,11 @@ export const config = {
     // in the matcher so store cookies and staff auth still run; SEO
     // redirects never apply to those prefixes (see isProtectedAppPath).
     "/((?!_next/|api/|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|txt|xml|woff2?)$).*)",
+    // /api/commerce/* also needs the store-slug header: POST
+    // /api/commerce/job-requests calls createCommerceClient() with no
+    // override, which falls back to resolveStoreContext() → the pinned/
+    // host-resolved default store, silently attaching every storefront
+    // order to the retail store instead of the one the shopper was on.
+    "/api/commerce/:path*",
   ],
 };

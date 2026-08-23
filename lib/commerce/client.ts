@@ -217,6 +217,25 @@ export class CommerceClient {
     );
   }
 
+    joinAccount(
+    accountId: string,
+    personId: string,
+  ): Promise<{ accountId: string; storeSlug?: string | null; storeName?: string | null }> {
+    return this.request(
+      `/v1/accounts/${encodeURIComponent(accountId)}/join`,
+      z.object({
+        accountId: z.string(),
+        storeSlug: z.string().nullable().optional(),
+        storeName: z.string().nullable().optional(),
+      }),
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ personId }),
+      },
+    );
+  }
+
   getAccountInvite(token: string) {
     return this.request(
       `/v1/accounts/invites/${encodeURIComponent(token)}`,
