@@ -14,7 +14,7 @@ import {
   categoryOverrides,
   pricingConfigs,
   ssCategoryMap,
-  ssProductCategories
+  ssProductCategories,
   ssProducts,
   ssStyleColumnsWithoutSizeSpecs,
   ssStyles,

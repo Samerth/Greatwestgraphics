@@ -396,8 +396,11 @@ export class JobRequestService {
         v2: publishedPricing.find((row) => row.schemaVersion === 2) ?? null,
       };
 
+      const storeAdjustment = store.pricingAdjustmentPercent
+        ? Number(store.pricingAdjustmentPercent)
+        : null;
       const pricedLines = command.lines.map((line) =>
-        repriceLine(line, published),
+        repriceLine(line, published, storeAdjustment),
       );
 
       const displayId = await nextDisplayId(transaction, tenantId);
