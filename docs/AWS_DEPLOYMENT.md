@@ -59,7 +59,11 @@ docker push "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/gwg-commerce-api:late
 
 A push to `main` runs `.github/workflows/aws-ecr.yml`, which pushes
 `gwg-web:<sha>` / `gwg-commerce-api:<sha>` (and `:latest`) then retargets
-**staging** to that SHA. Production does not move.
+**staging** to that SHA and waits until the services are stable. Deploy to
+Staging (after CI) joins that roll instead of stacking another
+`force-new-deployment`. Each workflow has its own concurrency group so two
+rapid merges on `main` serialize within the retarget and within the wait,
+without cancelling each other's queued run. Production does not move.
 
 Vercel is not part of this path. `vercel.json` turns off Git auto-deploys.
 Disconnect the GitHub integration in the Vercel project settings so it stops

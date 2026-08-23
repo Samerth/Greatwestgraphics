@@ -60,6 +60,8 @@ jobs:
         run: npm run db:migrate && npm run db:seed
       - name: Unit tests
         run: npm test
+      - name: Staging ECS roll classifier
+        run: python3 infra/cloudshell/scripts/ecs_service_state_test.py
       - name: PostgreSQL integration tests
         run: npm test --workspace @gwg/commerce-api
       - name: Production build

@@ -34,6 +34,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 16 | `16-create-store.sh` | The tenant, account and store rows this environment serves, plus their ids in its state file |
 | 17 | `17-roll-ecs.sh` | Nothing new. Restarts the web and API tasks so they pull the tag already on the task definition |
 | 18 | `18-retarget-ecs.sh` | Registers new task defs pointing at an existing ECR SHA and deploys. `CLUSTER=gwg-staging` or `gwg-prod` |
+| 22 | `22-wait-ecs.sh` | Nothing new. Polls web+api until stable (or dumps service events). `JOIN_OR_ROLL=1` joins an in-flight roll instead of stacking another |
 | 20 | `20-refresh-database-url.sh` | Rewrites `$NAME_PREFIX/api` `DATABASE_URL` from the live RDS master-user secret and rolls the API. Fixes Postgres `28P01` after a managed password rotation |
 | 21 | `21-set-stripe-secrets.sh` | Writes `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` into the existing api/web JSON secrets and attaches them to the ECS task definitions |
 
