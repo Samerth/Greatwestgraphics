@@ -14,8 +14,15 @@ export type LegacyRoute =
 /**
  * Transactional URLs the new commerce app already serves at the same path.
  * The other six WooCommerce paths are redirects (see redirects.ts).
+ * `/products` and `/account` are redirect targets, not WordPress slugs.
  */
 export const EXISTING_TRANSACTIONAL_PATHS = ["/cart", "/checkout"] as const;
+
+export const EXISTING_APP_PATHS = [
+  ...EXISTING_TRANSACTIONAL_PATHS,
+  "/products",
+  "/account",
+] as const;
 
 export function resolveLegacyRoute(path: string): LegacyRoute {
   const canonical = canonicalizePath(path);
@@ -24,9 +31,7 @@ export function resolveLegacyRoute(path: string): LegacyRoute {
   const to = resolveLegacyRedirect(canonical);
   if (to) return { type: "redirect", to };
 
-  if (
-    (EXISTING_TRANSACTIONAL_PATHS as readonly string[]).includes(canonical)
-  ) {
+  if ((EXISTING_APP_PATHS as readonly string[]).includes(canonical)) {
     return { type: "existing", path: canonical };
   }
 
