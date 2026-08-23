@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { GarmentPricing, PricingConfigV2 } from "@gwg/contracts";
+import { garmentSellPerPieceMinor } from "@gwg/pricing";
 import { Button } from "@/components/shared/Button";
 import {
   Field,
@@ -94,11 +95,17 @@ export function GarmentTab({ config, onChange }: Props) {
       : cost;
     const cappedCost = Math.min(effectiveCost, capDollars);
     const markup = lookupMarkup(grid, cappedCost, probeQty);
-    const sellMinor = Math.round(
-      dollarsToMinor(probeCost) * markup * config.garment.multiplier,
-    );
+    let sellMinor = 0;
+    try {
+      sellMinor = garmentSellPerPieceMinor(config, {
+        unitCostMinor: dollarsToMinor(probeCost),
+        quantity: probeQty,
+      });
+    } catch {
+      sellMinor = 0;
+    }
     return { cost, effectiveCost, cappedCost, markup, sellMinor };
-  }, [probeCost, probeQty, grid, config.garment]);
+  }, [probeCost, probeQty, grid, config]);
 
   return (
     <div className="space-y-sp-4">

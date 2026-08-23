@@ -491,7 +491,9 @@ export function calculateQuoteV2(
 
   /* Decoration run charges and surcharges. */
   let decorationMinor = 0;
+  let threadMinor = 0;
   let needsArtworkVerification = false;
+  const threadJobCharged = new Set<string>();
 
   for (const decoration of input.decorations) {
     const garment = garmentById.get(decoration.garmentId);
@@ -657,6 +659,67 @@ export function calculateQuoteV2(
     ) {
       needsArtworkVerification = true;
     }
+
+    const thread = method.threadFee;
+    if (thread?.enabled && thread.amountMinor > 0) {
+      const perPiece = thread.kind === "flatPerPiece";
+      if (!perPiece && threadJobCharged.has(method.key)) {
+        // Per-job thread is billed once for the method, not per location.
+      } else {
+        if (!perPiece) threadJobCharged.add(method.key);
+        let threadUnit = thread.amountMinor;
+        if (thread.multiplierApplies) threadUnit *= method.multiplier;
+        threadUnit = roundMinor(threadUnit);
+        const threadQty = perPiece ? quantity : 1;
+        const threadExtended = threadUnit * threadQty;
+        threadMinor += threadExtended;
+
+        if (perPiece) {
+          decorationPerPiece.set(
+            garment.id,
+            (decorationPerPiece.get(garment.id) ?? 0) + threadUnit,
+          );
+        }
+
+        lines.push({
+          id: perPiece
+            ? `thread:${decoration.id}`
+            : `thread:${method.key}`,
+          kind: "thread",
+          garmentId: garment.id,
+          decorationId: decoration.id,
+          label: perPiece
+            ? `${thread.label} · ${decoration.location}`
+            : `${thread.label} · ${method.label}`,
+          quantity: threadQty,
+          unitAmountMinor: threadUnit,
+          extendedAmountMinor: threadExtended,
+          costMinor: 0,
+          isOverride: false,
+          explain: {
+            plainEnglish: perPiece
+              ? `${thread.label} of ${money(threadUnit)} per piece on ${quantity} ${method.label.toLowerCase()} pieces.`
+              : `${thread.label} of ${money(threadUnit)} charged once for this ${method.label.toLowerCase()} job.`,
+            steps: [
+              {
+                label: thread.label,
+                detail: perPiece
+                  ? `${money(thread.amountMinor)} per piece × ${quantity} pieces`
+                  : `${money(thread.amountMinor)} once per job`,
+                result: money(threadExtended),
+              },
+            ],
+            sources: [
+              {
+                label: `${method.label} · ${thread.label}`,
+                path: `methods.${method.key}.threadFee.amountMinor`,
+                value: money(thread.amountMinor),
+              },
+            ],
+          },
+        });
+      }
+    }
   }
 
   /* Setup fees: one per logo group, split across the garments that use it. */
@@ -685,7 +748,20 @@ export function calculateQuoteV2(
       ? verified
       : lead.artwork.isRepeat;
 
-    const perUnitFee = useRepeat ? setup.repeatFeeMinor : setup.newFeeMinor;
+    /**
+     * perJob always bills (new or repeat rate).
+     * perCustomer / once skip the fee after a verified repeat — that's how
+     * digitizing is "one-time per customer" in the workbook.
+     */
+    const frequency = setup.frequency ?? "perJob";
+    const skipForReturningCustomer =
+      (frequency === "perCustomer" || frequency === "once") && useRepeat;
+
+    const perUnitFee = skipForReturningCustomer
+      ? 0
+      : useRepeat
+        ? setup.repeatFeeMinor
+        : setup.newFeeMinor;
     const multiplierCount =
       setup.per === "colour" ? (lead.colours ?? 1) : 1;
     let groupFee = perUnitFee * multiplierCount;
@@ -720,6 +796,13 @@ export function calculateQuoteV2(
             ? `${money(perUnitFee)} per design`
             : `${money(perUnitFee)} per location`;
 
+      const frequencyLabel =
+        frequency === "perJob"
+          ? "Charged every job"
+          : frequency === "perCustomer"
+            ? "Charged once per customer for this artwork"
+            : "Charged once for this artwork";
+
       const steps: ExplainStep[] = [
         {
           label: "Artwork status",
@@ -729,6 +812,16 @@ export function calculateQuoteV2(
               ? "Customer says this is repeat artwork, but staff have not verified it yet, so the new-artwork rate applies"
               : "New artwork, so the new-artwork rate applies",
           result: useRepeat ? "Repeat" : "New",
+        },
+        {
+          label: "When it is charged",
+          detail: frequencyLabel,
+          result:
+            frequency === "perJob"
+              ? "Every job"
+              : frequency === "perCustomer"
+                ? "Per customer"
+                : "Once",
         },
         {
           label: "Fee basis",
@@ -782,6 +875,11 @@ export function calculateQuoteV2(
               label: `${method.label} · ${setup.label} (${useRepeat ? "repeat" : "new"})`,
               path: `methods.${method.key}.setup.${useRepeat ? "repeatFeeMinor" : "newFeeMinor"}`,
               value: money(perUnitFee),
+            },
+            {
+              label: `${method.label} · setup frequency`,
+              path: `methods.${method.key}.setup.frequency`,
+              value: frequency,
             },
           ],
         },
@@ -950,7 +1048,12 @@ export function calculateQuoteV2(
 
   /* Rush. */
   const productionSubtotalMinor =
-    merchandiseMinor + decorationMinor + setupMinor + oneTimeExtrasMinor + packingMinor;
+    merchandiseMinor +
+    decorationMinor +
+    setupMinor +
+    threadMinor +
+    oneTimeExtrasMinor +
+    packingMinor;
   const rushBaseMinor =
     settings.rushAppliesTo === "everything"
       ? productionSubtotalMinor + shippingMinor
@@ -1062,6 +1165,7 @@ export function calculateQuoteV2(
       merchandiseMinor,
       decorationMinor,
       setupMinor,
+      threadMinor,
       packingMinor,
       shippingMinor,
       rushMinor,

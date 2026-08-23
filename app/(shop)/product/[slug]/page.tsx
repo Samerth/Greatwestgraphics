@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
+import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
 import { ProductSizeSpecs } from "@/components/pdp/ProductSizeSpecs";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
@@ -23,6 +24,8 @@ import {
 } from "@/lib/commerce/catalog";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
+import type { GarmentPriceCurve } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -323,6 +326,37 @@ export default async function ProductPage({
                     className="mt-sp-4 flex items-center justify-center gap-2 w-full rounded-md bg-accent text-white font-bold text-sm py-3 px-4 hover:bg-accent-hover transition-colors"
                   />
                 )}
+
+                <div className="mt-sp-4 pt-sp-4 border-t border-border">
+                  <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary mb-sp-2">
+                    Or order it blank
+                  </p>
+                  <DbProductActions
+                    productId={String(product.id)}
+                    productSlug={String(product.slug || slug)}
+                    styleId={String(style.id)}
+                    name={title}
+                    color={String(product.colorName || "")}
+                    image={imageUrl}
+                    pricingConfig={
+                      (detail as { pricingConfig?: PricingConfigV2 })
+                        .pricingConfig ?? null
+                    }
+                    variants={variants.map((v) => ({
+                      id: String(v.id),
+                      sizeName: String(v.sizeName || ""),
+                      retailMinor: Number(v.retailMinor || 0),
+                      costMinor: Number(v.customerPriceMinor || 0),
+                      mapPriceMinor:
+                        v.mapPriceMinor == null
+                          ? null
+                          : Number(v.mapPriceMinor),
+                      priceCurve:
+                        (v.priceCurve as GarmentPriceCurve | null) ?? null,
+                      inStock: Number(v.qty || 0) > 0 && v.active !== false,
+                    }))}
+                  />
+                </div>
 
                 {typeof style.sizeChartPdfUrl === "string" &&
                   style.sizeChartPdfUrl.length > 0 && (

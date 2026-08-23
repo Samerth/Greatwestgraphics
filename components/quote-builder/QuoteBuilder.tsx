@@ -1,13 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type {
-  DecorationMethodConfig,
-  PricingConfigV2,
-  QuoteInputV2,
-} from "@gwg/contracts";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
+import { priceShopperQuote } from "@gwg/pricing";
 import { OptionalImage } from "@/components/shared/OptionalImage";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
@@ -22,6 +18,14 @@ import {
   moneyFromMinor,
   type QbProduct,
 } from "@/lib/utils/quote-pricing";
+import {
+  STITCH_PRESETS,
+  colourOptions,
+  defaultOptionKey,
+  enabledDecorationMethods,
+  methodVariableInputs,
+  stitchCountForPreset,
+} from "@/lib/utils/shop-quote";
 
 const LOCATIONS = [
   { id: "front", label: "Front" },
@@ -30,49 +34,11 @@ const LOCATIONS = [
   { id: "sleeve", label: "Sleeve" },
 ] as const;
 
-const STITCH_PRESETS = [
-  { id: "small", stitches: 5000, label: "Small logo" },
-  { id: "medium", stitches: 8000, label: "Medium logo" },
-  { id: "large", stitches: 12000, label: "Large logo" },
-] as const;
-
-/** Colour counts the picker offers, capped so the row stays readable. */
-const MAX_COLOUR_PILLS = 6;
-
 const METHOD_BLURBS: Record<string, string> = {
   screenPrint: "Best value for bulk",
   embroidery: "Stitched, premium look",
   dtf: "Full-colour photos & gradients",
 };
-
-/** Which extra question to ask, decided by the method's rate model. */
-function variableInputFor(method: DecorationMethodConfig | undefined) {
-  return {
-    colours: method?.rateModel.kind === "matrixByColour",
-    stitches: method?.rateModel.kind === "baseWithVariable",
-    option: method?.rateModel.kind === "matrixByOption",
-  };
-}
-
-function defaultOptionKey(method: DecorationMethodConfig | undefined): string {
-  if (method?.rateModel.kind !== "matrixByOption") return "";
-  const options = method.rateModel.options;
-  return (options[Math.min(1, options.length - 1)] ?? options[0])?.key ?? "";
-}
-
-function colourOptions(method: DecorationMethodConfig | undefined): number[] {
-  if (method?.rateModel.kind !== "matrixByColour") return [];
-  const { minColours, maxColours } = method.rateModel;
-  const options: number[] = [];
-  for (
-    let count = minColours;
-    count <= Math.min(maxColours, minColours + MAX_COLOUR_PILLS - 1);
-    count += 1
-  ) {
-    options.push(count);
-  }
-  return options;
-}
 
 type CatalogOption = {
   id: string;
@@ -111,10 +77,7 @@ export function QuoteBuilder({
   // pricing config, so adding a method in the admin panel offers it here
   // without a code change.
   const methods = useMemo(
-    () =>
-      [...pricingConfig.methods]
-        .filter((entry) => entry.enabled)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
+    () => enabledDecorationMethods(pricingConfig),
     [pricingConfig],
   );
 
@@ -184,47 +147,31 @@ export function QuoteBuilder({
     ? catalogProducts.find((p) => p.id === catalogProductId) ?? catalogProducts[0]
     : null;
 
-  const buildQuote = useCallback(
-    (quantity: number): QuoteInputV2 => ({
-      garments: [
-        {
-          id: "garment",
-          description: selectedCatalog?.label ?? product,
-          unitCostMinor: selectedCatalog
-            ? selectedCatalog.unitCostMinor
-            : QB_PRODUCT_COST_MINOR[product],
-          quantity,
-          colourName: selectedCatalog?.colorName ?? "",
-          isDark: selectedCatalog
-            ? selectedCatalog.isDark
-            : QB_PRODUCT_IS_DARK[product],
-        },
-      ],
-      decorations: locations.map((location) => ({
-        id: `decoration-${location}`,
-        garmentId: "garment",
-        methodKey: selectedMethod?.key ?? "",
-        location,
-        // One design across every placement, so the setup fee is charged once.
-        logoGroup: "primary",
-        colours: variableInputFor(selectedMethod).colours
-          ? effectiveColours
-          : undefined,
-        variableValue: variableInputFor(selectedMethod).stitches
-          ? STITCH_PRESETS.find((p) => p.id === stitchPreset)?.stitches
-          : undefined,
-        optionKey: variableInputFor(selectedMethod).option
-          ? optionKey || defaultOptionKey(selectedMethod)
-          : undefined,
-        isOversized: false,
-        artwork: { isRepeat: false, verifiedByStaff: false },
-      })),
-      options: {
-        rush,
-        designHours: 0,
-        includePacking,
-        shippingCostMinor: 0,
-      },
+  const shopperInput = useMemo(
+    () => ({
+      unitCostMinor: selectedCatalog
+        ? selectedCatalog.unitCostMinor
+        : QB_PRODUCT_COST_MINOR[product],
+      colourName: selectedCatalog?.colorName ?? "",
+      isDark: selectedCatalog
+        ? selectedCatalog.isDark
+        : QB_PRODUCT_IS_DARK[product],
+      methodKey: selectedMethod?.key,
+      colours: methodVariableInputs(selectedMethod).colours
+        ? effectiveColours
+        : undefined,
+      stitchCount: methodVariableInputs(selectedMethod).stitches
+        ? stitchCountForPreset(stitchPreset)
+        : undefined,
+      optionKey: methodVariableInputs(selectedMethod).option
+        ? optionKey || defaultOptionKey(selectedMethod)
+        : undefined,
+      locations,
+      shareSetup: true,
+      rush,
+      includePacking,
+      description: selectedCatalog?.label ?? product,
+      decorated: true as const,
     }),
     [
       product,
@@ -239,14 +186,13 @@ export function QuoteBuilder({
     ],
   );
 
-  const quoteInput = useMemo(() => buildQuote(qty), [buildQuote, qty]);
-
-  const breakdown = useMemo(
-    () => calculateQuoteV2(quoteInput, pricingConfig),
-    [quoteInput, pricingConfig],
+  const quoted = useMemo(
+    () => priceShopperQuote(pricingConfig, { ...shopperInput, quantity: qty }),
+    [pricingConfig, shopperInput, qty],
   );
 
-  const perPieceMinor = breakdown.garments[0]?.unitPriceMinor ?? 0;
+  const breakdown = quoted.breakdown;
+  const perPieceMinor = quoted.perPieceMinor;
 
   /**
    * Prices the same order at the next quantity break using the engine itself,
@@ -257,15 +203,17 @@ export function QuoteBuilder({
       (anchor) => anchor > qty,
     );
     if (!nextBreak) return null;
-    const atNextBreak = calculateQuoteV2(buildQuote(nextBreak), pricingConfig);
-    const nextPerPiece = atNextBreak.garments[0]?.unitPriceMinor ?? 0;
-    const saving = perPieceMinor - nextPerPiece;
+    const atNextBreak = priceShopperQuote(pricingConfig, {
+      ...shopperInput,
+      quantity: nextBreak,
+    });
+    const saving = perPieceMinor - atNextBreak.perPieceMinor;
     if (saving <= 0) return null;
     return `Order ${nextBreak}+ and save ${moneyFromMinor(saving)} per piece.`;
-  }, [selectedMethod, qty, buildQuote, pricingConfig, perPieceMinor]);
+  }, [selectedMethod, qty, pricingConfig, shopperInput, perPieceMinor]);
 
   const oneTimeLines = breakdown.lines.filter((line) =>
-    ["setup", "design", "artworkMinimum"].includes(line.kind),
+    ["setup", "thread", "design", "artworkMinimum"].includes(line.kind),
   );
   const oneTimeFeesMinor = oneTimeLines.reduce(
     (sum, line) => sum + line.extendedAmountMinor,
@@ -296,14 +244,9 @@ export function QuoteBuilder({
         .join(", ")}${needsArtworkReview ? " · Artwork review needed" : ""}`,
       color: "As quoted",
       qty,
-      unit: perPieceMinor / 100,
+      unit: quoted.cartUnit,
       image: "",
-      pricingSnapshot: {
-        schemaVersion: 2,
-        input: quoteInput,
-        breakdown,
-        pricingConfigVersion: pricingConfig.version,
-      },
+      pricingSnapshot: quoted.snapshot,
     });
     setAddedToCart(true);
     setTimeout(() => {
@@ -513,7 +456,7 @@ export function QuoteBuilder({
               </div>
             </div>
 
-            {variableInputFor(selectedMethod).colours && (
+            {methodVariableInputs(selectedMethod).colours && (
               <QbRow label="How many colours in your design?">
                 {colourOptions(selectedMethod).map((c) => (
                   <Pill
@@ -534,7 +477,7 @@ export function QuoteBuilder({
               </QbRow>
             )}
 
-            {variableInputFor(selectedMethod).stitches && (
+            {methodVariableInputs(selectedMethod).stitches && (
               <QbRow label="Logo size">
                 {STITCH_PRESETS.map((p) => (
                   <Pill

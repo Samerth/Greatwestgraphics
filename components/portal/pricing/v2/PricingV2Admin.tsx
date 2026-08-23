@@ -15,9 +15,16 @@ import { CalculatorTab } from "./CalculatorTab";
 import { GarmentTab } from "./GarmentTab";
 import { GlobalSettingsTab } from "./GlobalSettingsTab";
 import { MethodsTab } from "./MethodsTab";
+import { StorefrontTab } from "./StorefrontTab";
 import { VersionsTab } from "./VersionsTab";
 
-type TabId = "calculator" | "garment" | "methods" | "global" | "versions";
+type TabId =
+  | "calculator"
+  | "garment"
+  | "methods"
+  | "storefront"
+  | "global"
+  | "versions";
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; blurb: string }> = [
   {
@@ -33,7 +40,12 @@ const TABS: ReadonlyArray<{ id: TabId; label: string; blurb: string }> = [
   {
     id: "methods",
     label: "Decoration",
-    blurb: "Rates, setup fees and surcharges per method",
+    blurb: "Rates, setup, thread fee and surcharges per method",
+  },
+  {
+    id: "storefront",
+    label: "Shopper price",
+    blurb: "What the published formula puts on the storefront",
   },
   {
     id: "global",
@@ -132,6 +144,9 @@ export function PricingV2Admin({
       )}
       {tab === "methods" && (
         <MethodsTab config={config} onChange={setConfig} />
+      )}
+      {tab === "storefront" && (
+        <StorefrontTab config={config} onChange={setConfig} />
       )}
       {tab === "global" && (
         <GlobalSettingsTab config={config} onChange={setConfig} />

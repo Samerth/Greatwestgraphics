@@ -1,9 +1,10 @@
 import { and, asc, desc, eq, exists, gt, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
-import type { Actor } from "@gwg/contracts";
+import type { Actor, PricingConfigV2 } from "@gwg/contracts";
 import { PricingConfigV2Schema } from "@gwg/contracts";
 import {
   garmentPriceCurve,
-  garmentSellPerPieceMinor,
+  PRICING_MASTER_V2,
+  priceShopperItem,
   type GarmentPriceCurve,
 } from "@gwg/pricing";
 import type { CommerceDatabase } from "../db/client.js";
@@ -22,7 +23,6 @@ import {
   storeCategoryVisibility,
   syncRuns,
 } from "../db/schema.js";
-import { retailFromCost } from "../adapters/ss-activewear/client.js";
 import { isMissingColumn } from "../db/postgres-error.js";
 import {
   DataIntegrityError,
@@ -57,21 +57,25 @@ export class CatalogService {
   constructor(private readonly db: CommerceDatabase) {}
 
   /**
-   * Prices blanks the way a quote would: through the published garment
-   * markup grid, read at the quantity the catalog is meant to advertise.
-   * Falls back to the flat catalog markup only while no v2 config is
-   * published, so tiles never disagree with the quote builder once it is.
+   * Advertised catalog prices use the published v2 config (or the bundled
+   * workbook defaults). The same helper prices tiles, the PDP, and admin
+   * preview, so a shopper never sees a different number than staff just set.
    */
   private async garmentPricer(tenantId: string): Promise<{
     /** Price shown on a tile: the advertised catalog quantity. */
-    price: (costMinor: number, mapPriceMinor: number | null) => number;
-    /** Quantity the tile price advertises, or null on the flat fallback. */
-    displayQty: number | null;
+    price: (
+      costMinor: number,
+      mapPriceMinor: number | null,
+      context?: { colourName?: string; isDark?: boolean },
+    ) => number;
+    /** Quantity the tile price advertises. */
+    displayQty: number;
     /**
      * The garment's markup row, so a page with its own quantity picker can
      * re-price without another round trip. Null on the flat fallback.
      */
     curveFor: (costMinor: number) => GarmentPriceCurve | null;
+    pricingConfig: PricingConfigV2;
   }> {
     const [row] = await this.db
       .select()
@@ -85,37 +89,31 @@ export class CatalogService {
       )
       .limit(1);
 
-    if (row) {
-      const parsed = PricingConfigV2Schema.safeParse(row.config);
-      if (parsed.success) {
-        const config = parsed.data;
-        const displayQty = config.garment.catalogDisplayQty;
-        return {
-          displayQty,
-          price: (costMinor, mapPriceMinor) =>
-            garmentSellPerPieceMinor(config, {
-              unitCostMinor: costMinor,
-              quantity: displayQty,
-              mapPriceMinor,
-            }),
-          curveFor: (costMinor) => {
-            try {
-              return garmentPriceCurve(config, costMinor);
-            } catch {
-              return null;
-            }
-          },
-        };
-      }
-    }
-
-    const settings = await this.getSettings(tenantId);
-    const markup = Number(settings.retailMarkup) || 2;
+    const parsed = row
+      ? PricingConfigV2Schema.safeParse(row.config)
+      : undefined;
+    const config = parsed?.success
+      ? parsed.data
+      : PricingConfigV2Schema.parse(PRICING_MASTER_V2);
+    const displayQty = config.garment.catalogDisplayQty;
     return {
-      displayQty: null,
-      price: (costMinor, mapPriceMinor) =>
-        retailFromCost(costMinor, mapPriceMinor, markup),
-      curveFor: () => null,
+      displayQty,
+      pricingConfig: config,
+      price: (costMinor, mapPriceMinor, context) =>
+        priceShopperItem(config, {
+          unitCostMinor: costMinor,
+          quantity: displayQty,
+          mapPriceMinor,
+          colourName: context?.colourName,
+          isDark: context?.isDark,
+        }).summary.unitMinor,
+      curveFor: (costMinor) => {
+        try {
+          return garmentPriceCurve(config, costMinor);
+        } catch {
+          return null;
+        }
+      },
     };
   }
 
@@ -807,7 +805,10 @@ export class CatalogService {
         // card with no image at all, even though a usable photo existed.
         styleImageUrl: row.style.styleImageUrl,
         costMinor: cost,
-        retailMinor: priceGarment(cost, map),
+        retailMinor: priceGarment(cost, map, {
+          colourName: row.product.colorName,
+          isDark: row.product.isDark,
+        }),
         mapPriceMinor: map,
         available:
           (row.product.qty ?? 0) > 0 &&
@@ -896,6 +897,10 @@ export class CatalogService {
         retailMinor: garmentPricing.price(
           variant.customerPriceMinor,
           variant.mapPriceMinor,
+          {
+            colourName: row.product.colorName,
+            isDark: row.product.isDark,
+          },
         ),
         priceCurve: garmentPricing.curveFor(variant.customerPriceMinor),
       })),
@@ -904,6 +909,7 @@ export class CatalogService {
       retailMarkup: markup,
       /** Quantity the `retailMinor` prices above are quoted at. */
       priceDisplayQty: garmentPricing.displayQty,
+      pricingConfig: garmentPricing.pricingConfig,
     };
   }
 

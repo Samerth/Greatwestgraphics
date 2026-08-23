@@ -3,6 +3,7 @@ import { normalizeDesignDocument } from "@gwg/contracts";
 import { Container } from "@/components/shared/Container";
 import { DesignStudio, type SavedDesignProject } from "@/components/design/DesignStudio";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
+import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 
@@ -23,12 +24,13 @@ export default async function DesignPage({
   searchParams: Promise<{ loadDesignId?: string; garmentId?: string }>;
 }) {
   const { loadDesignId, garmentId } = await searchParams;
-  const [catalog, session] = await Promise.all([
+  const [catalog, session, pricingConfig] = await Promise.all([
     // Catalog is sorted brand-then-style alphabetically and Adidas alone
     // has 170 colourways — a small limit would silently only ever offer
     // Adidas garments. 150 trades some brand variety for lower latency.
     loadStorefrontCatalog({ limit: 150 }),
     getCustomerSession(),
+    loadPublishedPricingV2(),
   ]);
   const garments = catalog.products
     .filter((p) => p.available)
@@ -43,6 +45,7 @@ export default async function DesignPage({
       backImageUrl: p.backImageUrl,
       isDark: p.isDark,
       slug: p.slug,
+      costMinor: p.costMinor,
     }));
 
   let initialDesign: SavedDesignProject | null = null;
@@ -92,6 +95,7 @@ export default async function DesignPage({
             signedIn={Boolean(session)}
             initialDesign={initialDesign}
             garmentIdOverride={garmentId ?? null}
+            pricingConfig={pricingConfig}
           />
         </Container>
       </section>

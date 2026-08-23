@@ -48,15 +48,15 @@ export default async function PricingV2Page() {
     <div className="space-y-sp-4">
       <div>
         <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
-          Pricing engine v2
+          Pricing strategy
         </p>
         <h1 className="font-display font-bold text-3xl m-0">
-          Pricing control panel
+          How a garment is priced
         </h1>
         <p className="text-text-secondary mt-2 mb-0 max-w-[70ch]">
-          Everything that goes into a quote lives here. Edit freely — nothing
-          reaches customers until you publish. Use the calculator to check any
-          order before you do.
+          Screen print, embroidery and DTF share one formula with the shop.
+          Edit rates, setup (every job or per customer), thread fees and the
+          shopper total here. Nothing goes live until you publish.
         </p>
       </div>
 

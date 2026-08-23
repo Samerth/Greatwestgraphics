@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { shopperUnitMinor } from "@/lib/utils/shopper-price";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 
 const QTY_OPTIONS = [24, 48, 96, 250, 500];
@@ -30,8 +32,27 @@ export type DbVariantOption = {
 function unitPriceMinor(
   variant: DbVariantOption | undefined,
   quantity: number,
+  pricingConfig?: PricingConfigV2 | null,
+  colourName?: string,
 ): number {
   if (!variant) return 0;
+  if (pricingConfig && variant.costMinor) {
+    return shopperUnitMinor(
+      {
+        ...pricingConfig,
+        storefront: {
+          ...pricingConfig.storefront,
+          unitPriceIncludes: "blank",
+        },
+      },
+      {
+        unitCostMinor: variant.costMinor,
+        quantity: Math.max(1, quantity),
+        mapPriceMinor: variant.mapPriceMinor ?? null,
+        colourName,
+      },
+    );
+  }
   if (!variant.priceCurve || !variant.costMinor) return variant.retailMinor;
   return priceGarmentFromCurve(variant.priceCurve, {
     unitCostMinor: variant.costMinor,
@@ -48,6 +69,7 @@ export function DbProductActions({
   image,
   variants,
   productSlug,
+  pricingConfig,
 }: {
   productId: string;
   styleId: string;
@@ -56,6 +78,7 @@ export function DbProductActions({
   image: string | null;
   variants: DbVariantOption[];
   productSlug?: string;
+  pricingConfig?: PricingConfigV2 | null;
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
@@ -212,7 +235,7 @@ export function DbProductActions({
 
           {selectedVariant?.priceCurve && (
             <p className="text-[12.5px] text-text-secondary mb-sp-2.5 mt-0">
-              {moneyFromMinor(unitPriceMinor(selectedVariant, qty))} per piece
+              {moneyFromMinor(unitPriceMinor(selectedVariant, qty, pricingConfig, color))} per piece
               at {qty.toLocaleString()} — the per-piece price drops as the
               quantity goes up.
             </p>
@@ -274,7 +297,7 @@ export function DbProductActions({
               meta: `Team order · ${roster.length} pieces, mixed sizes`,
               color,
               qty: roster.length,
-              unit: unitPriceMinor(priceVariant, roster.length) / 100,
+              unit: unitPriceMinor(priceVariant, roster.length, pricingConfig, color) / 100,
               image: image ?? "",
               roster: roster.map((r) => ({
                 size: r.size,
@@ -297,7 +320,7 @@ export function DbProductActions({
             meta: `Size ${selectedVariant.sizeName}`,
             color,
             qty,
-            unit: unitPriceMinor(selectedVariant, qty) / 100,
+            unit: unitPriceMinor(selectedVariant, qty, pricingConfig, color) / 100,
             image: image ?? "",
           });
           setJustAdded(true);
@@ -313,7 +336,7 @@ export function DbProductActions({
             : justAdded
               ? "Added ✓"
               : `Add ${qty.toLocaleString()} Piece${qty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
-                  unitPriceMinor(selectedVariant, qty) * qty,
+                  unitPriceMinor(selectedVariant, qty, pricingConfig, color) * qty,
                 )}`}
       </Button>
     </div>

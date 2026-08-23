@@ -22,3 +22,14 @@ export type {
   GarmentPriceResult,
 } from "./garment-price.js";
 export { PRICING_MASTER_V2 } from "./generated/pricing-master.js";
+export {
+  buildShopperQuoteInput,
+  priceShopperItem,
+  priceShopperQuote,
+  summarizeShopperPrice,
+} from "./shopper-price.js";
+export type {
+  ShopperPriceInput,
+  ShopperPriceSummary,
+  ShopperQuoteResult,
+} from "./shopper-price.js";
