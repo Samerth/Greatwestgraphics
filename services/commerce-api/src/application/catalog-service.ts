@@ -14,7 +14,7 @@ import {
   categoryOverrides,
   pricingConfigs,
   ssCategoryMap,
-  ssProductCategories,
+  ssProductCategories
   ssProducts,
   ssStyleColumnsWithoutSizeSpecs,
   ssStyles,
@@ -820,7 +820,7 @@ export class CatalogService {
   async getProductDetail(
     tenantId: string,
     productUuid: string,
-    options?: { includeHiddenColorways?: boolean },
+    options?: { includeHiddenColorways?: boolean; storeId?: string },
   ) {
     const styleColumns = ssStyleColumnsWithoutSizeSpecs();
     const [row] = await this.db
@@ -855,6 +855,23 @@ export class CatalogService {
       .from(ssProductCategories)
       .innerJoin(categories, eq(ssProductCategories.categoryId, categories.id))
       .where(eq(ssProductCategories.productUuid, productUuid));
+
+    // Mirrors the same allow-list `listCategories` applies to browsing: a
+    // store curated down to specific categories must not be reachable by a
+    // direct link either. Without this, "curate which categories a store
+    // can see" only hid a product from the nav — anyone with the URL, or
+    // who guessed it, could still view and order it in full.
+    if (options?.storeId) {
+      const allowedIds = await this.visibleCategoryIds(options.storeId);
+      if (allowedIds !== null) {
+        const allowed = new Set(allowedIds);
+        const visible = cats.some((cat) => allowed.has(cat.id));
+        if (!visible) {
+          throw new ResourceNotFoundError("Product not found");
+        }
+      }
+    }
+
     const settings = await this.getSettings(tenantId);
     const markup = Number(settings.retailMarkup) || 2;
     const garmentPricing = await this.garmentPricer(tenantId);

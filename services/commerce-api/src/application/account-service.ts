@@ -3,6 +3,7 @@ import type { Actor } from "@gwg/contracts";
 import type { CommerceDatabase } from "../db/client.js";
 import { accountPeople, accounts, people, stores } from "../db/schema.js";
 import { slugify } from "../adapters/ss-activewear/client.js";
+import { postgresSqlState } from "../db/postgres-error.js";
 
 export class SlugTakenError extends Error {
   readonly code = "SLUG_TAKEN";
@@ -60,20 +61,33 @@ export class AccountService {
         .returning();
       if (!account) throw new Error("Failed to create account");
 
-      const [store] = await tx
-        .insert(stores)
-        .values({
-          tenantId,
-          accountId: account.id,
-          name: input.storeName,
-          slug: input.slug,
-          status: "pending_review",
-          accentColor: input.accentColor ?? null,
-          logoUrl: input.logoUrl ?? null,
-          tagline: input.tagline ?? null,
-          createdBy: actor,
-        })
-        .returning();
+      let store: typeof stores.$inferSelect | undefined;
+      try {
+        [store] = await tx
+          .insert(stores)
+          .values({
+            tenantId,
+            accountId: account.id,
+            name: input.storeName,
+            slug: input.slug,
+            status: "pending_review",
+            accentColor: input.accentColor ?? null,
+            logoUrl: input.logoUrl ?? null,
+            tagline: input.tagline ?? null,
+            createdBy: actor,
+          })
+          .returning();
+      } catch (insertError) {
+        // The pre-check above closes the gap for a normal double-click, but
+        // two concurrent submissions of the identical slug can both pass it
+        // before either has inserted. The unique index is the real guard —
+        // translate its violation into the same clean error the pre-check
+        // gives everyone else, instead of a raw constraint-violation 500.
+        if (postgresSqlState(insertError) === "23505") {
+          throw new SlugTakenError(`The slug "${input.slug}" is already in use.`);
+        }
+        throw insertError;
+      }
       if (!store) throw new Error("Failed to create store");
 
       await tx.insert(accountPeople).values({

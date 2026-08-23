@@ -647,7 +647,9 @@ export function buildApp(input: {
     const productId = CanonicalIdSchema.parse(
       (request.params as { productId?: string }).productId,
     );
-    return catalogService.getProductDetail(auth.tenantId, productId);
+    return catalogService.getProductDetail(auth.tenantId, productId, {
+      storeId: auth.storeId,
+    });
   });
 
   app.get("/v1/catalog/categories", async (request) => {
