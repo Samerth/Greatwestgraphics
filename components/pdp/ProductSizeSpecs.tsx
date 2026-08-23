@@ -11,7 +11,10 @@ export function ProductSizeSpecs({
   }
 
   return (
-    <section className="py-sp-8 border-t border-border">
+    <section
+      id="size-chart"
+      className="py-sp-8 border-t border-border scroll-mt-28"
+    >
       <Container>
         <h2 className="font-display font-bold text-header m-0">
           Size chart / measurements
