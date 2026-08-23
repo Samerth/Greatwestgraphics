@@ -40,7 +40,7 @@ const FAQ_CATEGORIES: Array<{
       },
       {
         q: "Can I get a sample before I order?",
-        a: "Yes — order a blank sample of any garment before committing to your full run, or request a free digital proof.",
+        a: "Yes — request a free digital proof before you commit to a full run. We review artwork and send a mockup for sign-off.",
       },
       {
         q: "Do you do colour matching?",

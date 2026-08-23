@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
-import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
 import { ProductSizeSpecs } from "@/components/pdp/ProductSizeSpecs";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
