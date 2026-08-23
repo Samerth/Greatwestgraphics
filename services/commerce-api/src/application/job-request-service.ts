@@ -520,6 +520,8 @@ export class JobRequestService {
         command.reason,
         actor,
         command.source,
+        undefined,
+        command.notifyCustomer,
       );
     });
   }
@@ -1603,7 +1605,7 @@ export class JobRequestService {
     });
   }
 
-  private async applyTransition(
+ private async applyTransition(
     transaction: Parameters<
       Parameters<CommerceDatabase["transaction"]>[0]
     >[0],
@@ -1613,6 +1615,7 @@ export class JobRequestService {
     actor: Actor,
     source: SourceMetadata,
     eventTypeOverride?: CommerceEventType,
+    notifyCustomer = true,
   ): Promise<JobRequestResponse> {
     if (toStatus === "cancelled" && !reason?.trim()) {
       throw new JobActionError("A reason is required to cancel a job.");
@@ -1753,6 +1756,7 @@ export class JobRequestService {
           toStatus,
           reason,
           version: updated.version,
+          notifyCustomer,
         },
       },
     });

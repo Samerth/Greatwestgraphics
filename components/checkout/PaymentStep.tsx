@@ -55,17 +55,12 @@ const TABS: Array<{ id: PayTab; label: string; note: string }> = [
  */
 function buildCustomerNote(
   tab: PayTab,
-  depositNow: boolean,
+  // depositNow no longer used to build the note — deposit checkbox is disabled above
+  _depositNow: boolean,
   studioNotes: string | undefined,
 ): string | undefined {
   const preference = TABS.find((item) => item.id === tab)?.note ?? tab;
-  const deposit =
-    tab === "card"
-      ? depositNow
-        ? " · 50% deposit on invoice"
-        : " · prefers to pay in full on invoice"
-      : "";
-  const line = `Payment preference: ${preference}${deposit}`;
+  const line = `Payment preference: ${preference}`;
   const typed = studioNotes?.trim();
   return typed ? `${line}\n\n${typed}` : line;
 }
@@ -99,13 +94,13 @@ export function PaymentStep({
   );
   const deliveryFee = DELIVERY_FEES[delivery] ?? 0;
   const estimated = subtotal + deliveryFee;
-  const deposit = estimated * 0.5;
-  const depositNow = useWatch({ control, name: "depositNow" });
+  //const deposit = estimated * 0.5;
+  //const depositNow = useWatch({ control, name: "depositNow" });
 
   return (
     <form
-      onSubmit={handleSubmit(({ studioNotes, depositNow: wantsDeposit }) =>
-        onSubmit(buildCustomerNote(tab, wantsDeposit ?? false, studioNotes)),
+      onSubmit={handleSubmit(({ studioNotes }) =>
+        onSubmit(buildCustomerNote(tab, false, studioNotes)),
       )}
     >
       <h2 className="font-display font-bold text-header mb-sp-2">Payment</h2>
@@ -151,6 +146,11 @@ export function PaymentStep({
             pricing is confirmed — never here. Choosing Card now just tells the
             studio how you plan to settle.
           </div>
+          {/* Deposit-preference checkbox disabled for now. Stripe checkout
+              charges the full accepted-quote amount in one shot, so a
+              "50% deposit" preference set here has no downstream effect —
+              re-enable once partial/deposit payments are actually wired up
+              in the Stripe flow, or drop it for good.
           <label className="flex items-start gap-3 text-sm cursor-pointer rounded-md border border-border bg-bg-raised p-sp-3">
             <input type="checkbox" className="mt-1" {...register("depositNow")} />
             <span>
@@ -163,6 +163,7 @@ export function PaymentStep({
               ) : null}
             </span>
           </label>
+          */}
         </div>
       )}
 

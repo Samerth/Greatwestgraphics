@@ -433,6 +433,10 @@ export const TransitionJobRequestSchema = z.object({
   context: RequestContextSchema,
   toStatus: JobRequestStatusSchema,
   reason: z.string().min(1).max(1_000).optional(),
+  // Lets staff suppress the customer-facing status email for one specific
+  // transition (e.g. an internal correction) without touching the job's
+  // status history or audit trail. Defaults to true — notify unless told not to.
+  notifyCustomer: z.boolean().default(true),
   source: SourceMetadataSchema.default({ system: "commerce_api" }),
 });
 export type TransitionJobRequest = z.infer<typeof TransitionJobRequestSchema>;
@@ -698,7 +702,13 @@ export const StripeWebhookRelaySchema = z.object({
   context: RequestContextSchema,
   eventId: z.string().min(1).max(255),
   eventType: z.string().min(1).max(120),
-  sessionId: z.string().min(1).max(255),
+  // Nullable: a PaymentIntent-shaped event (e.g. payment_intent.payment_failed)
+  // has no Checkout Session id on it — Stripe assigns the session id only
+  // after we've already created it, so it can never be embedded in the
+  // PaymentIntent's own metadata. `jobRequestId` is the fallback key for
+  // those events instead.
+  sessionId: z.string().min(1).max(255).nullable().default(null),
+  jobRequestId: z.string().min(1).max(255).nullable().default(null),
   paymentIntentId: z.string().min(1).max(255).nullable().default(null),
   amountTotalMinor: z.number().int().nonnegative().nullable().default(null),
   currency: z.string().length(3).nullable().default(null),

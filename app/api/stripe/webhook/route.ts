@@ -81,10 +81,15 @@ export async function POST(request: Request) {
     : typeof object.payment_intent === "string"
       ? object.payment_intent
       : (object.payment_intent?.id ?? null);
-  const sessionId = isPaymentIntent ? (metadata.checkoutSessionId ?? "") : object.id;
+  // A checkout.session.* event carries its own id directly. A payment_intent.*
+  // event does not — Stripe assigns the Checkout Session id only after we've
+  // already created it, so it can never be embedded in the PaymentIntent's own
+  // metadata. jobRequestId travels on both, so it's the fallback lookup key.
+  const sessionId = isPaymentIntent ? null : object.id;
+  const jobRequestId = metadata.jobRequestId ?? null;
 
-  if (!sessionId) {
-    return NextResponse.json({ received: true, ignored: "no checkout session" });
+  if (!sessionId && !jobRequestId) {
+    return NextResponse.json({ received: true, ignored: "no checkout session or job reference" });
   }
 
   try {
@@ -93,6 +98,7 @@ export async function POST(request: Request) {
       eventId: event.id,
       eventType: event.type,
       sessionId,
+      jobRequestId,
       paymentIntentId,
       amountTotalMinor: object.amount_total ?? object.amount ?? null,
       currency: object.currency ? object.currency.toUpperCase() : null,

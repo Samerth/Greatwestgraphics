@@ -19,6 +19,17 @@ import type { StorefrontCategory } from "@/lib/commerce/catalog";
 // rather than guessing at slugs.
 const FALLBACK_CATEGORIES = [{ label: "All Products", href: "/products" }];
 
+type CategoryNode = StorefrontCategory & { children: StorefrontCategory[] };
+
+function buildCategoryTree(categories: StorefrontCategory[]): CategoryNode[] {
+  return categories
+    .filter((c) => !c.parentId)
+    .map((top) => ({
+      ...top,
+      children: categories.filter((c) => c.parentId === top.id),
+    }));
+}
+
 const PRIMARY_LINKS = [
   { label: "AI Design Studio", href: "/design" },
   { label: "About", href: "/about" },
@@ -44,6 +55,9 @@ export function Header({
           href: `/products?category=${encodeURIComponent(c.slug)}`,
         }))
       : FALLBACK_CATEGORIES;
+  const CATEGORY_TREE: CategoryNode[] =
+    categories.length > 0 ? buildCategoryTree(categories) : [];
+  const HAS_CATEGORIES = CATEGORY_TREE.length > 0;
   const rawPieceCount = useCartStore((s) => s.pieceCount());
   // Zustand's persist middleware only reads localStorage on the client, so
   // the server always renders an empty cart. Gate the real count behind a
@@ -151,21 +165,52 @@ export function Header({
               <div
                 onMouseEnter={openShop}
                 onMouseLeave={scheduleClose}
-                className="absolute left-1/2 -translate-x-1/2 top-full pt-3 w-[560px]"
+                className="absolute left-1/2 -translate-x-1/2 top-full pt-3 w-[820px] max-w-[92vw]"
               >
-                <div className="rounded-xl border border-border bg-bg shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-sp-4">
-                  <div className="grid grid-cols-2 gap-x-sp-4 gap-y-1">
-                    {CATEGORIES.map((cat) => (
-                      <Link
-                        key={cat.label}
-                        href={cat.href}
-                        onClick={() => setShopOpen(false)}
-                        className="rounded-md px-3 py-2.5 text-sm font-semibold text-text-primary hover:bg-fill-subtle-15 hover:text-accent transition-colors"
-                      >
-                        {cat.label}
-                      </Link>
-                    ))}
-                  </div>
+                <div className="rounded-xl border border-border bg-bg shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-sp-4 max-h-[70vh] overflow-y-auto">
+                  {HAS_CATEGORIES ? (
+                    <div className="grid grid-cols-3 gap-x-sp-4 gap-y-sp-4">
+                      {CATEGORY_TREE.map((cat) => (
+                        <div key={cat.id}>
+                          <Link
+                            href={`/products?category=${encodeURIComponent(cat.slug)}`}
+                            onClick={() => setShopOpen(false)}
+                            className="block text-sm font-bold text-text-primary hover:text-accent transition-colors mb-1.5"
+                          >
+                            {cat.name}
+                          </Link>
+                          {cat.children.length > 0 && (
+                            <ul className="space-y-1 m-0 p-0 list-none">
+                              {cat.children.map((child) => (
+                                <li key={child.id}>
+                                  <Link
+                                    href={`/products?category=${encodeURIComponent(child.slug)}`}
+                                    onClick={() => setShopOpen(false)}
+                                    className="block text-xs text-text-secondary hover:text-accent transition-colors py-0.5"
+                                  >
+                                    {child.name}
+                                  </Link>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-x-sp-4 gap-y-1">
+                      {FALLBACK_CATEGORIES.map((cat) => (
+                        <Link
+                          key={cat.label}
+                          href={cat.href}
+                          onClick={() => setShopOpen(false)}
+                          className="rounded-md px-3 py-2.5 text-sm font-semibold text-text-primary hover:bg-fill-subtle-15 hover:text-accent transition-colors"
+                        >
+                          {cat.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-sp-3 pt-sp-3 border-t border-border flex items-center justify-between">
                     <span className="text-xs text-text-tertiary">
                       Not sure what you need?
@@ -386,17 +431,46 @@ export function Header({
           className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4 max-h-[calc(100svh-var(--header-offset))] overflow-y-auto overscroll-contain"
           aria-label="Mobile"
         >
-          <div className="grid grid-cols-2 gap-2 mb-sp-3">
-            {CATEGORIES.map((cat) => (
-              <Link
-                key={cat.label}
-                href={cat.href}
-                onClick={() => setMobileOpen(false)}
-                className="rounded-md border border-border bg-bg-raised px-3 py-2.5 text-sm font-semibold"
-              >
-                {cat.label}
-              </Link>
-            ))}
+          <div className="flex flex-col gap-1 mb-sp-3">
+            {HAS_CATEGORIES
+              ? CATEGORY_TREE.map((cat) => (
+                  <div
+                    key={cat.id}
+                    className="border border-border rounded-md bg-bg-raised overflow-hidden"
+                  >
+                    <Link
+                      href={`/products?category=${encodeURIComponent(cat.slug)}`}
+                      onClick={() => setMobileOpen(false)}
+                      className="block px-3 py-2.5 text-sm font-bold"
+                    >
+                      {cat.name}
+                    </Link>
+                    {cat.children.length > 0 && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2.5">
+                        {cat.children.map((child) => (
+                          <Link
+                            key={child.id}
+                            href={`/products?category=${encodeURIComponent(child.slug)}`}
+                            onClick={() => setMobileOpen(false)}
+                            className="text-xs text-text-secondary"
+                          >
+                            {child.name}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              : FALLBACK_CATEGORIES.map((cat) => (
+                  <Link
+                    key={cat.label}
+                    href={cat.href}
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-md border border-border bg-bg-raised px-3 py-2.5 text-sm font-semibold"
+                  >
+                    {cat.label}
+                  </Link>
+                ))}
           </div>
           <div className="flex flex-wrap gap-2 border-t border-border pt-sp-3">
             <Link

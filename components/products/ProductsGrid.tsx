@@ -21,14 +21,17 @@ type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 // "Made in Canada" returned the whole catalogue and implied every result
 // qualified. Reinstate this only alongside real per-product attribute data.
 
-const COLOUR_SWATCHES = [
-  "#0D0D0D",
-  "#FFFFFF",
-  "#132A66",
-  "#AA3300",
-  "#2d4a38",
-  "#a8a8ac",
-];
+
+type CategoryNode = StorefrontCategory & { children: StorefrontCategory[] };
+
+function buildCategoryTree(categories: StorefrontCategory[]): CategoryNode[] {
+  return categories
+    .filter((c) => !c.parentId)
+    .map((top) => ({
+      ...top,
+      children: categories.filter((c) => c.parentId === top.id),
+    }));
+}
 
 type Props = {
   dbProducts?: StorefrontCatalogProduct[];
@@ -72,6 +75,7 @@ export function ProductsGrid({
   );
   const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
 
   function navigate(next: {
     category?: string;
@@ -147,48 +151,49 @@ export function ProductsGrid({
       </form>
 
       <FacetGroup title="Product Category">
-        <FacetCheck
-          label="All products"
-          checked={activeCategory === "All"}
-          onChange={() => {
-            setActiveCategory("All");
-            navigate({ category: "All" });
-          }}
-        />
-        {dbCategories.map((c) => (
+        <div className="space-y-2.5">
           <FacetCheck
-            key={c.slug}
-            label={c.name}
-            checked={
-              activeCategory.toLowerCase() === c.slug.toLowerCase()
-            }
+            label="All products"
+            checked={activeCategory === "All"}
             onChange={() => {
-              setActiveCategory(c.slug);
-              navigate({ category: c.slug });
+              setActiveCategory("All");
+              navigate({ category: "All" });
             }}
           />
-        ))}
-      </FacetGroup>
-
-      <FacetGroup title="Colour">
-        <div className="flex flex-wrap gap-2">
-          {COLOUR_SWATCHES.map((hex) => (
-            <span
-              key={hex}
-              title={hex}
-              className="w-6 h-6 rounded-full border border-border"
-              style={{ background: hex }}
-            />
+          {categoryTree.map((group) => (
+            <div key={group.id}>
+              <FacetCheck
+                label={group.name}
+                checked={activeCategory.toLowerCase() === group.slug.toLowerCase()}
+                onChange={() => {
+                  setActiveCategory(group.slug);
+                  navigate({ category: group.slug });
+                }}
+                emphasize
+              />
+              {group.children.length > 0 && (
+                <div className="pl-5 mt-0.5 space-y-0.5">
+                  {group.children.map((child) => (
+                    <FacetCheck
+                      key={child.slug}
+                      label={child.name}
+                      checked={activeCategory.toLowerCase() === child.slug.toLowerCase()}
+                      onChange={() => {
+                        setActiveCategory(child.slug);
+                        navigate({ category: child.slug });
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
-        <p className="text-xs text-text-tertiary m-0 mt-2">
-          Colour filters refine on the product page after you pick a style.
-        </p>
       </FacetGroup>
 
       {dbBrands.length > 0 && (
         <FacetGroup title="Brand">
-          <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-1">
+          <div className="space-y-1.5">
             {dbBrands.map((brand) => (
               <FacetCheck
                 key={brand}
@@ -260,7 +265,9 @@ export function ProductsGrid({
 
   return (
     <div className="lg:grid lg:grid-cols-[280px_1fr] gap-sp-5 items-start">
-      <div className="hidden lg:block sticky top-[100px]">{sidebar}</div>
+      <div className="hidden lg:block sticky top-[calc(var(--header-offset)+24px)] max-h-[calc(100vh-var(--header-offset)-40px)] overflow-y-auto pr-1 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+        {sidebar}
+      </div>
 
       <div>
         <div className="flex flex-wrap justify-between items-center gap-3 mb-sp-4">
@@ -435,20 +442,31 @@ function FacetCheck({
   label,
   checked,
   onChange,
+  emphasize = false,
 }: {
   label: string;
   checked: boolean;
   onChange: () => void;
+  emphasize?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm cursor-pointer">
+    <label className="flex items-center gap-2.5 text-sm rounded-sm px-1.5 py-1.5 -mx-1.5 cursor-pointer hover:bg-fill-subtle-15 transition-colors">
       <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="rounded-sm border-border"
+        className="w-4 h-4 rounded-sm border-border accent-[color:var(--color-accent)] cursor-pointer"
       />
-      <span>{label}</span>
+      <span
+        className={cn(
+          "leading-tight",
+          checked || emphasize
+            ? "font-bold text-text-primary"
+            : "text-text-secondary",
+        )}
+      >
+        {label}
+      </span>
     </label>
   );
 }

@@ -784,6 +784,7 @@ export class CommerceClient {
     toStatus: string,
     adminToken: string,
     reason?: string,
+    notifyCustomer = true,
   ): Promise<JobRequestResponse> {
     return this.request(
       `/internal/dev/job-requests/${encodeURIComponent(id)}/transition`,
@@ -799,6 +800,7 @@ export class CommerceClient {
           },
           toStatus,
           reason,
+          notifyCustomer,
           source: { system: "commerce_api" },
         }),
       },

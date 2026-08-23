@@ -84,6 +84,10 @@ html {
   scroll-padding-top: calc(var(--header-offset) + 16px);
 }
 
+html {
+  overflow-x: clip;
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text-primary);
@@ -92,7 +96,6 @@ body {
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: clip;
 }
 
 ::selection {

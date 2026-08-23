@@ -266,14 +266,34 @@ export class StripePaymentService {
    * so every branch is safe to run twice.
    */
   async applyWebhookEvent(relay: StripeWebhookRelay): Promise<WebhookOutcome> {
-    const [session] = await this.db
-      .select()
-      .from(stripeCheckoutSessions)
-      .where(eq(stripeCheckoutSessions.stripeSessionId, relay.sessionId))
-      .limit(1);
+    // checkout.session.* events resolve directly by Stripe's session id.
+    // payment_intent.* events (e.g. a card decline) carry no session id — it
+    // cannot exist in their metadata, since Stripe assigns the session id
+    // only after we've already created it — so those resolve by jobRequestId
+    // instead, which travels in both the session's and the PaymentIntent's
+    // metadata from the moment we create the Checkout Session.
+    const [session] = relay.sessionId
+      ? await this.db
+          .select()
+          .from(stripeCheckoutSessions)
+          .where(eq(stripeCheckoutSessions.stripeSessionId, relay.sessionId))
+          .limit(1)
+      : relay.jobRequestId
+        ? await this.db
+            .select()
+            .from(stripeCheckoutSessions)
+            .where(
+              and(
+                eq(stripeCheckoutSessions.tenantId, relay.context.tenantId),
+                eq(stripeCheckoutSessions.jobRequestId, relay.jobRequestId),
+              ),
+            )
+            .limit(1)
+        : [];
     if (!session) {
       // A session we never created (another environment sharing the Stripe
-      // account, most likely). Acknowledge so Stripe stops retrying.
+      // account, most likely), or an event with neither a session id nor a
+      // job reference we recognize. Acknowledge so Stripe stops retrying.
       return { handled: false, status: "ignored" };
     }
 
@@ -352,7 +372,7 @@ export class StripePaymentService {
             note: `Card payment received via Stripe (${relay.paymentIntentId ?? relay.sessionId}).`,
             source: {
               system: "stripe",
-              externalId: relay.paymentIntentId ?? relay.sessionId,
+              externalId: relay.paymentIntentId ?? relay.sessionId ?? undefined,
               correlationId: relay.eventId,
             },
           },
@@ -414,9 +434,10 @@ export class StripePaymentService {
         context,
         toStatus: "payment_pending",
         reason: "Card payment started in Stripe Checkout",
+        notifyCustomer: true,
         source: {
           system: "stripe",
-          externalId: relay.sessionId,
+          externalId: relay.sessionId ?? undefined,
           correlationId: relay.eventId,
         },
       },

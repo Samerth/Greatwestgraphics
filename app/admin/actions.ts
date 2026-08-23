@@ -10,7 +10,12 @@ const PROOF_TYPES: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/svg+xml": "svg",
+  "application/pdf": "pdf",
 };
+
+export interface ProofUploadState {
+  error?: string;
+}
 const MAX_PROOF_BYTES = 10 * 1024 * 1024;
 const PERSON_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +45,7 @@ export async function transitionJobAction(
   jobId: string,
   toStatus: string,
   reason?: string,
+  notifyCustomer = true,
 ) {
   const client = await adminClient();
   await client.transitionJobRequest(
@@ -47,6 +53,7 @@ export async function transitionJobAction(
     toStatus,
     requireAdminToken(),
     reason,
+    notifyCustomer,
   );
   revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -75,7 +82,10 @@ export async function createFinalQuoteAction(formData: FormData) {
   revalidatePath("/admin/quotes");
 }
 
-export async function createProofAction(formData: FormData) {
+export async function createProofAction(
+  _previous: ProofUploadState,
+  formData: FormData,
+): Promise<ProofUploadState> {
   await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const note = String(formData.get("note") || "") || undefined;
@@ -86,10 +96,10 @@ export async function createProofAction(formData: FormData) {
   if (file instanceof File && file.size > 0) {
     const extension = PROOF_TYPES[file.type];
     if (!extension) {
-      throw new Error("Proof must be a PNG, JPG, or SVG");
+      return { error: "Proof must be a PNG, JPG, SVG, or PDF" };
     }
     if (file.size > MAX_PROOF_BYTES) {
-      throw new Error("Proof file is too large — max 10MB");
+      return { error: "Proof file is too large — max 10MB" };
     }
     const owner = PERSON_ID_PATTERN.test(personId) ? personId : "staff";
     const key = `designs/${owner}/staff-${randomUUID()}.${extension}`;
@@ -101,18 +111,30 @@ export async function createProofAction(formData: FormData) {
   }
 
   if (!jobId || !storageKey) {
-    throw new Error("Job and a proof file are required");
+    return { error: "Job and a proof file are required" };
   }
-  const client = await adminClient();
-  await client.createProof(
-    jobId,
-    // A staff proof is always the customer's turn next. Naming it here rather
-    // than letting the API infer it keeps a revision aimed at the customer even
-    // when it is a rework of artwork they sent us.
-    { storageKey, note, awaitingDecisionFrom: "customer" },
-    requireAdminToken(),
-  );
+
+  try {
+    const client = await adminClient();
+    await client.createProof(
+      jobId,
+      // A staff proof is always the customer's turn next. Naming it here rather
+      // than letting the API infer it keeps a revision aimed at the customer even
+      // when it is a rework of artwork they sent us.
+      { storageKey, note, awaitingDecisionFrom: "customer" },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "We could not attach the proof. Please try again.",
+    };
+  }
+
   revalidatePath(`/admin/jobs/${jobId}`);
+  return {};
 }
 
 /** Staff side of the proof round trip: sign off on, or push back, artwork the
@@ -216,10 +238,11 @@ function categorySlugFrom(rawSlug: string, fallbackName = "") {
 export async function createCategoryAction(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
+  const parentId = String(formData.get("parentId") || "").trim() || null;
   if (!name) throw new Error("Category name is required");
   if (!slug) throw new Error("Could not create a URL name from that category name");
   const client = await adminClient();
-  await client.createCategory({ name, slug }, requireAdminToken());
+  await client.createCategory({ name, slug, parentId }, requireAdminToken());
   revalidatePath("/admin/categories");
 }
 
@@ -308,12 +331,13 @@ export async function updateCategoryAction(
 ) {
   const name = String(formData.get("name") || "").trim();
   const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
+  const parentId = String(formData.get("parentId") || "").trim() || null;
   if (!name) throw new Error("Category name is required");
   if (!slug) throw new Error("Could not create a URL name from that category name");
   const client = await adminClient();
   await client.updateCategory(
     categoryId,
-    { name, slug },
+    { name, slug, parentId },
     requireAdminToken(),
   );
   revalidatePath("/admin/categories");

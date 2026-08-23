@@ -151,8 +151,17 @@ export default async function JobDetailPage({
                           </p>
                         </div>
                         {line.snapshot.unitPriceEstimateMinor !== undefined && (
-                          <span className="text-sm whitespace-nowrap">
-                            Est. {money(line.snapshot.unitPriceEstimateMinor / 100)} each
+                          <span className="text-sm text-right whitespace-nowrap">
+                            <span className="block text-text-secondary">
+                              {money(line.snapshot.unitPriceEstimateMinor / 100)} each
+                            </span>
+                            <b className="block">
+                              {money(
+                                (line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity) /
+                                  100,
+                              )}{" "}
+                              total
+                            </b>
                           </span>
                         )}
                       </div>
@@ -249,15 +258,17 @@ export default async function JobDetailPage({
           <aside className="border border-border rounded-md p-sp-4">
             <h2 className="font-display font-bold text-lg mb-sp-2">Next action</h2>
             <p className="text-text-secondary">{presentation.nextAction}</p>
-            <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
-              {job.invoiceRequestedAt
-                ? "Invoice requested. We will send payment instructions to the email on this job."
-                : quoteAccepted
-                  ? "Your final quote is accepted. Request an invoice and we will send e-transfer, cheque, or phone-card instructions."
-                  : latestQuote
-                    ? "Review and accept the latest final quote before requesting an invoice."
-                    : "Payment stays locked until design approval and final pricing are complete."}
-            </div>
+            {!alreadyPaid && (
+              <div className="bg-fill-subtle-15 border border-border rounded-md p-sp-3 text-sm mb-sp-3">
+                {job.invoiceRequestedAt
+                  ? "Invoice requested. We will send payment instructions to the email on this job."
+                  : quoteAccepted
+                    ? "Your final quote is accepted. Request an invoice and we will send e-transfer, cheque, or phone-card instructions."
+                    : latestQuote
+                      ? "Review and accept the latest final quote before requesting an invoice."
+                      : "Payment stays locked until design approval and final pricing are complete."}
+              </div>
+            )}
             {paymentReturn === "success" && !alreadyPaid ? (
               <p className="text-sm border border-border rounded-md p-sp-3 bg-fill-subtle-15">
                 Thanks — your card payment is confirming. This page updates as

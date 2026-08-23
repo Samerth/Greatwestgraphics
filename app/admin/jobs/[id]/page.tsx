@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {
   createFinalQuoteAction,
-  createProofAction,
   decideProofAction,
   issueInvoiceAction,
   recordPaymentAction,
-  transitionJobAction,
 } from "@/app/admin/actions";
+import { ProofUploadForm } from "@/components/admin/ProofUploadForm";
+import { JobTransitionForm } from "@/components/admin/JobTransitionForm";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses, type JobRequestStatus } from "@gwg/contracts";
@@ -180,50 +180,7 @@ export default async function AdminJobDetailPage({
       ) : null}
 
       {nextStatuses.length > 0 ? (
-        <form
-          action={async (formData) => {
-            "use server";
-            await transitionJobAction(
-              detail!.id,
-              String(formData.get("toStatus") || ""),
-              String(formData.get("reason") || "") || undefined,
-            );
-          }}
-          className="flex flex-wrap gap-2 items-end border border-border rounded-md p-sp-3 bg-bg-raised"
-        >
-          <label className="text-sm font-semibold">
-            Transition
-            <select
-              name="toStatus"
-              className="block mt-1 border border-border rounded-sm px-2 py-1"
-              required
-              defaultValue=""
-            >
-              <option value="" disabled>
-                Select status
-              </option>
-              {nextStatuses.map((status) => (
-                <option key={status} value={status}>
-                  {jobStatusPresentation[status].label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-semibold">
-            Reason
-            <input
-              name="reason"
-              placeholder="Required to cancel"
-              className="block mt-1 border border-border rounded-sm px-2 py-1"
-            />
-          </label>
-          <button
-            type="submit"
-            className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-          >
-            Apply
-          </button>
-        </form>
+        <JobTransitionForm jobId={detail.id} nextStatuses={nextStatuses} />
       ) : (
         <p className="border border-border rounded-md p-sp-3 text-sm text-text-secondary m-0">
           This job is in a terminal status. No further staff transitions are available.
@@ -343,6 +300,15 @@ export default async function AdminJobDetailPage({
           const snapshotTotalMinor = lineSnapshotTotalMinor(
             configuration?.pricing,
           );
+          // Falls back to a direct qty × unit-price calculation whenever the
+          // pricing snapshot doesn't carry a precomputed breakdown total —
+          // which is the common case — so a total always shows instead of
+          // silently disappearing.
+          const computedLineTotalMinor =
+            line.snapshot.unitPriceEstimateMinor != null
+              ? line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity
+              : undefined;
+          const lineTotalMinor = snapshotTotalMinor ?? computedLineTotalMinor;
           const artworkProofUrl = configuration?.artworkProofUrl;
           const designProjectId = configuration?.designProjectId;
           const roster = configuration?.roster;
@@ -363,8 +329,8 @@ export default async function AdminJobDetailPage({
                 {line.snapshot.unitPriceEstimateMinor != null
                   ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
                   : ""}
-                {snapshotTotalMinor != null
-                  ? ` · snapshot total ${moneyFromMinor(snapshotTotalMinor)}`
+                {lineTotalMinor != null
+                  ? ` · total ${moneyFromMinor(lineTotalMinor)}`
                   : ""}
               </p>
               {catalogHint && (
@@ -581,37 +547,7 @@ export default async function AdminJobDetailPage({
           ) : (
             <p className="text-sm text-text-secondary m-0">No proofs yet.</p>
           )}
-          <form action={createProofAction} className="space-y-2">
-            <input type="hidden" name="jobId" value={detail.id} />
-            <input
-              type="hidden"
-              name="customerPersonId"
-              value={detail.customerPersonId}
-            />
-            <label className="block text-sm font-semibold">
-              Proof file
-              <input
-                name="file"
-                type="file"
-                accept="image/png,image/jpeg,image/svg+xml"
-                required
-                className="block mt-1 w-full text-sm"
-              />
-            </label>
-            <label className="block text-sm font-semibold">
-              Note
-              <input
-                name="note"
-                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
-              />
-            </label>
-            <button
-              type="submit"
-              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-            >
-              Attach proof
-            </button>
-          </form>
+          <ProofUploadForm jobId={detail.id} customerPersonId={detail.customerPersonId} />
         </div>
       </section>
 

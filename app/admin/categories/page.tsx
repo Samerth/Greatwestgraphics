@@ -10,16 +10,60 @@ import { adminClient, requireAdminToken } from "@/lib/admin/api";
 
 export const dynamic = "force-dynamic";
 
+type AdminCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  sortOrder: number;
+};
+
+function toAdminCategory(row: Record<string, unknown>): AdminCategory {
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    slug: String(row.slug ?? ""),
+    parentId: row.parentId ? String(row.parentId) : null,
+    sortOrder: Number(row.sortOrder ?? 0),
+  };
+}
+
 export default async function AdminCategoriesPage() {
-  let categories: Record<string, unknown>[] = [];
+  let categories: AdminCategory[] = [];
   let error: string | undefined;
   try {
-    categories = await (await adminClient()).listCategories(requireAdminToken());
+    const raw = await (await adminClient()).listCategories(requireAdminToken());
+    categories = raw.map(toAdminCategory);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Categories unavailable";
   }
 
   const isEmpty = !error && categories.length === 0;
+
+  // Only top-level categories can be picked as a parent — keeps the taxonomy
+  // to two levels (category → subcategory) rather than infinite nesting.
+  const topLevelCategories = categories
+    .filter((cat) => !cat.parentId)
+    .map((cat) => ({ id: String(cat.id), name: String(cat.name) }));
+
+  // Group into parents with their children nested beneath, so this list
+  // mirrors the Shop mega-menu instead of one flat alphabetical list.
+  const parentCategories = categories.filter((cat) => !cat.parentId);
+  const childrenByParent = new Map<string, AdminCategory[]>();
+  for (const cat of categories) {
+    if (!cat.parentId) continue;
+    const key = String(cat.parentId);
+    const existing = childrenByParent.get(key) ?? [];
+    existing.push(cat);
+    childrenByParent.set(key, existing);
+  }
+  const orderedCategories = parentCategories.flatMap((parent) => [
+    { ...parent, depth: 0 },
+    ...(childrenByParent.get(String(parent.id)) ?? []).map((child) => ({
+      ...child,
+      depth: 1,
+    })),
+  ]);
 
   return (
     <div className="space-y-sp-5 max-w-4xl">
@@ -100,7 +144,11 @@ export default async function AdminCategoriesPage() {
           </p>
         </div>
         <form action={createCategoryAction} className="space-y-sp-3">
-          <CategoryNameFields mode="create" nameId="new-category-name" />
+          <CategoryNameFields
+            mode="create"
+            nameId="new-category-name"
+            parentOptions={topLevelCategories}
+          />
           <button
             type="submit"
             className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
@@ -130,21 +178,24 @@ export default async function AdminCategoriesPage() {
         )}
 
         <ol className="space-y-2 m-0 p-0 list-none">
-          {categories.map((cat, index) => (
+          {orderedCategories.map((cat, index) => (
             <li
               key={String(cat.id)}
-              className="border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised"
+              className={`border border-border rounded-md p-sp-3 space-y-3 bg-bg-raised ${
+                cat.depth ? "ml-6 sm:ml-10" : ""
+              }`}
             >
               <div className="flex flex-wrap justify-between gap-2 items-center">
                 <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
-                  Position {index + 1} of {categories.length}
+                  {cat.depth ? "Subcategory" : "Category"} · Position {index + 1} of{" "}
+                  {orderedCategories.length}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {index > 0 && (
                     <form
                       action={async () => {
                         "use server";
-                        const ids = categories.map((c) => String(c.id));
+                        const ids = orderedCategories.map((c) => String(c.id));
                         const next = [...ids];
                         const tmp = next[index - 1]!;
                         next[index - 1] = next[index]!;
@@ -161,11 +212,11 @@ export default async function AdminCategoriesPage() {
                       </button>
                     </form>
                   )}
-                  {index < categories.length - 1 && (
+                  {index < orderedCategories.length - 1 && (
                     <form
                       action={async () => {
                         "use server";
-                        const ids = categories.map((c) => String(c.id));
+                        const ids = orderedCategories.map((c) => String(c.id));
                         const next = [...ids];
                         const tmp = next[index + 1]!;
                         next[index + 1] = next[index]!;
@@ -196,6 +247,10 @@ export default async function AdminCategoriesPage() {
                   mode="edit"
                   defaultName={String(cat.name || "")}
                   defaultSlug={String(cat.slug || "")}
+                  defaultParentId={cat.parentId ? String(cat.parentId) : ""}
+                  parentOptions={topLevelCategories.filter(
+                    (opt) => opt.id !== String(cat.id),
+                  )}
                 />
                 <div className="flex flex-wrap gap-3 items-center">
                   <button

@@ -17,7 +17,7 @@ export function CheckoutSummary({
 
   return (
     <div className="border border-border rounded-lg p-sp-4 bg-bg-raised">
-      <h2 className="font-display font-bold mb-1">Request Estimate</h2>
+      <h2 className="font-display font-bold mb-1">Your Request Summary</h2>
       <div className="text-[13px] text-text-tertiary mb-sp-3">{t.pieces} pieces</div>
 
       <div className="space-y-1 mb-sp-3">

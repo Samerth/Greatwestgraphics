@@ -262,6 +262,63 @@ export function notificationsForEvent(
     ];
   }
 
+  if (envelope.type === "commerce.job_request.status_changed.v1") {
+    const toStatus = typeof data.toStatus === "string" ? data.toStatus : null;
+    const reason = typeof data.reason === "string" ? data.reason : null;
+    // Staff can uncheck "Email the customer" on a transition to suppress this
+    // one email without touching the job's status history. Absent (older
+    // events, or any other caller) defaults to notifying, same as everything
+    // else in this file.
+    const notifyCustomer = data.notifyCustomer !== false;
+    if (!toStatus || !notifyCustomer || !context.customerEmail) return [];
+
+    const copy: Partial<Record<string, { subject: string; body: string }>> = {
+      ready_for_production: {
+        subject: `${context.jobDisplayId}: your order is queued for production`,
+        body: "Design and payment are complete. Your order is queued and production will start once the studio releases it.",
+      },
+      in_production: {
+        subject: `${context.jobDisplayId}: your order is in production`,
+        body: "Your order is now in production. No action is needed — we will update you when it is ready.",
+      },
+      ready_for_pickup: {
+        subject: `${context.jobDisplayId}: ready for pickup`,
+        body: "Your order is ready for pickup at our Vancouver studio.",
+      },
+      shipped: {
+        subject: `${context.jobDisplayId}: your order has shipped`,
+        body: "Your order has shipped and is on its way.",
+      },
+      completed: {
+        subject: `${context.jobDisplayId}: order complete`,
+        body: "Your order is complete. Thank you for choosing Great West Graphics.",
+      },
+      rejected: {
+        subject: `${context.jobDisplayId}: we are unable to proceed`,
+        body: "We are unable to proceed with this job request as submitted.",
+      },
+      cancelled: {
+        subject: `${context.jobDisplayId}: request cancelled`,
+        body: "This job request has been cancelled.",
+      },
+    };
+
+    const entry = copy[toStatus];
+    if (!entry) return [];
+
+    return [
+      {
+        to: context.customerEmail,
+        subject: entry.subject,
+        text: lines(
+          entry.body,
+          reason ? `\n${reason}` : null,
+          `\nView the job: ${customerJobUrl(context, jobRequestId)}`,
+        ),
+      },
+    ];
+  }
+
   return [];
 }
 
