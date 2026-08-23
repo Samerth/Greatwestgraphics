@@ -39,6 +39,13 @@ import {
   decoratedDesignSides,
 } from "@/lib/commerce/studio-placement";
 import { StudioSelect } from "@/components/design/StudioSelect";
+import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
+import {
+  studioArticleLabel,
+  studioColorwaysForArticle,
+  uniqueStudioArticles,
+} from "@/lib/commerce/studio-garments";
+import { readProductSizeChart } from "@/lib/utils/size-specs";
 
 export type DesignGarmentOption = {
   id: string;
@@ -49,6 +56,8 @@ export type DesignGarmentOption = {
   backImageUrl?: string | null;
   isDark: boolean;
   slug?: string;
+  brandName?: string;
+  styleName?: string;
 };
 
 type ProductDetailVariant = {
@@ -81,6 +90,14 @@ function unitPriceMinor(
   }).sellPerPieceMinor;
 }
 
+type ProductDetailColorway = {
+  id: string;
+  slug?: string;
+  colorName: string;
+  swatchImageUrl?: string | null;
+  frontImageUrl?: string | null;
+};
+
 type ProductDetail = {
   product: {
     id: string;
@@ -95,8 +112,11 @@ type ProductDetail = {
     brandName: string;
     styleName: string;
     styleImageUrl: string | null;
+    sizeSpecs?: unknown;
   };
   variants: ProductDetailVariant[];
+  colorways?: ProductDetailColorway[];
+  sizeSpecs?: unknown;
 };
 
 const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
@@ -209,8 +229,9 @@ export function DesignStudio({
   const [aiError, setAiError] = useState<string | null>(null);
 
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
-    initialDesign?.garmentProductId ?? garments[0]?.id ?? null,
+    initialDesign?.garmentProductId ?? garmentIdOverride ?? null,
   );
+  const [changingGarment, setChangingGarment] = useState(false);
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [designQty, setDesignQty] = useState(48);
@@ -325,6 +346,8 @@ export function DesignStudio({
       slug: productDetail.product.slug,
       label: `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim(),
       colorName: productDetail.product.colorName,
+      brandName: productDetail.style.brandName,
+      styleName: productDetail.style.styleName,
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
       sideImageUrl: productDetail.product.colorSideImageUrl,
       backImageUrl: productDetail.product.colorBackImageUrl,
@@ -336,6 +359,32 @@ export function DesignStudio({
     [extraGarment, garments],
   );
   const selectedGarment = garmentOptions.find((g) => g.id === selectedGarmentId);
+  const articleOptions = useMemo(
+    () => uniqueStudioArticles(garmentOptions),
+    [garmentOptions],
+  );
+  const colorwayOptions = useMemo(
+    () =>
+      studioColorwaysForArticle({
+        selectedId: selectedGarmentId,
+        garments: garmentOptions,
+        detailColorways: productDetail?.colorways,
+      }),
+    [selectedGarmentId, garmentOptions, productDetail?.colorways],
+  );
+  const selectedArticleLabel = selectedGarment
+    ? studioArticleLabel(selectedGarment)
+    : "Garment";
+  const sizeChartHref = useMemo(() => {
+    if (!selectedGarmentId || !productDetail) return null;
+    if (!readProductSizeChart(productDetail)) return null;
+    const slug =
+      productDetail.product.slug ??
+      selectedGarment?.slug ??
+      garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
+    if (!slug) return null;
+    return `/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(selectedGarmentId)}#size-chart`;
+  }, [productDetail, selectedGarmentId, selectedGarment?.slug, garmentOptions]);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
@@ -871,25 +920,60 @@ export function DesignStudio({
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
-            <h4 className="font-display text-[16px] mb-1 truncate">
-              {garmentOptions.find((g) => g.id === selectedGarmentId)?.label ||
-                "Garment"}
-            </h4>
-            <p className="text-xs text-text-secondary m-0 mb-2 truncate">
-              Colour:{" "}
-              {garmentOptions.find((g) => g.id === selectedGarmentId)?.colorName ||
-                "—"}
-            </p>
-            <StudioSelect
-              tone="panel"
-              ariaLabel="Garment"
-              value={selectedGarmentId ?? ""}
-              onChange={(id) => setSelectedGarmentId(id || null)}
-              options={garmentOptions.map((g) => ({
-                value: g.id,
-                label: `${g.label} · ${g.colorName}`,
-              }))}
-            />
+            {selectedGarmentId ? (
+              <>
+                <h4 className="font-display text-[16px] mb-1 truncate">
+                  {selectedArticleLabel}
+                </h4>
+                <p className="text-xs text-text-secondary m-0 mb-2 truncate">
+                  Colour: {selectedGarment?.colorName || "—"}
+                </p>
+                {colorwayOptions.length > 0 && (
+                  <StudioSelect
+                    tone="panel"
+                    ariaLabel="Colour"
+                    value={selectedGarmentId}
+                    onChange={(id) => {
+                      setSelectedGarmentId(id || null);
+                      setChangingGarment(false);
+                    }}
+                    options={colorwayOptions.map((colorway) => ({
+                      value: colorway.id,
+                      label: colorway.colorName,
+                    }))}
+                  />
+                )}
+                {articleOptions.length > 1 && (
+                  <button
+                    type="button"
+                    className="mt-2 text-[12.5px] font-semibold text-text-tertiary hover:text-accent transition-colors"
+                    onClick={() => setChangingGarment((open) => !open)}
+                    aria-expanded={changingGarment}
+                  >
+                    {changingGarment ? "Cancel" : "Change garment"}
+                  </button>
+                )}
+                {changingGarment && (
+                  <div className="mt-2">
+                    <StudioArticlePicker
+                      articles={articleOptions}
+                      onPick={(id) => {
+                        setSelectedGarmentId(id);
+                        setChangingGarment(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <h4 className="font-display text-[16px] mb-2">Choose a garment</h4>
+                <StudioArticlePicker
+                  articles={articleOptions}
+                  onPick={(id) => setSelectedGarmentId(id)}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -1181,6 +1265,16 @@ export function DesignStudio({
 
           {productDetail && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
+              {sizeChartHref && groupOrder && (
+                <p className="m-0 mb-sp-3 text-xs">
+                  <a
+                    href={sizeChartHref}
+                    className="font-semibold text-accent hover:underline"
+                  >
+                    Size chart
+                  </a>
+                </p>
+              )}
               <label className="flex items-center gap-2 text-xs font-bold mb-sp-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1215,11 +1309,21 @@ export function DesignStudio({
                 <>
                   {productDetail.variants.length > 0 && (
                     <>
-                      <span className="text-xs font-bold block mb-1.5">
-                        Size:{" "}
-                        <span className="font-normal">
-                          {selectedVariant?.sizeName ?? "Select a size"}
+                      <span className="text-xs font-bold mb-1.5 flex items-center justify-between gap-2">
+                        <span>
+                          Size:{" "}
+                          <span className="font-normal">
+                            {selectedVariant?.sizeName ?? "Select a size"}
+                          </span>
                         </span>
+                        {sizeChartHref && (
+                          <a
+                            href={sizeChartHref}
+                            className="font-semibold text-accent hover:underline"
+                          >
+                            Size chart
+                          </a>
+                        )}
                       </span>
                       <div className="flex gap-1.5 flex-wrap mb-sp-3">
                         {productDetail.variants.map((v) => {

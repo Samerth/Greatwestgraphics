@@ -36,6 +36,8 @@ export default async function DesignPage({
       id: p.id,
       label: p.name,
       colorName: p.colorName,
+      brandName: p.brandName,
+      styleName: p.styleName,
       imageUrl: p.imageUrl,
       sideImageUrl: p.sideImageUrl,
       backImageUrl: p.backImageUrl,
