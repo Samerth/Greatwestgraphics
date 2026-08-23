@@ -72,6 +72,8 @@ export type DesignGarmentOption = {
   backImageUrl?: string | null;
   isDark: boolean;
   slug?: string;
+  brandName?: string;
+  styleName?: string;
   /** Vendor cost; used when the size-level cost has not loaded yet. */
   costMinor?: number;
 };
@@ -142,6 +144,8 @@ type ProductDetail = {
     sizeSpecs?: unknown;
   };
   variants: ProductDetailVariant[];
+  colorways?: ProductDetailColorway[];
+  sizeSpecs?: unknown;
   pricingConfig?: PricingConfigV2;
 };
 
