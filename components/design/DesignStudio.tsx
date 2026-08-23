@@ -43,6 +43,8 @@ export type DesignGarmentOption = {
   label: string;
   colorName: string;
   imageUrl: string | null;
+  sideImageUrl?: string | null;
+  backImageUrl?: string | null;
   isDark: boolean;
   slug?: string;
 };
@@ -322,6 +324,8 @@ export function DesignStudio({
       label: `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim(),
       colorName: productDetail.product.colorName,
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
+      sideImageUrl: productDetail.product.colorSideImageUrl,
+      backImageUrl: productDetail.product.colorBackImageUrl,
       isDark: false,
     });
   }, [productDetail, selectedGarmentId, garments]);
@@ -329,38 +333,40 @@ export function DesignStudio({
     () => (extraGarment ? [extraGarment, ...garments] : garments),
     [extraGarment, garments],
   );
+  const selectedGarment = garmentOptions.find((g) => g.id === selectedGarmentId);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
-      if (!option.imageUrl) continue;
-      const img = new window.Image();
-      img.src = option.imageUrl;
+      for (const url of [option.imageUrl, option.sideImageUrl]) {
+        if (!url) continue;
+        const img = new window.Image();
+        img.src = url;
+      }
     }
   }, [garmentOptions]);
 
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
-  // Falls back to the style's generic photo when this colorway has no
-  // front/back photo of its own — otherwise the canvas showed a blank
-  // silhouette even though a usable photo existed (same gap as the
-  // catalog grid had before its listProducts fix).
-  // Sleeves never reuse the chest photo. Vendors rarely shoot a sleeve, so
-  // those views use a side photo or a labeled template instead.
+  // Front/back can use the list photo while detail loads. Sleeves use a
+  // vendor side shot when the catalog has one — never the chest photo.
   const backdrop = garmentBackdropForSide(activeSide, {
     colorFrontImageUrl:
       productDetail?.product.colorFrontImageUrl ||
-      garmentOptions.find((g) => g.id === selectedGarmentId)?.imageUrl ||
+      selectedGarment?.imageUrl ||
       null,
-    colorSideImageUrl: productDetail?.product.colorSideImageUrl,
-    colorBackImageUrl: productDetail?.product.colorBackImageUrl,
+    colorSideImageUrl:
+      productDetail?.product.colorSideImageUrl ||
+      selectedGarment?.sideImageUrl ||
+      null,
+    colorBackImageUrl:
+      productDetail?.product.colorBackImageUrl ||
+      selectedGarment?.backImageUrl ||
+      null,
     styleImageUrl: productDetail?.style.styleImageUrl,
   });
   const currentPhoto = backdrop.url;
   const mirrorPhoto = backdrop.mirror;
-  const sleeveUsesTemplate =
-    backdrop.source === "template" &&
-    (activeSide === "left" || activeSide === "right");
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
   const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
 
@@ -1101,12 +1107,6 @@ export function DesignStudio({
             </div>
           </div>
         </div>
-
-        <p id="placement-help" className="px-sp-3 pb-sp-3 text-[12px] text-white/50">
-          {sleeveUsesTemplate
-            ? "No sleeve photo for this garment. Place the logo on the template — we print it on this sleeve. Left / center / full front is a note for the press, not a different camera."
-            : "Left chest, center, and full front tell the press where to print. They do not change the photo. Drag to move, use the corner handles to scale, and the top handle to rotate."}
-        </p>
       </div>
 
       {/* Saving, proof download and ordering belong to the main workspace,
@@ -1308,11 +1308,6 @@ export function DesignStudio({
           )}
         </div>
       </div>
-      <p className="lg:col-start-2 text-xs text-text-tertiary">
-        Sleeve views use the vendor side photo when they have one, otherwise a
-        sleeve template. Your artwork and the placement name are saved for
-        every view so staff can print the right location.
-      </p>
     </div>
   );
 }

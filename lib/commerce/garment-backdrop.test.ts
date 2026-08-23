@@ -3,6 +3,7 @@ import {
   GARMENT_FALLBACK,
   SLEEVE_TEMPLATE_LEFT,
   SLEEVE_TEMPLATE_RIGHT,
+  distinctPhoto,
   garmentBackdropForSide,
   studioCanvasImageUrl,
 } from "./garment-backdrop";
@@ -45,6 +46,21 @@ describe("garmentBackdropForSide", () => {
     );
   });
 
+  it("rejects a side URL that is just the front or style chest shot", () => {
+    expect(
+      garmentBackdropForSide("left", {
+        ...PHOTOS,
+        colorSideImageUrl: PHOTOS.colorFrontImageUrl,
+      }).url,
+    ).toBe(SLEEVE_TEMPLATE_LEFT);
+    expect(
+      garmentBackdropForSide("right", {
+        ...PHOTOS,
+        colorSideImageUrl: PHOTOS.styleImageUrl,
+      }).url,
+    ).toBe(SLEEVE_TEMPLATE_RIGHT);
+  });
+
   it("falls back to the generic tee only when even the front is missing", () => {
     expect(garmentBackdropForSide("front", {})).toEqual({
       url: GARMENT_FALLBACK,
@@ -54,8 +70,20 @@ describe("garmentBackdropForSide", () => {
   });
 });
 
+describe("distinctPhoto", () => {
+  it("drops blanks and duplicates of the avoided URLs", () => {
+    expect(distinctPhoto("  https://cdn.example/side.jpg  ")).toBe(
+      "https://cdn.example/side.jpg",
+    );
+    expect(distinctPhoto("https://cdn.example/front.jpg", PHOTOS.colorFrontImageUrl)).toBe(
+      null,
+    );
+    expect(distinctPhoto("   ", PHOTOS.colorFrontImageUrl)).toBe(null);
+  });
+});
+
 describe("studioCanvasImageUrl", () => {
-  it("leaves local templates alone so SVG sleeves paint", () => {
+  it("leaves local templates alone so sleeve JPEGs paint", () => {
     expect(
       studioCanvasImageUrl({
         url: SLEEVE_TEMPLATE_LEFT,
@@ -63,6 +91,16 @@ describe("studioCanvasImageUrl", () => {
         mirror: false,
       }),
     ).toBe(SLEEVE_TEMPLATE_LEFT);
+  });
+
+  it("does not send SVG through the image optimizer", () => {
+    expect(
+      studioCanvasImageUrl({
+        url: "/images/studio/custom.svg",
+        source: "photo",
+        mirror: false,
+      }),
+    ).toBe("/images/studio/custom.svg");
   });
 
   it("sends remote photos through the image optimizer", () => {

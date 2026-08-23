@@ -13,25 +13,44 @@ export type GarmentBackdrop = {
   mirror: boolean;
 };
 
-export const SLEEVE_TEMPLATE_LEFT = "/images/studio/sleeve-left.svg";
-export const SLEEVE_TEMPLATE_RIGHT = "/images/studio/sleeve-right.svg";
+export const SLEEVE_TEMPLATE_LEFT = "/images/studio/sleeve-left.jpg";
+export const SLEEVE_TEMPLATE_RIGHT = "/images/studio/sleeve-right.jpg";
 export const GARMENT_FALLBACK = "/images/t-shirt.png";
+
+function photoUrl(url: string | null | undefined): string | null {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  return trimmed || null;
+}
+
+/** A side/back URL that is just the chest shot again does not count. */
+export function distinctPhoto(
+  url: string | null | undefined,
+  ...avoid: Array<string | null | undefined>
+): string | null {
+  const value = photoUrl(url);
+  if (!value) return null;
+  return avoid.some((other) => photoUrl(other) === value) ? null : value;
+}
 
 /**
  * Which backdrop a studio view should draw.
  *
- * Vendors almost never send a real sleeve photo. The old fallback reused the
- * front chest shot, so Left/Right Sleeve looked empty or like the art sat on
- * the torso. Sleeves now stay on a side photo when one exists, otherwise a
- * labeled sleeve template. Front/back still use the vendor photos.
+ * Sleeves use a vendor side photo when one exists and is not the chest
+ * shot. Otherwise they use an on-body sleeve photo — never the front
+ * photo. Front/back still use the vendor photos.
  */
 export function garmentBackdropForSide(
   side: DesignSide,
   photos: GarmentPhotoSet,
 ): GarmentBackdrop {
-  const front = photos.colorFrontImageUrl || photos.styleImageUrl || null;
-  const back = photos.colorBackImageUrl || null;
-  const sidePhoto = photos.colorSideImageUrl || null;
+  const front = photoUrl(photos.colorFrontImageUrl) || photoUrl(photos.styleImageUrl);
+  const back = distinctPhoto(photos.colorBackImageUrl);
+  const sidePhoto = distinctPhoto(
+    photos.colorSideImageUrl,
+    photos.colorFrontImageUrl,
+    photos.styleImageUrl,
+  );
 
   if (side === "front") {
     return {
@@ -56,11 +75,16 @@ export function garmentBackdropForSide(
   return { url: SLEEVE_TEMPLATE_RIGHT, source: "template", mirror: false };
 }
 
-/** Konva proofs need a same-origin URL. Local templates must not go through
- * the image optimizer — Next rejects SVG there and the stage stays blank. */
+/** Konva proofs need a same-origin URL. Local templates and SVGs must not
+ * go through the image optimizer — Next rejects SVG there and the stage
+ * stays blank. */
 export function studioCanvasImageUrl(backdrop: GarmentBackdrop): string {
   if (!backdrop.url) return "";
-  if (backdrop.source === "template" || backdrop.url.startsWith("/images/")) {
+  if (
+    backdrop.source === "template" ||
+    backdrop.url.startsWith("/images/") ||
+    /\.svg(\?|#|$)/i.test(backdrop.url)
+  ) {
     return backdrop.url;
   }
   return `/_next/image?url=${encodeURIComponent(backdrop.url)}&w=640&q=75`;
