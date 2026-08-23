@@ -145,7 +145,7 @@ const THIN_COPY: Record<string, LocationSection[]> = {
     {
       heading: "What “screen printing in Saskatoon” actually means here",
       paragraphs: [
-        "We are not a Saskatoon storefront. We are a Vancouver decorator that already ships into Saskatchewan every week. You get the same ink, the same proof and a phone number that reaches the floor — ${GWG_PHONE_DISPLAY} — instead of a form that dead-ends.",
+        `We are not a Saskatoon storefront. We are a Vancouver decorator that already ships into Saskatchewan every week. You get the same ink, the same proof and a phone number that reaches the floor — ${GWG_PHONE_DISPLAY} — instead of a form that dead-ends.`,
         `Need to see garments first? The showroom is ${GWG_ADDRESS}. Otherwise start a quote with the Saskatoon in-hands date in the notes.`,
       ],
     },
@@ -218,7 +218,7 @@ const THIN_COPY: Record<string, LocationSection[]> = {
     {
       heading: null,
       paragraphs: [
-        "Maple Ridge sits at the east end of Metro Vancouver, past Pitt Meadows on the Lougheed. Custom t-shirt printing for Ridge Meadows schools, the downtown shops along 224th and the industrial yards toward the river is a local courier job for us, not a long-haul mystery. We print in Vancouver — and the number to call is ${GWG_PHONE_DISPLAY}, not a transposed line.",
+        `Maple Ridge sits at the east end of Metro Vancouver, past Pitt Meadows on the Lougheed. Custom t-shirt printing for Ridge Meadows schools, the downtown shops along 224th and the industrial yards toward the river is a local courier job for us, not a long-haul mystery. We print in Vancouver — and the number to call is ${GWG_PHONE_DISPLAY}, not a transposed line.`,
         "Most Maple Ridge tee jobs are screen print: a club mark, a company picnic, a grad class. If the art is a full-colour photo, we will talk DTF instead of burning a dozen screens for twenty shirts. You see that recommendation on the proof.",
       ],
     },
@@ -234,7 +234,7 @@ const THIN_COPY: Record<string, LocationSection[]> = {
     {
       heading: null,
       paragraphs: [
-        "Vancouver screen printing is the work this shop was built for in 1980. This URL is the t-shirt-specific version of that: cotton and tri-blend tees, a limited colour count, screens burned on East Kent, shirts through the dryer before they go in a box. It is not a product widget page and it is not a blog snippet.",
+        "Vancouver screen printing is the work this shop was built for in 1980. This URL is the t-shirt-specific version of that: cotton and tri-blend tees, a limited colour count, screens burned on East Kent, shirts through the dryer before they go in a box. It is not a leftover shop module and it is not a blog snippet.",
         "We run automatic presses for the long jobs and still have room for a 24-piece staff tee if the art is honest. You approve a mock-up that shows placement on the actual blank, not a generic silhouette.",
       ],
     },
@@ -267,7 +267,7 @@ const THIN_COPY: Record<string, LocationSection[]> = {
       heading: null,
       paragraphs: [
         "This nested URL is the Vancouver screen-printing process page — the same path WordPress used under Decoration Processes. It is not a second homepage and it is not a blank. Screen printing here means mesh, ink and a squeegee on a garment you chose, done on our Vancouver floor, with a proof before we make the screens.",
-        "Read the parent decoration-process pages if you are still choosing a method. Stay here if you already know you want screens and a Vancouver production slot. The catalogue and the quote builder are the next step, not a WooCommerce “top sellers” list pasted into the article.",
+        "Read the parent decoration-process pages if you are still choosing a method. Stay here if you already know you want screens and a Vancouver production slot. The catalogue and the quote builder are the next step, not a leftover shop module pasted into the article.",
       ],
     },
     {

@@ -34,6 +34,52 @@ Until then:
 
 Flagged pages stay `noindex` even after launch.
 
+## Analytics (existing GA4 property)
+
+The rebuild reuses **G-0M446YCNS9**. Do not create a new GA4 property.
+
+- `components/seo/GoogleAnalytics.tsx` loads `gtag.js` from the root layout (`app/layout.tsx`) on every page.
+- `tel:` and `mailto:` clicks fire two events each:
+  - `phone_click` or `email_click` (custom)
+  - `generate_lead` (GA4 recommended conversion event) with `method` = `phone` | `email`
+
+### Mark them as key events (human, in GA4 Admin)
+
+Code cannot flip the “key event” switch. After the first clicks land in the property:
+
+1. Open [analytics.google.com](https://analytics.google.com) → the **existing** GWG property (`G-0M446YCNS9`).
+2. Admin → Data display → **Events**.
+3. Find `phone_click`, `email_click`, and `generate_lead`.
+4. Toggle **Mark as key event** on each.
+5. Optional: Admin → Data display → **Key events** → confirm they appear. If Google Ads is linked, map those key events to conversions there — still the same property, no new Measurement ID.
+
+Enhanced Measurement should keep “Page changes based on browser history events” on so App Router navigations count as page views.
+
+## Google Search Console (DNS TXT — human only)
+
+This environment cannot publish a real DNS TXT record. WordPress HTML-tag or file verification **will break at cutover** when the WP theme goes away. Use a DNS TXT so verification survives the platform change.
+
+1. Sign in to [Google Search Console](https://search.google.com/search-console) as the property owner.
+2. Add a property if one is not already there:
+   - Preferred: **Domain** property `greatwestgraphics.com` (covers apex + `www`).
+   - Or **URL prefix** `https://www.greatwestgraphics.com`.
+3. Choose **DNS record** verification. Google shows a TXT record. Copy it exactly — do not invent a token. It looks like:
+   - **Type:** `TXT`
+   - **Host / Name:** `@` on the zone for `greatwestgraphics.com` (some hosts want the bare hostname `greatwestgraphics.com` instead of `@`)
+   - **Value:** `google-site-verification=TOKEN_FROM_GSC`
+4. Create that TXT record at the DNS host that currently answers for `greatwestgraphics.com`.
+5. Wait for propagation (minutes to 48 hours). Click **Verify** in Search Console.
+6. If the domain property was already verified via DNS, skip 3–5.
+
+### Sitemap after the robots flip
+
+`app/robots.ts` lists `sitemap.xml` only when `SEO_ALLOW_INDEX=true` and the site URL is not staging/localhost. Do **not** submit the sitemap while robots is `Disallow: /`.
+
+After the launch flip below:
+
+1. Search Console → Sitemaps → Add `https://www.greatwestgraphics.com/sitemap.xml`
+2. Confirm it is fetched. The sitemap includes the 154 location URLs, the 37 general-content URLs, `/locations`, and the live catalogue. It omits retired, flagged, and transactional URLs.
+
 ## Launch flip
 
 On the cutover deploy (same change that points DNS at this app):
@@ -41,7 +87,9 @@ On the cutover deploy (same change that points DNS at this app):
 1. Set `SEO_ALLOW_INDEX=true`
 2. Set `NEXT_PUBLIC_SITE_URL=https://www.greatwestgraphics.com` (or the live apex you are launching)
 3. Redeploy the web task
-4. Submit `https://www.greatwestgraphics.com/sitemap.xml` in Search Console
+4. Confirm `https://www.greatwestgraphics.com/robots.txt` allows `/` and lists the sitemap
+5. Submit `https://www.greatwestgraphics.com/sitemap.xml` in Search Console
+6. Mark `phone_click`, `email_click`, and `generate_lead` as key events in GA4 (if not already)
 
 The sitemap always lists the 154 location URLs plus the 37 general-content URLs (and the live catalogue). It omits retired, flagged, and transactional URLs.
 

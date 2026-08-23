@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { getContentPage } from "./content-pages";
 import { getLocationPage, LOCATION_PAGES } from "./location-pages";
 import {
+  featuredContentLinks,
   featuredLocationLinks,
   FEATURED_CITY_SLUGS,
   locationHubLinks,
@@ -108,11 +109,22 @@ describe("location hub", () => {
       resolve(process.cwd(), "components/home/FigmaHomeSections.tsx"),
       "utf8",
     );
+    const layout = readFileSync(
+      resolve(process.cwd(), "app/layout.tsx"),
+      "utf8",
+    );
     expect(footer).toContain('href: "/locations"');
     expect(footer).toContain('href: "/services"');
+    expect(footer).toContain('href: "/how-to-order"');
+    expect(footer).toContain('href: "/decoration-processes"');
+    expect(featuredContentLinks().map((link) => link.path)).toEqual([
+      "/how-to-order",
+      "/decoration-processes",
+    ]);
     expect(header).toContain('{ label: "Services", href: "/services" }');
     expect(header).toContain('href="/locations"');
     expect(home).toContain('href="/locations"');
     expect(home).toContain('href="/services"');
+    expect(layout).toContain("GoogleAnalytics");
   });
 });

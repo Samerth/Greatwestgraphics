@@ -237,10 +237,19 @@ export function relatedLandingLinks(
   return relatedContentLinks(page);
 }
 
+/** General-content landings that should stay one click from the footer. */
+export function featuredContentLinks(): RelatedLink[] {
+  return [
+    { path: "/how-to-order", label: "How to order" },
+    { path: "/decoration-processes", label: "Decoration processes" },
+  ];
+}
+
 /** Footer / homepage entries that must resolve to live slugs. */
 export function siteFacingSeoLinks(): RelatedLink[] {
   return [
     ...locationHubLinks(),
+    ...featuredContentLinks(),
     ...featuredLocationLinks().map((link) => ({
       path: link.href,
       label: `${link.label} printing`,

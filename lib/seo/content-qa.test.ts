@@ -52,7 +52,11 @@ describe("content QA", () => {
       expect(page!.h1.length).toBeGreaterThan(8);
       expect(h1s.has(page!.h1), page!.h1).toBe(false);
       h1s.add(page!.h1);
-      const lead = uniqueThinSections(page!)[0]?.paragraphs[0] ?? "";
+      const sections = uniqueThinSections(page!);
+      const blob = sections.flatMap((section) => section.paragraphs).join("\n");
+      expect(blob).not.toContain("${");
+      expect(blob).toContain(GWG_PHONE_DISPLAY);
+      const lead = sections[0]?.paragraphs[0] ?? "";
       expect(lead.length).toBeGreaterThan(80);
       expect(leads.has(lead), path).toBe(false);
       leads.add(lead);
@@ -78,6 +82,17 @@ describe("content QA", () => {
     for (const page of [...LOCATION_PAGES, ...CONTENT_PAGES]) {
       expect(page.h1.split("\n").length).toBe(1);
       expect(page.h1.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not leave WooCommerce widget copy in rendered location bodies", () => {
+    for (const page of LOCATION_PAGES) {
+      const blob = locationSections(page)
+        .flatMap((section) => [section.heading ?? "", ...section.paragraphs])
+        .join("\n");
+      expect(blob, page.path).not.toMatch(
+        /woocommerce|add to cart|select options|best sellers?|featured products?|related products?|product widget/i,
+      );
     }
   });
 });
