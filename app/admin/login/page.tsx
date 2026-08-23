@@ -89,7 +89,8 @@ export default async function AdminLoginPage({
             <aside className="relative hidden lg:block min-h-[740px] overflow-hidden bg-[linear-gradient(155deg,var(--color-accent)_0%,#0b1f4a_48%,#0D0D0D_100%)] text-white">
         <video
           className="absolute inset-0 w-full h-full object-cover"
-          src="/images/login_hero.mp4"
+          src="/images/Hero.mp4"
+          poster="/images/hero-press.jpg"
           autoPlay
           loop
           muted

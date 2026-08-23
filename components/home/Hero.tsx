@@ -10,13 +10,13 @@ export function Hero() {
   return (
     <section className="relative min-h-[min(100svh,820px)] sm:min-h-[78vh] flex items-end overflow-hidden text-white">
       <video
-        src="/images/Hero.mp4"
+        src="/images/login_hero.mp4"
         autoPlay={!reduceMotion}
         loop
         muted
         playsInline
         preload="metadata"
-        poster="/images/hero-press.jpg"
+        poster="/images/login-hero-poster.jpg"
         className="fill-media absolute inset-0 w-full h-full object-cover z-0"
       />
       <div className="absolute inset-0 z-[1] bg-[linear-gradient(0deg,rgba(13,13,13,.9)_0%,rgba(13,13,13,.4)_52%,rgba(13,13,13,.5)_100%)]" />
