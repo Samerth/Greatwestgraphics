@@ -13,7 +13,12 @@ const ACCENT_PRESETS = [
   { label: "Black", value: "#1A1A1A" },
 ];
 
-const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/svg+xml",
+]);
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 
 export function StoreWizard() {
@@ -87,7 +92,12 @@ export function StoreWizard() {
       const response = await fetch("/api/uploads", { method: "POST", body: form });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.url) {
-        throw new Error(payload?.error?.message || "Could not upload your logo.");
+        throw new Error(
+          payload?.error?.message ||
+            (response.ok
+              ? "Could not upload your logo."
+              : `Could not upload your logo (${response.status}).`),
+        );
       }
       return String(payload.url);
     } finally {

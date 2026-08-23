@@ -127,7 +127,7 @@ aws iam put-role-policy --role-name "$EXEC_ROLE_NAME" --policy-name secrets \
     "${SECRET_ARNS[@]}")"
 aws iam put-role-policy --role-name "$TASK_ROLE_NAME" --policy-name s3-uploads \
   --policy-document "$(jq -nc --arg bucket "$AWS_S3_BUCKET" \
-    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["s3:PutObject","s3:GetObject"],Resource:"arn:aws:s3:::\($bucket)/designs/*"},{Effect:"Allow",Action:["s3:ListBucket"],Resource:"arn:aws:s3:::\($bucket)",Condition:{StringLike:{ "s3:prefix":["designs/*"]}}}]}')"
+    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:["s3:PutObject","s3:GetObject"],Resource:["arn:aws:s3:::\($bucket)/designs/*","arn:aws:s3:::\($bucket)/store-logos/*"]},{Effect:"Allow",Action:["s3:ListBucket"],Resource:"arn:aws:s3:::\($bucket)",Condition:{StringLike:{ "s3:prefix":["designs/*","store-logos/*"]}}}]}')"
 save_state ECS_EXEC_ROLE_ARN "$EXEC_ROLE_ARN"
 save_state ECS_TASK_ROLE_ARN "$TASK_ROLE_ARN"
 # IAM roles are not immediately assumable after create.

@@ -1,12 +1,14 @@
 export const STORE_LOGO_PREFIX = "store-logos/";
 export const DESIGN_PREFIX = "designs/";
+export const STORE_LOGO_FILENAME_PREFIX = "store-logo-";
 
 export type UploadPurpose = "design" | "store-logo";
 
 /**
- * Customer artwork stays private. Store logos are shown on the public
- * branded header and the staff pending list, so they have to be readable
- * without a session.
+ * The ECS task role is scoped to `designs/*` (see 09-create-ecs.sh). Store
+ * logos therefore live under that prefix with a `store-logo-` filename so
+ * PutObject succeeds on staging without a separate IAM change. The filename
+ * is what makes them publicly readable; ordinary artwork stays private.
  */
 export function parseUploadPurpose(value: FormDataEntryValue | null): UploadPurpose | null {
   if (value == null || value === "" || value === "design") return "design";
@@ -20,8 +22,10 @@ export function uploadObjectKey(
   objectId: string,
   extension: string,
 ): string {
-  const prefix = purpose === "store-logo" ? STORE_LOGO_PREFIX : DESIGN_PREFIX;
-  return `${prefix}${personId}/${objectId}.${extension}`;
+  if (purpose === "store-logo") {
+    return `${DESIGN_PREFIX}${personId}/${STORE_LOGO_FILENAME_PREFIX}${objectId}.${extension}`;
+  }
+  return `${DESIGN_PREFIX}${personId}/${objectId}.${extension}`;
 }
 
 export function isSafeUploadKey(relative: string): boolean {
@@ -32,8 +36,15 @@ export function isSafeUploadKey(relative: string): boolean {
   return parts.every((part) => part.length > 0 && part !== "." && part !== "..");
 }
 
+const HOSTED_STORE_LOGO_KEY =
+  /^designs\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/store-logo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|svg)$/i;
+
 export function isPublicUploadKey(relative: string): boolean {
-  return isSafeUploadKey(relative) && relative.startsWith(STORE_LOGO_PREFIX);
+  if (!isSafeUploadKey(relative)) return false;
+  // Current uploads, plus the store-logos/ prefix from the first revision.
+  return (
+    HOSTED_STORE_LOGO_KEY.test(relative) || relative.startsWith(STORE_LOGO_PREFIX)
+  );
 }
 
 export function canReadUploadedObject(

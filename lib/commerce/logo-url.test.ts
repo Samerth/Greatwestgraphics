@@ -7,6 +7,9 @@ const OBJECT = "33333333-3333-4333-8333-333333333333";
 describe("isAllowedLogoUrl", () => {
   it("accepts a same-origin store-logo upload path", () => {
     expect(
+      isAllowedLogoUrl(`/api/uploads/designs/${PERSON}/store-logo-${OBJECT}.png`),
+    ).toBe(true);
+    expect(
       isAllowedLogoUrl(`/api/uploads/store-logos/${PERSON}/${OBJECT}.png`),
     ).toBe(true);
   });
