@@ -4,25 +4,28 @@ import {
   fallbackCategorySlugs,
 } from "../src/adapters/catalog/writer.js";
 
-/** The winning slug, which is what the sync actually files the product under. */
+/** Preferred slug (first match). Callers then walk the list until a tenant category exists. */
 const best = (text: string): string | undefined => fallbackCategorySlugs(text)[0];
 
 describe("fallbackCategorySlugs", () => {
   it("files the garments that previously fell through uncategorised", () => {
-    expect(best("Port Authority Quarter-Zip Pullover")).toBe(
+    expect(best("Port Authority Quarter-Zip Pullover")).toBe("quarter-zips");
+    expect(fallbackCategorySlugs("Port Authority Quarter-Zip Pullover")).toContain(
       "hoodies-and-crewnecks",
     );
-    expect(best("Sport-Tek 1/4 Zip Sweatshirt")).toBe("hoodies-and-crewnecks");
+    expect(best("Sport-Tek 1/4 Zip Sweatshirt")).toBe("quarter-zips");
     expect(best("Micro Fleece Half-Zip")).toBe("hoodies-and-crewnecks");
     expect(best("Structured Twill Cap")).toBe("hats");
     expect(best("Merino Wool Crew Socks")).toBe("socks");
   });
 
-  it("prefers safety over the garment a hi-vis piece imitates", () => {
+  it("prefers the specific hi-vis type, then safety, over the garment it imitates", () => {
     expect(best("ANSI Class 2 Safety Vest")).toBe("safety");
-    expect(best("Hi-Vis Reflective Jacket")).toBe("safety");
-    // Without the hi-vis signal it is just a vest.
-    expect(best("Puffer Vest")).toBe("vests");
+    expect(best("Hi-Vis Reflective Jacket")).toBe("hi-vis-jackets");
+    expect(fallbackCategorySlugs("Hi-Vis Reflective Jacket")).toContain("safety");
+    // Without the hi-vis signal a puffer vest is the vest subtype, then vests.
+    expect(best("Puffer Vest")).toBe("puffy");
+    expect(fallbackCategorySlugs("Puffer Vest")).toContain("vests");
   });
 
   it("no longer matches on letters buried inside an unrelated word", () => {
@@ -30,7 +33,8 @@ describe("fallbackCategorySlugs", () => {
     // in Hats and Tote Bags respectively.
     expect(best("Chatham Oxford Shirt")).not.toBe("hats");
     expect(best("Baggy Carpenter Pant")).not.toBe("tote-bags");
-    expect(best("Escape Windbreaker")).toBe("jackets");
+    expect(best("Escape Windbreaker")).toBe("windbreakers");
+    expect(fallbackCategorySlugs("Escape Windbreaker")).toContain("jackets");
   });
 
   it("still matches the categories it always did", () => {
@@ -38,7 +42,8 @@ describe("fallbackCategorySlugs", () => {
     expect(best("Classic Pique Polo")).toBe("polos");
     expect(best("Canvas Tote Bag")).toBe("tote-bags");
     expect(best("Hockey Jersey")).toBe("jerseys");
-    expect(best("Softshell Jacket")).toBe("jackets");
+    expect(best("Softshell Jacket")).toBe("softshell");
+    expect(fallbackCategorySlugs("Softshell Jacket")).toContain("jackets");
   });
 
   it("returns nothing when the text suggests no category", () => {
@@ -55,13 +60,16 @@ describe("fallbackCategorySlugs", () => {
   it("covers the names S&S's own copy of these rules used to miss", () => {
     // The S&S sync carried a private, older copy of this list until it was
     // pointed at the shared one. These are the cases that differed.
-    expect(best("Independent Trading Quarter Zip Pullover")).toBe(
+    expect(best("Independent Trading Quarter Zip Pullover")).toBe("quarter-zips");
+    expect(fallbackCategorySlugs("Independent Trading Quarter Zip Pullover")).toContain(
       "hoodies-and-crewnecks",
     );
     expect(best("ANSI Class 3 Hi-Vis Vest")).toBe("safety");
     expect(best("Ribbed Crew Socks")).toBe("socks");
-    expect(best("Stainless Steel Tumbler")).toBe("drinkware");
-    expect(best("Hardcover Journal")).toBe("notebooks");
+    expect(best("Stainless Steel Tumbler")).toBe("tumblers");
+    expect(fallbackCategorySlugs("Stainless Steel Tumbler")).toContain("drinkware");
+    expect(best("Hardcover Journal")).toBe("journals");
+    expect(fallbackCategorySlugs("Hardcover Journal")).toContain("notebooks");
     expect(best("Embroidered Patch")).toBe("patches");
   });
 
