@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { requireStaff } from "@/lib/admin/auth";
+import { mappingListHref, parseMappingTab } from "@/lib/admin/mapping-list";
+import { parsePage } from "@/lib/admin/paged-list";
 import {
   buildStoreApprovedEmail,
   publicSiteOrigin,
@@ -241,6 +243,26 @@ export async function reorderCategoryAction(orderedIds: string[]) {
   revalidatePath("/admin/categories");
 }
 
+export async function moveCategoryAction(
+  categoryId: string,
+  direction: "up" | "down",
+) {
+  const client = await adminClient();
+  const token = requireAdminToken();
+  const categories = await client.listCategories(token);
+  const ids = categories.map((row) => String(row.id));
+  const index = ids.indexOf(categoryId);
+  if (index < 0) throw new Error("Category not found");
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= ids.length) return;
+  const next = [...ids];
+  const tmp = next[swapWith]!;
+  next[swapWith] = next[index]!;
+  next[index] = tmp;
+  await client.reorderCategories(next, token);
+  revalidatePath("/admin/categories");
+}
+
 export async function saveMappingAction(formData: FormData) {
   const ssCategoryKey = String(formData.get("ssCategoryKey") || "");
   const ssCategoryLabel = String(formData.get("ssCategoryLabel") || "");
@@ -256,6 +278,13 @@ export async function saveMappingAction(formData: FormData) {
   );
   revalidatePath("/admin/categories/mappings");
   revalidatePath("/admin/catalog");
+  redirect(
+    mappingListHref({
+      tab: parseMappingTab(String(formData.get("returnTab") || "")),
+      q: String(formData.get("returnQ") || ""),
+      page: parsePage(String(formData.get("returnPage") || "")),
+    }),
+  );
 }
 
 export async function patchProductAction(
