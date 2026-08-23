@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { PricingConfigV2, StorefrontPricing } from "@gwg/contracts";
 import { priceShopperItem } from "@gwg/pricing";
 import {
@@ -146,32 +146,18 @@ function ShopperPreview({ config }: { config: PricingConfigV2 }) {
   const [mapPriceMinor, setMapPriceMinor] = useState(0);
 
   const method = methods.find((entry) => entry.key === methodKey) ?? methods[0];
-  const sample = useMemo(
-    () =>
-      priceShopperItem(config, {
-        unitCostMinor,
-        quantity: Math.max(1, quantity),
-        colourName: storefront.assumeDarkGarment ? "Navy" : "White",
-        isDark: storefront.assumeDarkGarment,
-        methodKey: method?.key,
-        colours,
-        stitchCount,
-        optionKey,
-        mapPriceMinor: mapPriceMinor > 0 ? mapPriceMinor : null,
-        decorated: true,
-      }),
-    [
-      colours,
-      config,
-      mapPriceMinor,
-      method?.key,
-      optionKey,
-      quantity,
-      stitchCount,
-      storefront.assumeDarkGarment,
-      unitCostMinor,
-    ],
-  );
+  const sample = priceShopperItem(config, {
+    unitCostMinor,
+    quantity: Math.max(1, quantity),
+    colourName: storefront.assumeDarkGarment ? "Navy" : "White",
+    isDark: storefront.assumeDarkGarment,
+    methodKey: method?.key,
+    colours,
+    stitchCount,
+    optionKey,
+    mapPriceMinor: mapPriceMinor > 0 ? mapPriceMinor : null,
+    decorated: true,
+  });
   const { summary } = sample;
 
   return (
