@@ -28,12 +28,24 @@ import {
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import {
+  backdropImageStyle,
+  garmentBackdropForSide,
+  studioCanvasImageUrl,
+} from "@/lib/commerce/garment-backdrop";
+import {
+  cartPlacementSuffix,
+  cartPrintMetaLabel,
+  decoratedDesignSides,
+} from "@/lib/commerce/studio-placement";
 
 export type DesignGarmentOption = {
   id: string;
   label: string;
   colorName: string;
   imageUrl: string | null;
+  sideImageUrl?: string | null;
+  backImageUrl?: string | null;
   isDark: boolean;
   slug?: string;
 };
@@ -313,6 +325,8 @@ export function DesignStudio({
       label: `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim(),
       colorName: productDetail.product.colorName,
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
+      sideImageUrl: productDetail.product.colorSideImageUrl,
+      backImageUrl: productDetail.product.colorBackImageUrl,
       isDark: false,
     });
   }, [productDetail, selectedGarmentId, garments]);
@@ -320,58 +334,43 @@ export function DesignStudio({
     () => (extraGarment ? [extraGarment, ...garments] : garments),
     [extraGarment, garments],
   );
+  const selectedGarment = garmentOptions.find((g) => g.id === selectedGarmentId);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
-      if (!option.imageUrl) continue;
-      const img = new window.Image();
-      img.src = option.imageUrl;
+      for (const url of [option.imageUrl, option.sideImageUrl]) {
+        if (!url) continue;
+        const img = new window.Image();
+        img.src = url;
+      }
     }
   }, [garmentOptions]);
 
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
-  // Falls back to the style's generic photo when this colorway has no
-  // front/back photo of its own — otherwise the canvas showed a blank
-  // silhouette even though a usable photo existed (same gap as the
-  // catalog grid had before its listProducts fix).
-  // Vendors supply at most one side photo and never say which sleeve it is.
-  // Rather than hide the sleeves behind that gap, both sleeve views reuse it
-  // and the right one is mirrored, so a customer can always place a sleeve
-  // print and the mockup at least faces the right way.
-  const photoBySide: Record<DesignSide, string | null> = {
-    front:
-      productDetail?.product.colorFrontImageUrl || productDetail?.style.styleImageUrl || null,
-    back:
+  // Front/back can use the list photo while detail loads. Sleeves use a
+  // vendor side shot when the catalog has one, otherwise a crop of that
+  // colorway — never the full chest frame.
+  const backdrop = garmentBackdropForSide(activeSide, {
+    colorFrontImageUrl:
+      productDetail?.product.colorFrontImageUrl ||
+      selectedGarment?.imageUrl ||
+      null,
+    colorSideImageUrl:
+      productDetail?.product.colorSideImageUrl ||
+      selectedGarment?.sideImageUrl ||
+      null,
+    colorBackImageUrl:
       productDetail?.product.colorBackImageUrl ||
-      productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
+      selectedGarment?.backImageUrl ||
       null,
-    left:
-      productDetail?.product.colorSideImageUrl ||
-      productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
-      null,
-    right:
-      productDetail?.product.colorSideImageUrl ||
-      productDetail?.product.colorFrontImageUrl ||
-      productDetail?.style.styleImageUrl ||
-      null,
-  };
-  const catalogGarmentImage =
-    garmentOptions.find((g) => g.id === selectedGarmentId)?.imageUrl ?? null;
-  const currentPhoto =
-    (productDetail ? photoBySide[activeSide] : null) || catalogGarmentImage;
-  const mirrorPhoto = activeSide === "right";
+    styleImageUrl: productDetail?.style.styleImageUrl,
+  });
+  const currentPhoto = backdrop.url;
+  const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  // Canvas pixel reads require a same-origin garment. The Next image
-  // endpoint fetches the supplier host server-side. Quality must be one
-  // Next 16 allows (75 or 90 in next.config) — q=90 used to 400 and the
-  // stage stayed empty on the dark studio background.
-  const canvasGarmentImageUrl = currentPhoto
-    ? `/_next/image?url=${encodeURIComponent(currentPhoto)}&w=640&q=75`
-    : "";
+  const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
   // customer orders whether or not the vendor photographed that angle, and
@@ -638,9 +637,7 @@ export function DesignStudio({
       return;
     }
 
-    const decorated = DesignSides.filter(
-      (side) => artworksBySide[side].length > 0,
-    );
+    const decorated = decoratedDesignSides(artworksBySide);
     if (decorated.length === 0) {
       setCartError("Place artwork on the garment first.");
       return;
@@ -692,12 +689,7 @@ export function DesignStudio({
         return;
       }
 
-      const printLabel = decorated
-        .map(
-          (side) =>
-            `${placementBySide[side]} (${DESIGN_SIDE_LABELS[side].toLowerCase()})`,
-        )
-        .join(" + ");
+      const printLabel = cartPrintMetaLabel(decorated, placementBySide);
       const productName =
         `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
       const productSlug =
@@ -861,6 +853,13 @@ export function DesignStudio({
       setSaving(false);
     }
   }
+
+  const decoratedSides = decoratedDesignSides(artworksBySide);
+  const placementSuffix = cartPlacementSuffix(
+    decoratedSides,
+    placementBySide,
+    activeSide,
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
@@ -1036,14 +1035,15 @@ export function DesignStudio({
           </div>
 
           <label className="block">
-            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
-              Where the print goes
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
+              Print location
             </span>
             <div className="relative">
               <select
                 value={placementBySide[activeSide]}
                 onChange={(e) => setPlacement(activeSide, e.target.value)}
-                className="bg-accent text-white text-base font-bold pl-3.5 pr-8 py-2.5 min-h-11 rounded-md appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30"
+                aria-label="Print location"
+                className="bg-transparent border border-white/15 text-white/70 text-[12px] font-semibold pl-2.5 pr-6 py-1 min-h-8 rounded-md appearance-none cursor-pointer hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-white/20"
               >
                 {DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => (
                   <option key={zone} value={zone} className="text-text-primary">
@@ -1052,11 +1052,11 @@ export function DesignStudio({
                 ))}
               </select>
               <svg
-                width="10"
-                height="10"
+                width="8"
+                height="8"
                 viewBox="0 0 12 8"
                 fill="none"
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-50"
               >
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -1073,15 +1073,20 @@ export function DesignStudio({
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {catalogGarmentImage && (
-                // eslint-disable-next-line @next/next/no-img-element -- paint the CDN file immediately; Konva still waits on /_next/image
-                <img
-                  src={catalogGarmentImage}
-                  alt=""
-                  className="absolute inset-0 m-auto h-full w-full object-contain pointer-events-none"
-                />
+              {currentPhoto && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
+                  <img
+                    src={currentPhoto}
+                    alt=""
+                    style={backdropImageStyle(
+                      backdrop.crop,
+                      Boolean(mirrorPhoto && !backdrop.crop),
+                    )}
+                  />
+                </div>
               )}
-              {isLoadingGarment && !catalogGarmentImage && (
+              {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
@@ -1096,6 +1101,7 @@ export function DesignStudio({
                 canvasSize={CANVAS_SIZE}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
+                garmentCrop={backdrop.crop}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChange={(next) =>
@@ -1107,11 +1113,6 @@ export function DesignStudio({
             </div>
           </div>
         </div>
-
-        <p className="px-sp-3 pb-sp-3 text-[12px] text-white/50">
-          Drag to move, use the corner handles to scale, and the top handle to
-          rotate a selected layer. Front and back layers are saved separately.
-        </p>
       </div>
 
       {/* Saving, proof download and ordering belong to the main workspace,
@@ -1302,10 +1303,10 @@ export function DesignStudio({
                 {addingToCart
                   ? "Attaching artwork…"
                   : groupOrder
-                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
+                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
-                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
+                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
                           unitPriceMinor(selectedVariant, designQty) * designQty,
                         )}`}
               </Button>
@@ -1313,11 +1314,6 @@ export function DesignStudio({
           )}
         </div>
       </div>
-      <p className="lg:col-start-2 text-xs text-text-tertiary">
-        Sleeve views reuse the vendor&apos;s side photo where one exists and a
-        representative silhouette where it does not. Your artwork and placement
-        are saved separately for every view.
-      </p>
     </div>
   );
 }

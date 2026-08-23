@@ -14,6 +14,7 @@ import type {
   VendorSyncContext,
 } from "../catalog/types.js";
 import { BUILTIN_VENDORS } from "../catalog/types.js";
+import { pickImageViews } from "../catalog/image-views.js";
 import { CatalogWriter } from "../catalog/writer.js";
 import {
   SanmarAuthError,
@@ -25,26 +26,6 @@ import {
 } from "./client.js";
 
 const VENDOR = BUILTIN_VENDORS.sanmar;
-
-/** Prefer distinct front / side / back URLs when a vendor returns a list. */
-function pickImageViews(urls: Array<string | null | undefined> | undefined): {
-  imageFront?: string;
-  imageSide?: string;
-  imageBack?: string;
-} {
-  const unique = [
-    ...new Set(
-      (urls ?? [])
-        .map((url) => (typeof url === "string" ? url.trim() : ""))
-        .filter((url) => /^https?:\/\//i.test(url)),
-    ),
-  ];
-  return {
-    imageFront: unique[0],
-    imageSide: unique[1],
-    imageBack: unique[2],
-  };
-}
 
 async function mapPool<T, R>(
   items: T[],

@@ -61,6 +61,7 @@ import {
   StripePaymentService,
 } from "./application/stripe-payment-service.js";
 import { StripeApiError, StripeClient } from "./adapters/stripe/client.js";
+import { isAllowedLogoUrl } from "./domain/logo-url.js";
 import { ProofDecisionError } from "./domain/proof-decision.js";
 import {
   orderVisibilityFor,
@@ -787,7 +788,11 @@ export function buildApp(input: {
           .max(63)
           .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
         accentColor: z.string().max(20).optional(),
-        logoUrl: z.string().url().max(2000).optional(),
+        logoUrl: z
+          .string()
+          .max(2000)
+          .refine(isAllowedLogoUrl, "Upload a logo file or provide a valid image URL.")
+          .optional(),
         tagline: z.string().max(200).optional(),
       })
       .parse(request.body);
@@ -1258,7 +1263,7 @@ export function buildApp(input: {
       return storeService.getById(auth.tenantId, storeId);
     });
 
-    app.post("/admin/accounts/stores/:storeId/status", async (request) => {
+    app.post("/admin/accounts/stores/:storeId/status", async (request, reply) => {
       assertAdmin(request, input.environment);
       const auth = await input.auth.resolve(request);
       const storeId = CanonicalIdSchema.parse(
@@ -1267,7 +1272,17 @@ export function buildApp(input: {
       const body = z
         .object({ status: z.enum(["active", "suspended"]) })
         .parse(request.body);
-      return accountService.setStoreStatus(auth.tenantId, storeId, body.status);
+      const updated = await accountService.setStoreStatus(
+        auth.tenantId,
+        storeId,
+        body.status,
+      );
+      if (!updated) {
+        return reply.code(404).send({
+          error: { code: "STORE_NOT_FOUND", message: "Store not found." },
+        });
+      }
+      return updated;
     });
 
     app.get(

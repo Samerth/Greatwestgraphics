@@ -1,13 +1,19 @@
 import Link from "next/link";
 import { setStoreStatusAction } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
+import { storeFrontPath } from "@/lib/commerce/store-approved-email";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminAccountsPage() {
+export default async function AdminAccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string; mailed?: string; slug?: string; error?: string }>;
+}) {
+  const { notice, mailed, slug, error: actionError } = await searchParams;
   let stores: Record<string, unknown>[] = [];
   let allStores: Record<string, unknown>[] = [];
-  let error: string | undefined;
+  let error: string | undefined = actionError;
   try {
     const client = await adminClient();
     const token = requireAdminToken();
@@ -18,6 +24,8 @@ export default async function AdminAccountsPage() {
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Pending stores unavailable";
   }
+
+  const storeLink = slug ? storeFrontPath(slug) : null;
 
   return (
     <div className="space-y-sp-4 max-w-4xl">
@@ -31,6 +39,30 @@ export default async function AdminAccountsPage() {
           live for a client until you say so.
         </p>
       </div>
+
+      {notice === "approved" && (
+        <p className="border border-green-200 bg-green-50 text-green-900 rounded-md p-sp-3 m-0">
+          Store approved
+          {storeLink ? (
+            <>
+              {" "}
+              — it is live at{" "}
+              <a href={storeLink} className="font-bold underline" target="_blank" rel="noreferrer">
+                {storeLink}
+              </a>
+            </>
+          ) : null}
+          .{" "}
+          {mailed === "1"
+            ? "The owner was emailed that link."
+            : "We could not email the owner. Send them the link above."}
+        </p>
+      )}
+      {notice === "rejected" && (
+        <p className="border border-border bg-fill-subtle-15 rounded-md p-sp-3 m-0">
+          Store rejected. It will not appear on the shop until you approve it.
+        </p>
+      )}
 
       {error && (
         <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
@@ -60,18 +92,13 @@ export default async function AdminAccountsPage() {
               <div>
                 <p className="font-semibold m-0">{String(store.name)}</p>
                 <p className="text-xs text-text-tertiary m-0 mt-1">
-                  {String(store.slug)}.greatwestgraphics.com
+                  {storeFrontPath(String(store.slug))}
                   {Boolean(store.tagline) ? ` · ${String(store.tagline)}` : ""}
                 </p>
               </div>
             </div>
             <div className="flex gap-2">
-              <form
-                action={async () => {
-                  "use server";
-                  await setStoreStatusAction(String(store.id), "active");
-                }}
-              >
+              <form action={setStoreStatusAction.bind(null, String(store.id), "active")}>
                 <button
                   type="submit"
                   className="text-sm font-bold px-3 py-1.5 rounded-sm bg-accent text-white"
@@ -79,12 +106,7 @@ export default async function AdminAccountsPage() {
                   Approve
                 </button>
               </form>
-              <form
-                action={async () => {
-                  "use server";
-                  await setStoreStatusAction(String(store.id), "suspended");
-                }}
-              >
+              <form action={setStoreStatusAction.bind(null, String(store.id), "suspended")}>
                 <button
                   type="submit"
                   className="text-sm font-bold px-3 py-1.5 rounded-sm border border-border"
@@ -120,7 +142,7 @@ export default async function AdminAccountsPage() {
                   </span>
                 </p>
                 <p className="text-xs text-text-tertiary m-0 mt-1">
-                  {String(store.slug)}.greatwestgraphics.com
+                  {storeFrontPath(String(store.slug))}
                 </p>
               </div>
               <Link

@@ -37,6 +37,8 @@ export default async function DesignPage({
       label: p.name,
       colorName: p.colorName,
       imageUrl: p.imageUrl,
+      sideImageUrl: p.sideImageUrl,
+      backImageUrl: p.backImageUrl,
       isDark: p.isDark,
       slug: p.slug,
     }));

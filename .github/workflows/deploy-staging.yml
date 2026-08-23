@@ -6,6 +6,15 @@ on:
     types: [completed]
     branches: [main]
 
+# Two main merges a few seconds apart used to start two of these jobs, each
+# force-new-deploying on top of AWS ECR's retarget. Four overlapping rolls
+# never reached services-stable inside the 10-minute waiter. Serialize this
+# workflow only — do not share a group with aws-ecr.yml (GitHub keeps one
+# pending run per group and would cancel the queued SHA retarget).
+concurrency:
+  group: gwg-staging-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy-staging:
     name: Deploy staging environment
@@ -57,25 +66,16 @@ jobs:
           npm ci
           npm run db:migrate
 
-      - name: Update ECS services with new images
+      # AWS ECR already retargets staging to this SHA. Only bounce if that
+      # rollout failed or the service is stuck — never stack another roll.
+      - name: Join in-progress staging roll
         run: |
           set -euo pipefail
-          for svc in gwg-staging-web gwg-staging-api; do
-            aws ecs update-service \
-              --cluster gwg-staging \
-              --service "$svc" \
-              --force-new-deployment \
-              --region ca-central-1 \
-              --query 'service.serviceName' \
-              --output text
-          done
-
-      - name: Wait for deployments
-        run: |
-          aws ecs wait services-stable \
-            --cluster gwg-staging \
-            --services gwg-staging-web gwg-staging-api \
-            --region ca-central-1
+          chmod +x infra/cloudshell/scripts/22-wait-ecs.sh
+          CLUSTER=gwg-staging \
+            JOIN_OR_ROLL=1 \
+            TIMEOUT_SECONDS=1200 \
+            infra/cloudshell/scripts/22-wait-ecs.sh
 
       - name: Run smoke tests against staging
         env:

@@ -12,15 +12,18 @@ import { useEffect, useRef, useState } from "react";
 import { Group, Image as KonvaImage, Stage, Layer } from "react-konva";
 import useImage from "use-image";
 import { ArtworkLayer, type PlacedArtwork } from "@/components/design/ArtworkLayer";
+import { cropPixels, type PhotoCrop } from "@/lib/commerce/garment-backdrop";
 
 function GarmentLayer({
   src,
   canvasSize,
   mirrored,
+  crop,
 }: {
   src: string;
   canvasSize: number;
   mirrored: boolean;
+  crop?: PhotoCrop;
 }) {
   // Same-origin URLs (/_next/image, /api/uploads) must not request CORS.
   // Next's optimizer does not send Access-Control-Allow-Origin, so
@@ -30,16 +33,22 @@ function GarmentLayer({
   const [image] = useImage(src, sameOrigin ? undefined : "anonymous");
   if (!image) return null;
 
-  const scale = Math.min(
-    canvasSize / image.naturalWidth,
-    canvasSize / image.naturalHeight,
-  );
-  const width = image.naturalWidth * scale;
-  const height = image.naturalHeight * scale;
+  const source = crop
+    ? cropPixels(crop, image.naturalWidth, image.naturalHeight)
+    : {
+        x: 0,
+        y: 0,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      };
+  const scale = Math.min(canvasSize / source.width, canvasSize / source.height);
+  const width = source.width * scale;
+  const height = source.height * scale;
 
   return (
     <KonvaImage
       image={image}
+      crop={crop ? source : undefined}
       x={mirrored ? (canvasSize + width) / 2 : (canvasSize - width) / 2}
       y={(canvasSize - height) / 2}
       width={width}
@@ -58,6 +67,7 @@ export default function DesignCanvas({
   canvasSize,
   garmentImageUrl,
   mirrorGarment,
+  garmentCrop,
   stageRef,
   onSelect,
   onChange,
@@ -68,6 +78,7 @@ export default function DesignCanvas({
   canvasSize: number;
   garmentImageUrl: string;
   mirrorGarment: boolean;
+  garmentCrop?: PhotoCrop;
    
   stageRef: React.RefObject<any>;
   onSelect: (id: string) => void;
@@ -112,6 +123,7 @@ export default function DesignCanvas({
                 src={garmentImageUrl}
                 canvasSize={canvasSize}
                 mirrored={mirrorGarment}
+                crop={garmentCrop}
               />
             ) : null}
             {artworks.map((a) => (
