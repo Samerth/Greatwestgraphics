@@ -111,7 +111,7 @@ export default async function AdminDesignsPage() {
                       ? counts
                           .map(
                             (entry) =>
-                              `${DESIGN_SIDE_LABELS[entry.side]} ${entry.count}`,
+                              `${DESIGN_SIDE_LABELS[entry.side]}: ${design.design.placementBySide[entry.side]}`,
                           )
                           .join(" · ")
                       : "No artwork placed"}
