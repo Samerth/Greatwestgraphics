@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -19,6 +19,7 @@ import type {
   JobRequestLineInput,
   PricingConfig,
   PricingConfigV2,
+  SizeSpecRow,
   SourceMetadata,
 } from "@gwg/contracts";
 
@@ -351,6 +352,11 @@ export const ssStyles = pgTable(
     modelUrl: text("model_url"),
     modelStatus: text("model_status").notNull().default("none"),
     modelSource: text("model_source"),
+    /**
+     * S&S `/v2/specs/` rows (sizeName + specName + value). Null until a sync
+     * that fetched specs; empty array means the vendor sent none.
+     */
+    sizeSpecs: jsonb("size_specs").$type<SizeSpecRow[] | null>(),
     ...auditColumns,
   },
   (table) => [
@@ -363,6 +369,16 @@ export const ssStyles = pgTable(
     index("ss_styles_tenant_vendor_idx").on(table.tenantId, table.vendor),
   ],
 );
+
+/**
+ * Catalog list / writer reads omit `size_specs` so a database that has not
+ * applied 0022 still serves the shop. Product detail loads the column
+ * separately and treats a missing column as "no specs".
+ */
+export function ssStyleColumnsWithoutSizeSpecs() {
+  const { sizeSpecs: _sizeSpecs, ...columns } = getTableColumns(ssStyles);
+  return columns;
+}
 
 /** Website product = style + color (vendor-namespaced). */
 export const ssProducts = pgTable(

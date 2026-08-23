@@ -43,6 +43,20 @@ export function schemaDriftMessage(error: unknown): string | undefined {
  * RDS managed passwords rotate. The API secret snapshots DATABASE_URL once,
  * so ECS keeps the old password and Postgres answers 28P01.
  */
+/** True when Postgres rejected a query because `column` is not on the table. */
+export function isMissingColumn(error: unknown, column: string): boolean {
+  if (postgresSqlState(error) !== "42703") return false;
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current && typeof current === "object"; depth++) {
+    const message = (current as { message?: unknown }).message;
+    if (typeof message === "string" && message.includes(column)) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export function databaseAuthMessage(error: unknown): string | undefined {
   if (postgresSqlState(error) !== "28P01") return undefined;
   return "The API could not authenticate to the database. Refresh the API secret DATABASE_URL from the RDS master-user secret.";
