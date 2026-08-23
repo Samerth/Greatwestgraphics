@@ -124,7 +124,6 @@ def load(xlsx_path):
                 "setup": {
                     "label": "Screen setup",
                     "description": "One screen burned per colour, per location. Charged every job.",
-                    # Settings!B5 / B6. Staff can raise these in admin after import.
                     # Workbook B5 is still $30; live rule is $35 new-artwork setup.
                     "newFeeMinor": 3500,
                     "repeatFeeMinor": cents(s["B6"].value),
