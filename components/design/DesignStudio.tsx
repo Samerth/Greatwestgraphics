@@ -38,6 +38,7 @@ import {
   cartPrintMetaLabel,
   decoratedDesignSides,
 } from "@/lib/commerce/studio-placement";
+import { StudioSelect } from "@/components/design/StudioSelect";
 
 export type DesignGarmentOption = {
   id: string;
@@ -866,30 +867,29 @@ export function DesignStudio({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
       {/* Product and artwork controls. Every visible control is interactive. */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px]">
-        <div className="p-sp-4 flex flex-col gap-2.5 flex-1">
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px] min-w-0">
+        <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
-          <div className="mb-sp-2">
-            <h4 className="font-display text-[16px] mb-1">
+          <div className="relative z-10 mb-sp-2 min-w-0">
+            <h4 className="font-display text-[16px] mb-1 truncate">
               {garmentOptions.find((g) => g.id === selectedGarmentId)?.label ||
                 "Garment"}
             </h4>
-            <p className="text-xs text-text-secondary m-0 mb-2">
+            <p className="text-xs text-text-secondary m-0 mb-2 truncate">
               Colour:{" "}
               {garmentOptions.find((g) => g.id === selectedGarmentId)?.colorName ||
                 "—"}
             </p>
-            <select
+            <StudioSelect
+              tone="panel"
+              ariaLabel="Garment"
               value={selectedGarmentId ?? ""}
-              onChange={(e) => setSelectedGarmentId(e.target.value || null)}
-              className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3 py-2.5 text-base font-body font-semibold text-text-primary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-            >
-              {garmentOptions.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.label} · {g.colorName}
-                </option>
-              ))}
-            </select>
+              onChange={(id) => setSelectedGarmentId(id || null)}
+              options={garmentOptions.map((g) => ({
+                value: g.id,
+                label: `${g.label} · ${g.colorName}`,
+              }))}
+            />
           </div>
         )}
 
@@ -999,12 +999,12 @@ export function DesignStudio({
           </div>
         </div>
 
-        <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3">
-          <div>
+        <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3 min-w-0">
+          <div className="min-w-0">
             <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
               Which side are you designing?
             </span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {availableViews.map((side) => (
                 <button
                   key={side}
@@ -1036,34 +1036,21 @@ export function DesignStudio({
             </div>
           </div>
 
-          <label className="block">
+          <div className="min-w-0 w-full max-w-full sm:w-auto sm:max-w-[12.5rem]">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
               Print location
             </span>
-            <div className="relative">
-              <select
-                value={placementBySide[activeSide]}
-                onChange={(e) => setPlacement(activeSide, e.target.value)}
-                aria-label="Print location"
-                className="bg-transparent border border-white/15 text-white/70 text-[12px] font-semibold pl-2.5 pr-6 py-1 min-h-8 rounded-md appearance-none cursor-pointer hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-white/20"
-              >
-                {DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => (
-                  <option key={zone} value={zone} className="text-text-primary">
-                    {zone}
-                  </option>
-                ))}
-              </select>
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 12 8"
-                fill="none"
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-50"
-              >
-                <path d="M1 1.5L6 6.5L11 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-          </label>
+            <StudioSelect
+              tone="canvas"
+              ariaLabel="Print location"
+              value={placementBySide[activeSide]}
+              onChange={(zone) => setPlacement(activeSide, zone)}
+              options={DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => ({
+                value: zone,
+                label: zone,
+              }))}
+            />
+          </div>
         </div>
 
         <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
