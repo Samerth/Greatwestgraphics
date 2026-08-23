@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   databaseAuthMessage,
+  isMissingColumn,
   postgresSqlState,
   schemaDriftMessage,
 } from "../src/db/postgres-error.js";
@@ -34,6 +35,14 @@ describe("postgres error helpers", () => {
     });
     expect(postgresSqlState(error)).toBe("28P01");
     expect(databaseAuthMessage(error)).toMatch(/master-user secret/);
+  });
+
+  it("matches a missing column by name", () => {
+    const error = Object.assign(new Error('column "size_specs" does not exist'), {
+      code: "42703",
+    });
+    expect(isMissingColumn(error, "size_specs")).toBe(true);
+    expect(isMissingColumn(error, "last_crm_sync_at")).toBe(false);
   });
 
   it("ignores application error codes that are not SQLSTATE", () => {

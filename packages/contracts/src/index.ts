@@ -117,6 +117,24 @@ export const IdempotencyKeySchema = z
 export const MinorAmountSchema = z.number().int().nonnegative();
 export type MinorAmount = z.infer<typeof MinorAmountSchema>;
 
+/** One S&S `/v2/specs/` row persisted on `ss_styles.size_specs`. */
+export const SizeSpecRowSchema = z.object({
+  specId: z.number(),
+  sizeName: z.string().min(1),
+  sizeOrder: z.string().nullable(),
+  specName: z.string().min(1),
+  value: z.string(),
+});
+export type SizeSpecRow = z.infer<typeof SizeSpecRowSchema>;
+
+/** Pivoted size chart for the shop: spec names × sizes. */
+export const SizeSpecChartSchema = z.object({
+  sizes: z.array(z.string()),
+  specNames: z.array(z.string()),
+  cells: z.record(z.record(z.string())),
+});
+export type SizeSpecChart = z.infer<typeof SizeSpecChartSchema>;
+
 export const QtyTierSchema = z.object({
   min: z.number().int().positive(),
   max: z.number().int().positive().nullable(),

@@ -84,6 +84,28 @@ export type SsStockPriceRow = {
   mapPrice?: number;
 };
 
+/**
+ * One row from GET /v2/specs/ (https://api.ssactivewear.com/v2/Specs.aspx).
+ * Styles and Products do not carry a size-chart URL; this is the measurement
+ * feed used to build vendor spec sheets.
+ */
+export type SsSpec = {
+  specID: number;
+  styleID: number;
+  sizeName: string;
+  sizeOrder?: string;
+  specName: string;
+  value: string;
+};
+
+export type SsSizeSpecRow = {
+  specId: number;
+  sizeName: string;
+  sizeOrder: string | null;
+  specName: string;
+  value: string;
+};
+
 type FetchResult<T> = {
   data: T;
   rateLimitRemaining: number | null;
@@ -95,6 +117,8 @@ const PRODUCT_FIELDS =
   "skuID_Master,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage";
 const STOCK_PRICE_FIELDS =
   "skuID_Master,sku,qty,customerPrice,mapPrice";
+const SPEC_FIELDS = "specID,styleID,sizeName,sizeOrder,specName,value";
+const SPECS_STYLE_CHUNK = 40;
 
 export class SsActivewearClient {
   private remaining = 60;
@@ -166,6 +190,44 @@ export class SsActivewearClient {
    * Bulk stock + CUSTOMER cost in one Products call (Inventory has no price).
    * Prefer this for Admin "Update stock & price".
    */
+  /**
+   * All spec-sheet rows. Prefer this on a full sync (one request) instead of
+   * one call per style.
+   */
+  async listSpecs(): Promise<SsSpec[]> {
+    const result = await this.getJson<unknown>(`/v2/specs/?fields=${SPEC_FIELDS}`);
+    return parseSsSpecs(result.data);
+  }
+
+  /** Specs for one style (`?style=` accepts StyleID / part number / brand name). */
+  async listSpecsByStyle(styleId: number): Promise<SsSpec[]> {
+    const result = await this.getJson<unknown>(
+      `/v2/specs/?style=${encodeURIComponent(String(styleId))}&fields=${SPEC_FIELDS}`,
+    );
+    return parseSsSpecs(result.data);
+  }
+
+  /**
+   * Specs for many styles in chunks. Used when the bulk `/v2/specs/` call
+   * fails (timeout / payload) so a full sync does not N+1 every style.
+   */
+  async listSpecsByStyles(styleIds: number[]): Promise<SsSpec[]> {
+    const unique = [
+      ...new Set(
+        styleIds.filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    ];
+    const rows: SsSpec[] = [];
+    for (let index = 0; index < unique.length; index += SPECS_STYLE_CHUNK) {
+      const chunk = unique.slice(index, index + SPECS_STYLE_CHUNK);
+      const result = await this.getJson<unknown>(
+        `/v2/specs/?style=${chunk.join(",")}&fields=${SPEC_FIELDS}`,
+      );
+      rows.push(...parseSsSpecs(result.data));
+    }
+    return rows;
+  }
+
   async listStockAndPrice(): Promise<SsStockPriceRow[]> {
     const result = await this.getJson<SsStockPriceRow[] | SsStockPriceRow>(
       `/v2/products/?fields=${STOCK_PRICE_FIELDS}`,
@@ -304,6 +366,75 @@ export function isDarkHex(hex: string | null | undefined): boolean {
   const b = Number.parseInt(cleaned.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance < 0.45;
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function asTrimmedString(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+/** Parse one S&S specs API object. Skips rows that cannot build a chart cell. */
+export function parseSsSpec(raw: unknown): SsSpec | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const styleID = asFiniteNumber(row.styleID);
+  const sizeName = asTrimmedString(row.sizeName);
+  const specName = asTrimmedString(row.specName);
+  if (styleID == null || !sizeName || !specName) return null;
+  const specID = asFiniteNumber(row.specID) ?? 0;
+  const sizeOrder = asTrimmedString(row.sizeOrder);
+  const value = row.value == null ? "" : String(row.value).trim();
+  return {
+    specID,
+    styleID,
+    sizeName,
+    sizeOrder: sizeOrder ?? undefined,
+    specName,
+    value,
+  };
+}
+
+export function parseSsSpecs(payload: unknown): SsSpec[] {
+  if (payload == null) return [];
+  const rows = Array.isArray(payload) ? payload : [payload];
+  const parsed: SsSpec[] = [];
+  for (const row of rows) {
+    const spec = parseSsSpec(row);
+    if (spec) parsed.push(spec);
+  }
+  return parsed;
+}
+
+export function toSizeSpecRow(spec: SsSpec): SsSizeSpecRow {
+  return {
+    specId: spec.specID,
+    sizeName: spec.sizeName,
+    sizeOrder: spec.sizeOrder ?? null,
+    specName: spec.specName,
+    value: spec.value,
+  };
+}
+
+export function groupSpecsByStyleId(
+  specs: SsSpec[],
+): Map<number, SsSizeSpecRow[]> {
+  const map = new Map<number, SsSizeSpecRow[]>();
+  for (const spec of specs) {
+    const list = map.get(spec.styleID) ?? [];
+    list.push(toSizeSpecRow(spec));
+    map.set(spec.styleID, list);
+  }
+  return map;
 }
 
 export function parseSizeOrder(raw: string | undefined | null): number {
