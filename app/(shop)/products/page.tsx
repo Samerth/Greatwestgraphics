@@ -45,7 +45,7 @@ export async function generateMetadata({
       title: "Full Catalogue",
       description:
         "Browse our full custom apparel and promotional products catalogue — apparel, headwear, bags, outerwear, safety wear and signage, screen printed or embroidered in Vancouver.",
-      alternates: { canonical: "/products" },
+      alternates: { canonical: "/shop" },
     };
   }
 

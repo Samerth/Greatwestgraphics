@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "FAQ",
   description:
     "Ordering, artwork, print methods, shipping and account support — answers from the Great West Graphics production floor.",
-  alternates: { canonical: "/faq" },
+  alternates: { canonical: "/faqs" },
 };
 
 const FAQ_CATEGORIES: Array<{

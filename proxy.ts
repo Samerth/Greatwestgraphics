@@ -6,11 +6,19 @@ import {
   STORE_COOKIE,
   STORE_SLUG_HEADER,
 } from "@/lib/commerce/store-cookie";
+import { resolveLegacyRedirect } from "@/lib/seo/redirects";
 
 const COOKIE = "gwg_staff_session";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  const seoRedirect = resolveLegacyRedirect(pathname);
+  if (seoRedirect) {
+    const url = request.nextUrl.clone();
+    url.pathname = seoRedirect;
+    return NextResponse.redirect(url, 301);
+  }
 
   if (pathname.startsWith("/admin")) {
     // Login page + credential POST (must stay public; auth sets the session cookie).

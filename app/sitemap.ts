@@ -1,17 +1,11 @@
 import type { MetadataRoute } from "next";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
+import { sitemapLegacyPaths } from "@/lib/seo/inventory";
 
 const STATIC_ROUTES = [
   { path: "/", priority: 1, frequency: "daily" as const },
-  { path: "/products", priority: 0.9, frequency: "daily" as const },
-  { path: "/quote", priority: 0.8, frequency: "weekly" as const },
   { path: "/design", priority: 0.8, frequency: "weekly" as const },
-  { path: "/contact", priority: 0.5, frequency: "monthly" as const },
-  { path: "/about", priority: 0.5, frequency: "monthly" as const },
-  { path: "/faq", priority: 0.5, frequency: "monthly" as const },
-  { path: "/shipping", priority: 0.4, frequency: "monthly" as const },
-  { path: "/privacy", priority: 0.3, frequency: "yearly" as const },
   { path: "/start", priority: 0.6, frequency: "monthly" as const },
 ];
 
@@ -40,6 +34,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: route.frequency,
     priority: route.priority,
   }));
+
+  // Preserved WordPress slugs (location/service + general content). These
+  // earn most of the organic clicks; they must stay in the sitemap at the
+  // exact path. Flagged/retired URLs are omitted.
+  for (const path of sitemapLegacyPaths()) {
+    entries.push({
+      url: `${siteUrl}${path}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    });
+  }
 
   try {
     const categories = await loadStorefrontCategories();

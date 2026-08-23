@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+
+export const metadata: Metadata = {
+  title: "Shipping & Delivery",
+  description:
+    "Pickup in Vancouver, Metro Vancouver courier, and tracked shipping across Canada and the United States.",
+  alternates: { canonical: "/shipping-delivery" },
+};
 
 const DELIVERY_OPTIONS = [
   {
