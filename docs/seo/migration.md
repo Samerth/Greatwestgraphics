@@ -18,7 +18,7 @@ WordPress used trailing slashes. This app keeps the existing Next.js convention 
 
 ## Leftovers
 
-Unmapped inventoried URLs (old blog posts, FAQ CPT rows, product-category archives, empty WP templates) **301 to the closest relevant page**. They never dump onto `/`. The explicit map lives in `lib/seo/leftovers.ts`; unknown slugs go through `closestRelevantPath()`.
+Unmapped inventoried URLs (old blog posts, FAQ CPT rows, product-category archives, empty WP templates) **301 to an explicit leftover destination**. They never dump onto `/`. The map lives in `lib/seo/leftovers.ts` (exact leftovers + a short WordPress-only prefix allowlist). Unknown slugs **404**. `closestRelevantPath()` is only for authoring leftover destinations — it is not wired into the catch-all or middleware.
 
 ## Pre-launch crawl control
 

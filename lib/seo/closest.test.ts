@@ -26,6 +26,23 @@ describe("closestRelevantPath", () => {
     );
   });
 
+  it("does not invent a new destination for live commerce prefixes", () => {
+    expect(closestRelevantPath("/cart")).toBe("/cart");
+    expect(closestRelevantPath("/checkout")).toBe("/checkout");
+    expect(closestRelevantPath("/quote/screen")).toBe("/quote/screen");
+    expect(closestRelevantPath("/product/gildan-64000")).toBe(
+      "/product/gildan-64000",
+    );
+    expect(closestRelevantPath("/products/t-shirts")).toBe("/products/t-shirts");
+    expect(closestRelevantPath("/design")).toBe("/design");
+    expect(closestRelevantPath("/studio/open")).toBe("/studio/open");
+    expect(closestRelevantPath("/admin/jobs")).toBe("/admin/jobs");
+    expect(closestRelevantPath("/api/health")).toBe("/api/health");
+    expect(closestRelevantPath("/category/t-shirts")).toBe("/category/t-shirts");
+    expect(closestRelevantPath("/store/demo")).toBe("/store/demo");
+    expect(closestRelevantPath("/account/team")).toBe("/account/team");
+  });
+
   it("keeps the two retire 301s and the four live -2 slugs distinct", () => {
     expect(retiredRedirects()["/promotional-products-burnaby-2"]).toBe(
       "/promotional-products-burnaby",

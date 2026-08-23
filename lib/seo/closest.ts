@@ -33,20 +33,19 @@ function scorePath(from: string, candidatePath: string, extra = ""): number {
 export function closestRelevantPath(path: string): string {
   const canonical = canonicalizePath(path);
   if (canonical === "/") return FALLBACK;
-  // Nested WP FAQ rows sit under /faq/..., which is also a live Next prefix.
-  // Those leftovers still have to land on the preserved /faqs page.
+
+  // Nested WP FAQ rows sit under /faq/... — leftover aliases, not the live
+  // /faq page. Resolve them before the protected-path guard.
   if (canonical.startsWith("/faq/") && canonical !== "/faq") return "/faqs";
+
   // Never invent a destination for a live commerce route.
   if (isProtectedAppPath(canonical)) return canonical;
-  if (canonical.startsWith("/faq/")) return "/faqs";
 
   const knownRedirect = resolveLegacyRedirect(canonical);
   if (knownRedirect) return knownRedirect;
 
   const leftover = LEFTOVER_REDIRECTS[canonical];
   if (leftover) return leftover;
-
-  if (canonical.startsWith("/faq/")) return "/faqs";
   if (
     canonical.startsWith("/product-category") ||
     canonical.startsWith("/product-tag")

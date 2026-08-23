@@ -9,7 +9,6 @@ export const PROTECTED_EXACT = [
   "/contact",
   "/faq",
   "/shop",
-  "/studio",
 ] as const;
 
 export const PROTECTED_TREE = [
@@ -30,6 +29,7 @@ export const PROTECTED_TREE = [
   "/s",
   "/start",
   "/store",
+  "/studio",
   "/3d-demo",
 ] as const;
 

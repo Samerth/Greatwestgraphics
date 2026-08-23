@@ -53,12 +53,12 @@ export const LEFTOVER_REDIRECTS: Record<string, string> = {
 };
 
 /**
- * WordPress-only prefix leftovers. Do not add `/product/:path*`,
- * `/products/:path*`, `/category/:path*`, `/quote/:path*`, `/design/:path*`,
- * `/cart/:path*`, `/checkout/:path*`, `/account/:path*`, `/admin/:path*`,
- * `/api/:path*`, `/store/:path*`, or `/studio/:path*` — those are live app
- * routes. These patterns are not registered in next.config; keep them unused
- * unless a source is proven WordPress-only and disjoint from the app.
+ * WordPress-only prefix leftovers. These are an explicit allowlist emitted
+ * by `nextSeoRedirects()` only when `isProtectedRedirectSource` is false.
+ * Do not add `/product/:path*`, `/products/:path*`, `/category/:path*`,
+ * `/quote/:path*`, `/design/:path*`, `/cart/:path*`, `/checkout/:path*`,
+ * `/account/:path*`, `/admin/:path*`, `/api/:path*`, `/store/:path*`, or
+ * `/studio/:path*` — those are live app routes.
  */
 export const PREFIX_REDIRECTS: Array<{
   source: string;

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CONTENT_PAGES } from "./content-pages";
 import { catchAllStaticPaths, resolveLegacyRoute } from "./inventory";
@@ -5,17 +7,58 @@ import { LOCATION_PAGES } from "./location-pages";
 import {
   isProtectedAppPath,
   isProtectedFirstSegment,
+  isProtectedRedirectSource,
+  isProtectedTreePath,
+  patternPrefix,
   PROTECTED_PREFIXES,
 } from "./protected-paths";
-import { LEFTOVER_REDIRECTS } from "./leftovers";
+import { LEFTOVER_REDIRECTS, PREFIX_REDIRECTS } from "./leftovers";
 import { getContentPage } from "./content-pages";
 import { getLocationPage } from "./location-pages";
+import { closestRelevantPath } from "./closest";
+import { canonicalizePath } from "./paths";
 import {
   nextSeoRedirects,
   resolveLegacyRedirect,
   retiredRedirects,
   transactionalRedirects,
 } from "./redirects";
+
+/** Live commerce prefixes that must never be 301'd or replaced by a landing. */
+const STEAL_PREFIXES = [
+  "/product",
+  "/products",
+  "/category",
+  "/admin",
+  "/api",
+  "/design",
+  "/studio",
+  "/quote",
+  "/store",
+  "/account",
+  "/cart",
+  "/checkout",
+] as const;
+
+const COMMERCE_PAGES = [
+  "/shop",
+  "/cart",
+  "/checkout",
+  "/quote",
+  "/faq",
+  "/products",
+  "/design",
+  "/contact",
+  "/account",
+  "/admin",
+  "/api",
+  "/studio",
+] as const;
+
+function sourceTouchesPrefix(source: string, prefix: string): boolean {
+  const base = canonicalizePath(patternPrefix(source));
+  return base === prefix || base.startsWith(`${prefix}/`);
+}
 
 const WORKING_PATHS = [
   "/cart",
@@ -116,33 +159,123 @@ describe("protected app paths", () => {
     expect(catalogue?.reuse).toBe("products");
     expect(LOCATION_PAGES.some((page) => page.path === "/shop")).toBe(false);
   });
+
+  it("does not put shop/product/cart/admin/studio/quote/design in the location slug map", () => {
+    const locationPaths = new Set(LOCATION_PAGES.map((page) => page.path));
+    for (const path of COMMERCE_PAGES) {
+      expect(locationPaths.has(path), path).toBe(false);
+    }
+    for (const page of LOCATION_PAGES) {
+      for (const prefix of STEAL_PREFIXES) {
+        expect(sourceTouchesPrefix(page.path, prefix), page.path).toBe(false);
+      }
+    }
+  });
+
+  it("does not capture working trees via leftover or prefix 301s", () => {
+    for (const from of Object.keys(LEFTOVER_REDIRECTS)) {
+      for (const prefix of STEAL_PREFIXES) {
+        expect(sourceTouchesPrefix(from, prefix), from).toBe(false);
+      }
+    }
+    for (const rule of PREFIX_REDIRECTS) {
+      expect(isProtectedRedirectSource(rule.source), rule.source).toBe(false);
+      expect(isProtectedTreePath(patternPrefix(rule.source)), rule.source).toBe(
+        false,
+      );
+      for (const prefix of STEAL_PREFIXES) {
+        expect(sourceTouchesPrefix(rule.source, prefix), rule.source).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it("blocks steal-prefix patterns from ever entering the redirect allowlist", () => {
+    for (const prefix of STEAL_PREFIXES) {
+      expect(isProtectedRedirectSource(`${prefix}/:path*`)).toBe(true);
+      expect(isProtectedAppPath(`${prefix}/example`)).toBe(true);
+      expect(closestRelevantPath(`${prefix}/example`)).toBe(`${prefix}/example`);
+    }
+    expect(isProtectedRedirectSource("/faq/:slug")).toBe(false);
+    expect(isProtectedAppPath("/faq")).toBe(true);
+    expect(isProtectedAppPath("/faq/old-question")).toBe(false);
+  });
+
+  it("keeps closestRelevantPath from rewriting live commerce pages", () => {
+    for (const path of WORKING_PATHS) {
+      const canonical = canonicalizePath(path);
+      expect(closestRelevantPath(canonical)).toBe(canonical);
+    }
+  });
 });
 
 describe("redirect allowlist", () => {
-  it("only emits the retire and transactional sources, with no loops", () => {
+  it("emits only explicit retire, transactional, leftover, and slash aliases — no loops", () => {
     const entries = nextSeoRedirects();
     const sources = new Set(entries.map((entry) => entry.source));
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.every((entry) => entry.statusCode === 301)).toBe(true);
 
     for (const entry of entries) {
-      expect(isProtectedAppPath(entry.source), entry.source).toBe(false);
+      expect(isProtectedRedirectSource(entry.source), entry.source).toBe(false);
       expect(entry.destination).not.toBe("/");
       expect(entry.destination.endsWith("/") && entry.destination !== "/").toBe(
         false,
       );
       expect(entry.source).not.toBe(entry.destination);
       expect(sources.has(entry.destination)).toBe(false);
+      for (const prefix of STEAL_PREFIXES) {
+        expect(sourceTouchesPrefix(entry.source, prefix), entry.source).toBe(
+          false,
+        );
+      }
     }
 
     expect(sources.has("/my-account")).toBe(true);
     expect(sources.has("/my-account/")).toBe(true);
     expect(sources.has("/cart")).toBe(false);
+    expect(sources.has("/cart/")).toBe(false);
     expect(sources.has("/products")).toBe(false);
     expect(sources.has("/product/:slug")).toBe(false);
     expect(sources.has("/(.*)")).toBe(false);
     expect(sources.has("/:path*")).toBe(false);
     expect(sources.has("/category/:path*")).toBe(false);
     expect(sources.has("/product/:path*")).toBe(false);
+    expect(sources.has("/products/:path*")).toBe(false);
+    expect(sources.has("/admin/:path*")).toBe(false);
+    expect(sources.has("/api/:path*")).toBe(false);
+    expect(sources.has("/design/:path*")).toBe(false);
+    expect(sources.has("/studio/:path*")).toBe(false);
+    expect(sources.has("/quote/:path*")).toBe(false);
+    expect(sources.has("/store/:path*")).toBe(false);
+    expect(sources.has("/account/:path*")).toBe(false);
+    expect(sources.has("/cart/:path*")).toBe(false);
+    expect(sources.has("/checkout/:path*")).toBe(false);
+  });
+
+  it("does not wire a greedy closest-match 301 into the catch-all or PDP", () => {
+    const catchAll = readFileSync(
+      resolve(process.cwd(), "app/(shop)/[...slug]/page.tsx"),
+      "utf8",
+    );
+    const product = readFileSync(
+      resolve(process.cwd(), "app/(shop)/product/[slug]/page.tsx"),
+      "utf8",
+    );
+    const proxy = readFileSync(resolve(process.cwd(), "proxy.ts"), "utf8");
+    const nextConfig = readFileSync(
+      resolve(process.cwd(), "next.config.ts"),
+      "utf8",
+    );
+
+    expect(catchAll).toContain("dynamicParams = false");
+    expect(catchAll).not.toContain("closestRelevantPath");
+    expect(product).not.toMatch(/permanentRedirect\(["']\/products["']\)/);
+    expect(proxy).toContain("isProtectedAppPath");
+    expect(proxy).toContain("_next/");
+    expect(proxy).toContain("api/");
+    expect(nextConfig).toContain("nextSeoRedirects()");
+    expect(nextConfig).not.toMatch(/trailingSlash:\s*true/);
   });
 });
