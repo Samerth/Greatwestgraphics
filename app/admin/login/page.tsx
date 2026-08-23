@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { BackToSite } from "@/components/shared/BackToSite";
 import { getStaffSession } from "@/lib/admin/auth";
 
 export default async function AdminLoginPage({
@@ -14,6 +15,7 @@ export default async function AdminLoginPage({
   return (
     <div className="min-h-[calc(100vh-0px)] grid lg:grid-cols-[minmax(320px,560px)_1fr] bg-bg">
       <div className="flex flex-col justify-center px-sp-5 sm:px-sp-7 py-sp-8">
+        <BackToSite href="/" showLogo />
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent m-0">
           Staff access
         </p>

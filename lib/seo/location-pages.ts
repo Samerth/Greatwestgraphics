@@ -77,10 +77,19 @@ export function locationPlaceLabel(page: LocationPage): string {
 }
 
 export function relatedLocationPages(page: LocationPage, limit = 4): LocationPage[] {
-  const sameCity = LOCATION_PAGES.filter(
-    (candidate) =>
-      candidate.path !== page.path && candidate.citySlug === page.citySlug,
+  const others = LOCATION_PAGES.filter((candidate) => candidate.path !== page.path);
+  const sameCity = others.filter((candidate) => candidate.citySlug === page.citySlug);
+  const sameKind = others.filter(
+    (candidate) => candidate.kind === page.kind && candidate.citySlug !== page.citySlug,
   );
-  const pool = sameCity.length > 0 ? sameCity : LOCATION_PAGES;
-  return pool.filter((candidate) => candidate.path !== page.path).slice(0, limit);
+  const cityTake = Math.min(sameCity.length, Math.max(1, Math.ceil(limit / 2)));
+  const picked = sameCity.slice(0, cityTake);
+  const seen = new Set(picked.map((item) => item.path));
+  for (const candidate of [...sameKind, ...others]) {
+    if (seen.has(candidate.path)) continue;
+    seen.add(candidate.path);
+    picked.push(candidate);
+    if (picked.length >= limit) break;
+  }
+  return picked;
 }

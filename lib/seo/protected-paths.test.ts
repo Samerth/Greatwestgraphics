@@ -80,6 +80,7 @@ const WORKING_PATHS = [
   "/portal",
   "/start",
   "/shop",
+  "/locations",
   "/s/acme",
   "/category/t-shirts",
   "/studio",
@@ -96,6 +97,8 @@ describe("protected app paths", () => {
     expect(isProtectedAppPath("/safety-products")).toBe(false);
     expect(isProtectedAppPath("/screen-printing-tsawwassen")).toBe(false);
     expect(isProtectedAppPath("/support")).toBe(false);
+    expect(isProtectedAppPath("/locations")).toBe(true);
+    expect(isProtectedAppPath("/locations/extra")).toBe(false);
   });
 
   it("keeps working shop/product/cart/admin/studio/quote/design paths out of the retire map", () => {
@@ -139,6 +142,7 @@ describe("protected app paths", () => {
     expect(resolveLegacyRoute("/admin/jobs").type).toBe("existing");
     expect(resolveLegacyRoute("/api/health").type).toBe("existing");
     expect(resolveLegacyRoute("/shop").type).toBe("existing");
+    expect(resolveLegacyRoute("/locations").type).toBe("existing");
     expect(resolveLegacyRoute("/faqs").type).toBe("content");
     expect(resolveLegacyRoute("/get-a-quote").type).toBe("content");
   });

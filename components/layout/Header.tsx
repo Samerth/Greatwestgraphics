@@ -32,6 +32,7 @@ function buildCategoryTree(categories: StorefrontCategory[]): CategoryNode[] {
 
 const PRIMARY_LINKS = [
   { label: "AI Design Studio", href: "/design" },
+  { label: "Services", href: "/services" },
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
 ];
@@ -486,6 +487,20 @@ export function Header({
               className="text-sm font-bold px-3 py-2"
             >
               AI Design Studio
+            </Link>
+            <Link
+              href="/services"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              Services
+            </Link>
+            <Link
+              href="/locations"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold px-3 py-2"
+            >
+              Locations
             </Link>
             <Link
               href="/quote"
