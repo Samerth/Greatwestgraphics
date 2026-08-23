@@ -6,6 +6,10 @@ import {
   type DesignSide,
 } from "@gwg/contracts";
 import { DesignSidePreview } from "@/components/design/DesignSidePreview";
+import {
+  garmentBackdrops,
+  type GarmentBackdrop,
+} from "@/lib/commerce/garment-backdrop";
 import { adminToken, getStaffSession } from "@/lib/admin/auth";
 import {
   formatDesignTimestamp,
@@ -16,40 +20,31 @@ import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 
 export const dynamic = "force-dynamic";
 
-type GarmentImages = Record<DesignSide, string | null>;
-
-const NO_GARMENT_IMAGES: GarmentImages = {
-  front: null,
-  back: null,
-  left: null,
-  right: null,
-};
-
 /**
- * The garment photo is backdrop only — the placement lives in the artwork
- * transforms — so a catalog lookup that fails degrades to the neutral canvas
- * rather than taking the review page down with it.
+ * The garment photo is backdrop only — the print zone lives in
+ * `placementBySide` plus the artwork transforms — so a catalog lookup that
+ * fails degrades to the sleeve/tee templates rather than taking the page down.
  */
-async function loadGarmentImages(
+async function loadGarmentBackdrops(
   garmentProductId: string | null,
-): Promise<GarmentImages> {
-  if (!garmentProductId) return NO_GARMENT_IMAGES;
+): Promise<Record<DesignSide, GarmentBackdrop>> {
+  if (!garmentProductId) return garmentBackdrops({});
   try {
     const detail = await (
       await createCommerceClient()
     ).getCatalogProduct(garmentProductId, adminToken());
     const product = (detail.product ?? {}) as Record<string, unknown>;
-    const pick = (key: string) =>
-      typeof product[key] === "string" && product[key] ? product[key] : null;
-    const sideImage = pick("colorSideImageUrl");
-    return {
-      front: pick("colorFrontImageUrl"),
-      back: pick("colorBackImageUrl"),
-      left: sideImage,
-      right: sideImage,
-    };
+    const style = (detail.style ?? {}) as Record<string, unknown>;
+    const pick = (record: Record<string, unknown>, key: string) =>
+      typeof record[key] === "string" && record[key] ? String(record[key]) : null;
+    return garmentBackdrops({
+      colorFrontImageUrl: pick(product, "colorFrontImageUrl"),
+      colorSideImageUrl: pick(product, "colorSideImageUrl"),
+      colorBackImageUrl: pick(product, "colorBackImageUrl"),
+      styleImageUrl: pick(style, "styleImageUrl"),
+    });
   } catch {
-    return NO_GARMENT_IMAGES;
+    return garmentBackdrops({});
   }
 }
 
@@ -92,7 +87,7 @@ export default async function AdminDesignDetailPage({
   }
 
   const design = loaded;
-  const garmentImages = await loadGarmentImages(design.garmentProductId);
+  const garmentBackdropsBySide = await loadGarmentBackdrops(design.garmentProductId);
 
   return (
     <div className="space-y-sp-4 max-w-5xl">
@@ -187,7 +182,8 @@ export default async function AdminDesignDetailPage({
                   <DesignSidePreview
                     side={side}
                     design={design.design}
-                    garmentImageUrl={garmentImages[side]}
+                    garmentImageUrl={garmentBackdropsBySide[side].url}
+                    mirrorGarment={garmentBackdropsBySide[side].mirror}
                     size={200}
                   />
                 </div>
