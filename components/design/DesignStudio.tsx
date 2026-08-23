@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DESIGN_CANVAS_SIZE,
@@ -1349,9 +1350,9 @@ export function DesignStudio({
             </div>
           ) : (
             <p className="text-[12.5px] text-text-tertiary border border-border rounded-md p-sp-3 bg-bg">
-              <a href="/account?next=/design" className="text-accent font-bold">
+              <Link href="/account?next=/design" className="text-accent font-bold">
                 Sign in
-              </a>{" "}
+              </Link>{" "}
               to keep this mockup on your account. The artwork stays on this
               canvas when you come back — then we upload it so staff can open
               the same file.
