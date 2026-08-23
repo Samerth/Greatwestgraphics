@@ -126,7 +126,7 @@ describe("imported config", () => {
       "embroidery",
       "dtf",
     ]);
-    expect(screen.setup.newFeeMinor).toBe(3500);
+    expect(screen.setup.newFeeMinor).toBe(3000);
     expect(screen.setup.repeatFeeMinor).toBe(3000);
     expect(screen.setup.frequency).toBe("perJob");
     expect(embroidery.setup.frequency).toBe("perCustomer");
@@ -198,11 +198,10 @@ describe("workbook parity", () => {
    * Workbook: markup 2.03, garment $558.25, print $420.94, setup $30,
    * total before tax $1,009.19.
    *
-   * Ours: $1,014.00. Setup is $35 because the client raised new-artwork setup,
-   * and the rest is rounding — the workbook extends unrounded unit prices
-   * ($5.5825 x 100), while we round the unit price first so a customer can
-   * always multiply the printed unit price by the quantity and get the line
-   * total. Total difference on this quote is 19 cents.
+   * Ours: $1,009.00. Setup matches the workbook $30. The remaining 19 cents
+   * is rounding — the workbook extends unrounded unit prices ($5.5825 x 100),
+   * while we round the unit price first so a customer can always multiply the
+   * printed unit price by the quantity and get the line total.
    */
   it("reproduces the sample quote line for line", () => {
     const result = calculateQuoteV2(
@@ -243,11 +242,10 @@ describe("workbook parity", () => {
     expect(print.extendedAmountMinor + dark.extendedAmountMinor).toBe(42100);
 
     const setup = result.lines.find((line) => line.kind === "setup")!;
-    expect(setup.extendedAmountMinor).toBe(3500);
+    expect(setup.extendedAmountMinor).toBe(3000);
 
-    expect(result.totals.totalMinor).toBe(101400);
-    // Within a rounding hair of the workbook's $1,009.19 + the $5 setup change.
-    expect(Math.abs(result.totals.totalMinor - 101419)).toBeLessThanOrEqual(25);
+    expect(result.totals.totalMinor).toBe(100900);
+    expect(Math.abs(result.totals.totalMinor - 100919)).toBeLessThanOrEqual(25);
   });
 });
 
@@ -432,11 +430,11 @@ describe("setup sharing", () => {
       config,
     );
 
-    // One logo, 2 colours x $35 = $70, split 100:50.
+    // One logo, 2 colours x $30 = $60, split 100:50.
     const setups = result.lines.filter((line) => line.kind === "setup");
     expect(setups).toHaveLength(2);
-    expect(setups.map((line) => line.extendedAmountMinor)).toEqual([4667, 2333]);
-    expect(result.totals.setupMinor).toBe(7000);
+    expect(setups.map((line) => line.extendedAmountMinor)).toEqual([4000, 2000]);
+    expect(result.totals.setupMinor).toBe(6000);
   });
 
   it("charges separate setups when the logos differ", () => {
@@ -467,7 +465,7 @@ describe("setup sharing", () => {
       }),
       config,
     );
-    expect(result.totals.setupMinor).toBe(7000);
+    expect(result.totals.setupMinor).toBe(6000);
   });
 });
 

@@ -56,7 +56,7 @@ describe("priceShopperItem", () => {
       methodKey: "screenPrint",
       colours: 1,
     });
-    expect(summary.setupMinor).toBe(3500);
+    expect(summary.setupMinor).toBe(3000);
     expect(summary.totalMinor).toBe(
       summary.garmentMinor + summary.decorationMinor + summary.setupMinor,
     );
@@ -124,7 +124,7 @@ describe("priceShopperQuote", () => {
     });
     const admin = calculateQuoteV2(priced.input, config);
     expect(priced.totalMinor).toBe(admin.totals.totalMinor);
-    expect(priced.breakdown.totals.setupMinor).toBe(10500);
+    expect(priced.breakdown.totals.setupMinor).toBe(9000);
     expect(priced.cartUnit * priced.breakdown.totalQuantity).toBeCloseTo(
       priced.totalMinor / 100,
       10,
@@ -170,7 +170,7 @@ describe("priceShopperQuote", () => {
       locations: ["front", "back"],
       shareSetup: true,
     });
-    expect(shared.breakdown.totals.setupMinor).toBe(3500);
+    expect(shared.breakdown.totals.setupMinor).toBe(3000);
   });
 
   it("charges setup per placement when artwork is independent", () => {
@@ -186,6 +186,6 @@ describe("priceShopperQuote", () => {
     const setupTotal = independent.breakdown.lines
       .filter((line) => line.kind === "setup")
       .reduce((sum, line) => sum + line.extendedAmountMinor, 0);
-    expect(setupTotal).toBe(7000);
+    expect(setupTotal).toBe(6000);
   });
 });

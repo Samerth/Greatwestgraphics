@@ -2122,7 +2122,7 @@ export const PRICING_MASTER_V2: PricingConfigV2 = {
       "setup": {
         "label": "Screen setup",
         "description": "One screen burned per colour, per location. Charged every job.",
-        "newFeeMinor": 3500,
+        "newFeeMinor": 3000,
         "repeatFeeMinor": 3000,
         "per": "colour",
         "frequency": "perJob",
