@@ -446,14 +446,20 @@ export async function setStoreCategoryVisibilityAction(
   revalidatePath(`/admin/accounts/${storeId}`);
 }
 
+export interface PricingAdjustmentState {
+  error?: string;
+  savedAt?: number;
+}
+
 export async function setStorePricingAdjustmentAction(
   storeId: string,
+  _previous: PricingAdjustmentState,
   formData: FormData,
-) {
+): Promise<PricingAdjustmentState> {
   const raw = String(formData.get("percent") ?? "").trim();
   const enteredPercent = raw === "" ? null : Number(raw);
   if (enteredPercent != null && !Number.isFinite(enteredPercent)) {
-    throw new Error("Pricing adjustment must be a number");
+    return { error: "Pricing adjustment must be a number" };
   }
   // The form takes whole percentage points (the label and placeholder say
   // "-10 for 10% off"), but the API stores and applies a decimal fraction
@@ -463,15 +469,25 @@ export async function setStorePricingAdjustmentAction(
   // human-facing number becomes the API's number.
   const percent = enteredPercent == null ? null : enteredPercent / 100;
   if (percent != null && (percent < -0.9 || percent > 2)) {
-    throw new Error(
-      "Pricing adjustment must be between -90 and 200 (percent).",
-    );
+    return {
+      error: "Pricing adjustment must be between -90 and 200 (percent).",
+    };
   }
-  const client = await adminClient();
-  await client.setStorePricingAdjustment(
-    storeId,
-    percent,
-    requireAdminToken(),
-  );
+  try {
+    const client = await adminClient();
+    await client.setStorePricingAdjustment(
+      storeId,
+      percent,
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "Could not save the pricing adjustment.",
+    };
+  }
   revalidatePath(`/admin/accounts/${storeId}`);
+  return { savedAt: Date.now() };
 }
