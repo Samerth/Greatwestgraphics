@@ -29,9 +29,10 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import {
-  garmentBackdropForSide,
-  studioCanvasImageUrl,
-} from "@/lib/commerce/garment-backdrop";
+  cartPlacementSuffix,
+  cartPrintMetaLabel,
+  decoratedDesignSides,
+} from "@/lib/commerce/studio-placement";
 
 export type DesignGarmentOption = {
   id: string;
@@ -624,9 +625,7 @@ export function DesignStudio({
       return;
     }
 
-    const decorated = DesignSides.filter(
-      (side) => artworksBySide[side].length > 0,
-    );
+    const decorated = decoratedDesignSides(artworksBySide);
     if (decorated.length === 0) {
       setCartError("Place artwork on the garment first.");
       return;
@@ -678,12 +677,7 @@ export function DesignStudio({
         return;
       }
 
-      const printLabel = decorated
-        .map(
-          (side) =>
-            `${placementBySide[side]} (${DESIGN_SIDE_LABELS[side].toLowerCase()})`,
-        )
-        .join(" + ");
+      const printLabel = cartPrintMetaLabel(decorated, placementBySide);
       const productName =
         `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
       const productSlug =
@@ -847,6 +841,13 @@ export function DesignStudio({
       setSaving(false);
     }
   }
+
+  const decoratedSides = decoratedDesignSides(artworksBySide);
+  const placementSuffix = cartPlacementSuffix(
+    decoratedSides,
+    placementBySide,
+    activeSide,
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
@@ -1022,15 +1023,15 @@ export function DesignStudio({
           </div>
 
           <label className="block">
-            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
-              Where the print goes
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
+              Print location
             </span>
             <div className="relative">
               <select
                 value={placementBySide[activeSide]}
                 onChange={(e) => setPlacement(activeSide, e.target.value)}
-                aria-describedby="placement-help"
-                className="bg-accent text-white text-base font-bold pl-3.5 pr-8 py-2.5 min-h-11 rounded-md appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30"
+                aria-label="Print location"
+                className="bg-transparent border border-white/15 text-white/70 text-[12px] font-semibold pl-2.5 pr-6 py-1 min-h-8 rounded-md appearance-none cursor-pointer hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-white/20"
               >
                 {DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => (
                   <option key={zone} value={zone} className="text-text-primary">
@@ -1039,11 +1040,11 @@ export function DesignStudio({
                 ))}
               </select>
               <svg
-                width="10"
-                height="10"
+                width="8"
+                height="8"
                 viewBox="0 0 12 8"
                 fill="none"
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-50"
               >
                 <path d="M1 1.5L6 6.5L11 1.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -1292,10 +1293,10 @@ export function DesignStudio({
                 {addingToCart
                   ? "Attaching artwork…"
                   : groupOrder
-                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart`
+                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
-                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${moneyFromMinor(
+                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
                           unitPriceMinor(selectedVariant, designQty) * designQty,
                         )}`}
               </Button>
