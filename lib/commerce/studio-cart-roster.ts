@@ -1,5 +1,5 @@
 import type { RosterDecor } from "@gwg/contracts";
-import { rosterDecorSummary } from "@/lib/commerce/studio-roster-decor";
+import { rosterDecorSummary } from "./studio-roster-decor";
 
 /** Draft row from the Names tab editor (empty placeholders are allowed). */
 export type StudioRosterDraftRow = {
