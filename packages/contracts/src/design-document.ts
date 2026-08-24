@@ -19,12 +19,13 @@ export const DESIGN_SIDE_LABELS: Record<DesignSide, string> = {
 };
 
 /**
- * Where on a given view the print lands. This is production intent, not
- * geometry — the artwork transform already says exactly where the layer sits,
- * but a press operator reads the zone name, so it has to survive a save.
+ * Named slot on a view. The artwork transform is the exact geometry; this
+ * string is what a press operator reads and what the studio uses as the
+ * left / center / right (or full) alignment preset inside the print area.
+ * It has to survive a save.
  */
 export const DESIGN_PLACEMENT_ZONES: Record<DesignSide, readonly string[]> = {
-  front: ["Left Chest", "Center Chest", "Full Front"],
+  front: ["Left Chest", "Center Chest", "Right Chest", "Full Front"],
   back: ["Upper Back", "Full Back"],
   left: ["Left Sleeve", "Left Side Panel"],
   right: ["Right Sleeve", "Right Side Panel"],
@@ -59,7 +60,7 @@ export interface DesignDocument {
 
 export function defaultPlacementBySide(): Record<DesignSide, string> {
   return {
-    front: DESIGN_PLACEMENT_ZONES.front[0]!,
+    front: "Center Chest",
     back: DESIGN_PLACEMENT_ZONES.back[0]!,
     left: DESIGN_PLACEMENT_ZONES.left[0]!,
     right: DESIGN_PLACEMENT_ZONES.right[0]!,
