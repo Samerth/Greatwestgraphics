@@ -25,9 +25,8 @@ export default async function DesignPage({
 }) {
   const { loadDesignId, garmentId } = await searchParams;
   const [catalog, session, pricingConfig] = await Promise.all([
-    // Catalog is sorted brand-then-style alphabetically and Adidas alone
-    // has 170 colourways — a small limit would silently only ever offer
-    // Adidas garments. 150 trades some brand variety for lower latency.
+    // Grouped by style so 150 rows are 150 garments, not 150 Adidas
+    // colourways. Colour switching uses the product-detail colorways list.
     loadStorefrontCatalog({ limit: 150 }),
     getCustomerSession(),
     loadPublishedPricingV2(),

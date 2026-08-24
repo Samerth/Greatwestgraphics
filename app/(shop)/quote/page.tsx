@@ -58,10 +58,13 @@ export default async function QuotePage({
   const params = await searchParams;
   const pricingConfig = await loadPublishedPricingV2();
 
-  // Sorted brand-then-style alphabetically, and Adidas alone has 170
-  // colourways — a small limit would silently only ever offer Adidas.
+  // Ungrouped so "Pick your product" can still offer every colourway.
   // 150 is a conservative trade-off between brand variety and latency.
-  const catalog = await loadStorefrontCatalog({ limit: 150 });
+  const catalog = await loadStorefrontCatalog({
+    limit: 150,
+    // Quote colour pills are built from the colourway rows themselves.
+    groupByStyle: false,
+  });
   const catalogProducts = catalog.products.map((p) => ({
     id: p.id,
     label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),

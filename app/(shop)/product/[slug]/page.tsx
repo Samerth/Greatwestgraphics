@@ -426,7 +426,12 @@ export default async function ProductPage({
   // dead end for anyone who doesn't notice the link and for every crawler.
   // The lookup is a targeted search rather than a scan of the first N
   // products, so it resolves slugs from anywhere in a five-figure catalog.
-  const bySlug = await loadStorefrontCatalog({ search: slug, limit: 60 });
+  const bySlug = await loadStorefrontCatalog({
+    search: slug,
+    limit: 60,
+    // Must see every colourway slug, not one representative per style.
+    groupByStyle: false,
+  });
   const match = bySlug.products.find((p) => p.slug === slug);
   if (match) {
     redirect(`/product/${encodeURIComponent(match.slug)}?id=${match.id}`);

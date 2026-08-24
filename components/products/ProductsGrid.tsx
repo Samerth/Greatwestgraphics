@@ -10,6 +10,7 @@ import type {
   StorefrontCatalogProduct,
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
+import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -120,6 +121,7 @@ export function ProductsGrid({
       brandName: p.brandName,
       styleName: p.styleName,
       colorName: p.colorName,
+      colorwayCount: p.colorwayCount,
       priceFrom: p.priceFrom,
       imageUrl: p.imageUrl,
       available: p.available,
@@ -364,20 +366,12 @@ export function ProductsGrid({
                   )}
                 </Link>
 
-                {/* Three fixtures used to sit in this card and were rendered
-                    identically on all ten thousand of them: an empty grey
-                    swatch labelled "+ colours" with no count behind it, and
-                    "S – 3XL" / "Min. 24" size and minimum badges. The size
-                    range was wrong for every cap, tote and banner in the
-                    catalogue, and "Min. 24" contradicted the minimum the
-                    quote builder actually enforces, which is 12. Real size
-                    ranges and colourway counts exist on the style record but
-                    are not carried on the listing payload, so showing them
-                    here needs a contract change rather than a literal. */}
+                {/* Colourway count is real (from the grouped listing). Size
+                    range and minimums still stay off the card — they vary by
+                    garment and the listing payload does not carry them. */}
                 <div className="p-sp-3 flex flex-col flex-1">
                   <p className="text-xs text-text-tertiary mb-1">
-                    {tile.brandName}
-                    {tile.colorName ? ` · ${tile.colorName}` : ""}
+                    {catalogCardSubtitle(tile)}
                   </p>
                   <h3 className="font-display font-bold text-[17px] m-0 leading-snug">
                     <Link href={tile.href} className="hover:text-accent transition-colors">

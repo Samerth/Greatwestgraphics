@@ -23,8 +23,7 @@ export default async function AdminDesignEditPage({
   try {
     const [row, loadedCatalog] = await Promise.all([
       (await createCommerceClient()).getAdminDesignProject(adminToken(), id),
-      // Same limit the storefront studio uses: the catalog is sorted
-      // brand-then-style, so a small limit only ever offers one brand.
+      // Same grouped storefront listing the studio uses (one row per style).
       loadStorefrontCatalog({ limit: 150 }),
     ]);
     loaded = toAdminDesignView(row);

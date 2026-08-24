@@ -157,8 +157,9 @@ export default async function ProductsPage({
           </h1>
           {!catalogFailed && (
             <p className="text-text-secondary max-w-[60ch] mt-sp-3">
-              Live blanks from the local S&amp;S catalog. Out-of-stock colours
-              stay visible as unavailable.
+              Live blanks from the local S&amp;S catalog. Each style is one
+              product — pick the colour on the product page. Out-of-stock
+              styles stay visible as unavailable.
             </p>
           )}
         </Container>
