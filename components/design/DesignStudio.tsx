@@ -45,6 +45,7 @@ import {
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
@@ -301,6 +302,10 @@ export function DesignStudio({
   const [pendingUploads, setPendingUploads] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [showAiPrompt, setShowAiPrompt] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
     initialDesign?.garmentProductId ?? garmentIdOverride ?? null,
@@ -819,6 +824,40 @@ export function DesignStudio({
     setSelectedId(null);
   }
 
+  async function generateConcept() {
+    const prompt = aiPrompt.trim();
+    if (!prompt) return;
+    setGenerating(true);
+    setAiError(null);
+    const seed = Math.floor(Math.random() * 1_000_000_000);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+      `${prompt}, print-ready logo design, clean vector art style, isolated on white background`,
+    )}?width=1024&height=1024&seed=${seed}&nologo=true`;
+
+    // Uncached prompts commonly take 20-60s to render on Pollinations'
+    // free tier — fetch with a generous timeout so a real failure is
+    // distinguishable from "still working", instead of a bare <img> that
+    // just hangs with no feedback either way.
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
+      if (!res.ok) throw new Error(`Generation failed (${res.status})`);
+      const blob = await res.blob();
+      // Generated art goes through the same upload as an uploaded logo. It
+      // used to live only as an object URL, so a design built entirely from
+      // an AI concept saved as an empty design — the worst version of the
+      // bug, because the customer had nothing on disk to re-upload.
+      await addArtworkFromBlob(blob, "ai-concept.png");
+      setShowAiPrompt(false);
+      setAiPrompt("");
+    } catch {
+      setAiError(
+        "That took too long or failed — the free generator can be slow. Try again or try a shorter prompt.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   /**
    * Reading pixels back off the stage throws once any layer is a cross-origin
    * image the host did not send CORS headers for. That became a live risk the
@@ -1199,6 +1238,43 @@ export function DesignStudio({
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
+
+        {SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
+        <button
+          onClick={() => setShowAiPrompt((open) => !open)}
+          className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
+        >
+          Generate an AI concept
+        </button>
+        ) : null}
+
+        {SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
+          <div className="rounded-md border border-border bg-bg p-sp-3">
+            <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
+              Describe your concept
+            </label>
+            <textarea
+              value={aiPrompt}
+              onChange={(event) => setAiPrompt(event.target.value)}
+              placeholder="Vintage mountain badge for a staff tee"
+              className="w-full min-h-24 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            />
+            <button
+              onClick={generateConcept}
+              disabled={!aiPrompt.trim() || generating}
+              className="mt-2 w-full rounded-sm bg-text-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
+            >
+              {generating ? "Building concept… (can take up to a minute)" : "Generate preview"}
+            </button>
+            {aiError && (
+              <p className="text-[11px] leading-4 text-red-600 mt-2">{aiError}</p>
+            )}
+            <p className="text-[11px] leading-4 text-text-tertiary mt-2">
+              AI-generated starting point — review and adjust before printing.
+              First-time prompts can take up to a minute to render.
+            </p>
+          </div>
+        )}
 
         {artworks.length > 0 && (
           <div className="mt-sp-3">
