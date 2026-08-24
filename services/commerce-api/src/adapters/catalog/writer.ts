@@ -244,7 +244,7 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   {
     pattern:
       /\b(hoodie|hooded|crewneck|sweatshirt|sweater|fleece|pullover|quarter[- ]?zip|1\/4[- ]?zip|half[- ]?zip|1\/2[- ]?zip)\b/i,
-    categorySlug: "hoodies-and-crewnecks",
+    categorySlug: "hoodies-sweatshirts",
   },
   { pattern: /\b(tee|tees|t-shirt|tshirt|t shirt)\b/i, categorySlug: "t-shirts" },
   {

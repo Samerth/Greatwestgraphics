@@ -1209,6 +1209,7 @@ export class CommerceClient {
       {
         method: "DELETE",
         headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({}),
       },
     );
   }

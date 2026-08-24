@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStaffSession } from "@/lib/admin/auth";
 import { getCustomerSession } from "@/lib/auth/session";
+import { getGuestId } from "@/lib/auth/guest-identity";
 import { getImageStore } from "@/lib/storage";
 import {
   canReadUploadedObject,
@@ -28,10 +29,17 @@ export async function GET(
   if (!publicLogo) {
     const staff = Boolean(await getStaffSession());
     const session = staff ? null : await getCustomerSession();
+    // Both are checked, not one-or-the-other: covers a guest who uploaded
+    // artwork under their guest id and then signed in later in the same
+    // browser session — their file is still filed under the guest id, so
+    // dropping that check the moment a session exists would 404 their own
+    // just-uploaded artwork.
+    const guestId = staff ? null : await getGuestId();
     if (
       !canReadUploadedObject(relative, {
         isStaff: staff,
         personId: session?.personId,
+        guestId,
       })
     ) {
       return NextResponse.json(

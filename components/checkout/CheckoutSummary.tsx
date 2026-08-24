@@ -51,7 +51,9 @@ export function CheckoutSummary({
       </div>
 
       <Row label="Subtotal" value={money(t.subtotal)} />
-      <Row label="Volume tier discount" value={`-${money(t.discount)}`} />
+      {t.discount > 0 && (
+        <Row label="Volume tier discount" value={`-${money(t.discount)}`} />
+      )}
       <Row label="Delivery" value={fee === 0 ? "Free" : money(fee)} />
       <Row label="Est. GST (5%)" value={money(t.gst)} />
       <div className="flex justify-between border-t border-border mt-1.5 pt-3.5 font-display font-bold text-lg">

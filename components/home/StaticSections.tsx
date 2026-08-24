@@ -7,50 +7,70 @@ import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
 import { publicQuoteOrFallback, SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
-const TRUST_LOGOS = [
-  { name: "Marriott", src: "/images/marriott.png" },
-  { name: "Fujitsu", src: "/images/fujitsu.png" },
-  { name: "Grande West", src: "/images/grande_west.png" },
-  { name: "Unity Collective", src: "/images/company_logo.png" },
-  { name: "St. George's", src: "/images/company_logo_2.png" },
+/** `pad` trades tile padding for logo size: the wide, fine-print wordmarks
+ * (Grande West, St. George's) were rendering at the same box as the chunky
+ * Marriott mark, which left their type too small to read. Wordmarks get a
+ * tighter inset so they fill the tile. */
+const TRUST_LOGOS: {
+  name: string;
+  src: string;
+  pad: "tight" | "normal";
+}[] = [
+  { name: "Marriott", src: "/images/marriott.png", pad: "normal" },
+  { name: "Fujitsu", src: "/images/fujitsu.png", pad: "normal" },
+  {
+    name: "Grande West Transportation",
+    src: "/images/grande_west.png",
+    pad: "tight",
+  },
+  { name: "Unity Collective", src: "/images/company_logo.png", pad: "normal" },
+  {
+    name: "St. George's School",
+    src: "/images/company_logo_2.png",
+    pad: "tight",
+  },
 ];
 
 export function TrustStrip() {
   return (
-    <section className="section-pad text-center border-y border-border bg-bg-raised">
+    <section className="section-pad text-center border-y border-border bg-bg">
       <Container>
-        <p className="font-bold text-text-secondary m-0 mb-sp-5 text-balance">
+        <p className="font-bold text-text-secondary m-0 mb-sp-2 text-balance">
           Trusted by enterprise, education, and hospitality brands.
         </p>
-        <div className="flex flex-wrap justify-center items-center gap-x-sp-5 gap-y-sp-4">
-          {TRUST_LOGOS.map((logo) =>
-            logo.src ? (
+        <p className="m-0 mb-sp-5 text-sm text-text-tertiary text-balance">
+          Four decades of print and embroidery for teams across Metro Vancouver.
+        </p>
+        <ul className="m-0 p-0 list-none grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-sp-3">
+          {TRUST_LOGOS.map((logo) => (
+            <li
+              key={logo.name}
+              className="group rounded-xl border border-border bg-bg-raised h-[104px] sm:h-[120px] grid place-items-center transition-colors hover:border-text-tertiary"
+            >
               <div
-                key={logo.name}
-                className="relative h-9 sm:h-10 w-[100px] sm:w-[120px] opacity-70 grayscale hover:opacity-100 hover:grayscale-0 transition-all"
+                className={`relative w-full h-full ${
+                  logo.pad === "tight"
+                    ? "px-sp-2 py-sp-2 sm:px-sp-3"
+                    : "px-sp-4 py-sp-4"
+                }`}
               >
                 <Image
                   src={logo.src}
-                  alt={logo.name}
+                  alt={`${logo.name} logo`}
                   fill
-                  className="object-contain"
-                  sizes="120px"
+                  className="object-contain transition-transform duration-med group-hover:scale-[1.04]"
+                  sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
                 />
               </div>
-            ) : (
-              <span
-                key={logo.name}
-                className="font-display font-bold text-base sm:text-lg text-text-secondary"
-              >
-                {logo.name}
-              </span>
-            ),
-          )}
-        </div>
+              <span className="sr-only">{logo.name}</span>
+            </li>
+          ))}
+        </ul>
       </Container>
     </section>
   );
 }
+
 
 const TESTIMONIALS = [
   { text: "Good fast turnover and good quality product", who: "Nabil Khan" },
@@ -131,7 +151,7 @@ const GALLERY: GalleryItem[] = [
   {
     name: "Thread floor",
     meta: "Embroidery · digitized stitch by stitch",
-    imageUrl: "/images/shop-embroidery.jpg",
+    imageUrl: "/images/thread-floor-card.jpg",
   },
   {
     name: "Headwear",
@@ -141,7 +161,7 @@ const GALLERY: GalleryItem[] = [
   {
     name: "Ink room",
     meta: "Hand-mixed · Pantone matched",
-    imageUrl: "/images/shop-ink.jpg",
+    imageUrl: "/images/ink-room-card.jpg",
   },
   {
     name: "Large format",

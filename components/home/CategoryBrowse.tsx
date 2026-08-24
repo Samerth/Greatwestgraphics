@@ -18,18 +18,18 @@ import type { StorefrontCategory } from "@/lib/commerce/catalog";
 const TILE_IMAGES: Record<string, string> = {
   "t-shirts": "/images/prod-tee.jpg",
   "hoodies-sweatshirts": "/images/hoodie-display.png",
-  polos: "/images/d19c5a181cda45a6341fe8feb0a6926fbb833cd2.jpg",
+  polos: "/images/category-polos.jpg",
   jackets: "/images/wardrobe_2.jpg",
   vests: "/images/prod-safety.jpg",
   workwear: "/images/wardrobe.jpg",
-  hats: "/images/caps.jpg",
-  "pants-shorts": "/images/t-shirt_3.jpg",
+  hats: "/images/category-caps.jpg",
+  "pants-shorts": "/images/pants.jpg",
   "athletic-wear": "/images/tshirt_2.jpg",
   bags: "/images/prod-tote.jpg",
   safety: "/images/wardrobe-3.jpg",
-  accessories: "/images/accessories.jpg",
+  accessories: "/images/category-accessories.jpg",
   "eco-friendly": "/images/accessories.jpg",
-  all: "/images/caps-display.jpg",
+  all: "/images/category-more.jpg",
 };
 
 export function CategoryBrowse({

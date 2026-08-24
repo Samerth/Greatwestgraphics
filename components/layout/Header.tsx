@@ -3,41 +3,24 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ShoppingBag } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
 import { SignOutButton } from "@/components/account/SignOutButton";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
+import {
+  buildCategoryTree,
+  buildShopSections,
+  SHOP_SERVICES,
+  type CategoryNode,
+} from "@/lib/navigation/shop-section";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
-// Used only when the commerce API returned no categories. This was a list of
-// eight hand-written slugs, seven of which ("apparel", "bags", "outerwear",
-// "promo", "safety", "signs-displays", "hats-beanies") do not exist in the
-// catalogue — the real ones are "tote-bags", "hats" and so on. Every one of
-// them resolved to a 200 page with an empty grid. When we genuinely do not
-// know the catalogue's categories, send people to the unfiltered listing
-// rather than guessing at slugs.
+// Used only when the commerce API returned no categories.
 const FALLBACK_CATEGORIES = [{ label: "All Products", href: "/products" }];
 
-type CategoryNode = StorefrontCategory & { children: StorefrontCategory[] };
-
-function buildCategoryTree(categories: StorefrontCategory[]): CategoryNode[] {
-  return categories
-    .filter((c) => !c.parentId)
-    .map((top) => ({
-      ...top,
-      children: categories.filter((c) => c.parentId === top.id),
-    }));
-}
-
-const PRIMARY_LINKS = [
-  { label: "AI Design Studio", href: "/design" },
-  { label: "Services", href: "/services" },
-  { label: "About", href: "/about" },
-  { label: "Contact", href: "/contact" },
-];
+const PRIMARY_LINKS = [{ label: "Design Studio", href: "/design" }];
 
 export function Header({
   categories = [],
@@ -51,16 +34,27 @@ export function Header({
   storeName?: string;
   storeLogoUrl?: string | null;
 }) {
-  const CATEGORIES =
-    categories.length > 0
-      ? categories.map((c) => ({
-          label: c.name,
-          href: `/products?category=${encodeURIComponent(c.slug)}`,
-        }))
-      : FALLBACK_CATEGORIES;
   const CATEGORY_TREE: CategoryNode[] =
     categories.length > 0 ? buildCategoryTree(categories) : [];
-  const HAS_CATEGORIES = CATEGORY_TREE.length > 0;
+  const SHOP_SECTIONS =
+    categories.length > 0 ? buildShopSections(CATEGORY_TREE) : [];
+  const HAS_CATEGORIES = SHOP_SECTIONS.length > 0;
+
+  // The Shop mega menu used to be split by department, one at a time, behind
+  // a left-hand rail. It's now a single flat view of every group across
+  // every department at once — so "browse everything" really shows
+  // everything, with no extra click to switch departments.
+  const ALL_GROUPS = SHOP_SECTIONS.flatMap((section) => section.groups);
+
+  // The right rail used to list three shortcuts — Design Studio, Get a
+  // Quote, Corporate & Team Stores. The first two already have their own
+  // entry points in the header (the "Design Studio" nav link and the "Get a
+  // Quote" button), so the rail now surfaces only the one shortcut that
+  // doesn't live anywhere else: Corporate & Team Stores.
+  const CORPORATE_SERVICE = SHOP_SERVICES.filter((s) =>
+    s.label.toLowerCase().includes("corporate"),
+  );
+
   const rawPieceCount = useCartStore((s) => s.pieceCount());
   // Zustand's persist middleware only reads localStorage on the client, so
   // the server always renders an empty cart. Gate the real count behind a
@@ -71,10 +65,34 @@ export function Header({
   useEffect(() => setMounted(true), []);
   const pieceCount = mounted ? rawPieceCount : 0;
 
+  // --- Quick department buttons (Apparel / Headwear & Bags / Workwear &
+  // Safety / Eco & Specialty). Each opens a lightweight panel scoped to just
+  // that one department.
+  const [openDeptId, setOpenDeptId] = useState<string | null>(null);
+  const deptCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openDept = (id: string) => {
+    if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
+    setOpenDeptId(id);
+  };
+  const scheduleDeptClose = () => {
+    deptCloseTimer.current = setTimeout(() => setOpenDeptId(null), 120);
+  };
+  const activeDept = SHOP_SECTIONS.find((s) => s.id === openDeptId);
+
+  // --- The full "Shop" mega menu: every category, everywhere, at once.
   const [shopOpen, setShopOpen] = useState(false);
+  const shopCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openShop = () => {
+    if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
+    setShopOpen(true);
+  };
+  const scheduleShopClose = () => {
+    shopCloseTimer.current = setTimeout(() => setShopOpen(false), 120);
+  };
+
+  const [openMobileSection, setOpenMobileSection] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -86,13 +104,6 @@ export function Header({
     };
   }, [mobileOpen]);
 
-  const openShop = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    setShopOpen(true);
-  };
-  const scheduleClose = () => {
-    closeTimer.current = setTimeout(() => setShopOpen(false), 120);
-  };
   const openAccount = () => {
     if (accountTimer.current) clearTimeout(accountTimer.current);
     setAccountOpen(true);
@@ -103,7 +114,7 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border">
-      <Container className="h-[76px] flex items-center justify-between gap-sp-4">
+      <Container className="h-[88px] flex items-center justify-between gap-sp-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
           {storeName ? (
@@ -112,7 +123,7 @@ export function Header({
               <img
                 src={storeLogoUrl}
                 alt={storeName}
-                className="h-9 w-auto max-w-[180px] object-contain"
+                className="h-12 w-auto max-w-[220px] object-contain"
               />
             ) : (
               <span className="font-display font-bold text-lg">{storeName}</span>
@@ -124,124 +135,178 @@ export function Header({
               width={366}
               height={209}
               priority
-              className="h-12 w-auto"
+              className="h-14 sm:h-16 w-auto"
             />
           )}
         </Link>
 
         {/* Primary nav */}
-        <nav className="hidden lg:flex items-center gap-sp-5">
-          {/* Shop dropdown */}
-          <div
-            className="relative"
-            onMouseEnter={openShop}
-            onMouseLeave={scheduleClose}
-          >
-            <button
-              type="button"
-              onClick={() => setShopOpen((v) => !v)}
-              aria-expanded={shopOpen}
-              className="relative flex items-center gap-1.5 font-bold text-body text-text-primary py-1 group"
-            >
-              Shop
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 12 8"
-                fill="none"
-                className={`transition-transform duration-med ${
-                  shopOpen ? "rotate-180" : ""
-                }`}
-              >
-                <path
-                  d="M1 1.5L6 6.5L11 1.5"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
-            </button>
+        <nav className="hidden lg:flex items-center gap-sp-4 xl:gap-sp-5">
+          {HAS_CATEGORIES &&
+            SHOP_SECTIONS.map((section) => (
+              <NavTrigger
+                key={section.id}
+                label={section.label}
+                isOpen={openDeptId === section.id}
+                onToggle={() =>
+                  setOpenDeptId((v) => (v === section.id ? null : section.id))
+                }
+                onMouseEnter={() => openDept(section.id)}
+                onMouseLeave={scheduleDeptClose}
+              />
+            ))}
 
-            {shopOpen && (
-              <div
-                onMouseEnter={openShop}
-                onMouseLeave={scheduleClose}
-                className="absolute left-1/2 -translate-x-1/2 top-full pt-3 w-[820px] max-w-[92vw]"
-              >
-                <div className="rounded-xl border border-border bg-bg shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-sp-4 max-h-[70vh] overflow-y-auto">
-                  {HAS_CATEGORIES ? (
-                    <div className="grid grid-cols-3 gap-x-sp-4 gap-y-sp-4">
-                      {CATEGORY_TREE.map((cat) => (
-                        <div key={cat.id}>
-                          <Link
-                            href={`/products?category=${encodeURIComponent(cat.slug)}`}
-                            onClick={() => setShopOpen(false)}
-                            className="block text-sm font-bold text-text-primary hover:text-accent transition-colors mb-1.5"
-                          >
-                            {cat.name}
-                          </Link>
-                          {cat.children.length > 0 && (
-                            <ul className="space-y-1 m-0 p-0 list-none">
-                              {cat.children.map((child) => (
-                                <li key={child.id}>
-                                  <Link
-                                    href={`/products?category=${encodeURIComponent(child.slug)}`}
-                                    onClick={() => setShopOpen(false)}
-                                    className="block text-xs text-text-secondary hover:text-accent transition-colors py-0.5"
-                                  >
-                                    {child.name}
-                                  </Link>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-x-sp-4 gap-y-1">
-                      {FALLBACK_CATEGORIES.map((cat) => (
-                        <Link
-                          key={cat.label}
-                          href={cat.href}
-                          onClick={() => setShopOpen(false)}
-                          className="rounded-md px-3 py-2.5 text-sm font-semibold text-text-primary hover:bg-fill-subtle-15 hover:text-accent transition-colors"
-                        >
-                          {cat.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-sp-3 pt-sp-3 border-t border-border flex items-center justify-between">
-                    <span className="text-xs text-text-tertiary">
-                      Not sure what you need?
-                    </span>
-                    <Link
-                      href="/products"
-                      onClick={() => setShopOpen(false)}
-                      className="text-xs font-bold text-accent hover:underline"
-                    >
-                      View all products →
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <NavTrigger
+            label="Shop"
+            isOpen={shopOpen}
+            onToggle={() => setShopOpen((v) => !v)}
+            onMouseEnter={openShop}
+            onMouseLeave={scheduleShopClose}
+          />
 
           {PRIMARY_LINKS.map((link) => (
             <Link
               key={link.label}
               href={link.href}
-              className="relative font-bold text-body text-text-primary py-1 group"
+              className="relative whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
             >
               {link.label}
               <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
             </Link>
           ))}
         </nav>
+
+        {/* Quick department panel — single department, no sidebar, no rail */}
+        {activeDept && (
+          <div
+            onMouseEnter={() => openDept(activeDept.id)}
+            onMouseLeave={scheduleDeptClose}
+            className="fixed left-0 right-0 top-[88px] px-sp-4"
+          >
+            <div className="mx-auto w-full max-w-[1100px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden">
+              <div className="p-sp-5 max-h-[72vh] overflow-y-auto">
+                <div className="mb-sp-4">
+                  <h3 className="m-0 font-display font-bold text-lg text-text-primary">
+                    {activeDept.label}
+                  </h3>
+                  <p className="m-0 mt-1 text-xs text-text-secondary">
+                    {activeDept.blurb}
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-x-sp-5 gap-y-sp-5">
+                  {activeDept.groups.map((group) => (
+                    <CategoryGroupBlock
+                      key={group.id}
+                      group={group}
+                      onNavigate={() => setOpenDeptId(null)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="px-sp-5 py-sp-3 border-t border-border bg-bg-raised flex items-center justify-between">
+                <span className="text-xs text-text-tertiary">
+                  Not sure what you need?
+                </span>
+                <Link
+                  href="/products"
+                  onClick={() => setOpenDeptId(null)}
+                  className="text-xs font-bold text-accent hover:underline"
+                >
+                  View all products →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shop mega menu — every category, every department, in one flat
+            view. The right rail is trimmed to just Corporate & Team Stores. */}
+        {shopOpen && (
+          <div
+            onMouseEnter={openShop}
+            onMouseLeave={scheduleShopClose}
+            className="fixed left-0 right-0 top-[88px] px-sp-4"
+          >
+            <div className="mx-auto w-full max-w-[1180px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden">
+              {HAS_CATEGORIES ? (
+                <div className="flex max-h-[72vh]">
+                  <div className="flex-1 min-w-0 p-sp-5 overflow-y-auto">
+                    <div className="mb-sp-4">
+                      <h3 className="m-0 font-display font-bold text-lg text-text-primary">
+                        Shop All Categories
+                      </h3>
+                      <p className="m-0 mt-1 text-xs text-text-secondary">
+                        Every product line we print and embroider, all in one place.
+                      </p>
+                    </div>
+                    <div className="columns-1 sm:columns-2 xl:columns-3 gap-x-sp-5">
+                      {ALL_GROUPS.map((group) => (
+                        <div key={group.id} className="break-inside-avoid mb-sp-5">
+                          <CategoryGroupBlock
+                            group={group}
+                            onNavigate={() => setShopOpen(false)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Services rail — trimmed to just Corporate & Team Stores */}
+                  {CORPORATE_SERVICE.length > 0 && (
+                    <div className="hidden xl:flex w-[276px] shrink-0 flex-col gap-sp-2 border-l border-border bg-bg-raised p-sp-4">
+                      {CORPORATE_SERVICE.map((service) => (
+                        <Link
+                          key={service.label}
+                          href={service.href}
+                          onClick={() => setShopOpen(false)}
+                          className="block rounded-lg border border-border bg-bg px-3.5 py-3.5 hover:border-accent transition-colors"
+                        >
+                          <span className="block font-bold text-sm">{service.label}</span>
+                          <span className="block text-xs text-text-secondary mt-1">
+                            {service.hint}
+                          </span>
+                        </Link>
+                      ))}
+                      <Link
+                        href="/contact"
+                        onClick={() => setShopOpen(false)}
+                        className="mt-auto block rounded-lg px-3.5 py-3 text-center text-xs font-bold text-text-secondary hover:text-accent transition-colors"
+                      >
+                        Need help? Contact the team →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-sp-5 grid grid-cols-2 gap-x-sp-4 gap-y-1">
+                  {FALLBACK_CATEGORIES.map((cat) => (
+                    <Link
+                      key={cat.label}
+                      href={cat.href}
+                      onClick={() => setShopOpen(false)}
+                      className="rounded-md px-3 py-2.5 text-sm font-semibold text-text-primary hover:bg-fill-subtle-15 hover:text-accent transition-colors"
+                    >
+                      {cat.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              <div className="px-sp-5 py-sp-3 border-t border-border bg-bg-raised flex items-center justify-between">
+                <span className="text-xs text-text-tertiary">
+                  Not sure what you need?
+                </span>
+                <Link
+                  href="/products"
+                  onClick={() => setShopOpen(false)}
+                  className="text-xs font-bold text-accent hover:underline"
+                >
+                  View all products →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-sp-2 shrink-0">
@@ -397,10 +462,8 @@ export function Header({
           )}
           <Link
             href="/cart"
-            aria-label="Cart"
             className="relative inline-flex items-center gap-sp-2 px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
           >
-            <ShoppingBag className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Cart</span>
             <span className="absolute -top-2 -right-2 bg-text-primary text-white text-[11px] font-bold min-w-[18px] h-[18px] rounded-full grid place-items-center px-1">
               {pieceCount}
@@ -438,36 +501,61 @@ export function Header({
           className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4 max-h-[calc(100svh-var(--header-offset))] overflow-y-auto overscroll-contain"
           aria-label="Mobile"
         >
-          <div className="flex flex-col gap-1 mb-sp-3">
+          <div className="flex flex-col gap-1.5 mb-sp-3">
             {HAS_CATEGORIES
-              ? CATEGORY_TREE.map((cat) => (
-                  <div
-                    key={cat.id}
-                    className="border border-border rounded-md bg-bg-raised overflow-hidden"
-                  >
-                    <Link
-                      href={`/products?category=${encodeURIComponent(cat.slug)}`}
-                      onClick={() => setMobileOpen(false)}
-                      className="block px-3 py-2.5 text-sm font-bold"
+              ? SHOP_SECTIONS.map((section) => {
+                  const open = openMobileSection === section.id;
+                  return (
+                    <div
+                      key={section.id}
+                      className="border border-border rounded-md bg-bg-raised overflow-hidden"
                     >
-                      {cat.name}
-                    </Link>
-                    {cat.children.length > 0 && (
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2.5">
-                        {cat.children.map((child) => (
-                          <Link
-                            key={child.id}
-                            href={`/products?category=${encodeURIComponent(child.slug)}`}
-                            onClick={() => setMobileOpen(false)}
-                            className="text-xs text-text-secondary"
-                          >
-                            {child.name}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenMobileSection(open ? null : section.id)
+                        }
+                        aria-expanded={open}
+                        className="w-full grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 text-left"
+                      >
+                        <span className="min-w-0 truncate text-sm font-bold">
+                          {section.label}
+                        </span>
+                        <span
+                          aria-hidden
+                          className={`shrink-0 text-xs text-text-tertiary transition-transform duration-med ${
+                            open ? "rotate-180" : ""
+                          }`}
+                        >
+                          ▾
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="border-t border-border px-3 py-2.5 space-y-sp-3">
+                          {section.groups.map((group) => (
+                            <div key={group.id}>
+                              <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
+                                {group.label}
+                              </p>
+                              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                                {group.categories.map((cat) => (
+                                  <Link
+                                    key={cat.id}
+                                    href={`/products?category=${encodeURIComponent(cat.slug)}`}
+                                    onClick={() => setMobileOpen(false)}
+                                    className="text-xs font-semibold text-text-primary"
+                                  >
+                                    {cat.name}
+                                  </Link>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               : FALLBACK_CATEGORIES.map((cat) => (
                   <Link
                     key={cat.label}
@@ -479,6 +567,7 @@ export function Header({
                   </Link>
                 ))}
           </div>
+
           <div className="flex flex-wrap gap-2 border-t border-border pt-sp-3">
             <Link
               href="/products"
@@ -492,7 +581,7 @@ export function Header({
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2"
             >
-              AI Design Studio
+              Design Studio
             </Link>
             <Link
               href="/services"
@@ -583,5 +672,102 @@ export function Header({
         </nav>
       )}
     </header>
+  );
+}
+
+/** Shared trigger for every header dropdown (departments + Shop) so the
+ * label/arrow can never render inconsistently between buttons the way a
+ * one-off, duplicated version of this markup could. */
+function NavTrigger({
+  label,
+  isOpen,
+  onToggle,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  return (
+    <div className="relative" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="relative flex items-center gap-1.5 whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
+      >
+        <span>{label}</span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 12 8"
+          fill="none"
+          className={`shrink-0 transition-transform duration-med ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        >
+          <path
+            d="M1 1.5L6 6.5L11 1.5"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
+      </button>
+    </div>
+  );
+}
+
+type CategoryGroup = ReturnType<typeof buildShopSections>[number]["groups"][number];
+
+/** One category group column: a heading plus its categories, each with any
+ * subcategories nested underneath. Shared by the department panels and the
+ * flattened "Shop All Categories" view so both stay visually identical. */
+function CategoryGroupBlock({
+  group,
+  onNavigate,
+}: {
+  group: CategoryGroup;
+  onNavigate: () => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="m-0 mb-2 pb-1.5 border-b border-border text-[11px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
+        {group.label}
+      </p>
+      <ul className="m-0 p-0 list-none space-y-2.5">
+        {group.categories.map((cat) => (
+          <li key={cat.id} className="min-w-0">
+            <Link
+              href={`/products?category=${encodeURIComponent(cat.slug)}`}
+              onClick={onNavigate}
+              className="block text-sm font-bold text-text-primary hover:text-accent transition-colors"
+            >
+              {cat.name}
+            </Link>
+            {cat.children.length > 0 && (
+              <ul className="mt-1 m-0 p-0 list-none space-y-1">
+                {cat.children.map((child) => (
+                  <li key={child.id}>
+                    <Link
+                      href={`/products?category=${encodeURIComponent(child.slug)}`}
+                      onClick={onNavigate}
+                      className="block text-xs text-text-secondary hover:text-accent transition-colors"
+                    >
+                      {child.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

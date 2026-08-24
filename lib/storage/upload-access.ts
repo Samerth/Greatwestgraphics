@@ -49,12 +49,17 @@ export function isPublicUploadKey(relative: string): boolean {
 
 export function canReadUploadedObject(
   relative: string,
-  access: { isStaff: boolean; personId?: string | null },
+  access: { isStaff: boolean; personId?: string | null; guestId?: string | null },
 ): boolean {
   if (!isSafeUploadKey(relative)) return false;
   if (isPublicUploadKey(relative)) return true;
   if (access.isStaff) return true;
-  return Boolean(
-    access.personId && relative.startsWith(`${DESIGN_PREFIX}${access.personId}/`),
+  // Checked as an OR, not swapped on sign-in: someone who uploaded artwork
+  // as a guest and then signed in mid-session still owns that file under
+  // its original guest-tagged folder. Dropping the guest check the moment
+  // a session exists would make their own just-uploaded artwork 404.
+  const owners = [access.personId, access.guestId].filter(
+    (id): id is string => Boolean(id),
   );
+  return owners.some((id) => relative.startsWith(`${DESIGN_PREFIX}${id}/`));
 }

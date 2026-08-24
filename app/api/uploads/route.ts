@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomerSession } from "@/lib/auth/session";
+import { getOrCreateGuestId } from "@/lib/auth/guest-identity";
 import { getImageStore } from "@/lib/storage";
 import { parseUploadPurpose, uploadObjectKey } from "@/lib/storage/upload-access";
 
@@ -28,12 +29,13 @@ function extensionFor(file: File): string | undefined {
 
 export async function POST(request: NextRequest) {
   const session = await getCustomerSession();
-  if (!session) {
-    return NextResponse.json(
-      { error: { message: "Sign in to upload artwork." } },
-      { status: 401 },
-    );
-  }
+  // Guests get a stable anonymous id (cookie-backed) instead of a hard stop.
+  // It doubles as the storage key owner until the person signs in. Files
+  // stay filed under the guest id permanently — no re-keying happens on
+  // sign-in. The read side (app/api/uploads/[...key]/route.ts) checks both
+  // the signed-in personId and the guest id, so access keeps working either
+  // way. See lib/storage/upload-access.ts: canReadUploadedObject.
+  const ownerId = session?.personId ?? (await getOrCreateGuestId());
 
   const form = await request.formData();
   const purpose = parseUploadPurpose(form.get("purpose"));
@@ -64,7 +66,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const key = uploadObjectKey(purpose, session.personId, randomUUID(), extension);
+  const key = uploadObjectKey(purpose, ownerId, randomUUID(), extension);
   const buffer = Buffer.from(await file.arrayBuffer());
   const contentType =
     extension === "svg"

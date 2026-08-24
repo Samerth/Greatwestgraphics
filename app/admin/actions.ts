@@ -310,29 +310,44 @@ export async function saveMappingAction(formData: FormData) {
   );
 }
 
+export interface PatchProductState {
+  error?: string;
+  savedAt?: number;
+}
+
 export async function patchProductAction(
   productId: string,
+  _previous: PatchProductState,
   formData: FormData,
-) {
+): Promise<PatchProductState> {
   const storefrontVisible = formData.has("storefrontVisible");
   const isDark = formData.has("isDark");
-  // Optional vendor discontinued flag — only sent when the form includes it.
   const touchActive = formData.has("touchActive");
   const active = formData.has("active");
   const categoryIds = formData.getAll("categoryIds").map(String);
-  const client = await adminClient();
-  await client.patchCatalogProduct(
-    productId,
-    {
-      storefrontVisible,
-      isDark,
-      ...(touchActive ? { active } : {}),
-      categoryIds: categoryIds.length ? categoryIds : undefined,
-    },
-    requireAdminToken(),
-  );
+  try {
+    const client = await adminClient();
+    await client.patchCatalogProduct(
+      productId,
+      {
+        storefrontVisible,
+        isDark,
+        ...(touchActive ? { active } : {}),
+        categoryIds: categoryIds.length ? categoryIds : undefined,
+      },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "Could not save this product's storefront settings.",
+    };
+  }
   revalidatePath("/admin/catalog");
   revalidatePath(`/admin/catalog/${productId}`);
+  return { savedAt: Date.now() };
 }
 
 export async function bulkCatalogVisibilityAction(formData: FormData) {

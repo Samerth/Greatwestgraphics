@@ -1,10 +1,8 @@
 import Link from "next/link";
-import {
-  patchProductAction,
-  refreshCatalogProductAction,
-} from "@/app/admin/actions";
+import { refreshCatalogProductAction } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { ProductSettingsForm } from "@/components/admin/ProductSettingsForm";
 
 export const dynamic = "force-dynamic";
 
@@ -104,71 +102,14 @@ export default async function AdminCatalogProductPage({
         )}
       </div>
 
-      <form
-        action={async (formData) => {
-          "use server";
-          await patchProductAction(id, formData);
-        }}
-        className="border border-border rounded-md p-sp-4 space-y-sp-3 bg-bg-raised"
-      >
-        <h2 className="font-display font-bold text-lg m-0">Storefront</h2>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input
-            type="checkbox"
-            name="storefrontVisible"
-            defaultChecked={product.storefrontVisible !== false}
-          />
-          Visible on storefront
-        </label>
-        <p className="text-xs text-text-tertiary m-0">
-          Soft-hide omits this colorway from PLP, brands, sitemap, and design
-          picker. Vendor sync will not un-hide it.
-        </p>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input
-            type="checkbox"
-            name="isDark"
-            defaultChecked={Boolean(product.isDark)}
-          />
-          Dark garment (pricing premium)
-        </label>
-        <input type="hidden" name="touchActive" value="1" />
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input
-            type="checkbox"
-            name="active"
-            defaultChecked={product.active !== false}
-          />
-          Vendor active (not discontinued)
-        </label>
-        <fieldset>
-          <legend className="text-sm font-semibold mb-2">
-            Category override (wins over map)
-          </legend>
-          <div className="grid sm:grid-cols-2 gap-2 max-h-48 overflow-auto">
-            {categories.map((cat) => (
-              <label
-                key={String(cat.id)}
-                className="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  name="categoryIds"
-                  value={String(cat.id)}
-                  defaultChecked={assignedIds.has(String(cat.id))}
-                />
-                {String(cat.name)}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <button
-          type="submit"
-          className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-        >
-          Save
-        </button>
-      </form>
+      <ProductSettingsForm
+        productId={id}
+        storefrontVisible={product.storefrontVisible !== false}
+        isDark={Boolean(product.isDark)}
+        active={product.active !== false}
+        categories={categories}
+        assignedIds={assignedIds}
+      />
 
       <section>
         <h2 className="font-display font-bold text-lg m-0 mb-2">Colorways</h2>

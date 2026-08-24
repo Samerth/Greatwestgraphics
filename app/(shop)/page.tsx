@@ -6,9 +6,9 @@ import {
 } from "@/components/home/HomeFigmaSections";
 import { CategoryBrowse } from "@/components/home/CategoryBrowse";
 import {
+  HowToOrder,
   OrderNowBand,
   PrintMethods,
-  ServicesBreakdown,
 } from "@/components/home/FigmaHomeSections";
 import {
   TrustStrip,
@@ -24,7 +24,8 @@ export const dynamic = "force-dynamic";
 /**
  * Homepage section order matches Figma "Homepage/ Direction A/ Desktop 1441"
  * (node 2107:273): Hero → Quick Paths → Idea to Delivery → Trust → Product
- * Browse → Reviews → Print Methods → Gallery → Order Now → Services → Stats → CTA.
+ * Browse → Reviews → Print Methods → Gallery → How to Order → Order Now →
+ * Stats → CTA.
  */
 export default async function HomePage() {
   const catalog = await loadStorefrontCatalog({ limit: 120 });
@@ -56,8 +57,11 @@ export default async function HomePage() {
         <Gallery />
       </Reveal>
 
+      <Reveal>
+        <HowToOrder />
+      </Reveal>
+
       <OrderNowBand />
-      <ServicesBreakdown />
       <StatsBand />
       <CtaBand />
     </>

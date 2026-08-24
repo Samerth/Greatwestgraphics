@@ -11,10 +11,10 @@ describe("fallbackCategorySlugs", () => {
   it("files the garments that previously fell through uncategorised", () => {
     expect(best("Port Authority Quarter-Zip Pullover")).toBe("quarter-zips");
     expect(fallbackCategorySlugs("Port Authority Quarter-Zip Pullover")).toContain(
-      "hoodies-and-crewnecks",
+      "hoodies-sweatshirts",
     );
     expect(best("Sport-Tek 1/4 Zip Sweatshirt")).toBe("quarter-zips");
-    expect(best("Micro Fleece Half-Zip")).toBe("hoodies-and-crewnecks");
+    expect(best("Micro Fleece Half-Zip")).toBe("hoodies-sweatshirts");
     expect(best("Structured Twill Cap")).toBe("hats");
     expect(best("Merino Wool Crew Socks")).toBe("socks");
   });
@@ -62,7 +62,7 @@ describe("fallbackCategorySlugs", () => {
     // pointed at the shared one. These are the cases that differed.
     expect(best("Independent Trading Quarter Zip Pullover")).toBe("quarter-zips");
     expect(fallbackCategorySlugs("Independent Trading Quarter Zip Pullover")).toContain(
-      "hoodies-and-crewnecks",
+      "hoodies-sweatshirts",
     );
     expect(best("ANSI Class 3 Hi-Vis Vest")).toBe("safety");
     expect(best("Ribbed Crew Socks")).toBe("socks");

@@ -130,7 +130,7 @@ export default async function PortalHomePage() {
           <SectionCard
             href="/portal/designs"
             title="My designs"
-            body="Artwork saved from the AI Design Studio. Reopen it to keep editing or apply it to a different garment."
+            body="Artwork saved from the Design Studio. Reopen it to keep editing or apply it to a different garment."
             cta="View designs"
           />
         </div>
