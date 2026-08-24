@@ -8,6 +8,7 @@ import {
   studioCartRosterPayload,
   studioCheckoutConfiguration,
   studioDesignNotesBit,
+  studioFinishCtaLabel,
   studioFinishMode,
   studioHasStartedTeamRoster,
   studioIsCompleteTeamRoster,
@@ -66,6 +67,23 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(2);
     expect(studioTeamQuoteQuantity(teamDraft, 48)).toBe(2);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
+  });
+
+  it("always puts the quoted dollar amount on the finish CTA", () => {
+    expect(
+      studioFinishCtaLabel({
+        quoteQty: 2,
+        placementSuffix: "Left Chest",
+        totalMinor: 4599,
+      }),
+    ).toBe('Add 2 Pieces to Cart · Left Chest · $45.99');
+    expect(
+      studioFinishCtaLabel({
+        quoteQty: 1,
+        placementSuffix: "Full Front",
+        totalMinor: 1200,
+      }),
+    ).toBe('Add 1 Piece to Cart · Full Front · $12.00');
   });
 
   it("empty Team panel stays a regular size + qty line", () => {

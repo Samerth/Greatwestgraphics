@@ -1,4 +1,5 @@
 import type { RosterDecor } from "@gwg/contracts";
+import { moneyFromMinor } from "../utils/quote-pricing";
 import { rosterDecorSummary } from "./studio-roster-decor";
 
 /** Draft row from the Team order panel (empty placeholders are allowed). */
@@ -96,6 +97,18 @@ export function studioTeamQuoteQuantity(
   const named = cartRosterRowsFromDraft(roster).length;
   if (named > 0) return named;
   return designQty;
+}
+
+/** Team and bulk share one CTA shape: qty · placement · quoted dollars. */
+export function studioFinishCtaLabel(input: {
+  quoteQty: number;
+  placementSuffix: string;
+  totalMinor: number;
+}): string {
+  const pieces = `Add ${input.quoteQty.toLocaleString()} Piece${
+    input.quoteQty === 1 ? "" : "s"
+  } to Cart`;
+  return `${pieces} · ${input.placementSuffix} · ${moneyFromMinor(input.totalMinor)}`;
 }
 
 export type StudioCartRosterPayload =

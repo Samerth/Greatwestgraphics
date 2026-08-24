@@ -36,7 +36,6 @@ import {
   dataUrlToBlob,
   filenameForArtworkBlob,
 } from "@/lib/store/design-draft";
-import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { shopperUnitMinor } from "@/lib/utils/shopper-price";
 import {
   PRICING_MASTER_V2,
@@ -93,6 +92,7 @@ import {
   cartRosterRowsFromDraft,
   studioCartLineFields,
   studioCartRosterPayload,
+  studioFinishCtaLabel,
   studioFinishMode,
   studioTeamQuoteQuantity,
 } from "@/lib/commerce/studio-cart-roster";
@@ -2546,8 +2546,11 @@ export function DesignStudio({
                     : !teamOrderStarted &&
                         (!selectedVariant || selectedVariant.qty <= 0)
                       ? "Unavailable"
-                      : `Add ${quoteQty.toLocaleString()} Piece${quoteQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
-                          quoted?.totalMinor ??
+                      : studioFinishCtaLabel({
+                          quoteQty,
+                          placementSuffix,
+                          totalMinor:
+                            quoted?.totalMinor ??
                             (selectedVariant
                               ? unitPriceMinor(
                                   selectedVariant,
@@ -2555,7 +2558,7 @@ export function DesignStudio({
                                   productDetail,
                                 ) * quoteQty
                               : 0),
-                        )}`}
+                        })}
               </Button>
             </div>
           )}
