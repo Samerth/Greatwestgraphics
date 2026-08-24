@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
@@ -11,6 +11,8 @@ import { shopperUnitMinor } from "@/lib/utils/shopper-price";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { publicQuoteOrFallback } from "@/lib/features";
+import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 
 const QTY_OPTIONS = [24, 48, 96, 250, 500];
 
@@ -97,6 +99,26 @@ export function DbProductActions({
 
   const selectedVariant = variants.find((v) => v.id === variantId);
   const inStockSizes = variants.filter((v) => v.inStock);
+  const saveHandoff = usePdpStudioHandoff((state) => state.save);
+
+  useEffect(() => {
+    saveHandoff({
+      productId,
+      variantId,
+      sizeName: selectedVariant?.sizeName,
+      qty: groupOrder ? roster.length : qty,
+      roster,
+      groupOrder,
+    });
+  }, [
+    groupOrder,
+    productId,
+    qty,
+    roster,
+    saveHandoff,
+    selectedVariant?.sizeName,
+    variantId,
+  ]);
 
   function selectPresetQty(q: number) {
     setQty(q);
@@ -198,7 +220,7 @@ export function DbProductActions({
             equivalent that is in stock.
           </p>
           <Link
-            href="/quote"
+            href={publicQuoteOrFallback("/contact")}
             className="mt-3 inline-flex rounded-md border border-amber-800 bg-amber-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-950 transition-colors"
           >
             Ask us to source it

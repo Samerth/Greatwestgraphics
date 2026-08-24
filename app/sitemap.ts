@@ -88,7 +88,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       // also the only stable option here — stock counts move with every
       // vendor sync, so filtering on them would add and drop thousands of
       // URLs an hour and teach crawlers that this document is noise.
-      const catalog = await loadStorefrontCatalog({ limit: PAGE_SIZE, page });
+      const catalog = await loadStorefrontCatalog({
+        limit: PAGE_SIZE,
+        page,
+        // Keep existing colour-specific PDP URLs in the sitemap.
+        groupByStyle: false,
+      });
       for (const product of catalog.products) {
         entries.push({
           url: `${siteUrl}/product/${encodeURIComponent(product.slug)}?id=${product.id}`,

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 import { allowSearchIndexing } from "@/lib/seo/indexing";
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
@@ -23,7 +24,16 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/admin", "/api", "/portal", "/account", "/invite", "/cart", "/checkout"],
+        disallow: [
+          "/admin",
+          "/api",
+          "/portal",
+          "/account",
+          "/invite",
+          "/cart",
+          "/checkout",
+          ...(SHOW_PUBLIC_QUOTE_CALCULATOR ? [] : ["/quote", "/get-a-quote"]),
+        ],
       },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,

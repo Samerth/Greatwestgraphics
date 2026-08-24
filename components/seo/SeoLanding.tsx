@@ -22,6 +22,7 @@ import {
   locationBreadcrumb,
   serviceJsonLd,
 } from "@/lib/seo/schema";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 type LandingPage = LocationPage | (ContentPage & { city?: string });
 
@@ -130,7 +131,9 @@ export function SeoLanding({ page }: { page: LandingPage }) {
             </p>
           ) : null}
           <div className="mt-sp-4 flex flex-wrap gap-2.5">
-            <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            ) : null}
             <ButtonLink href="/contact" variant="secondary">
               Contact the team
             </ButtonLink>
@@ -219,7 +222,9 @@ export function SeoLanding({ page }: { page: LandingPage }) {
             </p>
           </div>
           <div className="flex flex-wrap gap-2.5">
-            <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href={quoteHref(page)}>Request a Quote</ButtonLink>
+            ) : null}
             <ButtonLink href="/contact" variant="secondary">
               Contact the team
             </ButtonLink>
@@ -257,13 +262,15 @@ function ShopTeaser({ page }: { page: LandingPage }) {
         </h2>
         <p className="text-text-secondary mt-sp-2 mb-sp-4 max-w-[64ch]">
           The old product widgets on this URL were a shop module, not article
-          copy. Use the live catalogue, the quote builder, or the design studio.
+          copy. Use the live catalogue or the design studio.
         </p>
         <div className="flex flex-wrap gap-2.5">
           <ButtonLink href={shopHref(page)}>Open the shop</ButtonLink>
-          <ButtonLink href={quoteHref(page)} variant="secondary">
-            Get a quote
-          </ButtonLink>
+          {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+            <ButtonLink href={quoteHref(page)} variant="secondary">
+              Get a quote
+            </ButtonLink>
+          ) : null}
           <ButtonLink href="/design" variant="secondary">
             Design studio
           </ButtonLink>
@@ -296,7 +303,11 @@ function HowToSteps() {
   const steps = [
     { title: "Choose a garment", href: "/products", body: "Pick a live blank from the catalogue." },
     { title: "Add artwork", href: "/design", body: "Use the design studio or send a print-ready file." },
-    { title: "Approve the proof", href: "/quote", body: "Nothing goes to press until you sign off." },
+    {
+      title: "Approve the proof",
+      href: SHOW_PUBLIC_QUOTE_CALCULATOR ? "/quote" : "/contact",
+      body: "Nothing goes to press until you sign off.",
+    },
     { title: "We print and ship", href: "/shipping-delivery", body: "Standard production is 5–7 business days; rush is quoted against the calendar." },
   ];
   return (

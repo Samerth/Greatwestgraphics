@@ -8,6 +8,7 @@ import {
   parseVendorDescription,
   type DescriptionBlock,
 } from "@/lib/catalog/vendor-description";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 /** Vendor copy is a mix of spec bullets and prose. Rendering bullets as an
  * actual list is the whole point of parsing it, so both call sites share this. */
@@ -160,12 +161,14 @@ export function PdpOutOfStockBanner({
         equivalent that is in stock.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Link
-          href="/quote"
-          className="rounded-md border border-amber-800 bg-amber-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-950 transition-colors"
-        >
-          Ask us to source it
-        </Link>
+        {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+          <Link
+            href="/quote"
+            className="rounded-md border border-amber-800 bg-amber-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-950 transition-colors"
+          >
+            Ask us to source it
+          </Link>
+        ) : null}
         <Link
           href="/contact"
           className="rounded-md border border-amber-800 px-4 py-2.5 text-sm font-bold text-amber-950 hover:bg-amber-100 transition-colors"

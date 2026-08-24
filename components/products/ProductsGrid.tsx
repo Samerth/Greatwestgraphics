@@ -11,6 +11,8 @@ import type {
   StorefrontCatalogProduct,
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
+import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -127,6 +129,7 @@ export function ProductsGrid({
       brandName: p.brandName,
       styleName: p.styleName,
       colorName: p.colorName,
+      colorwayCount: p.colorwayCount,
       priceFrom: p.priceFrom,
       imageUrl: p.imageUrl,
       available: p.available,
@@ -365,13 +368,13 @@ export function ProductsGrid({
             <p className="font-display text-[19px] mb-sp-2">Nothing here yet.</p>
             <p className="text-text-secondary max-w-[48ch] mx-auto mb-sp-4">
               We don&apos;t have live inventory matching these filters right now.
-              Reach out for a custom quote and we&apos;ll source it for you.
+              Reach out and we&apos;ll source it for you.
             </p>
             <Link
-              href="/quote"
+              href={publicQuoteOrFallback("/contact")}
               className="inline-block rounded-md bg-accent text-white font-bold text-sm px-4 py-2.5 hover:bg-accent-hover transition-colors"
             >
-              Request a Custom Quote
+              Ask us to source it
             </Link>
           </div>
         ) : (
@@ -408,20 +411,12 @@ export function ProductsGrid({
                   )}
                 </Link>
 
-                {/* Three fixtures used to sit in this card and were rendered
-                    identically on all ten thousand of them: an empty grey
-                    swatch labelled "+ colours" with no count behind it, and
-                    "S – 3XL" / "Min. 24" size and minimum badges. The size
-                    range was wrong for every cap, tote and banner in the
-                    catalogue, and "Min. 24" contradicted the minimum the
-                    quote builder actually enforces, which is 12. Real size
-                    ranges and colourway counts exist on the style record but
-                    are not carried on the listing payload, so showing them
-                    here needs a contract change rather than a literal. */}
+                {/* Colourway count is real (from the grouped listing). Size
+                    range and minimums still stay off the card — they vary by
+                    garment and the listing payload does not carry them. */}
                 <div className="p-sp-3 flex flex-col flex-1">
                   <p className="text-xs text-text-tertiary mb-1">
-                    {tile.brandName}
-                    {tile.colorName ? ` · ${tile.colorName}` : ""}
+                    {catalogCardSubtitle(tile)}
                   </p>
                   <h3 className="font-display font-bold text-[17px] m-0 leading-snug">
                     <Link href={tile.href} className="hover:text-accent transition-colors">

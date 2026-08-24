@@ -3,12 +3,24 @@ import {
   DESIGN_SIDE_LABELS,
   type DesignDocument,
   type DesignSide,
+  type PlacedText,
 } from "@gwg/contracts";
+import { studioFontById } from "@/lib/commerce/studio-fonts";
+import {
+  estimateTextDisplaySize,
+  studioTextArcSvgPath,
+} from "@/lib/commerce/studio-text";
+import { SleeveIllustration } from "@/components/design/SleeveIllustration";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
   type PhotoCrop,
 } from "@/lib/commerce/garment-backdrop";
+import {
+  DEFAULT_SLEEVE_FILL_HEX,
+  isStudioSleeveSide,
+  studioSleeveFillHex,
+} from "@/lib/commerce/studio-sleeve";
 
 /**
  * A read-only rendering of one garment view, faithful to what the customer
@@ -32,6 +44,7 @@ export function DesignSidePreview({
   mirrorGarment,
   garmentCrop,
   garmentPlate,
+  sleeveFillHex,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
@@ -41,10 +54,14 @@ export function DesignSidePreview({
   mirrorGarment?: boolean;
   garmentCrop?: PhotoCrop;
   garmentPlate?: boolean;
+  sleeveFillHex?: string | null;
   size?: number;
   className?: string;
 }) {
   const artworks = design.artworksBySide[side] ?? [];
+  const texts = design.textsBySide?.[side] ?? [];
+  const sleeveView = isStudioSleeveSide(side);
+  const fillHex = studioSleeveFillHex({ hex: sleeveFillHex }) || DEFAULT_SLEEVE_FILL_HEX;
   const fallback = garmentBackdropForSide(side, {});
   const imageUrl = garmentImageUrl || fallback.url;
   const mirrored = mirrorGarment ?? fallback.mirror;
@@ -72,17 +89,23 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        <div style={framed.frame}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageUrl}
-            alt=""
-            style={{
-              ...framed.image,
-              opacity: garmentImageUrl ? 1 : 0.9,
-            }}
-          />
-        </div>
+        {isStudioSleeveSide(side) ? (
+          <div style={{ position: "absolute", inset: 0 }}>
+            <SleeveIllustration side={side} fillHex={fillHex} />
+          </div>
+        ) : (
+          <div style={framed.frame}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              style={{
+                ...framed.image,
+                opacity: garmentImageUrl ? 1 : 0.9,
+              }}
+            />
+          </div>
+        )}
 
         {artworks.map((artwork) => (
           // eslint-disable-next-line @next/next/no-img-element
@@ -100,9 +123,12 @@ export function DesignSidePreview({
             }}
           />
         ))}
+        {texts.map((layer) => (
+          <PreviewText key={layer.id} layer={layer} />
+        ))}
       </div>
 
-      {artworks.length === 0 && (
+      {artworks.length === 0 && texts.length === 0 && (
         <span
           className="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-text-tertiary"
         >
@@ -110,5 +136,68 @@ export function DesignSidePreview({
         </span>
       )}
     </div>
+  );
+}
+
+function PreviewText({ layer }: { layer: PlacedText }) {
+  const family = studioFontById(layer.fontFamily).family;
+  const display = estimateTextDisplaySize(
+    layer.text,
+    layer.fontSize,
+    layer.letterSpacing,
+  );
+  const arc = layer.arc ?? 0;
+  const transform = `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`;
+  if (Math.abs(arc) < 1) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          left: layer.x,
+          top: layer.y,
+          transformOrigin: "top left",
+          transform,
+          color: layer.fill,
+          fontFamily: family,
+          fontSize: layer.fontSize,
+          letterSpacing: layer.letterSpacing,
+          textAlign: layer.align,
+          WebkitTextStroke: layer.outline
+            ? `${layer.outlineWidth ?? 1}px ${layer.outlineColor ?? "#111"}`
+            : undefined,
+          whiteSpace: "pre",
+          lineHeight: 1.1,
+        }}
+      >
+        {layer.text}
+      </div>
+    );
+  }
+  const pathId = `preview-arc-${layer.id}`;
+  return (
+    <svg
+      width={display.width}
+      height={Math.max(display.height * 2, 40)}
+      style={{
+        position: "absolute",
+        left: layer.x,
+        top: layer.y,
+        overflow: "visible",
+        transformOrigin: "top left",
+        transform,
+      }}
+    >
+      <defs>
+        <path id={pathId} d={studioTextArcSvgPath(display.width, arc)} fill="none" />
+      </defs>
+      <text
+        fill={layer.fill}
+        fontFamily={family}
+        fontSize={layer.fontSize}
+        letterSpacing={layer.letterSpacing}
+      >
+        <textPath href={`#${pathId}`}>{layer.text}</textPath>
+      </text>
+    </svg>
   );
 }

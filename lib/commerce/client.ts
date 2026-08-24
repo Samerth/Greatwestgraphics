@@ -1042,6 +1042,8 @@ export class CommerceClient {
       visibility?: "visible" | "hidden" | "all";
       stock?: "in" | "oos" | "any";
       sort?: "brand" | "style" | "stock" | "updated";
+      /** Storefront default is true. Admin lists omit this. */
+      groupByStyle?: boolean;
     },
     adminToken?: string,
   ): Promise<{ products: Record<string, unknown>[]; total: number }> {
@@ -1057,6 +1059,8 @@ export class CommerceClient {
     if (query?.visibility) params.set("visibility", query.visibility);
     if (query?.stock) params.set("stock", query.stock);
     if (query?.sort) params.set("sort", query.sort);
+    if (query?.groupByStyle === false) params.set("groupByStyle", "false");
+    if (query?.groupByStyle === true) params.set("groupByStyle", "true");
     const qs = params.toString();
     const headers = adminToken
       ? this.headers(undefined, adminToken)

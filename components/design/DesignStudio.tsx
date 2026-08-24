@@ -6,23 +6,31 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DESIGN_CANVAS_SIZE,
-  DESIGN_PLACEMENT_ZONES,
   DESIGN_SIDE_LABELS,
   DesignSides,
+  defaultRosterDecor,
   emptyDesignDocument,
+  emptyTextsBySide,
   ephemeralArtworkSides,
   isDurableArtworkSrc,
   normalizeDesignDocument,
   type DesignDocument,
   type DesignSide,
   type PlacedArtwork,
+  type PlacedText,
   type PricingConfigV2,
+  type TextAlign,
+  type TextPrintMethod,
 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
+import {
+  rosterLooksStarted,
+  usePdpStudioHandoff,
+} from "@/lib/store/pdp-studio-handoff";
 import {
   artworkSrcForDraft,
   dataUrlToBlob,
@@ -45,10 +53,12 @@ import {
   stitchCountForPreset,
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
-import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { type RosterRow } from "@/components/shared/RosterEditor";
+import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
+  garmentBackdrops,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
 import {
@@ -58,13 +68,54 @@ import {
   decoratedDesignSides,
   placeArtworkInZone,
 } from "@/lib/commerce/studio-placement";
+import { STUDIO_DEFAULT_FONT_ID } from "@/lib/commerce/studio-fonts";
+import {
+  createStudioHistory,
+  type StudioHistorySnapshot,
+} from "@/lib/commerce/studio-history";
+import {
+  centerStudioLayer,
+  createStudioTextLayer,
+  deleteStudioLayer,
+  duplicateStudioLayer,
+  estimateTextDisplaySize,
+  moveStudioLayerToSide,
+  nudgeStudioLayerOrder,
+  patchStudioArtwork,
+  patchStudioText,
+} from "@/lib/commerce/studio-text";
+import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-zones";
+import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
+import {
+  cartRosterRowsFromDraft,
+  studioCartLineFields,
+  studioCartRosterPayload,
+  studioIsCompleteTeamRoster,
+  studioTeamOrderQuantity,
+} from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
+import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
+import { SleeveIllustration } from "@/components/design/SleeveIllustration";
+import { StudioFontLoader } from "@/components/design/StudioFontLoader";
+import { StudioTextPanel } from "@/components/design/StudioTextPanel";
+import { StudioElementEditor } from "@/components/design/StudioElementEditor";
+import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
+import { StudioNotesTab } from "@/components/design/StudioNotesTab";
 import {
   studioArticleLabel,
   studioColorwaysForArticle,
+  studioDetailColorwaysForSelection,
+  studioGarmentPhotos,
+  studioVariantIdForColorway,
   uniqueStudioArticles,
 } from "@/lib/commerce/studio-garments";
+import {
+  DESIGN_SIDE_THUMB_LABELS,
+  isStudioSleeveSide,
+  sleeveIllustrationDataUrl,
+  studioSleeveFillFromColorway,
+} from "@/lib/commerce/studio-sleeve";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 
 export type DesignGarmentOption = {
@@ -126,8 +177,13 @@ type ProductDetailColorway = {
   id: string;
   slug?: string;
   colorName: string;
+  colorHex?: string | null;
+  color1?: string | null;
   swatchImageUrl?: string | null;
   frontImageUrl?: string | null;
+  sideImageUrl?: string | null;
+  backImageUrl?: string | null;
+  isDark?: boolean;
 };
 
 type ProductDetail = {
@@ -154,6 +210,43 @@ type ProductDetail = {
 };
 
 const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
+const STUDIO_TABS = [
+  { id: "images", label: "Images" },
+  { id: "text", label: "Text" },
+  { id: "team", label: "Team" },
+  { id: "notes", label: "Notes" },
+] as const;
+type StudioTab = (typeof STUDIO_TABS)[number]["id"];
+const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+function snapshotOf(document: DesignDocument): StudioHistorySnapshot {
+  return {
+    artworksBySide: document.artworksBySide,
+    textsBySide: document.textsBySide,
+    placementBySide: document.placementBySide,
+  };
+}
+
+function applyHistorySnapshot(
+  document: DesignDocument,
+  snapshot: StudioHistorySnapshot,
+): DesignDocument {
+  return {
+    ...document,
+    artworksBySide: snapshot.artworksBySide as DesignDocument["artworksBySide"],
+    textsBySide: snapshot.textsBySide as DesignDocument["textsBySide"],
+    placementBySide: snapshot.placementBySide as DesignDocument["placementBySide"],
+  };
+}
+
+function rosterRowsFromDesign(document: DesignDocument): RosterRow[] {
+  if (!document.roster?.length) return [{ size: "", name: "", number: "" }];
+  return document.roster.map((row) => ({
+    size: row.size,
+    name: row.name,
+    number: row.number ?? "",
+  }));
+}
 
 function firstDurableArtworkUrl(document: DesignDocument): string | undefined {
   for (const side of DesignSides) {
@@ -316,9 +409,25 @@ export function DesignStudio({
   const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
-  const [groupOrder, setGroupOrder] = useState(false);
-  const [roster, setRoster] = useState<RosterRow[]>([{ size: "", name: "", number: "" }]);
+  const [roster, setRoster] = useState<RosterRow[]>(() =>
+    initialDesign
+      ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
+      : [{ size: "", name: "", number: "" }],
+  );
   const [rosterError, setRosterError] = useState<string | null>(null);
+  const [studioTab, setStudioTab] = useState<StudioTab>("images");
+  const [textDraft, setTextDraft] = useState("");
+  const [textAlign, setTextAlign] = useState<TextAlign>("center");
+  const [textPrintMethod, setTextPrintMethod] = useState<TextPrintMethod>("print");
+  const [textFill, setTextFill] = useState("#111111");
+  const [textFontId, setTextFontId] = useState(STUDIO_DEFAULT_FONT_ID);
+  const [zoom, setZoom] = useState(1);
+  const [liveZone, setLiveZone] = useState<string | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+  const historyRef = useRef(createStudioHistory());
+  const sliderHistoryArmedRef = useRef(false);
+  const designRef = useRef(design);
+  designRef.current = design;
 
   const [savedDesignId, setSavedDesignId] = useState<string | null>(
     initialDesign?.id ?? null,
@@ -330,8 +439,16 @@ export function DesignStudio({
 
   const artworkInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<any>(null);
+  const preferredSizeNameRef = useRef<string | null>(null);
   const artworks = artworksBySide[activeSide];
+  const textsBySide = design.textsBySide ?? emptyTextsBySide();
+  const texts = textsBySide[activeSide] ?? [];
+  const rosterDecor = design.rosterDecor ?? defaultRosterDecor();
   const selectedId = selectedBySide[activeSide];
+  const selectedText = texts.find((layer) => layer.id === selectedId) ?? null;
+  const selectedArtwork = artworks.find((layer) => layer.id === selectedId) ?? null;
+  const sideLayerCount = (side: DesignSide) =>
+    artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
 
   useEffect(() => {
     if (!selectedGarmentId) {
@@ -354,8 +471,13 @@ export function DesignStudio({
 
   useEffect(() => {
     const variants = productDetail?.variants ?? [];
-    const inStock = variants.find((v) => v.qty > 0 && v.active !== false);
-    setSelectedVariantId((inStock ?? variants[0])?.id ?? null);
+    const nextId = studioVariantIdForColorway({
+      variants,
+      preferredSizeName: preferredSizeNameRef.current,
+    });
+    setSelectedVariantId(nextId);
+    const next = variants.find((variant) => variant.id === nextId);
+    if (next) preferredSizeNameRef.current = next.sizeName;
   }, [productDetail]);
 
   // Persistent design + 1-click apply: when arriving without an explicit
@@ -375,7 +497,9 @@ export function DesignStudio({
       if (hasActiveArtwork(design)) return;
       const stored = useActiveDesignStore.getState();
       if (hasActiveArtwork(stored.design)) {
-        setDesign(normalizeDesignDocument(stored.design));
+        const restored = normalizeDesignDocument(stored.design);
+        setDesign(restored);
+        setRoster(rosterRowsFromDesign(restored));
         if (stored.name) setDesignName(stored.name);
         if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
         if (!garmentIdOverride && stored.garmentProductId) {
@@ -397,6 +521,37 @@ export function DesignStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Size, qty, and a roster started on the product page follow "Design this".
+  useEffect(() => {
+    if (isStaff || !garmentIdOverride || initialDesign) return;
+    const applyHandoff = () => {
+      const handoff = usePdpStudioHandoff.getState().handoff;
+      if (!handoff || handoff.productId !== garmentIdOverride) return;
+      if (handoff.sizeName) preferredSizeNameRef.current = handoff.sizeName;
+      if (handoff.qty && handoff.qty > 0) setDesignQty(handoff.qty);
+      if (rosterLooksStarted(handoff.roster)) {
+        setRoster(handoff.roster ?? [{ size: "", name: "", number: "" }]);
+        setDesign((prev) => ({
+          ...prev,
+          roster: (handoff.roster ?? [])
+            .filter((row) => row.name.trim() || row.number.trim() || row.size)
+            .map((row) => ({
+              size: row.size,
+              name: row.name,
+              number: row.number.trim() || undefined,
+            })),
+        }));
+        setStudioTab("team");
+      }
+    };
+    const persistApi = usePdpStudioHandoff.persist;
+    if (persistApi.hasHydrated()) {
+      applyHandoff();
+      return;
+    }
+    return persistApi.onFinishHydration(applyHandoff);
+  }, [garmentIdOverride, initialDesign, isStaff]);
+
   // Mirror the working design into the persistent store as it changes so
   // it's there when the customer clicks through to another product.
   useEffect(() => {
@@ -416,6 +571,7 @@ export function DesignStudio({
   const [extraGarment, setExtraGarment] = useState<DesignGarmentOption | null>(null);
   useEffect(() => {
     if (!productDetail || !selectedGarmentId) return;
+    if (productDetail.product.id !== selectedGarmentId) return;
     if (garments.some((g) => g.id === selectedGarmentId)) {
       setExtraGarment(null);
       return;
@@ -448,23 +604,50 @@ export function DesignStudio({
       studioColorwaysForArticle({
         selectedId: selectedGarmentId,
         garments: garmentOptions,
-        detailColorways: productDetail?.colorways,
+        detailColorways: studioDetailColorwaysForSelection({
+          selectedId: selectedGarmentId,
+          productId: productDetail?.product.id,
+          colorways: productDetail?.colorways,
+        }),
       }),
-    [selectedGarmentId, garmentOptions, productDetail?.colorways],
+    [
+      selectedGarmentId,
+      garmentOptions,
+      productDetail?.product.id,
+      productDetail?.colorways,
+    ],
+  );
+  const selectedColorway = colorwayOptions.find(
+    (colorway) => colorway.id === selectedGarmentId,
+  );
+  const selectedColorwayReady = Boolean(
+    selectedGarmentId && productDetail?.product.id === selectedGarmentId,
   );
   const selectedArticleLabel = selectedGarment
     ? studioArticleLabel(selectedGarment)
-    : "Garment";
+    : productDetail
+      ? `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim()
+      : "Garment";
   const sizeChartHref = useMemo(() => {
-    if (!selectedGarmentId || !productDetail) return null;
+    if (!selectedGarmentId || !productDetail || !selectedColorwayReady) {
+      return null;
+    }
     if (!readProductSizeChart(productDetail)) return null;
     const slug =
       productDetail.product.slug ??
+      selectedColorway?.slug ??
       selectedGarment?.slug ??
       garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
     if (!slug) return null;
     return `/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(selectedGarmentId)}#size-chart`;
-  }, [productDetail, selectedGarmentId, selectedGarment?.slug, garmentOptions]);
+  }, [
+    productDetail,
+    selectedGarmentId,
+    selectedColorwayReady,
+    selectedColorway,
+    selectedGarment,
+    garmentOptions,
+  ]);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
@@ -479,9 +662,11 @@ export function DesignStudio({
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
+  const namedRosterCount = cartRosterRowsFromDraft(roster).length;
+  const teamOrderReady = studioIsCompleteTeamRoster(roster);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
-  const decoratedSides = decoratedDesignSides(artworksBySide);
+  const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
 
   const quoted = useMemo(() => {
     const unitCostMinor =
@@ -493,11 +678,20 @@ export function DesignStudio({
     try {
       return priceShopperQuote(pricingConfig, {
         unitCostMinor,
-        quantity: groupOrder ? Math.max(1, roster.length) : designQty,
+        quantity: studioTeamOrderQuantity(roster, designQty),
         mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
         colourName:
-          selectedGarment?.colorName ?? productDetail?.product.colorName ?? "",
-        isDark: selectedGarment?.isDark,
+          (selectedColorwayReady
+            ? productDetail?.product.colorName
+            : null) ||
+          selectedGarment?.colorName ||
+          selectedColorway?.colorName ||
+          "",
+        isDark:
+          selectedGarment?.isDark ??
+          (selectedColorwayReady
+            ? productDetail?.product.isDark
+            : selectedColorway?.isDark),
         methodKey: selectedMethod?.key,
         colours: methodVariableInputs(selectedMethod).colours
           ? colours
@@ -521,44 +715,42 @@ export function DesignStudio({
     colours,
     decoratedSides,
     designQty,
-    groupOrder,
     optionKey,
     placementBySide,
     pricingConfig,
-    productDetail?.product.colorName,
-    roster.length,
-    selectedGarment?.colorName,
-    selectedGarment?.costMinor,
-    selectedGarment?.isDark,
-    selectedGarment?.label,
+    productDetail,
+    roster,
+    selectedColorway,
+    selectedColorwayReady,
+    selectedGarment,
     selectedMethod,
     selectedVariant,
     stitchPreset,
   ]);
 
-  // Front/back can use the list photo while detail loads. Sleeves use a
-  // vendor side shot when the catalog has one (the dedicated garment
-  // angle), otherwise a framed sleeve-on-shirt crop of that colorway —
-  // never the full chest frame, never a zoomed torso fill.
-  const backdrop = garmentBackdropForSide(activeSide, {
-    colorFrontImageUrl:
-      productDetail?.product.colorFrontImageUrl ||
-      selectedGarment?.imageUrl ||
-      null,
-    colorSideImageUrl:
-      productDetail?.product.colorSideImageUrl ||
-      selectedGarment?.sideImageUrl ||
-      null,
-    colorBackImageUrl:
-      productDetail?.product.colorBackImageUrl ||
-      selectedGarment?.backImageUrl ||
-      null,
+  // Front/back stay photographic. Left/right sleeves are original line-art
+  // plates whose fill follows the selected colourway hex.
+  const garmentPhotos = studioGarmentPhotos({
+    selectedId: selectedGarmentId,
+    product: productDetail?.product,
     styleImageUrl: productDetail?.style.styleImageUrl,
+    selectedGarment,
+    selectedColorway,
   });
-  const currentPhoto = backdrop.url;
-  const mirrorPhoto = backdrop.mirror;
+  const sideBackdrops = garmentBackdrops(garmentPhotos);
+  const backdrop = sideBackdrops[activeSide];
+  const sleeveFillHex = studioSleeveFillFromColorway(
+    selectedColorway,
+    (selectedColorwayReady ? productDetail?.product.colorName : null) ||
+      selectedGarment?.colorName,
+  );
+  const sleeveView = isStudioSleeveSide(activeSide);
+  const currentPhoto = sleeveView ? null : backdrop.url;
+  const mirrorPhoto = sleeveView ? false : backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
+  const canvasGarmentImageUrl = isStudioSleeveSide(activeSide)
+    ? sleeveIllustrationDataUrl({ side: activeSide, fillHex: sleeveFillHex })
+    : studioCanvasImageUrl(backdrop);
   const framedBackdrop = framedBackdropStyles(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
@@ -568,6 +760,12 @@ export function DesignStudio({
 
   function setSelectedId(id: string | null) {
     setSelectedBySide((prev) => ({ ...prev, [activeSide]: id }));
+  }
+
+  function selectColorway(id: string) {
+    if (!id || id === selectedGarmentId) return;
+    setSelectedGarmentId(id);
+    setChangingGarment(false);
   }
 
   const updateArtworks = useCallback(
@@ -583,50 +781,48 @@ export function DesignStudio({
     [],
   );
 
-  function setActiveArtworks(
-    update: (artworks: PlacedArtwork[]) => PlacedArtwork[]
-  ) {
-    updateArtworks(activeSide, update);
+  function commitDesign(updater: (prev: DesignDocument) => DesignDocument) {
+    const prev = designRef.current;
+    historyRef.current.push(snapshotOf(prev));
+    const next = updater(prev);
+    designRef.current = next;
+    setDesign(next);
+    setHistoryTick((tick) => tick + 1);
     setExportError(null);
   }
 
-  function setPlacement(side: DesignSide, zone: string) {
-    setDesign((prev) => ({
-      ...prev,
-      placementBySide: { ...prev.placementBySide, [side]: zone },
-    }));
-    const layers = artworksBySide[side];
-    const targetId =
-      (side === activeSide ? selectedId : null) ??
-      (layers.length === 1 ? layers[0]!.id : null);
-    const target = targetId
-      ? layers.find((layer) => layer.id === targetId)
-      : undefined;
-    if (target) void snapArtworkToZone(side, zone, target);
+  function undoStudio() {
+    const prev = designRef.current;
+    const restored = historyRef.current.undo(snapshotOf(prev));
+    if (!restored) return;
+    const next = applyHistorySnapshot(prev, restored);
+    designRef.current = next;
+    setDesign(next);
+    setHistoryTick((tick) => tick + 1);
+    setLiveZone(null);
   }
 
-  async function snapArtworkToZone(
-    side: DesignSide,
-    zone: string,
-    artwork: PlacedArtwork,
+  function redoStudio() {
+    const prev = designRef.current;
+    const restored = historyRef.current.redo(snapshotOf(prev));
+    if (!restored) return;
+    const next = applyHistorySnapshot(prev, restored);
+    designRef.current = next;
+    setDesign(next);
+    setHistoryTick((tick) => tick + 1);
+    setLiveZone(null);
+  }
+
+  function setActiveArtworks(
+    update: (artworks: PlacedArtwork[]) => PlacedArtwork[]
   ) {
-    try {
-      const size = await measureArtworkSize(artwork.src);
-      const placed = placeArtworkInZone({
-        side,
-        zone,
-        imageWidth: size.width,
-        imageHeight: size.height,
-        canvasSize: CANVAS_SIZE,
-      });
-      updateArtworks(side, (layers) =>
-        layers.map((layer) =>
-          layer.id === artwork.id ? { ...layer, ...placed } : layer,
-        ),
-      );
-    } catch {
-      // Zone name still saves for the press ticket; geometry stays put.
-    }
+    commitDesign((prev) => ({
+      ...prev,
+      artworksBySide: {
+        ...prev.artworksBySide,
+        [activeSide]: update(prev.artworksBySide[activeSide]),
+      },
+    }));
   }
 
   /**
@@ -738,9 +934,9 @@ export function DesignStudio({
    * exists after the tab closes.
    *
    * Size and position come from the active print area: a 4000px phone photo
-   * and a 200px logo both start as a small centered (or left/right) chest
-   * mark. The old `scale = 0.4` was 40% of the file's natural pixels, which
-   * is why uploads covered the shirt.
+   * and a 200px logo both start as a small centered chest mark. The old
+   * `scale = 0.4` was 40% of the file's natural pixels, which is why
+   * uploads covered the shirt.
    */
   async function addArtworkFromBlob(
     blob: Blob,
@@ -794,9 +990,192 @@ export function DesignStudio({
 
   function removeSelected() {
     if (!selectedId) return;
-    setActiveArtworks((prev) => prev.filter((a) => a.id !== selectedId));
+    commitDesign((prev) => deleteStudioLayer(prev, selectedId));
     setSelectedId(null);
   }
+
+  function addTextLayer() {
+    const text = textDraft.trim();
+    if (!text) return;
+    const layer = createStudioTextLayer({
+      side: activeSide,
+      text,
+      canvasSize: CANVAS_SIZE,
+      zone: placementBySide[activeSide],
+      fontFamily: textFontId,
+      fill: textFill,
+      align: textAlign,
+      printMethod: textPrintMethod,
+    });
+    commitDesign((prev) => ({
+      ...prev,
+      textsBySide: {
+        ...(prev.textsBySide ?? emptyTextsBySide()),
+        [activeSide]: [
+          ...(prev.textsBySide ?? emptyTextsBySide())[activeSide],
+          layer,
+        ],
+      },
+    }));
+    setSelectedId(layer.id);
+    setTextDraft("");
+  }
+
+  function commitArtworkChange(next: PlacedArtwork) {
+    const width = 80 * Math.abs(next.scaleX);
+    const height = 80 * Math.abs(next.scaleY);
+    const zone = detectPlacementZone({
+      side: activeSide,
+      x: next.x,
+      y: next.y,
+      width,
+      height,
+      canvasSize: CANVAS_SIZE,
+    });
+    commitDesign((prev) => ({
+      ...prev,
+      artworksBySide: {
+        ...prev.artworksBySide,
+        [activeSide]: prev.artworksBySide[activeSide].map((layer) =>
+          layer.id === next.id ? next : layer,
+        ),
+      },
+      placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+    }));
+    setLiveZone(null);
+  }
+
+  function commitTextChange(next: PlacedText) {
+    const display = estimateTextDisplaySize(
+      next.text,
+      next.fontSize,
+      next.letterSpacing,
+    );
+    const zone = detectPlacementZone({
+      side: activeSide,
+      x: next.x,
+      y: next.y,
+      width: display.width * Math.abs(next.scaleX),
+      height: display.height * Math.abs(next.scaleY),
+      canvasSize: CANVAS_SIZE,
+    });
+    commitDesign((prev) => ({
+      ...prev,
+      textsBySide: {
+        ...(prev.textsBySide ?? emptyTextsBySide()),
+        [activeSide]: (prev.textsBySide ?? emptyTextsBySide())[activeSide].map(
+          (layer) => (layer.id === next.id ? next : layer),
+        ),
+      },
+      placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+    }));
+    setLiveZone(null);
+  }
+
+  function handleLayerDragMove(info: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) {
+    setLiveZone(
+      detectPlacementZone({
+        side: activeSide,
+        x: info.x,
+        y: info.y,
+        width: info.width,
+        height: info.height,
+        canvasSize: CANVAS_SIZE,
+      }),
+    );
+  }
+
+  function moveSelectedToSide(side: DesignSide) {
+    if (!selectedId) return;
+    commitDesign((prev) => moveStudioLayerToSide(prev, selectedId, side, CANVAS_SIZE).document);
+    setActiveSide(side);
+    setSelectedBySide((prev) => ({ ...prev, [side]: selectedId }));
+    setLiveZone(null);
+  }
+
+  function duplicateSelected() {
+    if (!selectedId) return;
+    const newId = crypto.randomUUID();
+    commitDesign((prev) => duplicateStudioLayer(prev, selectedId, newId).document);
+    setSelectedId(newId);
+  }
+
+  function applySelectedTextPatch(patch: Partial<PlacedText>, record = true) {
+    if (!selectedId) return;
+    if (record) commitDesign((prev) => patchStudioText(prev, selectedId, patch));
+    else setDesign((prev) => patchStudioText(prev, selectedId, patch));
+  }
+
+  function applySelectedArtworkPatch(patch: Partial<PlacedArtwork>, record = true) {
+    if (!selectedId) return;
+    if (record) commitDesign((prev) => patchStudioArtwork(prev, selectedId, patch));
+    else setDesign((prev) => patchStudioArtwork(prev, selectedId, patch));
+  }
+
+  function beginSliderHistory() {
+    if (sliderHistoryArmedRef.current) return;
+    sliderHistoryArmedRef.current = true;
+    historyRef.current.push(snapshotOf(designRef.current));
+    setHistoryTick((tick) => tick + 1);
+  }
+
+  function endSliderHistory() {
+    sliderHistoryArmedRef.current = false;
+    setHistoryTick((tick) => tick + 1);
+  }
+
+  function patchSelectedWhileSliding(textPatch?: Partial<PlacedText>, artPatch?: Partial<PlacedArtwork>) {
+    beginSliderHistory();
+    if (textPatch) applySelectedTextPatch(textPatch, false);
+    if (artPatch) applySelectedArtworkPatch(artPatch, false);
+  }
+
+  function setRosterRows(rows: RosterRow[]) {
+    setRoster(rows);
+    setRosterError(null);
+    setDesign((prev) => ({
+      ...prev,
+      roster: rows
+        .filter((row) => row.name.trim() || row.number.trim() || row.size)
+        .map((row) => ({
+          size: row.size,
+          name: row.name,
+          number: row.number.trim() || undefined,
+        })),
+    }));
+  }
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoStudio();
+        else undoStudio();
+      }
+      if ((event.metaKey || event.ctrlKey) && key === "y") {
+        event.preventDefault();
+        redoStudio();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   async function generateConcept() {
     const prompt = aiPrompt.trim();
@@ -872,33 +1251,38 @@ export function DesignStudio({
   }
 
   async function addDesignToCart() {
-    if (!productDetail) {
-      setCartError("Pick a garment first.");
+    if (!productDetail || productDetail.product.id !== selectedGarmentId) {
+      setCartError(
+        selectedGarmentId
+          ? "The selected colour is still loading. Try add to cart again in a moment."
+          : "Pick a garment first.",
+      );
       return;
     }
 
-    const decorated = decoratedDesignSides(artworksBySide);
+    const decorated = decoratedDesignSides(artworksBySide, textsBySide);
     if (decorated.length === 0) {
-      setCartError("Place artwork on the garment first.");
+      setCartError("Place artwork or text on the garment first.");
       return;
     }
 
     // Validate before uploading: an upload spent on a roster that is about to
-    // be rejected is a round trip nobody asked for.
-    if (groupOrder) {
-      if (roster.length === 0) {
-        setRosterError("Add at least one person.");
-        return;
-      }
-      if (roster.some((r) => !r.name.trim())) {
-        setRosterError("Every row needs a name.");
-        return;
-      }
-      setRosterError(null);
-    } else if (!selectedVariant) {
+    // be rejected is a round trip nobody asked for. A finished Team panel is
+    // the order. An empty panel stays a regular size + qty line.
+    const rosterPayload = studioCartRosterPayload({
+      roster,
+      rosterDecor,
+    });
+    if (!rosterPayload.ok) {
+      setRosterError(rosterPayload.error);
+      setStudioTab("team");
+      return;
+    }
+    if (!rosterPayload.teamOrder && !selectedVariant) {
       setCartError("Select a size first.");
       return;
     }
+    setRosterError(null);
 
     // The proof has to end up somewhere staff can open. Carrying the canvas as
     // a data: URL looked like it worked and then died on the way to checkout,
@@ -935,13 +1319,26 @@ export function DesignStudio({
       const productSlug =
         productDetail.product.slug ??
         garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
+      const line = studioCartLineFields(rosterPayload, {
+        printLabel,
+        notes: design.notes,
+        sizeName: selectedVariant?.sizeName ?? "",
+        designQty,
+      });
 
-      if (groupOrder) {
+      if (rosterPayload.teamOrder) {
+        const cartRoster = line.roster;
+        if (!cartRoster || line.qty !== cartRoster.length) {
+          setRosterError("Add at least one person.");
+          setStudioTab("team");
+          return;
+        }
         const priceVariant =
-          productDetail.variants.find((v) => v.sizeName === roster[0]!.size) ??
+          productDetail.variants.find((v) => v.sizeName === cartRoster[0]?.size) ??
           selectedVariant;
         if (!priceVariant) {
           setCartError("Select a size for the first roster row.");
+          setStudioTab("team");
           return;
         }
         addItem({
@@ -951,30 +1348,28 @@ export function DesignStudio({
           styleId: productDetail.style.id,
           variantId: priceVariant.id,
           name: productName,
-          meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
+          meta: line.meta,
           color: productDetail.product.colorName,
-          qty: roster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
           image: artworkProofUrl || currentPhoto || "",
           artworkProofUrl,
           designProjectId,
           pricingSnapshot: quoted?.snapshot,
-          roster: roster.map((r) => ({
-            size: r.size,
-            name: r.name.trim(),
-            number: r.number.trim() || undefined,
-          })),
+          roster: cartRoster,
+          designNotes: (design.notes ?? "").trim() || undefined,
+          rosterDecor: line.rosterDecor,
         });
         trackCartItemAdded({
           id: productDetail.product.id,
           productId: productDetail.product.id,
           name: productName,
-          qty: roster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
         });
         router.push("/cart");
         return;
@@ -991,25 +1386,27 @@ export function DesignStudio({
         styleId: productDetail.style.id,
         variantId: selectedVariant.id,
         name: productName,
-        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
+        meta: line.meta,
         color: productDetail.product.colorName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
         image: artworkProofUrl || currentPhoto || "",
         artworkProofUrl,
         designProjectId,
         pricingSnapshot: quoted?.snapshot,
+        designNotes: (design.notes ?? "").trim() || undefined,
+        rosterDecor: line.rosterDecor,
       });
       trackCartItemAdded({
         id: productDetail.product.id,
         productId: productDetail.product.id,
         name: productName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
       });
       router.push("/cart");
     } catch (caught) {
@@ -1124,36 +1521,41 @@ export function DesignStudio({
     activeSide,
   );
 
+  const canUndo = historyTick >= 0 && historyRef.current.canUndo;
+  const canRedo = historyTick >= 0 && historyRef.current.canRedo;
+  const guideZone = liveZone ?? placementBySide[activeSide];
+  const selectedPrintLabel = selectedText
+    ? selectedText.printMethod === "embroidery"
+      ? "Embroidery"
+      : "Print"
+    : "Print";
+  const zoomIndex = ZOOM_STEPS.findIndex((step) => step >= zoom - 0.001);
+  const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
+      <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
       <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px] min-w-0">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-2">
+              Product
+            </span>
             {selectedGarmentId ? (
               <>
                 <h4 className="font-display text-[16px] mb-1 truncate">
                   {selectedArticleLabel}
                 </h4>
-                <p className="text-xs text-text-secondary m-0 mb-2 truncate">
-                  Colour: {selectedGarment?.colorName || "—"}
-                </p>
-                {colorwayOptions.length > 0 && (
-                  <StudioSelect
+                <div className="mb-2">
+                  <StudioColorSwitcher
                     tone="panel"
-                    ariaLabel="Colour"
-                    value={selectedGarmentId}
-                    onChange={(id) => {
-                      setSelectedGarmentId(id || null);
-                      setChangingGarment(false);
-                    }}
-                    options={colorwayOptions.map((colorway) => ({
-                      value: colorway.id,
-                      label: colorway.colorName,
-                    }))}
+                    colorways={colorwayOptions}
+                    selectedId={selectedGarmentId}
+                    onChange={selectColorway}
                   />
-                )}
+                </div>
                 {articleOptions.length > 1 && (
                   <button
                     type="button"
@@ -1194,7 +1596,23 @@ export function DesignStudio({
           <li>Classic fit, true to size</li>
         </ul>
 
-        <h4 className="font-display text-[16px] mb-sp-2">Assets</h4>
+        <div className="grid grid-cols-4 gap-1 mb-2">
+          {STUDIO_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setStudioTab(tab.id)}
+              className={cn(
+                "h-8 rounded-sm border text-[10px] font-bold uppercase tracking-[0.06em] transition-colors",
+                studioTab === tab.id
+                  ? "bg-accent text-white border-accent"
+                  : "border-border text-text-tertiary hover:border-text-tertiary",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         <input
           ref={artworkInputRef}
@@ -1204,24 +1622,92 @@ export function DesignStudio({
           onChange={handleFileSelected}
         />
 
+        {studioTab === "images" && (
+          <>
+        <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-2">
+          Images
+        </span>
         <button
           onClick={() => artworkInputRef.current?.click()}
-          className="border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
+          className="w-full border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
         >
-          Upload logo or artwork
+          Upload art
         </button>
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
+          </>
+        )}
 
+        {studioTab === "text" && (
+          <StudioTextPanel
+            draft={textDraft}
+            onDraftChange={setTextDraft}
+            align={selectedText?.align ?? textAlign}
+            onAlignChange={(value) => {
+              setTextAlign(value);
+              if (selectedText) applySelectedTextPatch({ align: value });
+            }}
+            printMethod={selectedText?.printMethod ?? textPrintMethod}
+            onPrintMethodChange={(value) => {
+              setTextPrintMethod(value);
+              if (selectedText) applySelectedTextPatch({ printMethod: value });
+            }}
+            fill={selectedText?.fill ?? textFill}
+            onFillChange={(value) => {
+              setTextFill(value);
+              if (selectedText) applySelectedTextPatch({ fill: value });
+            }}
+            fontId={selectedText?.fontFamily ?? textFontId}
+            onFontChange={(value) => {
+              setTextFontId(value);
+              if (selectedText) applySelectedTextPatch({ fontFamily: value });
+            }}
+            onAdd={addTextLayer}
+          />
+        )}
+
+        {studioTab === "team" && (
+          <div className="flex flex-col gap-2">
+            <p className="m-0 text-[13px] leading-5 text-text-secondary">
+              {teamOrderReady
+                ? `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} on the team list below.`
+                : namedRosterCount > 0
+                  ? "Finish every row on the team list below — or use Text for one name."
+                  : "The team list is below the canvas, with room for names."}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("studio-team-order")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+              className="text-left text-[12.5px] font-semibold text-accent hover:underline"
+            >
+              {namedRosterCount > 0 ? "Jump to team list" : "Add a team list"}
+            </button>
+          </div>
+        )}
+
+        {studioTab === "notes" && (
+          <StudioNotesTab
+            value={design.notes ?? ""}
+            onChange={(notes) => setDesign((prev) => ({ ...prev, notes }))}
+          />
+        )}
+
+        {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
         <button
           onClick={() => setShowAiPrompt((open) => !open)}
           className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
         >
           Generate an AI concept
         </button>
+        ) : null}
 
-        {showAiPrompt && (
+        {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
           <div className="rounded-md border border-border bg-bg p-sp-3">
             <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
               Describe your concept
@@ -1249,7 +1735,8 @@ export function DesignStudio({
           </div>
         )}
 
-        {artworks.length > 0 && (
+        {(studioTab === "images" || studioTab === "text") &&
+          (artworks.length > 0 || texts.length > 0) && (
           <div className="mt-sp-3">
             <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
               {DESIGN_SIDE_LABELS[activeSide]} layers
@@ -1267,6 +1754,20 @@ export function DesignStudio({
                   )}
                 >
                   Artwork {i + 1}
+                </button>
+              ))}
+              {texts.map((layer) => (
+                <button
+                  key={layer.id}
+                  onClick={() => setSelectedId(layer.id)}
+                  className={cn(
+                    "text-left px-2.5 py-2 rounded-md text-[13px] font-semibold border transition-colors truncate",
+                    selectedId === layer.id
+                      ? "border-accent bg-accent-tint text-accent"
+                      : "border-border hover:border-text-tertiary"
+                  )}
+                >
+                  “{layer.text || "Text"}”
                 </button>
               ))}
             </div>
@@ -1289,75 +1790,87 @@ export function DesignStudio({
           <div>
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
-              {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · Print
+              {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
           </div>
-        </div>
-
-        <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3 min-w-0">
-          <div className="min-w-0">
-            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
-              Which side are you designing?
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {availableViews.map((side) => (
-                <button
-                  key={side}
-                  onClick={() => {
-                    setActiveSide(side);
-                    setExportError(null);
-                  }}
-                  aria-pressed={activeSide === side}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-[13px] font-bold transition-colors",
-                    activeSide === side
-                      ? "bg-accent border-accent text-white"
-                      : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
-                  )}
-                >
-                  {DESIGN_SIDE_LABELS[side]}
-                  {artworksBySide[side].length > 0 && (
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 text-[10px] font-bold",
-                        activeSide === side ? "bg-white/25" : "bg-white/15"
-                      )}
-                    >
-                      {artworksBySide[side].length}
-                    </span>
-                  )}
-                </button>
-              ))}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={undoStudio}
+              disabled={!canUndo}
+              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={redoStudio}
+              disabled={!canRedo}
+              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+            >
+              Redo
+            </button>
+            <div className="flex items-center gap-1 ml-1" aria-label="Zoom">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                disabled={zoomAt <= 0}
+                onClick={() => setZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)]!)}
+                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+              >
+                −
+              </button>
+              <span className="min-w-12 text-center text-[11px] font-bold text-white/80">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                disabled={zoomAt >= ZOOM_STEPS.length - 1}
+                onClick={() =>
+                  setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomAt + 1)]!)
+                }
+                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+              >
+                +
+              </button>
             </div>
           </div>
-
-          <div className="min-w-0 w-full max-w-full sm:w-auto sm:max-w-[12.5rem]">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
-              Placement on this side
-            </span>
-            <StudioSelect
-              tone="canvas"
-              ariaLabel="Placement on this side"
-              value={placementBySide[activeSide]}
-              onChange={(zone) => setPlacement(activeSide, zone)}
-              options={DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => ({
-                value: zone,
-                label: zone,
-              }))}
-            />
-          </div>
         </div>
 
+        {colorwayOptions.length > 0 && (
+          <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
+            <StudioColorSwitcher
+              tone="canvas"
+              colorways={colorwayOptions}
+              selectedId={selectedGarmentId}
+              onChange={selectColorway}
+            />
+          </div>
+        )}
+
         <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
-          <div className="min-w-0 w-full max-w-full overflow-hidden bg-[#141414] rounded-md flex items-center justify-center p-sp-3">
+          <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
+            <div className="min-w-0 flex-1 flex items-center justify-center">
             <div
-              className="relative w-full max-w-[600px] aspect-square"
+              className={cn(
+                "relative w-full max-w-[600px] aspect-square",
+                sleeveView && "gwg-sleeve-breathe",
+              )}
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {currentPhoto && (
+              {isStudioSleeveSide(activeSide) ? (
+                <div className="absolute inset-0 overflow-visible pointer-events-none">
+                  <SleeveIllustration
+                    side={activeSide}
+                    fillHex={sleeveFillHex}
+                    animated
+                  />
+                </div>
+              ) : currentPhoto ? (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                   <div style={framedBackdrop.frame}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
@@ -1368,8 +1881,8 @@ export function DesignStudio({
                     />
                   </div>
                 </div>
-              )}
-              {isLoadingGarment && !currentPhoto && (
+              ) : null}
+              {isLoadingGarment && !currentPhoto && !sleeveView && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
@@ -1380,19 +1893,19 @@ export function DesignStudio({
               <DesignCanvas
                 activeSide={activeSide}
                 artworks={artworks}
+                texts={texts}
                 selectedId={selectedId}
                 canvasSize={CANVAS_SIZE}
+                zoom={zoom}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
-                garmentCrop={backdrop.crop}
-                garmentPlate={backdrop.plate}
+                garmentCrop={sleeveView ? undefined : backdrop.crop}
+                garmentPlate={sleeveView ? undefined : backdrop.plate}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
-                onChange={(next) =>
-                  setActiveArtworks((prev) =>
-                    prev.map((p) => (p.id === next.id ? next : p))
-                  )
-                }
+                onChangeArtwork={commitArtworkChange}
+                onChangeText={commitTextChange}
+                onDragMove={handleLayerDragMove}
               />
               {/* CSS overlay so the guide never lands in the Konva proof. */}
               <div
@@ -1405,14 +1918,210 @@ export function DesignStudio({
                   height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                 }}
               >
-                <span className="absolute left-1 top-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-white/50">
-                  Print area
+                <span className="absolute left-1 top-0.5 right-1 rounded-[2px] bg-black/45 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
+                  {formatZoneInchLabel(guideZone)}
                 </span>
               </div>
+              {sleeveView && artworks.length === 0 && texts.length === 0 && (
+                <div
+                  className="absolute z-[3] flex flex-col items-center justify-center gap-2"
+                  style={{
+                    left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
+                    top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
+                    width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
+                    height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => artworkInputRef.current?.click()}
+                    className="min-h-9 rounded-md bg-white px-3 py-1.5 text-[12px] font-bold text-text-primary hover:bg-accent hover:text-white transition-colors"
+                  >
+                    Upload art
+                  </button>
+                </div>
+              )}
+            </div>
+            </div>
+            <div className="flex sm:flex-col gap-2 shrink-0 sm:w-[92px]">
+              {availableViews.map((side) => {
+                const selected = activeSide === side;
+                const thumbBackdrop = sideBackdrops[side];
+                const thumbFrame = framedBackdropStyles(thumbBackdrop);
+                return (
+                  <button
+                    key={side}
+                    type="button"
+                    onClick={() => {
+                      setActiveSide(side);
+                      setExportError(null);
+                    }}
+                    aria-pressed={selected}
+                    aria-label={DESIGN_SIDE_LABELS[side]}
+                    className={cn(
+                      "flex-1 sm:flex-none rounded-md border overflow-hidden bg-black/30 text-left transition-colors",
+                      selected
+                        ? "border-accent ring-1 ring-accent"
+                        : "border-white/15 hover:border-white/40",
+                    )}
+                  >
+                    <span className="block aspect-square relative bg-[#1a1a1a]">
+                      {isStudioSleeveSide(side) ? (
+                        <span className="absolute inset-1">
+                          <SleeveIllustration
+                            side={side}
+                            fillHex={sleeveFillHex}
+                          />
+                        </span>
+                      ) : thumbBackdrop.url ? (
+                        <span className="absolute inset-0 overflow-hidden">
+                          <span style={thumbFrame.frame}>
+                            {/* eslint-disable-next-line @next/next/no-img-element -- tiny side thumb */}
+                            <img
+                              src={thumbBackdrop.url}
+                              alt=""
+                              style={thumbFrame.image}
+                            />
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="absolute inset-0 bg-white/5" />
+                      )}
+                      {sideLayerCount(side) > 0 && (
+                        <span className="absolute top-1 right-1 rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">
+                          {sideLayerCount(side)}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        "block px-1.5 py-1 text-[10px] font-bold tracking-[0.04em] text-center",
+                        selected ? "bg-accent text-white" : "text-white/70",
+                      )}
+                    >
+                      {DESIGN_SIDE_THUMB_LABELS[side]}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
+        {(selectedText || selectedArtwork) && (
+          <StudioElementEditor
+            kind={selectedText ? "text" : "artwork"}
+            activeSide={activeSide}
+            text={
+              selectedText
+                ? {
+                    align: selectedText.align,
+                    printMethod: selectedText.printMethod,
+                    fill: selectedText.fill,
+                    fontFamily: selectedText.fontFamily,
+                    letterSpacing: selectedText.letterSpacing ?? 0,
+                    arc: selectedText.arc ?? 0,
+                    sample: selectedText.text,
+                  }
+                : undefined
+            }
+            onPatchText={(patch) => {
+              const sliding =
+                patch.arc !== undefined || patch.letterSpacing !== undefined;
+              if (sliding) patchSelectedWhileSliding(patch);
+              else applySelectedTextPatch(patch);
+            }}
+            outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
+            rotation={
+              selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
+            }
+            size={
+              selectedText
+                ? selectedText.fontSize
+                : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
+            }
+            onOutline={(next) => {
+              if (selectedText) applySelectedTextPatch({ outline: next });
+              else applySelectedArtworkPatch({ outline: next });
+            }}
+            onRotation={(next) => {
+              if (selectedText) patchSelectedWhileSliding({ rotation: next });
+              else patchSelectedWhileSliding(undefined, { rotation: next });
+            }}
+            onSize={(next) => {
+              if (selectedText) patchSelectedWhileSliding({ fontSize: next });
+              else {
+                const scale = next / 500;
+                patchSelectedWhileSliding(undefined, {
+                  scaleX: scale,
+                  scaleY: scale,
+                });
+              }
+            }}
+            onCenter={() => {
+              if (!selectedId) return;
+              const display = selectedText
+                ? estimateTextDisplaySize(
+                    selectedText.text,
+                    selectedText.fontSize,
+                    selectedText.letterSpacing,
+                  )
+                : { width: 80, height: 80 };
+              commitDesign((prev) =>
+                centerStudioLayer(
+                  prev,
+                  selectedId,
+                  CANVAS_SIZE,
+                  display.width,
+                  display.height,
+                ),
+              );
+            }}
+            onForward={() => {
+              if (!selectedId) return;
+              commitDesign((prev) =>
+                nudgeStudioLayerOrder(prev, selectedId, "forward"),
+              );
+            }}
+            onBack={() => {
+              if (!selectedId) return;
+              commitDesign((prev) =>
+                nudgeStudioLayerOrder(prev, selectedId, "back"),
+              );
+            }}
+            onDuplicate={duplicateSelected}
+            onDelete={removeSelected}
+            onMoveToSide={moveSelectedToSide}
+            onSliderCommit={endSliderHistory}
+          />
+        )}
       </div>
+
+      {studioTab === "team" && (
+        <div
+          id="studio-team-order"
+          className="lg:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+        >
+          <StudioTeamOrderPanel
+            roster={roster}
+            onRosterChange={setRosterRows}
+            rosterError={rosterError}
+            sizes={(productDetail?.variants ?? [])
+              .filter((variant) => variant.qty > 0 && variant.active !== false)
+              .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
+            decor={rosterDecor}
+            onDecorChange={(target, patch) =>
+              setDesign((prev) => ({
+                ...prev,
+                rosterDecor: patchRosterDecor(
+                  prev.rosterDecor ?? defaultRosterDecor(),
+                  target,
+                  patch,
+                ),
+              }))
+            }
+          />
+        </div>
+      )}
 
       {/* Saving, proof download and ordering belong to the main workspace,
           below the canvas they act on — not in a duplicate preview panel. */}
@@ -1474,9 +2183,11 @@ export function DesignStudio({
           <Button
             className="w-full"
             onClick={downloadProof}
-            disabled={artworks.length === 0 || isLoadingGarment}
+            disabled={
+              (artworks.length === 0 && texts.length === 0) || isLoadingGarment
+            }
           >
-            {artworks.length === 0
+            {artworks.length === 0 && texts.length === 0
               ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
               : `Download ${DESIGN_SIDE_LABELS[activeSide]} Mockup`}
           </Button>
@@ -1489,42 +2200,32 @@ export function DesignStudio({
             Downloads the selected garment view with all placed artwork.
           </p>
 
-          {productDetail && !isStaff && (
+          {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              {sizeChartHref && groupOrder && (
-                <p className="m-0 mb-sp-3 text-xs">
-                  <a
-                    href={sizeChartHref}
-                    className="font-semibold text-accent hover:underline"
+              {teamOrderReady ? (
+                <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
+                  <p className="m-0 text-xs text-text-secondary">
+                    Team order · {roster.length.toLocaleString()} piece
+                    {roster.length === 1 ? "" : "s"} from the team list
+                    (mixed sizes).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setStudioTab("team")}
+                    className="mt-2 text-xs font-bold text-accent hover:underline"
                   >
-                    Size chart
-                  </a>
-                </p>
-              )}
-              <label className="flex items-center gap-2 text-xs font-bold mb-sp-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={groupOrder}
-                  onChange={(e) => {
-                    setGroupOrder(e.target.checked);
-                    setRosterError(null);
-                  }}
-                />
-                Team/group order — different sizes, names &amp; numbers
-              </label>
-
-              {groupOrder ? (
-                <div className="mb-sp-3 border border-border rounded-md p-sp-3 bg-bg">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Roster
-                  </span>
-                  <RosterEditor
-                    sizes={productDetail.variants
-                      .filter((v) => v.qty > 0 && v.active !== false)
-                      .map((v) => ({ id: v.id, label: v.sizeName }))}
-                    rows={roster}
-                    onChange={setRoster}
-                  />
+                    Edit team list
+                  </button>
+                  {sizeChartHref && (
+                    <p className="m-0 mt-2 text-xs">
+                      <a
+                        href={sizeChartHref}
+                        className="font-semibold text-accent hover:underline"
+                      >
+                        Size chart
+                      </a>
+                    </p>
+                  )}
                   {rosterError && (
                     <p className="text-[12px] text-red-600 font-semibold mt-2 mb-0">
                       {rosterError}
@@ -1559,7 +2260,10 @@ export function DesignStudio({
                               key={v.id}
                               type="button"
                               disabled={!inStock}
-                              onClick={() => setSelectedVariantId(v.id)}
+                              onClick={() => {
+                                preferredSizeNameRef.current = v.sizeName;
+                                setSelectedVariantId(v.id);
+                              }}
                               className={cn(
                                 "min-w-9 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
                                 !inStock &&
@@ -1598,6 +2302,12 @@ export function DesignStudio({
                       </button>
                     ))}
                   </div>
+                  {namedRosterCount > 0 && (
+                    <p className="m-0 mb-sp-3 text-xs text-text-secondary">
+                      Team list is incomplete — every row needs a name. A single
+                      name on one jersey belongs on the Text tab.
+                    </p>
+                  )}
                 </>
               )}
 
@@ -1702,15 +2412,17 @@ export function DesignStudio({
                 variant="primary"
                 disabled={
                   addingToCart ||
-                  (groupOrder
-                    ? roster.length === 0
-                    : !selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0)
+                  !selectedColorwayReady ||
+                  (!teamOrderReady &&
+                    (!selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0))
                 }
                 onClick={addDesignToCart}
               >
                 {addingToCart
                   ? "Attaching artwork…"
-                  : groupOrder
+                  : !selectedColorwayReady
+                    ? "Loading colour…"
+                  : teamOrderReady
                     ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"

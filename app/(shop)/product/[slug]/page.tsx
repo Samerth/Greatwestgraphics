@@ -26,6 +26,7 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 import type { GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -368,9 +369,11 @@ export default async function ProductPage({
                 )}
 
                 <div className="mt-sp-4 flex gap-3">
-                  <ButtonLink href="/quote" variant="secondary">
-                    Get a formal quote instead
-                  </ButtonLink>
+                  {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+                    <ButtonLink href="/quote" variant="secondary">
+                      Get a formal quote instead
+                    </ButtonLink>
+                  ) : null}
                   <ButtonLink href="/products" variant="secondary">
                     Back to catalogue
                   </ButtonLink>
@@ -426,7 +429,12 @@ export default async function ProductPage({
   // dead end for anyone who doesn't notice the link and for every crawler.
   // The lookup is a targeted search rather than a scan of the first N
   // products, so it resolves slugs from anywhere in a five-figure catalog.
-  const bySlug = await loadStorefrontCatalog({ search: slug, limit: 60 });
+  const bySlug = await loadStorefrontCatalog({
+    search: slug,
+    limit: 60,
+    // Must see every colourway slug, not one representative per style.
+    groupByStyle: false,
+  });
   const match = bySlug.products.find((p) => p.slug === slug);
   if (match) {
     redirect(`/product/${encodeURIComponent(match.slug)}?id=${match.id}`);

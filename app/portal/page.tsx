@@ -7,6 +7,7 @@ import { resolvePortalScope } from "@/lib/commerce/portal-client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -151,9 +152,11 @@ export default async function PortalHomePage() {
             <ButtonLink href="/products" variant="secondary" size="sm">
               Browse products
             </ButtonLink>
-            <ButtonLink href="/quote" variant="secondary" size="sm">
-              Request a quote
-            </ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href="/quote" variant="secondary" size="sm">
+                Request a quote
+              </ButtonLink>
+            ) : null}
           </div>
         </div>
       </Container>

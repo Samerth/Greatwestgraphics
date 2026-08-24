@@ -3,6 +3,11 @@ import { Facebook, Instagram, Linkedin } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 import { featuredLocationLinks } from "@/lib/seo/location-hub";
+import {
+  publicPrintMethodHref,
+  SHOW_PUBLIC_QUOTE_CALCULATOR,
+  withoutPublicQuoteLinks,
+} from "@/lib/features";
 
 const SOCIAL_LINKS = [
   {
@@ -56,10 +61,10 @@ export function Footer({
 
   const serviceLinks = [
     ...(isBranded ? [] : [{ label: "All print services", href: "/services" }]),
-    { label: "Embroidery", href: "/quote?method=embroidery" },
-    { label: "Screen Printing", href: "/quote?method=screen" },
-    { label: "DTF Printing", href: "/quote?method=dtf" },
-    { label: "Sublimation Printing", href: "/quote?method=sublimation" },
+    { label: "Embroidery", href: publicPrintMethodHref("embroidery") },
+    { label: "Screen Printing", href: publicPrintMethodHref("screen") },
+    { label: "DTF Printing", href: publicPrintMethodHref("dtf") },
+    { label: "Sublimation Printing", href: publicPrintMethodHref("sublimation") },
     { label: "Design Studio", href: "/design" },
   ];
 
@@ -74,24 +79,29 @@ export function Footer({
   // "Privacy Policy" used to point at /shipping#privacy, an anchor that does
   // not exist on that page, and "Sitemap" pointed at /products — neither went
   // where its label promised.
-  const importantLinks = [
-    { label: "Start an Order", href: "/quote" },
+  const importantLinks = withoutPublicQuoteLinks([
+    {
+      label: "Start an Order",
+      href: SHOW_PUBLIC_QUOTE_CALCULATOR ? "/quote" : "/products",
+    },
     { label: "How to Order", href: "/how-to-order" },
     { label: "Decoration Processes", href: "/decoration-processes" },
     { label: "FAQ", href: "/faq" },
     { label: "Shipping Policy", href: "/shipping" },
     { label: "Privacy Policy", href: "/privacy" },
     { label: "Sitemap", href: "/sitemap.xml" },
-  ];
+  ]);
 
-  const aboutLinks = [
+  const aboutLinks = withoutPublicQuoteLinks([
     { label: "Contact Us", href: "/contact" },
     { label: "About Us", href: "/about" },
     { label: "Our Work", href: "/#gallery" },
     { label: "Reviews", href: "/#reviews" },
-    { label: "Get a Quote", href: "/quote" },
+    ...(SHOW_PUBLIC_QUOTE_CALCULATOR
+      ? [{ label: "Get a Quote", href: "/quote" }]
+      : []),
     ...(isBranded ? [] : [{ label: "Staff login", href: "/admin/login" }]),
-  ];
+  ]);
 
   return (
     <footer className="bg-text-primary text-white/70 pt-sp-7 pb-sp-4">

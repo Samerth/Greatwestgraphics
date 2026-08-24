@@ -3,6 +3,7 @@ import {
   blankGarmentMergeTarget,
   cartItemBelongsToStore,
   cartItemEditHref,
+  cartLineIsCustomized,
   visibleCartItems,
   type CartItem,
 } from "./cart";
@@ -55,6 +56,22 @@ describe("blankGarmentMergeTarget", () => {
     expect(
       blankGarmentMergeTarget([designed], { ...designed, qty: 48 }, store),
     ).toBeUndefined();
+  });
+
+  it("keeps a team roster line as its own line with qty === roster.length", () => {
+    const team: CartItem = {
+      ...blank,
+      meta: "Custom design · Team order · 2 pieces, mixed sizes",
+      qty: 2,
+      roster: [
+        { size: "M", name: "Alex", number: "12" },
+        { size: "XL", name: "Sam" },
+      ],
+    };
+    expect(team.qty).toBe(team.roster!.length);
+    expect(cartLineIsCustomized(team)).toBe(true);
+    expect(blankGarmentMergeTarget([blank], team, store)).toBeUndefined();
+    expect(blankGarmentMergeTarget([team], { ...team }, store)).toBeUndefined();
   });
 });
 

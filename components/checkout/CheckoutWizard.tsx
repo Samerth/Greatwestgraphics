@@ -179,6 +179,8 @@ export function CheckoutWizard() {
                       artworkProofUrl: item.artworkProofUrl,
                       designProjectId: item.designProjectId,
                       roster: item.roster,
+                      designNotes: item.designNotes,
+                      rosterDecor: item.rosterDecor,
                       // Sending the snapshot lets the API re-price the line
                       // against the config that is live right now, so a cart
                       // left open for a week can't lock in stale pricing.

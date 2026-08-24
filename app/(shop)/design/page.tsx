@@ -25,9 +25,8 @@ export default async function DesignPage({
 }) {
   const { loadDesignId, garmentId } = await searchParams;
   const [catalog, session, pricingConfig] = await Promise.all([
-    // Catalog is sorted brand-then-style alphabetically and Adidas alone
-    // has 170 colourways — a small limit would silently only ever offer
-    // Adidas garments. 150 trades some brand variety for lower latency.
+    // Grouped by style so 150 rows are 150 garments, not 150 Adidas
+    // colourways. Colour switching uses the product-detail colorways list.
     loadStorefrontCatalog({ limit: 150 }),
     getCustomerSession(),
     loadPublishedPricingV2(),
@@ -79,7 +78,7 @@ export default async function DesignPage({
             you go.
           </h1>
           <p className="mt-sp-3 max-w-[52ch] text-white/75 text-[16px] leading-[1.6]">
-            Upload a logo, try a sample AI concept, and place it on the garment.
+            Upload a logo or artwork and place it on the garment.
             The live mockup updates the second you move, scale or rotate a layer.
           </p>
         </Container>

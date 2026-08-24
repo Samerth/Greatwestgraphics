@@ -1,4 +1,5 @@
 import { ButtonLink } from "@/components/shared/Button";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 /**
  * Shown when the commerce API call itself failed, as distinct from a search
@@ -31,9 +32,11 @@ export function CatalogUnavailable({
         <ButtonLink href={retryHref} variant="secondary">
           Try again
         </ButtonLink>
-        <ButtonLink href="/quote" variant="primary">
-          Request a Quote
-        </ButtonLink>
+        {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+          <ButtonLink href="/quote" variant="primary">
+            Request a Quote
+          </ButtonLink>
+        ) : null}
         <ButtonLink href="/contact" variant="secondary">
           Contact Us
         </ButtonLink>

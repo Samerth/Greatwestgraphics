@@ -29,6 +29,7 @@ import {
   ResourceNotFoundError,
 } from "./job-request-service.js";
 import { mapSizeSpecsToChart, parseSizeSpecRows } from "./size-specs.js";
+import { pickRepresentativeByStyle } from "./style-grouping.js";
 
 /** S&S sells its own printed catalogue through the same styles feed.
  * These are not garment brands and are hidden from shopper-facing lists. */
@@ -51,6 +52,11 @@ type ProductFilterQuery = {
    * design picker). Admin list sets this false and uses `visibility` instead.
    */
   storefrontOnly?: boolean;
+  /**
+   * Storefront PLP: one row per `ss_styles` garment, not one per colourway.
+   * Admin lists leave this unset so staff can hide individual colours.
+   */
+  groupByStyle?: boolean;
 };
 
 export class CatalogService {
@@ -701,9 +707,13 @@ export class CatalogService {
       ? await this.expandCategoryIds(tenantId, query.categoryId)
       : null;
 
+    const countExpr = query?.groupByStyle
+      ? sql<number>`count(distinct ${ssProducts.styleUuid})::int`
+      : sql<number>`count(*)::int`;
+
     const [row] = categoryIds
       ? await this.db
-          .select({ count: sql<number>`count(*)::int` })
+          .select({ count: countExpr })
           .from(ssProducts)
           .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
           .innerJoin(
@@ -715,11 +725,79 @@ export class CatalogService {
           )
           .where(whereClause)
       : await this.db
-          .select({ count: sql<number>`count(*)::int` })
+          .select({ count: countExpr })
           .from(ssProducts)
           .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
           .where(whereClause);
     return row?.count ?? 0;
+  }
+
+  /** Paginated style ids for storefront tiles — one garment, not N colours. */
+  private async listGroupedStyleIds(
+    tenantId: string,
+    query: ProductFilterQuery & { limit?: number; offset?: number },
+    whereClause: ReturnType<typeof and>,
+  ): Promise<string[]> {
+    const limit = query.limit ?? 50;
+    const offset = query.offset ?? 0;
+    const categoryIds = query.categoryId
+      ? await this.expandCategoryIds(tenantId, query.categoryId)
+      : null;
+
+    const orderBy = (() => {
+      switch (query.sort) {
+        case "style":
+          return [
+            asc(ssStyles.styleName),
+            asc(ssStyles.brandName),
+            asc(ssProducts.styleUuid),
+          ];
+        case "stock":
+          return [
+            desc(sql`max(${ssProducts.qty})`),
+            asc(ssStyles.brandName),
+            asc(ssProducts.styleUuid),
+          ];
+        case "updated":
+          return [desc(sql`max(${ssProducts.updatedAt})`), asc(ssProducts.styleUuid)];
+        case "brand":
+        default:
+          return [
+            asc(ssStyles.brandName),
+            asc(ssStyles.styleName),
+            asc(ssProducts.styleUuid),
+          ];
+      }
+    })();
+
+    const rows = categoryIds
+      ? await this.db
+          .select({ styleUuid: ssProducts.styleUuid })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .innerJoin(
+            ssProductCategories,
+            and(
+              eq(ssProductCategories.productUuid, ssProducts.id),
+              inArray(ssProductCategories.categoryId, categoryIds),
+            ),
+          )
+          .where(whereClause)
+          .groupBy(ssProducts.styleUuid, ssStyles.brandName, ssStyles.styleName)
+          .orderBy(...orderBy)
+          .limit(limit)
+          .offset(offset)
+      : await this.db
+          .select({ styleUuid: ssProducts.styleUuid })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .where(whereClause)
+          .groupBy(ssProducts.styleUuid, ssStyles.brandName, ssStyles.styleName)
+          .orderBy(...orderBy)
+          .limit(limit)
+          .offset(offset);
+
+    return rows.map((row) => row.styleUuid);
   }
 
   async listProducts(
@@ -733,41 +811,48 @@ export class CatalogService {
     const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
     if (empty) return [];
 
-    const orderBy = this.productOrderBy(query?.sort);
-
-    const categoryIds = query?.categoryId
-      ? await this.expandCategoryIds(tenantId, query.categoryId)
-      : null;
+    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
+    const grouped =
+      query?.groupByStyle === true
+        ? await this.listGroupedColorways(tenantId, query, whereClause)
+        : null;
 
     // Category filtering is done as a join in the same query (not a
     // per-row post-filter) so `limit` is honoured correctly and the
     // category check doesn't cost a round trip per row. A stable order
     // (brand, style, id) keeps pagination deterministic across pages.
-    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
-    const rows = categoryIds
-      ? await this.db
-          .select({ product: ssProducts, style: styleColumns })
-          .from(ssProducts)
-          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
-          .innerJoin(
-            ssProductCategories,
-            and(
-              eq(ssProductCategories.productUuid, ssProducts.id),
-              inArray(ssProductCategories.categoryId, categoryIds),
-            ),
-          )
-          .where(whereClause)
-          .orderBy(...orderBy)
-          .limit(limit)
-          .offset(offset)
-      : await this.db
-          .select({ product: ssProducts, style: styleColumns })
-          .from(ssProducts)
-          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
-          .where(whereClause)
-          .orderBy(...orderBy)
-          .limit(limit)
-          .offset(offset);
+    const categoryIds = grouped
+      ? null
+      : query?.categoryId
+        ? await this.expandCategoryIds(tenantId, query.categoryId)
+        : null;
+    const orderBy = this.productOrderBy(query?.sort);
+    const rows = grouped
+      ? grouped.rows
+      : categoryIds
+        ? await this.db
+            .select({ product: ssProducts, style: styleColumns })
+            .from(ssProducts)
+            .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+            .innerJoin(
+              ssProductCategories,
+              and(
+                eq(ssProductCategories.productUuid, ssProducts.id),
+                inArray(ssProductCategories.categoryId, categoryIds),
+              ),
+            )
+            .where(whereClause)
+            .orderBy(...orderBy)
+            .limit(limit)
+            .offset(offset)
+        : await this.db
+            .select({ product: ssProducts, style: styleColumns })
+            .from(ssProducts)
+            .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+            .where(whereClause)
+            .orderBy(...orderBy)
+            .limit(limit)
+            .offset(offset);
 
     if (rows.length === 0) return [];
 
@@ -813,8 +898,73 @@ export class CatalogService {
           (row.product.qty ?? 0) > 0 &&
           row.product.active &&
           row.product.storefrontVisible,
+        colorwayCount: grouped?.countByStyle.get(row.product.styleUuid) ?? 1,
       };
     });
+  }
+
+  private async listGroupedColorways(
+    tenantId: string,
+    query: ProductFilterQuery & { limit?: number; offset?: number },
+    whereClause: ReturnType<typeof and>,
+  ) {
+    const styleUuids = await this.listGroupedStyleIds(tenantId, query, whereClause);
+    if (styleUuids.length === 0) {
+      return { rows: [], countByStyle: new Map<string, number>() };
+    }
+
+    const styleColumns = ssStyleColumnsWithoutSizeSpecs();
+    const categoryIds = query.categoryId
+      ? await this.expandCategoryIds(tenantId, query.categoryId)
+      : null;
+    const siblingsRaw = categoryIds
+      ? await this.db
+          .select({ product: ssProducts, style: styleColumns })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .innerJoin(
+            ssProductCategories,
+            and(
+              eq(ssProductCategories.productUuid, ssProducts.id),
+              inArray(ssProductCategories.categoryId, categoryIds),
+            ),
+          )
+          .where(and(whereClause, inArray(ssProducts.styleUuid, styleUuids)))
+      : await this.db
+          .select({ product: ssProducts, style: styleColumns })
+          .from(ssProducts)
+          .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+          .where(and(whereClause, inArray(ssProducts.styleUuid, styleUuids)));
+    const siblings = [
+      ...new Map(siblingsRaw.map((row) => [row.product.id, row])).values(),
+    ];
+
+    const picked = pickRepresentativeByStyle(
+      siblings,
+      (row) => ({
+        id: row.product.id,
+        styleUuid: row.product.styleUuid,
+        colorName: row.product.colorName,
+        slug: row.product.slug,
+        qty: row.product.qty,
+        active: row.product.active,
+        colorFrontImageUrl: row.product.colorFrontImageUrl,
+      }),
+      { search: query.search },
+    );
+    const byStyle = new Map(
+      picked.map((entry) => [entry.representative.product.styleUuid, entry]),
+    );
+    const rows = styleUuids
+      .map((styleUuid) => byStyle.get(styleUuid)?.representative)
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    const countByStyle = new Map(
+      picked.map((entry) => [
+        entry.representative.product.styleUuid,
+        entry.colorwayCount,
+      ]),
+    );
+    return { rows, countByStyle };
   }
 
   async getProductDetail(
@@ -885,8 +1035,12 @@ export class CatalogService {
         id: ssProducts.id,
         slug: ssProducts.slug,
         colorName: ssProducts.colorName,
+        colorHex: ssProducts.color1,
         swatchImageUrl: ssProducts.colorSwatchImageUrl,
         frontImageUrl: ssProducts.colorFrontImageUrl,
+        sideImageUrl: ssProducts.colorSideImageUrl,
+        backImageUrl: ssProducts.colorBackImageUrl,
+        isDark: ssProducts.isDark,
         active: ssProducts.active,
         storefrontVisible: ssProducts.storefrontVisible,
         qty: ssProducts.qty,

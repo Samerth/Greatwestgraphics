@@ -94,6 +94,19 @@ describe("location hub", () => {
     expect(relatedContentLinks(content!).map((link) => link.path)).toEqual(
       expect.arrayContaining(["/locations", "/services"]),
     );
+    expect(relatedLandingLinks(location!).map((link) => link.path)).not.toContain(
+      "/get-a-quote",
+    );
+    expect(relatedLandingLinks(location!).map((link) => link.path)).not.toContain(
+      "/quote",
+    );
+    const kenora = getLocationPage("/screen-printing-and-embroidery-in-kenora");
+    expect(kenora?.relatedLinks?.some((link) => link.path === "/get-a-quote")).toBe(
+      true,
+    );
+    expect(relatedLandingLinks(kenora!).map((link) => link.path)).not.toContain(
+      "/get-a-quote",
+    );
   });
 
   it("wires the hubs into the header, footer, and homepage", () => {

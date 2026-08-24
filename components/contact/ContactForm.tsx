@@ -56,7 +56,7 @@ export function ContactForm() {
                 </h2>
                 <p className="text-text-secondary mt-sp-2 max-w-[52ch]">
                   A specialist will follow up shortly. In the meantime, feel free
-                  to browse the catalogue or build a quote.
+                  to browse the catalogue or open the design studio.
                 </p>
                 <Button className="mt-sp-4" variant="secondary" onClick={() => setSent(false)}>
                   Send another message

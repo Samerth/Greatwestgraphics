@@ -7,6 +7,7 @@ import { ProductsGrid } from "@/components/products/ProductsGrid";
 import { Pagination } from "@/components/products/Pagination";
 import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 import { cn } from "@/lib/utils/cn";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
 
 /** Copy and photography for the "Shop by Category" tiles, keyed by real
@@ -163,6 +164,7 @@ export default async function ProductsPage({
               <b className="text-text-primary">Shop All Products</b>
             )}
           </div>
+
           <div className="flex flex-wrap items-end justify-between gap-sp-4">
             <div className="min-w-0">
               <h1 className="font-display font-bold text-display leading-display max-w-[16ch] m-0">
@@ -170,8 +172,9 @@ export default async function ProductsPage({
               </h1>
               {!catalogFailed && (
                 <p className="text-text-secondary max-w-[60ch] mt-sp-3 mb-0">
-                  Live blanks from the local S&amp;S catalog. Out-of-stock
-                  colours stay visible as unavailable.
+                  Live blanks from the local S&amp;S catalog. Each style is one
+                  product — pick the colour on the product page. Out-of-stock
+                  styles stay visible as unavailable.
                 </p>
               )}
             </div>
@@ -186,6 +189,7 @@ export default async function ProductsPage({
               ))}
             </div>
           </div>
+
         </Container>
       </section>
 
@@ -285,9 +289,11 @@ export default async function ProductsPage({
               <ButtonLink href="/contact" variant="secondary">
                 Ask us to source it
               </ButtonLink>
-              <ButtonLink href="/quote" variant="primary">
-                Request a Custom Quote
-              </ButtonLink>
+              {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+                <ButtonLink href="/quote" variant="primary">
+                  Request a Custom Quote
+                </ButtonLink>
+              ) : null}
             </div>
           </div>
         </Container>

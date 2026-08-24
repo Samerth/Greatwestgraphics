@@ -611,6 +611,7 @@ export function buildApp(input: {
       brand?: string | string[];
       priceMin?: string;
       priceMax?: string;
+      groupByStyle?: string;
     };
     const brands = query.brand
       ? Array.isArray(query.brand)
@@ -627,6 +628,9 @@ export function buildApp(input: {
       // Soft-hidden colorways are omitted from storefront PLP (not shown
       // as Unavailable). Staff hide = storefront_visible, not vendor active.
       storefrontOnly: true as const,
+      // One shop tile per style. Pass groupByStyle=false for sitemap,
+      // colour-slug lookup, and quote colour pickers that still list SKUs.
+      groupByStyle: query.groupByStyle !== "false",
     };
     const limit = parsePageSize(query.limit, 50);
     const offset = parseOffset(query.offset);

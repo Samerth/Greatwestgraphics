@@ -158,6 +158,39 @@ body {
   }
 }
 
+@keyframes gwg-sleeve-breathe {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -2px, 0) scale(1.016);
+  }
+}
+
+@keyframes gwg-sleeve-sheen {
+  0%,
+  100% {
+    opacity: 0.08;
+    transform: translate(-3px, 2px);
+  }
+  50% {
+    opacity: 0.22;
+    transform: translate(5px, -3px);
+  }
+}
+
+.gwg-sleeve-breathe {
+  transform-origin: 50% 46%;
+  animation: gwg-sleeve-breathe 6s ease-in-out infinite;
+}
+
+.gwg-sleeve-sheen {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gwg-sleeve-sheen 6s ease-in-out infinite;
+}
+
 @layer utilities {
   .scroll-section {
     scroll-margin-top: calc(var(--header-offset) + 16px);
