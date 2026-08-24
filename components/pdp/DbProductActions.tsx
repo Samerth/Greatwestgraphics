@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
+import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { shopperUnitMinor } from "@/lib/utils/shopper-price";
@@ -305,6 +306,13 @@ export function DbProductActions({
                 number: r.number.trim() || undefined,
               })),
             });
+            trackCartItemAdded({
+              id: productId,
+              productId,
+              name,
+              qty: roster.length,
+              unit: unitPriceMinor(priceVariant, roster.length, pricingConfig, color) / 100,
+            });
             setJustAdded(true);
             setTimeout(() => setJustAdded(false), 2000);
             return;
@@ -322,6 +330,13 @@ export function DbProductActions({
             qty,
             unit: unitPriceMinor(selectedVariant, qty, pricingConfig, color) / 100,
             image: image ?? "",
+          });
+          trackCartItemAdded({
+            id: productId,
+            productId,
+            name,
+            qty,
+            unit: unitPriceMinor(selectedVariant, qty, pricingConfig, color) / 100,
           });
           setJustAdded(true);
           setTimeout(() => setJustAdded(false), 2000);

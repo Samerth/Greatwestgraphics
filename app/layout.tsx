@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { GoogleAnalytics } from "@/components/seo/GoogleAnalytics";
+import { GoogleAnalytics } from "@next/third-parties/google";
+import { AnalyticsClickTracker } from "@/components/analytics/AnalyticsClickTracker";
+import { GA4_MEASUREMENT_ID } from "@/lib/analytics/gtag";
 import { publicRobots } from "@/lib/seo/indexing";
 import "./globals.css";
 
@@ -75,8 +77,10 @@ export default function RootLayout({
       </head>
       <body className="font-body text-body">
         {children}
-        <GoogleAnalytics />
+        <AnalyticsClickTracker />
       </body>
+      {/* Official App Router helper: sends page_view on next/link navigations. */}
+      <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
     </html>
   );
 }

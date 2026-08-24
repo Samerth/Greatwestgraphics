@@ -172,6 +172,7 @@ HTTP 200, interval ~30s. Container `HEALTHCHECK` instructions match these paths.
 - `PORT=3000`
 - `COMMERCE_API_BASE_URL=https://api.example.com` (or internal URL)
 - `NEXT_PUBLIC_SITE_URL=https://www.example.com`
+- `SEO_ALLOW_INDEX` — **omit or `false` until AT-CUTOVER**. When `true` (and `NEXT_PUBLIC_SITE_URL` is not localhost/staging), `robots.txt` allows `/` and advertises `/sitemap.xml`. See `docs/seo/migration.md`. GA4 measurement ID `G-0M446YCNS9` is hardcoded; do not add a second snippet.
 
 ### Secrets (Secrets Manager / SSM → task secrets)
 

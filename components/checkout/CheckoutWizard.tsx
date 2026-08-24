@@ -6,7 +6,7 @@ import {
   type JobRequestResponse,
   type StorefrontJobSubmission,
 } from "@gwg/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StepPills } from "./StepPills";
 import { ContactStep } from "./ContactStep";
 import { ShippingStep } from "./ShippingStep";
@@ -14,7 +14,12 @@ import { DeliveryStep, PickupStep } from "./DeliveryStep";
 import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
-import { useCartStore, useVisibleCartItems } from "@/lib/store/cart";
+import { trackBeginCheckout, trackPurchase } from "@/lib/analytics/gtag";
+import {
+  computeCartTotals,
+  useCartStore,
+  useVisibleCartItems,
+} from "@/lib/store/cart";
 import type {
   ContactValues,
   ShippingValues,
@@ -36,6 +41,18 @@ export function CheckoutWizard() {
   const [data, setData] = useState<CheckoutData>({ delivery: "priority" });
   const [placed, setPlaced] = useState<JobRequestResponse>();
   const [submissionError, setSubmissionError] = useState<string>();
+  const checkoutTracked = useRef(false);
+
+  useEffect(() => {
+    if (checkoutTracked.current || placed || items.length === 0) return;
+    checkoutTracked.current = true;
+    const totals = computeCartTotals(items);
+    trackBeginCheckout({
+      value: Number(totals.total.toFixed(2)),
+      currency: "CAD",
+      items: items.length,
+    });
+  }, [items, placed]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("gwg-checkout-details");
@@ -208,6 +225,12 @@ export function CheckoutWizard() {
                   );
                 }
                 const jobRequest = JobRequestResponseSchema.parse(payload);
+                const totals = computeCartTotals(items);
+                trackPurchase({
+                  transaction_id: jobRequest.displayId,
+                  value: Number(totals.total.toFixed(2)),
+                  currency: "CAD",
+                });
                 setPlaced(jobRequest);
                 clearCart();
                 window.localStorage.removeItem("gwg-submission-key");
