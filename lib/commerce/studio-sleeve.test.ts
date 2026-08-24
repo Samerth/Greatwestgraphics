@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { garmentBackdropForSide } from "@/lib/commerce/garment-backdrop";
+import { garmentBackdropForSide } from "./garment-backdrop";
 import {
   DEFAULT_SLEEVE_FILL_HEX,
   DESIGN_SIDE_THUMB_LABELS,
@@ -9,7 +9,7 @@ import {
   sleeveOutlineHex,
   studioSleeveFillFromColorway,
   studioSleeveFillHex,
-} from "@/lib/commerce/studio-sleeve";
+} from "./studio-sleeve";
 
 const PHOTOS = {
   colorFrontImageUrl: "https://cdn.example/front.jpg",
@@ -29,7 +29,8 @@ describe("studioSleeveFillHex", () => {
   });
 
   it("falls back to the named-colour map, then a neutral fill", () => {
-    expect(studioSleeveFillHex({ colorName: "Forest Green" })).toBe("#1f4d2e");
+    expect(studioSleeveFillHex({ colorName: "Forest" })).toBe("#1f4d2e");
+    expect(studioSleeveFillHex({ colorName: "Navy" })).toBe("#1b2a4a");
     expect(studioSleeveFillFromColorway({ colorName: "Azalea Blast" })).toBe(
       DEFAULT_SLEEVE_FILL_HEX,
     );

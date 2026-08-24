@@ -3,7 +3,7 @@ import {
   hexForColorName,
   normalizeStudioHex,
   type StudioColorwayOption,
-} from "@/lib/commerce/studio-garments";
+} from "./studio-garments";
 
 export const STUDIO_SLEEVE_SIDES = ["left", "right"] as const;
 export type StudioSleeveSide = (typeof STUDIO_SLEEVE_SIDES)[number];
