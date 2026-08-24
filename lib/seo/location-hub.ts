@@ -1,4 +1,4 @@
-import { withoutPublicQuoteLinks } from "@/lib/features";
+import { withoutPublicQuoteLinks } from "../features";
 import { CONTENT_PAGES, type ContentPage } from "./content-pages";
 import {
   LOCATION_PAGES,

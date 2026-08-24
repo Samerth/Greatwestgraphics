@@ -1,4 +1,4 @@
-import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "../features";
 import { canonicalizePath } from "./paths";
 
 export type ContentReuse =
