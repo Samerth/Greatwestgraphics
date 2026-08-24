@@ -3,7 +3,13 @@ import {
   DESIGN_SIDE_LABELS,
   type DesignDocument,
   type DesignSide,
+  type PlacedText,
 } from "@gwg/contracts";
+import { studioFontById } from "@/lib/commerce/studio-fonts";
+import {
+  estimateTextDisplaySize,
+  studioTextArcSvgPath,
+} from "@/lib/commerce/studio-text";
 import { SleeveIllustration } from "@/components/design/SleeveIllustration";
 import {
   framedBackdropStyles,
@@ -53,6 +59,7 @@ export function DesignSidePreview({
   className?: string;
 }) {
   const artworks = design.artworksBySide[side] ?? [];
+  const texts = design.textsBySide?.[side] ?? [];
   const sleeveView = isStudioSleeveSide(side);
   const fillHex = studioSleeveFillHex({ hex: sleeveFillHex }) || DEFAULT_SLEEVE_FILL_HEX;
   const fallback = garmentBackdropForSide(side, {});
@@ -116,9 +123,12 @@ export function DesignSidePreview({
             }}
           />
         ))}
+        {texts.map((layer) => (
+          <PreviewText key={layer.id} layer={layer} />
+        ))}
       </div>
 
-      {artworks.length === 0 && (
+      {artworks.length === 0 && texts.length === 0 && (
         <span
           className="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-text-tertiary"
         >
@@ -126,5 +136,68 @@ export function DesignSidePreview({
         </span>
       )}
     </div>
+  );
+}
+
+function PreviewText({ layer }: { layer: PlacedText }) {
+  const family = studioFontById(layer.fontFamily).family;
+  const display = estimateTextDisplaySize(
+    layer.text,
+    layer.fontSize,
+    layer.letterSpacing,
+  );
+  const arc = layer.arc ?? 0;
+  const transform = `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`;
+  if (Math.abs(arc) < 1) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          left: layer.x,
+          top: layer.y,
+          transformOrigin: "top left",
+          transform,
+          color: layer.fill,
+          fontFamily: family,
+          fontSize: layer.fontSize,
+          letterSpacing: layer.letterSpacing,
+          textAlign: layer.align,
+          WebkitTextStroke: layer.outline
+            ? `${layer.outlineWidth ?? 1}px ${layer.outlineColor ?? "#111"}`
+            : undefined,
+          whiteSpace: "pre",
+          lineHeight: 1.1,
+        }}
+      >
+        {layer.text}
+      </div>
+    );
+  }
+  const pathId = `preview-arc-${layer.id}`;
+  return (
+    <svg
+      width={display.width}
+      height={Math.max(display.height * 2, 40)}
+      style={{
+        position: "absolute",
+        left: layer.x,
+        top: layer.y,
+        overflow: "visible",
+        transformOrigin: "top left",
+        transform,
+      }}
+    >
+      <defs>
+        <path id={pathId} d={studioTextArcSvgPath(display.width, arc)} fill="none" />
+      </defs>
+      <text
+        fill={layer.fill}
+        fontFamily={family}
+        fontSize={layer.fontSize}
+        letterSpacing={layer.letterSpacing}
+      >
+        <textPath href={`#${pathId}`}>{layer.text}</textPath>
+      </text>
+    </svg>
   );
 }

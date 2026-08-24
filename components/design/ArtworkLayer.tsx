@@ -1,33 +1,34 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { Image as KonvaImage, Transformer } from "react-konva";
+import { Group, Image as KonvaImage, Rect, Transformer } from "react-konva";
 import useImage from "use-image";
 import type Konva from "konva";
+import type { PlacedArtwork } from "@gwg/contracts";
 
-export interface PlacedArtwork {
-  id: string;
-  src: string; // object URL until upload completes, then a durable hosted URL
-  x: number;
-  y: number;
-  scaleX: number;
-  scaleY: number;
-  rotation: number;
-}
+export type { PlacedArtwork };
 
 export function ArtworkLayer({
   artwork,
   isSelected,
   onSelect,
   onChange,
+  onDragMove,
 }: {
   artwork: PlacedArtwork;
   isSelected: boolean;
   onSelect: () => void;
   onChange: (next: PlacedArtwork) => void;
+  onDragMove?: (next: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => void;
 }) {
   const [img] = useImage(artwork.src, "anonymous");
-  const shapeRef = useRef<Konva.Image>(null);
+  const shapeRef = useRef<Konva.Group>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
   useEffect(() => {
@@ -37,11 +38,13 @@ export function ArtworkLayer({
     }
   }, [isSelected]);
 
+  const naturalW = img?.width ?? 80;
+  const naturalH = img?.height ?? 80;
+
   return (
     <>
-      <KonvaImage
+      <Group
         ref={shapeRef}
-        image={img}
         x={artwork.x}
         y={artwork.y}
         scaleX={artwork.scaleX}
@@ -50,6 +53,15 @@ export function ArtworkLayer({
         draggable
         onClick={onSelect}
         onTap={onSelect}
+        onDragMove={(event) =>
+          onDragMove?.({
+            id: artwork.id,
+            x: event.target.x(),
+            y: event.target.y(),
+            width: naturalW * Math.abs(event.target.scaleX()),
+            height: naturalH * Math.abs(event.target.scaleY()),
+          })
+        }
         onDragEnd={(e) =>
           onChange({ ...artwork, x: e.target.x(), y: e.target.y() })
         }
@@ -65,7 +77,18 @@ export function ArtworkLayer({
             rotation: node.rotation(),
           });
         }}
-      />
+      >
+        <KonvaImage image={img} />
+        {artwork.outline && img ? (
+          <Rect
+            width={img.width}
+            height={img.height}
+            stroke={artwork.outlineColor ?? "#111111"}
+            strokeWidth={2 / Math.max(0.02, Math.abs(artwork.scaleX))}
+            listening={false}
+          />
+        ) : null}
+      </Group>
       {isSelected && (
         <Transformer
           ref={trRef}

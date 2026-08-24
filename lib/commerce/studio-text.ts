@@ -130,7 +130,7 @@ export function findStudioLayerSide(
     if (document.artworksBySide[side].some((layer) => layer.id === layerId)) {
       return { side, kind: "artwork" };
     }
-    if (document.textsBySide[side].some((layer) => layer.id === layerId)) {
+    if (document.textsBySide?.[side]?.some((layer) => layer.id === layerId)) {
       return { side, kind: "text" };
     }
   }

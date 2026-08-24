@@ -8,14 +8,19 @@ import {
   DESIGN_CANVAS_SIZE,
   DESIGN_SIDE_LABELS,
   DesignSides,
+  defaultRosterDecor,
   emptyDesignDocument,
+  emptyTextsBySide,
   ephemeralArtworkSides,
   isDurableArtworkSrc,
   normalizeDesignDocument,
   type DesignDocument,
   type DesignSide,
   type PlacedArtwork,
+  type PlacedText,
   type PricingConfigV2,
+  type TextAlign,
+  type TextPrintMethod,
 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
@@ -59,10 +64,33 @@ import {
   decoratedDesignSides,
   placeArtworkInZone,
 } from "@/lib/commerce/studio-placement";
+import { STUDIO_DEFAULT_FONT_ID } from "@/lib/commerce/studio-fonts";
+import {
+  createStudioHistory,
+  type StudioHistorySnapshot,
+} from "@/lib/commerce/studio-history";
+import {
+  centerStudioLayer,
+  createStudioTextLayer,
+  deleteStudioLayer,
+  duplicateStudioLayer,
+  estimateTextDisplaySize,
+  moveStudioLayerToSide,
+  nudgeStudioLayerOrder,
+  patchStudioArtwork,
+  patchStudioText,
+} from "@/lib/commerce/studio-text";
+import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-zones";
+import { patchRosterDecor, rosterDecorSummary } from "@/lib/commerce/studio-roster-decor";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
 import { SleeveIllustration } from "@/components/design/SleeveIllustration";
+import { StudioFontLoader } from "@/components/design/StudioFontLoader";
+import { StudioTextPanel } from "@/components/design/StudioTextPanel";
+import { StudioElementEditor } from "@/components/design/StudioElementEditor";
+import { StudioNamesNumbersTab } from "@/components/design/StudioNamesNumbersTab";
+import { StudioNotesTab } from "@/components/design/StudioNotesTab";
 import {
   studioArticleLabel,
   studioColorwaysForArticle,
@@ -171,6 +199,43 @@ type ProductDetail = {
 };
 
 const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
+const STUDIO_TABS = [
+  { id: "images", label: "Images" },
+  { id: "text", label: "Text" },
+  { id: "names", label: "Names" },
+  { id: "notes", label: "Notes" },
+] as const;
+type StudioTab = (typeof STUDIO_TABS)[number]["id"];
+const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+function snapshotOf(document: DesignDocument): StudioHistorySnapshot {
+  return {
+    artworksBySide: document.artworksBySide,
+    textsBySide: document.textsBySide,
+    placementBySide: document.placementBySide,
+  };
+}
+
+function applyHistorySnapshot(
+  document: DesignDocument,
+  snapshot: StudioHistorySnapshot,
+): DesignDocument {
+  return {
+    ...document,
+    artworksBySide: snapshot.artworksBySide as DesignDocument["artworksBySide"],
+    textsBySide: snapshot.textsBySide as DesignDocument["textsBySide"],
+    placementBySide: snapshot.placementBySide as DesignDocument["placementBySide"],
+  };
+}
+
+function rosterRowsFromDesign(document: DesignDocument): RosterRow[] {
+  if (!document.roster?.length) return [{ size: "", name: "", number: "" }];
+  return document.roster.map((row) => ({
+    size: row.size,
+    name: row.name,
+    number: row.number ?? "",
+  }));
+}
 
 function firstDurableArtworkUrl(document: DesignDocument): string | undefined {
   for (const side of DesignSides) {
@@ -334,8 +399,23 @@ export function DesignStudio({
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [groupOrder, setGroupOrder] = useState(false);
-  const [roster, setRoster] = useState<RosterRow[]>([{ size: "", name: "", number: "" }]);
+  const [roster, setRoster] = useState<RosterRow[]>(() =>
+    initialDesign
+      ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
+      : [{ size: "", name: "", number: "" }],
+  );
   const [rosterError, setRosterError] = useState<string | null>(null);
+  const [studioTab, setStudioTab] = useState<StudioTab>("images");
+  const [textDraft, setTextDraft] = useState("");
+  const [textAlign, setTextAlign] = useState<TextAlign>("center");
+  const [textPrintMethod, setTextPrintMethod] = useState<TextPrintMethod>("print");
+  const [textFill, setTextFill] = useState("#111111");
+  const [textFontId, setTextFontId] = useState(STUDIO_DEFAULT_FONT_ID);
+  const [zoom, setZoom] = useState(1);
+  const [liveZone, setLiveZone] = useState<string | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+  const historyRef = useRef(createStudioHistory());
+  const sliderHistoryArmedRef = useRef(false);
 
   const [savedDesignId, setSavedDesignId] = useState<string | null>(
     initialDesign?.id ?? null,
@@ -349,7 +429,14 @@ export function DesignStudio({
   const stageRef = useRef<any>(null);
   const preferredSizeNameRef = useRef<string | null>(null);
   const artworks = artworksBySide[activeSide];
+  const textsBySide = design.textsBySide ?? emptyTextsBySide();
+  const texts = textsBySide[activeSide] ?? [];
+  const rosterDecor = design.rosterDecor ?? defaultRosterDecor();
   const selectedId = selectedBySide[activeSide];
+  const selectedText = texts.find((layer) => layer.id === selectedId) ?? null;
+  const selectedArtwork = artworks.find((layer) => layer.id === selectedId) ?? null;
+  const sideLayerCount = (side: DesignSide) =>
+    artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
 
   useEffect(() => {
     if (!selectedGarmentId) {
@@ -398,7 +485,9 @@ export function DesignStudio({
       if (hasActiveArtwork(design)) return;
       const stored = useActiveDesignStore.getState();
       if (hasActiveArtwork(stored.design)) {
-        setDesign(normalizeDesignDocument(stored.design));
+        const restored = normalizeDesignDocument(stored.design);
+        setDesign(restored);
+        setRoster(rosterRowsFromDesign(restored));
         if (stored.name) setDesignName(stored.name);
         if (stored.savedDesignId) setSavedDesignId(stored.savedDesignId);
         if (!garmentIdOverride && stored.garmentProductId) {
@@ -532,7 +621,7 @@ export function DesignStudio({
   );
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
-  const decoratedSides = decoratedDesignSides(artworksBySide);
+  const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
 
   const quoted = useMemo(() => {
     const unitCostMinor =
@@ -648,11 +737,45 @@ export function DesignStudio({
     [],
   );
 
+  function commitDesign(updater: (prev: DesignDocument) => DesignDocument) {
+    setDesign((prev) => {
+      historyRef.current.push(snapshotOf(prev));
+      return updater(prev);
+    });
+    setHistoryTick((tick) => tick + 1);
+    setExportError(null);
+  }
+
+  function undoStudio() {
+    setDesign((prev) => {
+      const next = historyRef.current.undo(snapshotOf(prev));
+      if (!next) return prev;
+      return applyHistorySnapshot(prev, next);
+    });
+    setHistoryTick((tick) => tick + 1);
+    setLiveZone(null);
+  }
+
+  function redoStudio() {
+    setDesign((prev) => {
+      const next = historyRef.current.redo(snapshotOf(prev));
+      if (!next) return prev;
+      return applyHistorySnapshot(prev, next);
+    });
+    setHistoryTick((tick) => tick + 1);
+    setLiveZone(null);
+  }
+
   function setActiveArtworks(
     update: (artworks: PlacedArtwork[]) => PlacedArtwork[]
   ) {
-    updateArtworks(activeSide, update);
-    setExportError(null);
+    commitDesign((prev) => ({
+      ...prev,
+      artworksBySide: {
+        ...prev.artworksBySide,
+        [activeSide]: update(prev.artworksBySide[activeSide]),
+      },
+    }));
   }
 
   /**
@@ -820,9 +943,205 @@ export function DesignStudio({
 
   function removeSelected() {
     if (!selectedId) return;
-    setActiveArtworks((prev) => prev.filter((a) => a.id !== selectedId));
+    commitDesign((prev) => deleteStudioLayer(prev, selectedId));
     setSelectedId(null);
   }
+
+  function addTextLayer() {
+    const text = textDraft.trim();
+    if (!text) return;
+    const layer = createStudioTextLayer({
+      side: activeSide,
+      text,
+      canvasSize: CANVAS_SIZE,
+      zone: placementBySide[activeSide],
+      fontFamily: textFontId,
+      fill: textFill,
+      align: textAlign,
+      printMethod: textPrintMethod,
+    });
+    const display = estimateTextDisplaySize(text, layer.fontSize);
+    commitDesign((prev) => {
+      const next: DesignDocument = {
+        ...prev,
+        textsBySide: {
+          ...(prev.textsBySide ?? emptyTextsBySide()),
+          [activeSide]: [...(prev.textsBySide ?? emptyTextsBySide())[activeSide], layer],
+        },
+      };
+      const zone = detectPlacementZone({
+        side: activeSide,
+        x: layer.x,
+        y: layer.y,
+        width: display.width,
+        height: display.height,
+        canvasSize: CANVAS_SIZE,
+      });
+      return {
+        ...next,
+        placementBySide: { ...next.placementBySide, [activeSide]: zone },
+      };
+    });
+    setSelectedId(layer.id);
+    setTextDraft("");
+  }
+
+  function commitArtworkChange(next: PlacedArtwork) {
+    const width = 80 * Math.abs(next.scaleX);
+    const height = 80 * Math.abs(next.scaleY);
+    const zone = detectPlacementZone({
+      side: activeSide,
+      x: next.x,
+      y: next.y,
+      width,
+      height,
+      canvasSize: CANVAS_SIZE,
+    });
+    commitDesign((prev) => ({
+      ...prev,
+      artworksBySide: {
+        ...prev.artworksBySide,
+        [activeSide]: prev.artworksBySide[activeSide].map((layer) =>
+          layer.id === next.id ? next : layer,
+        ),
+      },
+      placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+    }));
+    setLiveZone(null);
+  }
+
+  function commitTextChange(next: PlacedText) {
+    const display = estimateTextDisplaySize(
+      next.text,
+      next.fontSize,
+      next.letterSpacing,
+    );
+    const zone = detectPlacementZone({
+      side: activeSide,
+      x: next.x,
+      y: next.y,
+      width: display.width * Math.abs(next.scaleX),
+      height: display.height * Math.abs(next.scaleY),
+      canvasSize: CANVAS_SIZE,
+    });
+    commitDesign((prev) => ({
+      ...prev,
+      textsBySide: {
+        ...(prev.textsBySide ?? emptyTextsBySide()),
+        [activeSide]: (prev.textsBySide ?? emptyTextsBySide())[activeSide].map(
+          (layer) => (layer.id === next.id ? next : layer),
+        ),
+      },
+      placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+    }));
+    setLiveZone(null);
+  }
+
+  function handleLayerDragMove(info: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) {
+    setLiveZone(
+      detectPlacementZone({
+        side: activeSide,
+        x: info.x,
+        y: info.y,
+        width: info.width,
+        height: info.height,
+        canvasSize: CANVAS_SIZE,
+      }),
+    );
+  }
+
+  function moveSelectedToSide(side: DesignSide) {
+    if (!selectedId) return;
+    commitDesign((prev) => moveStudioLayerToSide(prev, selectedId, side, CANVAS_SIZE).document);
+    setActiveSide(side);
+    setSelectedBySide((prev) => ({ ...prev, [side]: selectedId }));
+    setLiveZone(null);
+  }
+
+  function duplicateSelected() {
+    if (!selectedId) return;
+    const newId = crypto.randomUUID();
+    commitDesign((prev) => duplicateStudioLayer(prev, selectedId, newId).document);
+    setSelectedId(newId);
+  }
+
+  function applySelectedTextPatch(patch: Partial<PlacedText>, record = true) {
+    if (!selectedId) return;
+    if (record) commitDesign((prev) => patchStudioText(prev, selectedId, patch));
+    else setDesign((prev) => patchStudioText(prev, selectedId, patch));
+  }
+
+  function applySelectedArtworkPatch(patch: Partial<PlacedArtwork>, record = true) {
+    if (!selectedId) return;
+    if (record) commitDesign((prev) => patchStudioArtwork(prev, selectedId, patch));
+    else setDesign((prev) => patchStudioArtwork(prev, selectedId, patch));
+  }
+
+  function beginSliderHistory() {
+    if (sliderHistoryArmedRef.current) return;
+    sliderHistoryArmedRef.current = true;
+    setDesign((prev) => {
+      historyRef.current.push(snapshotOf(prev));
+      return prev;
+    });
+  }
+
+  function endSliderHistory() {
+    sliderHistoryArmedRef.current = false;
+    setHistoryTick((tick) => tick + 1);
+  }
+
+  function patchSelectedWhileSliding(textPatch?: Partial<PlacedText>, artPatch?: Partial<PlacedArtwork>) {
+    beginSliderHistory();
+    if (textPatch) applySelectedTextPatch(textPatch, false);
+    if (artPatch) applySelectedArtworkPatch(artPatch, false);
+  }
+
+  function setRosterRows(rows: RosterRow[]) {
+    setRoster(rows);
+    setDesign((prev) => ({
+      ...prev,
+      roster: rows
+        .filter((row) => row.name.trim() || row.number.trim() || row.size)
+        .map((row) => ({
+          size: row.size,
+          name: row.name,
+          number: row.number.trim() || undefined,
+        })),
+    }));
+  }
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoStudio();
+        else undoStudio();
+      }
+      if ((event.metaKey || event.ctrlKey) && key === "y") {
+        event.preventDefault();
+        redoStudio();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   async function generateConcept() {
     const prompt = aiPrompt.trim();
@@ -907,9 +1226,9 @@ export function DesignStudio({
       return;
     }
 
-    const decorated = decoratedDesignSides(artworksBySide);
+    const decorated = decoratedDesignSides(artworksBySide, textsBySide);
     if (decorated.length === 0) {
-      setCartError("Place artwork on the garment first.");
+      setCartError("Place artwork or text on the garment first.");
       return;
     }
 
@@ -960,6 +1279,11 @@ export function DesignStudio({
       }
 
       const printLabel = cartPrintMetaLabel(decorated, placementBySide);
+      const rosterLabel = rosterDecorSummary(rosterDecor);
+      const notesBit = (design.notes ?? "").trim()
+        ? ` · Note: ${(design.notes ?? "").trim().slice(0, 80)}`
+        : "";
+      const namesBit = groupOrder ? ` · ${rosterLabel}` : "";
       const productName =
         `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
       const productSlug =
@@ -981,7 +1305,7 @@ export function DesignStudio({
           styleId: productDetail.style.id,
           variantId: priceVariant.id,
           name: productName,
-          meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}`,
+          meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}${namesBit}${notesBit}`,
           color: productDetail.product.colorName,
           qty: roster.length,
           unit:
@@ -996,6 +1320,8 @@ export function DesignStudio({
             name: r.name.trim(),
             number: r.number.trim() || undefined,
           })),
+          designNotes: (design.notes ?? "").trim() || undefined,
+          rosterDecor,
         });
         trackCartItemAdded({
           id: productDetail.product.id,
@@ -1021,7 +1347,7 @@ export function DesignStudio({
         styleId: productDetail.style.id,
         variantId: selectedVariant.id,
         name: productName,
-        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}`,
+        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}${notesBit}`,
         color: productDetail.product.colorName,
         qty: designQty,
         unit:
@@ -1031,6 +1357,8 @@ export function DesignStudio({
         artworkProofUrl,
         designProjectId,
         pricingSnapshot: quoted?.snapshot,
+        designNotes: (design.notes ?? "").trim() || undefined,
+        rosterDecor,
       });
       trackCartItemAdded({
         id: productDetail.product.id,
@@ -1154,8 +1482,20 @@ export function DesignStudio({
     activeSide,
   );
 
+  const canUndo = historyTick >= 0 && historyRef.current.canUndo;
+  const canRedo = historyTick >= 0 && historyRef.current.canRedo;
+  const guideZone = liveZone ?? placementBySide[activeSide];
+  const selectedPrintLabel = selectedText
+    ? selectedText.printMethod === "embroidery"
+      ? "Embroidery"
+      : "Print"
+    : "Print";
+  const zoomIndex = ZOOM_STEPS.findIndex((step) => step >= zoom - 0.001);
+  const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
+      <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
       <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px] min-w-0">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
@@ -1217,9 +1557,23 @@ export function DesignStudio({
           <li>Classic fit, true to size</li>
         </ul>
 
-        <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-2">
-          Images
-        </span>
+        <div className="grid grid-cols-4 gap-1 mb-2">
+          {STUDIO_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setStudioTab(tab.id)}
+              className={cn(
+                "h-8 rounded-sm border text-[10px] font-bold uppercase tracking-[0.06em] transition-colors",
+                studioTab === tab.id
+                  ? "bg-accent text-white border-accent"
+                  : "border-border text-text-tertiary hover:border-text-tertiary",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         <input
           ref={artworkInputRef}
@@ -1229,17 +1583,80 @@ export function DesignStudio({
           onChange={handleFileSelected}
         />
 
+        {studioTab === "images" && (
+          <>
+        <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-2">
+          Images
+        </span>
         <button
           onClick={() => artworkInputRef.current?.click()}
-          className="border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
+          className="w-full border border-dashed border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent hover:bg-accent-tint transition-colors"
         >
           Upload art
         </button>
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
+          </>
+        )}
 
-        {SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
+        {studioTab === "text" && (
+          <StudioTextPanel
+            draft={textDraft}
+            onDraftChange={setTextDraft}
+            align={selectedText?.align ?? textAlign}
+            onAlignChange={(value) => {
+              setTextAlign(value);
+              if (selectedText) applySelectedTextPatch({ align: value });
+            }}
+            printMethod={selectedText?.printMethod ?? textPrintMethod}
+            onPrintMethodChange={(value) => {
+              setTextPrintMethod(value);
+              if (selectedText) applySelectedTextPatch({ printMethod: value });
+            }}
+            fill={selectedText?.fill ?? textFill}
+            onFillChange={(value) => {
+              setTextFill(value);
+              if (selectedText) applySelectedTextPatch({ fill: value });
+            }}
+            fontId={selectedText?.fontFamily ?? textFontId}
+            onFontChange={(value) => {
+              setTextFontId(value);
+              if (selectedText) applySelectedTextPatch({ fontFamily: value });
+            }}
+            onAdd={addTextLayer}
+          />
+        )}
+
+        {studioTab === "names" && (
+          <StudioNamesNumbersTab
+            roster={roster}
+            onRosterChange={setRosterRows}
+            sizes={(productDetail?.variants ?? [])
+              .filter((variant) => variant.qty > 0 && variant.active !== false)
+              .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
+            decor={rosterDecor}
+            onDecorChange={(target, patch) =>
+              setDesign((prev) => ({
+                ...prev,
+                rosterDecor: patchRosterDecor(
+                  prev.rosterDecor ?? defaultRosterDecor(),
+                  target,
+                  patch,
+                ),
+              }))
+            }
+          />
+        )}
+
+        {studioTab === "notes" && (
+          <StudioNotesTab
+            value={design.notes ?? ""}
+            onChange={(notes) => setDesign((prev) => ({ ...prev, notes }))}
+          />
+        )}
+
+        {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
         <button
           onClick={() => setShowAiPrompt((open) => !open)}
           className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
@@ -1248,7 +1665,7 @@ export function DesignStudio({
         </button>
         ) : null}
 
-        {SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
+        {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
           <div className="rounded-md border border-border bg-bg p-sp-3">
             <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
               Describe your concept
@@ -1276,7 +1693,8 @@ export function DesignStudio({
           </div>
         )}
 
-        {artworks.length > 0 && (
+        {(studioTab === "images" || studioTab === "text") &&
+          (artworks.length > 0 || texts.length > 0) && (
           <div className="mt-sp-3">
             <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
               {DESIGN_SIDE_LABELS[activeSide]} layers
@@ -1294,6 +1712,20 @@ export function DesignStudio({
                   )}
                 >
                   Artwork {i + 1}
+                </button>
+              ))}
+              {texts.map((layer) => (
+                <button
+                  key={layer.id}
+                  onClick={() => setSelectedId(layer.id)}
+                  className={cn(
+                    "text-left px-2.5 py-2 rounded-md text-[13px] font-semibold border transition-colors truncate",
+                    selectedId === layer.id
+                      ? "border-accent bg-accent-tint text-accent"
+                      : "border-border hover:border-text-tertiary"
+                  )}
+                >
+                  “{layer.text || "Text"}”
                 </button>
               ))}
             </div>
@@ -1316,8 +1748,51 @@ export function DesignStudio({
           <div>
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
-              {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · Print
+              {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={undoStudio}
+              disabled={!canUndo}
+              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={redoStudio}
+              disabled={!canRedo}
+              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+            >
+              Redo
+            </button>
+            <div className="flex items-center gap-1 ml-1" aria-label="Zoom">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                disabled={zoomAt <= 0}
+                onClick={() => setZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)]!)}
+                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+              >
+                −
+              </button>
+              <span className="min-w-12 text-center text-[11px] font-bold text-white/80">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                disabled={zoomAt >= ZOOM_STEPS.length - 1}
+                onClick={() =>
+                  setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomAt + 1)]!)
+                }
+                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1376,19 +1851,19 @@ export function DesignStudio({
               <DesignCanvas
                 activeSide={activeSide}
                 artworks={artworks}
+                texts={texts}
                 selectedId={selectedId}
                 canvasSize={CANVAS_SIZE}
+                zoom={zoom}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
                 garmentCrop={sleeveView ? undefined : backdrop.crop}
                 garmentPlate={sleeveView ? undefined : backdrop.plate}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
-                onChange={(next) =>
-                  setActiveArtworks((prev) =>
-                    prev.map((p) => (p.id === next.id ? next : p))
-                  )
-                }
+                onChangeArtwork={commitArtworkChange}
+                onChangeText={commitTextChange}
+                onDragMove={handleLayerDragMove}
               />
               {/* CSS overlay so the guide never lands in the Konva proof. */}
               <div
@@ -1401,11 +1876,11 @@ export function DesignStudio({
                   height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                 }}
               >
-                <span className="absolute left-1 top-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-white/50">
-                  Print area
+                <span className="absolute left-1 top-0.5 right-1 text-[8px] font-bold uppercase tracking-[0.08em] text-white/70">
+                  {formatZoneInchLabel(guideZone)}
                 </span>
               </div>
-              {sleeveView && artworks.length === 0 && (
+              {sleeveView && artworks.length === 0 && texts.length === 0 && (
                 <div
                   className="absolute z-[3] flex flex-col items-center justify-center gap-2"
                   style={{
@@ -1470,9 +1945,9 @@ export function DesignStudio({
                       ) : (
                         <span className="absolute inset-0 bg-white/5" />
                       )}
-                      {artworksBySide[side].length > 0 && (
+                      {sideLayerCount(side) > 0 && (
                         <span className="absolute top-1 right-1 rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">
-                          {artworksBySide[side].length}
+                          {sideLayerCount(side)}
                         </span>
                       )}
                     </span>
@@ -1490,6 +1965,93 @@ export function DesignStudio({
             </div>
           </div>
         </div>
+        {(selectedText || selectedArtwork) && (
+          <StudioElementEditor
+            kind={selectedText ? "text" : "artwork"}
+            activeSide={activeSide}
+            text={
+              selectedText
+                ? {
+                    align: selectedText.align,
+                    printMethod: selectedText.printMethod,
+                    fill: selectedText.fill,
+                    fontFamily: selectedText.fontFamily,
+                    letterSpacing: selectedText.letterSpacing ?? 0,
+                    arc: selectedText.arc ?? 0,
+                    sample: selectedText.text,
+                  }
+                : undefined
+            }
+            onPatchText={(patch) => {
+              const sliding =
+                patch.arc !== undefined || patch.letterSpacing !== undefined;
+              if (sliding) patchSelectedWhileSliding(patch);
+              else applySelectedTextPatch(patch);
+            }}
+            outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
+            rotation={
+              selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
+            }
+            size={
+              selectedText
+                ? selectedText.fontSize
+                : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
+            }
+            onOutline={(next) => {
+              if (selectedText) applySelectedTextPatch({ outline: next });
+              else applySelectedArtworkPatch({ outline: next });
+            }}
+            onRotation={(next) => {
+              if (selectedText) patchSelectedWhileSliding({ rotation: next });
+              else patchSelectedWhileSliding(undefined, { rotation: next });
+            }}
+            onSize={(next) => {
+              if (selectedText) patchSelectedWhileSliding({ fontSize: next });
+              else {
+                const scale = next / 500;
+                patchSelectedWhileSliding(undefined, {
+                  scaleX: scale,
+                  scaleY: scale,
+                });
+              }
+            }}
+            onCenter={() => {
+              if (!selectedId) return;
+              const display = selectedText
+                ? estimateTextDisplaySize(
+                    selectedText.text,
+                    selectedText.fontSize,
+                    selectedText.letterSpacing,
+                  )
+                : { width: 80, height: 80 };
+              commitDesign((prev) =>
+                centerStudioLayer(
+                  prev,
+                  selectedId,
+                  CANVAS_SIZE,
+                  display.width,
+                  display.height,
+                ),
+              );
+            }}
+            onForward={() => {
+              if (!selectedId) return;
+              commitDesign((prev) =>
+                nudgeStudioLayerOrder(prev, selectedId, "forward"),
+              );
+            }}
+            onBack={() => {
+              if (!selectedId) return;
+              commitDesign((prev) =>
+                nudgeStudioLayerOrder(prev, selectedId, "back"),
+              );
+            }}
+            onDuplicate={duplicateSelected}
+            onDelete={removeSelected}
+            onMoveToSide={moveSelectedToSide}
+            onSliderCommit={endSliderHistory}
+          />
+        )}
       </div>
 
       {/* Saving, proof download and ordering belong to the main workspace,
@@ -1552,9 +2114,11 @@ export function DesignStudio({
           <Button
             className="w-full"
             onClick={downloadProof}
-            disabled={artworks.length === 0 || isLoadingGarment}
+            disabled={
+              (artworks.length === 0 && texts.length === 0) || isLoadingGarment
+            }
           >
-            {artworks.length === 0
+            {artworks.length === 0 && texts.length === 0
               ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
               : `Download ${DESIGN_SIDE_LABELS[activeSide]} Mockup`}
           </Button>
