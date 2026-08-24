@@ -68,6 +68,17 @@ export function studioHasStartedTeamRoster(
   return cartRosterRowsFromDraft(rows).length > 0;
 }
 
+/** Finish-block mode. The default empty row stays bulk Size/Qty. */
+export type StudioFinishMode = "bulk" | "team-progress" | "team-ready";
+
+export function studioFinishMode(
+  rows: StudioRosterDraftRow[],
+): StudioFinishMode {
+  if (!studioHasStartedTeamRoster(rows)) return "bulk";
+  if (studioIsCompleteTeamRoster(rows)) return "team-ready";
+  return "team-progress";
+}
+
 export function studioTeamOrderQuantity(
   roster: StudioRosterDraftRow[],
   designQty: number,

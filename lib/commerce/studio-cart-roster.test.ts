@@ -8,6 +8,7 @@ import {
   studioCartRosterPayload,
   studioCheckoutConfiguration,
   studioDesignNotesBit,
+  studioFinishMode,
   studioHasStartedTeamRoster,
   studioIsCompleteTeamRoster,
   studioTeamOrderQuantity,
@@ -50,6 +51,9 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(studioIsCompleteTeamRoster(emptyDraft)).toBe(false);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
     expect(studioHasStartedTeamRoster(incompleteDraft)).toBe(true);
+    expect(studioFinishMode(emptyDraft)).toBe("bulk");
+    expect(studioFinishMode(incompleteDraft)).toBe("team-progress");
+    expect(studioFinishMode(teamDraft)).toBe("team-ready");
   });
 
   it("prices a complete team roster from roster.length", () => {

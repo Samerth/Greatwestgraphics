@@ -93,8 +93,7 @@ import {
   cartRosterRowsFromDraft,
   studioCartLineFields,
   studioCartRosterPayload,
-  studioHasStartedTeamRoster,
-  studioIsCompleteTeamRoster,
+  studioFinishMode,
   studioTeamQuoteQuantity,
 } from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
@@ -681,8 +680,9 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
-  const teamOrderReady = studioIsCompleteTeamRoster(roster);
-  const teamOrderStarted = studioHasStartedTeamRoster(roster);
+  const finishMode = studioFinishMode(roster);
+  const teamOrderReady = finishMode === "team-ready";
+  const teamOrderStarted = finishMode !== "bulk";
   const quoteQty = studioTeamQuoteQuantity(roster, designQty);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
