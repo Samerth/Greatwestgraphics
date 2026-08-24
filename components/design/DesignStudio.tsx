@@ -95,6 +95,7 @@ import {
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
+import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
 import { StudioElementEditor } from "@/components/design/StudioElementEditor";
@@ -111,6 +112,7 @@ import {
 import {
   DESIGN_SIDE_THUMB_LABELS,
   isStudioSleeveSide,
+  studioSleeveFillFromColorway,
 } from "@/lib/commerce/studio-sleeve";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 
@@ -724,19 +726,28 @@ export function DesignStudio({
     stitchPreset,
   ]);
 
-  // All four views are photographic. Sleeves use a vendor side shot when
-  // the catalog has one, otherwise a framed sleeve-on-shirt crop of that
-  // colorway — never a cartoon plate.
+  // Front/back stay the vendor photos. Sleeves use a vendor side shot
+  // when the catalog has one, otherwise a photorealistic 3/4 side plate
+  // tinted to the colourway — never a crop of the chest photo.
   const garmentPhotos = studioGarmentPhotos({
     selectedId: selectedGarmentId,
     product: productDetail?.product,
     styleImageUrl: productDetail?.style.styleImageUrl,
+    styleName:
+      selectedGarment?.styleName ?? productDetail?.style.styleName ?? null,
     selectedGarment,
     selectedColorway,
   });
   const sideBackdrops = garmentBackdrops(garmentPhotos);
   const backdrop = sideBackdrops[activeSide];
   const sleeveView = isStudioSleeveSide(activeSide);
+  const sleeveFillHex = studioSleeveFillFromColorway(
+    selectedColorway,
+    (selectedColorwayReady ? productDetail?.product.colorName : null) ||
+      selectedGarment?.colorName,
+  );
+  const sleeveTintHex =
+    backdrop.source === "side-view" ? sleeveFillHex : undefined;
   const currentPhoto = backdrop.url;
   const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
@@ -1851,14 +1862,12 @@ export function DesignStudio({
             >
               {currentPhoto ? (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <div style={framedBackdrop.frame}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
-                    <img
-                      src={currentPhoto}
-                      alt=""
-                      style={framedBackdrop.image}
-                    />
-                  </div>
+                  <GarmentBackdropImage
+                    url={currentPhoto}
+                    frame={framedBackdrop.frame}
+                    image={framedBackdrop.image}
+                    tintHex={sleeveTintHex}
+                  />
                 </div>
               ) : null}
               {isLoadingGarment && !currentPhoto && (
@@ -1880,6 +1889,7 @@ export function DesignStudio({
                 mirrorGarment={mirrorPhoto}
                 garmentCrop={backdrop.crop}
                 garmentPlate={backdrop.plate}
+                garmentTintHex={sleeveTintHex}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChangeArtwork={commitArtworkChange}
@@ -1947,14 +1957,16 @@ export function DesignStudio({
                     <span className="block aspect-square relative bg-[#1a1a1a]">
                       {thumbBackdrop.url ? (
                         <span className="absolute inset-0 overflow-hidden">
-                          <span style={thumbFrame.frame}>
-                            {/* eslint-disable-next-line @next/next/no-img-element -- tiny side thumb */}
-                            <img
-                              src={thumbBackdrop.url}
-                              alt=""
-                              style={thumbFrame.image}
-                            />
-                          </span>
+                          <GarmentBackdropImage
+                            url={thumbBackdrop.url}
+                            frame={thumbFrame.frame}
+                            image={thumbFrame.image}
+                            tintHex={
+                              thumbBackdrop.source === "side-view"
+                                ? sleeveFillHex
+                                : undefined
+                            }
+                          />
                         </span>
                       ) : (
                         <span className="absolute inset-0 bg-white/5" />

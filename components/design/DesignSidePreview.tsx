@@ -10,6 +10,7 @@ import {
   estimateTextDisplaySize,
   studioTextArcSvgPath,
 } from "@/lib/commerce/studio-text";
+import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
@@ -38,6 +39,7 @@ export function DesignSidePreview({
   mirrorGarment,
   garmentCrop,
   garmentPlate,
+  garmentTintHex,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
@@ -47,6 +49,7 @@ export function DesignSidePreview({
   mirrorGarment?: boolean;
   garmentCrop?: PhotoCrop;
   garmentPlate?: boolean;
+  garmentTintHex?: string;
   size?: number;
   className?: string;
 }) {
@@ -79,17 +82,15 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        <div style={framed.frame}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageUrl}
-            alt=""
-            style={{
-              ...framed.image,
-              opacity: garmentImageUrl ? 1 : 0.9,
-            }}
-          />
-        </div>
+        <GarmentBackdropImage
+          url={imageUrl}
+          frame={framed.frame}
+          image={{
+            ...framed.image,
+            opacity: garmentImageUrl ? 1 : 0.9,
+          }}
+          tintHex={garmentTintHex}
+        />
 
         {artworks.map((artwork) => (
           // eslint-disable-next-line @next/next/no-img-element

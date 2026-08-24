@@ -60,9 +60,9 @@ export type NormalizedRect = {
 export const STUDIO_PRINT_AREAS: Record<DesignSide, NormalizedRect> = {
   front: { x: 0.3, y: 0.26, width: 0.4, height: 0.36 },
   back: { x: 0.3, y: 0.24, width: 0.4, height: 0.4 },
-  // Photo sleeves sit on the outer half of a front crop / 3/4 side shot.
-  left: { x: 0.52, y: 0.16, width: 0.28, height: 0.46 },
-  right: { x: 0.2, y: 0.16, width: 0.28, height: 0.46 },
+  // 3/4 side plates: left sleeve is on the camera-near side of the photo.
+  left: { x: 0.16, y: 0.2, width: 0.34, height: 0.44 },
+  right: { x: 0.5, y: 0.2, width: 0.34, height: 0.44 },
 };
 
 /** Chest / sleeve mark — ~32% of the print-area width, not of the canvas. */

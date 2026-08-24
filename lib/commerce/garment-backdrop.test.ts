@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   GARMENT_FALLBACK,
-  SLEEVE_CROP_LEFT,
-  SLEEVE_CROP_RIGHT,
   SLEEVE_PLATE_INSET,
+  STUDIO_SIDE_HOODIE,
+  STUDIO_SIDE_TEE,
   backdropImageStyle,
   distinctPhoto,
   framedBackdropStyles,
@@ -11,8 +11,17 @@ import {
   namedVendorView,
   plateContainRect,
   studioCanvasImageUrl,
+  studioSideViewTemplate,
   usableSidePhoto,
+  type PhotoCrop,
 } from "./garment-backdrop";
+
+const SAMPLE_CROP: PhotoCrop = {
+  x: 0.46,
+  y: 0.02,
+  width: 0.52,
+  height: 0.7,
+};
 
 const PHOTOS = {
   colorFrontImageUrl: "https://cdn.example/front.jpg",
@@ -37,20 +46,18 @@ describe("garmentBackdropForSide", () => {
     });
   });
 
-  it("frames a sleeve-on-shirt crop — never the full chest, never a zoom fill", () => {
-    const noSide = { ...PHOTOS, colorSideImageUrl: null };
+  it("uses a photorealistic side plate when the vendor omitted a side shot", () => {
+    const noSide = { ...PHOTOS, colorSideImageUrl: null, styleName: "Essential Hoodie" };
     expect(garmentBackdropForSide("left", noSide)).toEqual({
-      url: PHOTOS.colorFrontImageUrl,
-      source: "photo",
+      url: STUDIO_SIDE_HOODIE,
+      source: "side-view",
       mirror: false,
-      crop: SLEEVE_CROP_LEFT,
       plate: true,
     });
     expect(garmentBackdropForSide("right", noSide)).toEqual({
-      url: PHOTOS.colorFrontImageUrl,
-      source: "photo",
-      mirror: false,
-      crop: SLEEVE_CROP_RIGHT,
+      url: STUDIO_SIDE_HOODIE,
+      source: "side-view",
+      mirror: true,
       plate: true,
     });
     expect(garmentBackdropForSide("front", noSide)).toEqual({
@@ -58,10 +65,12 @@ describe("garmentBackdropForSide", () => {
       source: "photo",
       mirror: false,
     });
-    expect(SLEEVE_CROP_LEFT.x).toBeGreaterThan(0.4);
-    expect(SLEEVE_CROP_LEFT.width + SLEEVE_CROP_LEFT.x).toBeLessThanOrEqual(1);
-    expect(SLEEVE_CROP_LEFT.height).toBeLessThan(0.85);
-    expect(SLEEVE_CROP_RIGHT.x).toBeLessThan(0.1);
+    expect(garmentBackdropForSide("left", { ...noSide, styleName: "Ring-spun Tee" })).toEqual({
+      url: STUDIO_SIDE_TEE,
+      source: "side-view",
+      mirror: false,
+      plate: true,
+    });
   });
 
   it("rejects a side URL that is just the front or style chest shot", () => {
@@ -71,8 +80,8 @@ describe("garmentBackdropForSide", () => {
         colorSideImageUrl: PHOTOS.colorFrontImageUrl,
       }),
     ).toMatchObject({
-      url: PHOTOS.colorFrontImageUrl,
-      crop: SLEEVE_CROP_LEFT,
+      url: STUDIO_SIDE_TEE,
+      source: "side-view",
       plate: true,
     });
     expect(
@@ -81,8 +90,9 @@ describe("garmentBackdropForSide", () => {
         colorSideImageUrl: PHOTOS.styleImageUrl,
       }),
     ).toMatchObject({
-      url: PHOTOS.colorFrontImageUrl,
-      crop: SLEEVE_CROP_RIGHT,
+      url: STUDIO_SIDE_TEE,
+      source: "side-view",
+      mirror: true,
       plate: true,
     });
   });
@@ -94,8 +104,8 @@ describe("garmentBackdropForSide", () => {
         colorSideImageUrl: PHOTOS.colorBackImageUrl,
       }),
     ).toMatchObject({
-      url: PHOTOS.colorFrontImageUrl,
-      crop: SLEEVE_CROP_LEFT,
+      url: STUDIO_SIDE_TEE,
+      source: "side-view",
       plate: true,
     });
   });
@@ -106,13 +116,13 @@ describe("garmentBackdropForSide", () => {
         ...PHOTOS,
         colorSideImageUrl: "https://cdn.example/color_front.jpg",
       }),
-    ).toMatchObject({ crop: SLEEVE_CROP_LEFT, plate: true });
+    ).toMatchObject({ source: "side-view", url: STUDIO_SIDE_TEE, plate: true });
     expect(
       garmentBackdropForSide("right", {
         ...PHOTOS,
         colorSideImageUrl: "https://cdn.example/17190_b_fm.jpg",
       }),
-    ).toMatchObject({ crop: SLEEVE_CROP_RIGHT, plate: true });
+    ).toMatchObject({ source: "side-view", url: STUDIO_SIDE_TEE, mirror: true, plate: true });
   });
 
   it("falls back to the generic tee only when even the front is missing", () => {
@@ -122,12 +132,20 @@ describe("garmentBackdropForSide", () => {
       mirror: false,
     });
     expect(garmentBackdropForSide("left", {})).toEqual({
-      url: GARMENT_FALLBACK,
-      source: "template",
+      url: STUDIO_SIDE_TEE,
+      source: "side-view",
       mirror: false,
-      crop: SLEEVE_CROP_LEFT,
       plate: true,
     });
+  });
+});
+
+describe("studioSideViewTemplate", () => {
+  it("picks the hoodie plate for fleece and the tee plate otherwise", () => {
+    expect(studioSideViewTemplate("Coastal Hoodie")).toBe(STUDIO_SIDE_HOODIE);
+    expect(studioSideViewTemplate("Crew Fleece")).toBe(STUDIO_SIDE_HOODIE);
+    expect(studioSideViewTemplate("Ring-spun Tee")).toBe(STUDIO_SIDE_TEE);
+    expect(studioSideViewTemplate(null)).toBe(STUDIO_SIDE_TEE);
   });
 });
 
@@ -179,6 +197,14 @@ describe("studioCanvasImageUrl", () => {
         mirror: false,
       }),
     ).toBe(GARMENT_FALLBACK);
+    expect(
+      studioCanvasImageUrl({
+        url: STUDIO_SIDE_HOODIE,
+        source: "side-view",
+        mirror: false,
+        plate: true,
+      }),
+    ).toBe(STUDIO_SIDE_HOODIE);
   });
 
   it("does not send SVG through the image optimizer", () => {
@@ -204,16 +230,16 @@ describe("studioCanvasImageUrl", () => {
 
 describe("backdropImageStyle", () => {
   it("fills the box with the crop rect", () => {
-    const style = backdropImageStyle(SLEEVE_CROP_LEFT, false);
-    expect(style.left).toBe(`${(-SLEEVE_CROP_LEFT.x / SLEEVE_CROP_LEFT.width) * 100}%`);
-    expect(style.width).toBe(`${100 / SLEEVE_CROP_LEFT.width}%`);
+    const style = backdropImageStyle(SAMPLE_CROP, false);
+    expect(style.left).toBe(`${(-SAMPLE_CROP.x / SAMPLE_CROP.width) * 100}%`);
+    expect(style.width).toBe(`${100 / SAMPLE_CROP.width}%`);
     expect(style.objectFit).toBe("fill");
   });
 });
 
 describe("plateContainRect", () => {
   it("letterboxes a portrait sleeve crop inside the inset plate", () => {
-    const box = plateContainRect(SLEEVE_CROP_LEFT, 1, SLEEVE_PLATE_INSET);
+    const box = plateContainRect(SAMPLE_CROP, 1, SLEEVE_PLATE_INSET);
     expect(box.x).toBeGreaterThan(0);
     expect(box.y).toBeCloseTo(SLEEVE_PLATE_INSET);
     expect(box.x + box.width).toBeLessThan(1);
@@ -233,7 +259,7 @@ describe("plateContainRect", () => {
 describe("framedBackdropStyles", () => {
   it("pads a sleeve plate instead of filling the square", () => {
     const { frame, image } = framedBackdropStyles({
-      crop: SLEEVE_CROP_LEFT,
+      crop: SAMPLE_CROP,
       mirror: false,
       plate: true,
     });

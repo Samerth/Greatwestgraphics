@@ -106,6 +106,10 @@ describe("photo sides stay photographic", () => {
       mirror: true,
       plate: true,
     });
+    expect(garmentBackdropForSide("left", { ...PHOTOS, colorSideImageUrl: null })).toMatchObject({
+      source: "side-view",
+      plate: true,
+    });
     expect(DESIGN_SIDE_THUMB_LABELS.left).toBe("L.Sleeve");
     expect(DESIGN_SIDE_THUMB_LABELS.right).toBe("R.Sleeve");
   });

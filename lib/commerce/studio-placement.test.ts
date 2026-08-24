@@ -96,12 +96,12 @@ describe("studio print areas", () => {
     expect(front.y).toBeGreaterThan(0.15);
   });
 
-  it("puts sleeve plates on the photographed sleeve, not canvas center", () => {
+  it("puts sleeve plates on the near sleeve of the 3/4 side view", () => {
     const left = STUDIO_PRINT_AREAS.left;
     const right = STUDIO_PRINT_AREAS.right;
-    expect(left.x).toBeGreaterThan(0.45);
-    expect(right.x + right.width).toBeLessThan(0.55);
-    expect(left.x).toBeGreaterThan(right.x + right.width);
+    expect(left.x + left.width).toBeLessThan(0.55);
+    expect(right.x).toBeGreaterThan(0.45);
+    expect(right.x).toBeGreaterThan(left.x + left.width - 0.05);
   });
 });
 
