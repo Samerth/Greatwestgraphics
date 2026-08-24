@@ -78,7 +78,7 @@ export default async function DesignPage({
             you go.
           </h1>
           <p className="mt-sp-3 max-w-[52ch] text-white/75 text-[16px] leading-[1.6]">
-            Upload a logo and place it on the garment.
+            Upload a logo or artwork and place it on the garment.
             The live mockup updates the second you move, scale or rotate a layer.
           </p>
         </Container>
