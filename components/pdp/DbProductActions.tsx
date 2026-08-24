@@ -11,6 +11,7 @@ import { shopperUnitMinor } from "@/lib/utils/shopper-price";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 const QTY_OPTIONS = [24, 48, 96, 250, 500];
 
@@ -198,7 +199,7 @@ export function DbProductActions({
             equivalent that is in stock.
           </p>
           <Link
-            href="/quote"
+            href={publicQuoteOrFallback("/contact")}
             className="mt-3 inline-flex rounded-md border border-amber-800 bg-amber-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-950 transition-colors"
           >
             Ask us to source it

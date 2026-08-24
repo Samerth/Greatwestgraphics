@@ -11,8 +11,10 @@ describe("sitemap inventory", () => {
     for (const page of LOCATION_PAGES) {
       expect(paths.has(page.path), page.path).toBe(true);
     }
-    const general = CONTENT_PAGES.filter((page) => page.mode !== "flag");
-    expect(general).toHaveLength(37);
+    const general = CONTENT_PAGES.filter(
+      (page) => page.mode !== "flag" && page.indexable !== false,
+    );
+    expect(general).toHaveLength(36);
     for (const page of general) {
       expect(paths.has(page.canonicalPath ?? page.path), page.path).toBe(true);
     }
@@ -20,6 +22,8 @@ describe("sitemap inventory", () => {
 
   it("excludes retired, transactional noise and flagged-internal pages", () => {
     const paths = sitemapLegacyPaths();
+    expect(paths).not.toContain("/quote");
+    expect(paths).not.toContain("/get-a-quote");
     expect(paths).not.toContain("/promotional-products-burnaby-2");
     expect(paths).not.toContain("/safety-products-2");
     expect(paths).not.toContain("/xyz-school");

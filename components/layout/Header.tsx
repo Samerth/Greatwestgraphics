@@ -10,6 +10,7 @@ import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
 import { SignOutButton } from "@/components/account/SignOutButton";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 // Used only when the commerce API returned no categories. This was a list of
 // eight hand-written slugs, seven of which ("apparel", "bags", "outerwear",
@@ -405,14 +406,16 @@ export function Header({
               {pieceCount}
             </span>
           </Link>
-          <ButtonLink
-            href="/quote"
-            variant="primary"
-            size="sm"
-            className="hidden md:inline-flex"
-          >
-            Get a Quote
-          </ButtonLink>
+          {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+            <ButtonLink
+              href="/quote"
+              variant="primary"
+              size="sm"
+              className="hidden md:inline-flex"
+            >
+              Get a Quote
+            </ButtonLink>
+          ) : null}
           <button
             type="button"
             onClick={() => setMobileOpen((open) => !open)}
@@ -505,13 +508,15 @@ export function Header({
             >
               Locations
             </Link>
-            <Link
-              href="/quote"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm font-bold px-3 py-2 text-accent"
-            >
-              Get a Quote
-            </Link>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <Link
+                href="/quote"
+                onClick={() => setMobileOpen(false)}
+                className="text-sm font-bold px-3 py-2 text-accent"
+              >
+                Get a Quote
+              </Link>
+            ) : null}
             <Link
               href="/about"
               onClick={() => setMobileOpen(false)}

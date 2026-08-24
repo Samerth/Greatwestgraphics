@@ -7,6 +7,7 @@ import { ProductsGrid } from "@/components/products/ProductsGrid";
 import { Pagination } from "@/components/products/Pagination";
 import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 import { cn } from "@/lib/utils/cn";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
 
 /** Copy and photography for the "Shop by Category" tiles, keyed by real
@@ -253,9 +254,11 @@ export default async function ProductsPage({
               <ButtonLink href="/contact" variant="secondary">
                 Ask us to source it
               </ButtonLink>
-              <ButtonLink href="/quote" variant="primary">
-                Request a Custom Quote
-              </ButtonLink>
+              {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+                <ButtonLink href="/quote" variant="primary">
+                  Request a Custom Quote
+                </ButtonLink>
+              ) : null}
             </div>
           </div>
         </Container>

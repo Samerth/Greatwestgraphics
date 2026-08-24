@@ -11,6 +11,7 @@ import type {
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
 import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -323,13 +324,13 @@ export function ProductsGrid({
             <p className="font-display text-[19px] mb-sp-2">Nothing here yet.</p>
             <p className="text-text-secondary max-w-[48ch] mx-auto mb-sp-4">
               We don&apos;t have live inventory matching these filters right now.
-              Reach out for a custom quote and we&apos;ll source it for you.
+              Reach out and we&apos;ll source it for you.
             </p>
             <Link
-              href="/quote"
+              href={publicQuoteOrFallback("/contact")}
               className="inline-block rounded-md bg-accent text-white font-bold text-sm px-4 py-2.5 hover:bg-accent-hover transition-colors"
             >
-              Request a Custom Quote
+              Ask us to source it
             </Link>
           </div>
         ) : (

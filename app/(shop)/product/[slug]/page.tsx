@@ -26,6 +26,7 @@ import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 import type { GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -368,9 +369,11 @@ export default async function ProductPage({
                 )}
 
                 <div className="mt-sp-4 flex gap-3">
-                  <ButtonLink href="/quote" variant="secondary">
-                    Get a formal quote instead
-                  </ButtonLink>
+                  {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+                    <ButtonLink href="/quote" variant="secondary">
+                      Get a formal quote instead
+                    </ButtonLink>
+                  ) : null}
                   <ButtonLink href="/products" variant="secondary">
                     Back to catalogue
                   </ButtonLink>

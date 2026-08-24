@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Container } from "@/components/shared/Container";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 /**
  * Figma "Idea to Delivery" (2107:317) — large atmospheric statement on a
@@ -66,7 +67,7 @@ const QUICK_PATHS = [
     // Pointed at "?category=promo", which is not a catalogue category — the
     // listing came back empty. We do not stock a promo line in the synced
     // catalogue, so sourcing these starts with a conversation.
-    href: "/quote",
+    href: publicQuoteOrFallback("/contact"),
   },
   {
     num: "03",

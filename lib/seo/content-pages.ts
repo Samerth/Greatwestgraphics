@@ -1,3 +1,4 @@
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 import { canonicalizePath } from "./paths";
 
 export type ContentReuse =
@@ -104,6 +105,8 @@ export const CONTENT_PAGES: ContentPage[] = [
     h1: "Build a better print quote.",
     mode: "reuse",
     reuse: "quote",
+    // Hidden from the public sitemap while the calculator is off the chrome.
+    indexable: SHOW_PUBLIC_QUOTE_CALCULATOR,
   },
   {
     path: "/about-us-great-west-graphics",

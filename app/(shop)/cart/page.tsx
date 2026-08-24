@@ -11,6 +11,7 @@ import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref,
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 const SAVED_KEY = "gwg-cart-saved";
 
@@ -379,12 +380,14 @@ export default function CartPage() {
             <ButtonLink href="/checkout" className="w-full">
               Continue to Checkout
             </ButtonLink>
-            <Link
-              href="/quote"
-              className="block text-center mt-2.5 text-sm font-bold border border-border rounded-md py-2.5 hover:bg-fill-subtle-15 transition-colors"
-            >
-              Request Quote
-            </Link>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <Link
+                href="/quote"
+                className="block text-center mt-2.5 text-sm font-bold border border-border rounded-md py-2.5 hover:bg-fill-subtle-15 transition-colors"
+              >
+                Request Quote
+              </Link>
+            ) : null}
             {/* Read "🔒 Secure checkout · Visa · Mastercard · Amex" directly
                 under the checkout button. Checkout takes no card and has no
                 processor behind it; it submits the job for design review. */}
