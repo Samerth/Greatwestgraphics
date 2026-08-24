@@ -42,7 +42,9 @@ The rebuild reuses **G-0M446YCNS9** (GreatWestGraphics, account 267559730 / prop
 
 ### Why `@next/third-parties/google`
 
-Default `gtag.js` only fires `page_view` on a full document load. App Router `next/link` navigations would go untracked. The official Next.js component (`<GoogleAnalytics gaId="G-0M446YCNS9" />` in `app/layout.tsx`) listens for those client navigations and sends pageviews. Do not add a second manual gtag snippet — that would double-count.
+Load GA4 once, from the official App Router helper (`<GoogleAnalytics gaId="G-0M446YCNS9" />` in `app/layout.tsx`, sibling of `<body>` per the Next.js third-party guide). That component installs `gtag.js` and `gtag('config', …)`. Do **not** also ship a hand-rolled `googletagmanager.com/gtag/js` snippet — two loaders on `G-0M446YCNS9` double-count.
+
+App Router `next/link` navigations are counted by GA4 Enhanced Measurement (“Page changes based on browser history events”). Keep that checkbox on. Do not send a second manual `page_view`.
 
 Tel/mailto clicks are captured by `components/analytics/AnalyticsClickTracker.tsx` (document-level delegation from the root layout). Conversion events are sent with `lib/analytics/gtag.ts` (`gtag('event', …)` and a safe `window.gtag` guard).
 
@@ -50,7 +52,7 @@ Tel/mailto clicks are captured by `components/analytics/AnalyticsClickTracker.ts
 
 | Event | When |
 | --- | --- |
-| `page_view` | Every route, including App Router client navigations |
+| `page_view` | Initial load via `gtag('config')`; further App Router routes via Enhanced Measurement history events |
 | `ads_conversion_Contact_Us_1` | Successful contact form submit (`ContactForm`) |
 | `Shopping_Cart_1` | Add to cart from the catalog PDP, Design Studio, quote builder, or cart “move to cart” |
 | `Checkout_1` | Checkout wizard starts with items in the cart |
@@ -72,7 +74,7 @@ Code cannot flip the “key event” switch. After the first hits land in the pr
 4. Toggle **Mark as key event** on each.
 5. Optional: Admin → Data display → **Key events** → confirm they appear. If Google Ads is linked, map those key events to conversions there — still the same property, no new Measurement ID.
 
-Keep Enhanced Measurement “Page changes based on browser history events” on as a backup. The `@next/third-parties` component is what makes App Router pageviews reliable.
+Keep Enhanced Measurement “Page changes based on browser history events” on. That is what counts App Router client navigations; the `@next/third-parties` component is the single approved loader, not a second pageview sender.
 
 ## Google Search Console (DNS TXT — human only)
 
@@ -151,7 +153,7 @@ Do **not** flip production indexing from a coding agent. Execute these in order 
    - `tel`
    - `mailto`
    - Do **not** look for `phone_click`, `email_click`, or `generate_lead` — those were on the retired custom snippet and are not fired anymore.
-   - Keep Enhanced Measurement “Page changes based on browser history events” on as a backup.
+   - Keep Enhanced Measurement “Page changes based on browser history events” on so `next/link` navigations count. Do not add a second pageview snippet.
 
 7. **Flagged stubs — still pending client / Codsphere.** `/custom-store-website-builder`, `/xyz-school`, `/monthly-specials` stay 200 + `noindex` until someone decides keep / rewrite / 301 / 410.
 
