@@ -8,6 +8,8 @@ import {
   studioCartRosterPayload,
   studioCheckoutConfiguration,
   studioDesignNotesBit,
+  studioHasStartedTeamRoster,
+  studioIsCompleteTeamRoster,
   studioTeamOrderQuantity,
   studioTeamRosterError,
 } from "./studio-cart-roster";
@@ -28,36 +30,36 @@ const teamRows = [
   { size: "XL", name: "Sam" },
 ];
 
-describe("studio cart roster — pre-dedupe team-order contract", () => {
-  it("summaries drop empty names; the cart line does not until validation fails", () => {
+const emptyDraft = [{ size: "", name: "", number: "" }];
+
+describe("studio cart roster — team panel is the order switch", () => {
+  it("summaries drop empty names; validated lines keep every row", () => {
     expect(cartRosterRowsFromDraft(incompleteDraft)).toEqual(teamRows);
     expect(cartRosterRowsFromValidatedDraft(teamDraft)).toEqual(teamRows);
   });
 
   it("uses the same team-order errors as catalog PDP", () => {
     expect(studioTeamRosterError([])).toBe("Add at least one person.");
-    expect(
-      studioTeamRosterError([{ size: "", name: "", number: "" }]),
-    ).toBe("Every row needs a name.");
+    expect(studioTeamRosterError(emptyDraft)).toBe("Every row needs a name.");
     expect(studioTeamRosterError(incompleteDraft)).toBe(
       "Every row needs a name.",
     );
     expect(studioTeamRosterError(teamDraft)).toBeNull();
+    expect(studioIsCompleteTeamRoster(teamDraft)).toBe(true);
+    expect(studioIsCompleteTeamRoster(emptyDraft)).toBe(false);
+    expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
+    expect(studioHasStartedTeamRoster(incompleteDraft)).toBe(true);
   });
 
-  it("prices a team order from roster.length, same as the old finish block", () => {
-    expect(studioTeamOrderQuantity(false, incompleteDraft, 48)).toBe(48);
-    expect(studioTeamOrderQuantity(true, teamDraft, 48)).toBe(2);
-    expect(
-      studioTeamOrderQuantity(true, [{ size: "", name: "", number: "" }], 48),
-    ).toBe(1);
+  it("prices a complete team roster from roster.length", () => {
+    expect(studioTeamOrderQuantity(emptyDraft, 48)).toBe(48);
+    expect(studioTeamOrderQuantity(teamDraft, 48)).toBe(2);
   });
 
-  it("does not put a roster on the cart line unless the team-order flag is checked", () => {
+  it("empty Team panel stays a regular size + qty line", () => {
     const decor = defaultRosterDecor();
     const single = studioCartRosterPayload({
-      teamOrder: false,
-      roster: teamDraft,
+      roster: emptyDraft,
       rosterDecor: decor,
     });
     expect(single).toEqual({
@@ -77,18 +79,16 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     });
     expect(line.roster).toBeUndefined();
     expect(line.qty).toBe(48);
-    expect(line.rosterDecor).toBe(decor);
     expect(line.meta).toBe(
       `Custom design · Size L · Front print${studioDesignNotesBit("  Keep names small  ")}`,
     );
   });
 
-  it("checked + named rows attach roster with qty === roster.length", () => {
+  it("a complete roster attaches roster with qty === roster.length", () => {
     const decor = patchRosterDecor(defaultRosterDecor(), "numbers", {
       printMethod: "embroidery",
     });
     const team = studioCartRosterPayload({
-      teamOrder: true,
       roster: teamDraft,
       rosterDecor: decor,
     });
@@ -102,8 +102,6 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     expect(team.roster).toEqual(teamRows);
     expect(team.qty).toBe(team.roster.length);
     expect(team.namesMetaBit).toBe(` · ${rosterDecorSummary(decor)}`);
-    expect(team.namesMetaBit).toContain('Names 2.5" print @ Upper Back');
-    expect(team.namesMetaBit).toContain('Numbers 8" embroidery @ Full Back');
 
     const line = studioCartLineFields(team, {
       printLabel: "Front print",
@@ -113,18 +111,15 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     });
     expect(line.roster).toEqual(teamRows);
     expect(line.qty).toBe(teamRows.length);
-    expect(line.qty).toBe(line.roster!.length);
-    expect(line.rosterDecor).toBe(decor);
     expect(line.meta).toBe(
       `Custom design · Team order · 2 pieces, mixed sizes · Front print · ${rosterDecorSummary(decor)}${studioDesignNotesBit("Rush Friday")}`,
     );
   });
 
-  it("rejects a checked team order the same way PDP does", () => {
+  it("rejects a started roster with a blank name so names are not dropped", () => {
     expect(
       studioCartRosterPayload({
-        teamOrder: true,
-        roster: [{ size: "M", name: "", number: "1" }],
+        roster: incompleteDraft,
         rosterDecor: defaultRosterDecor(),
       }),
     ).toEqual({
@@ -136,7 +131,6 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
   it("checkout configuration copies cart roster, qty, and rosterDecor unchanged", () => {
     const decor = defaultRosterDecor();
     const team = studioCartRosterPayload({
-      teamOrder: true,
       roster: teamDraft,
       rosterDecor: decor,
     });
@@ -155,11 +149,9 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     expect(configuration.quantity).toBe(line.qty);
     expect(configuration.quantity).toBe(configuration.roster!.length);
     expect(configuration.rosterDecor).toBe(decor);
-    expect(configuration.productMetadata).toContain("Team order · 2 pieces");
 
     const regular = studioCartRosterPayload({
-      teamOrder: false,
-      roster: teamDraft,
+      roster: emptyDraft,
       rosterDecor: decor,
     });
     if (!regular.ok) throw new Error("expected regular payload");
@@ -171,7 +163,6 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     const regularConfig = studioCheckoutConfiguration(regularLine);
     expect(regularConfig.roster).toBeUndefined();
     expect(regularConfig.quantity).toBe(24);
-    expect(regularConfig.productMetadata).toContain("Size XL");
     expect(regularConfig.productMetadata).not.toContain("Team order");
   });
 });

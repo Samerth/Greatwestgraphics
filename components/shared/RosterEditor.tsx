@@ -6,10 +6,13 @@ export function RosterEditor({
   sizes,
   rows,
   onChange,
+  layout = "compact",
 }: {
   sizes: { id: string; label: string }[];
   rows: RosterRow[];
   onChange: (rows: RosterRow[]) => void;
+  /** compact = PDP / narrow rails. wide = Design Studio team panel. */
+  layout?: "compact" | "wide";
 }) {
   function updateRow(index: number, patch: Partial<RosterRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -25,7 +28,14 @@ export function RosterEditor({
     <div>
       <div className="space-y-2 mb-2">
         {rows.map((row, i) => (
-          <div key={i} className="grid grid-cols-[72px_1fr_60px_28px] gap-1.5 items-center">
+          <div
+            key={i}
+            className={
+              layout === "wide"
+                ? "grid grid-cols-[120px_minmax(0,1fr)_100px_36px] gap-2 items-center"
+                : "grid grid-cols-[72px_1fr_60px_28px] gap-1.5 items-center"
+            }
+          >
             <select
               value={row.size}
               onChange={(e) => updateRow(i, { size: e.target.value })}
