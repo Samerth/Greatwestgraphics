@@ -15,6 +15,7 @@ export type StudioCartRosterRow = {
   number?: string;
 };
 
+/** Named rows only — used for the finish-block summary, not the cart qty. */
 export function cartRosterRowsFromDraft(
   rows: StudioRosterDraftRow[],
 ): StudioCartRosterRow[] {
@@ -27,11 +28,29 @@ export function cartRosterRowsFromDraft(
     }));
 }
 
+/** Same mapping the pre-dedupe finish block wrote after validation. */
+export function cartRosterRowsFromValidatedDraft(
+  rows: StudioRosterDraftRow[],
+): StudioCartRosterRow[] {
+  return rows.map((row) => ({
+    size: row.size,
+    name: row.name.trim(),
+    number: row.number.trim() || undefined,
+  }));
+}
+
+/**
+ * Same rules as catalog PDP and the pre-dedupe studio checkbox:
+ * at least one row, and every row needs a name.
+ */
 export function studioTeamRosterError(
   rows: StudioRosterDraftRow[],
 ): string | null {
-  if (cartRosterRowsFromDraft(rows).length === 0) {
-    return "Add at least one name in the Names tab.";
+  if (rows.length === 0) {
+    return "Add at least one person.";
+  }
+  if (rows.some((row) => !row.name.trim())) {
+    return "Every row needs a name.";
   }
   return null;
 }
@@ -42,7 +61,7 @@ export function studioTeamOrderQuantity(
   designQty: number,
 ): number {
   if (!teamOrder) return designQty;
-  return Math.max(1, cartRosterRowsFromDraft(roster).length);
+  return Math.max(1, roster.length);
 }
 
 export type StudioCartRosterPayload =
@@ -88,7 +107,7 @@ export function studioCartRosterPayload(input: {
   }
   const error = studioTeamRosterError(input.roster);
   if (error) return { ok: false, error };
-  const roster = cartRosterRowsFromDraft(input.roster);
+  const roster = cartRosterRowsFromValidatedDraft(input.roster);
   return {
     ok: true,
     teamOrder: true,

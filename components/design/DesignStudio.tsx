@@ -1296,7 +1296,7 @@ export function DesignStudio({
       if (rosterPayload.teamOrder) {
         const cartRoster = line.roster;
         if (!cartRoster || line.qty !== cartRoster.length) {
-          setRosterError("Add at least one name in the Names tab.");
+          setRosterError("Add at least one person.");
           setStudioTab("names");
           return;
         }
@@ -2155,9 +2155,11 @@ export function DesignStudio({
               {groupOrder ? (
                 <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
                   <p className="m-0 text-xs text-text-secondary">
-                    {namedRosterCount === 0
+                    {roster.length === 0 || namedRosterCount === 0
                       ? "Add names and numbers in the Names tab. Quantity will match that roster."
-                      : `${namedRosterCount.toLocaleString()} piece${namedRosterCount === 1 ? "" : "s"} from the Names tab (mixed sizes).`}
+                      : namedRosterCount < roster.length
+                        ? "Every row needs a name. Quantity will match the roster."
+                        : `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} from the Names tab (mixed sizes).`}
                   </p>
                   <button
                     type="button"
@@ -2376,9 +2378,9 @@ export function DesignStudio({
                   : !selectedColorwayReady
                     ? "Loading colour…"
                   : groupOrder
-                    ? namedRosterCount === 0
+                    ? roster.length === 0
                       ? "Add names in the Names tab"
-                      : `Add ${namedRosterCount.toLocaleString()} Piece${namedRosterCount === 1 ? "" : "s"} to Cart · ${placementSuffix}`
+                      : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
                       : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(

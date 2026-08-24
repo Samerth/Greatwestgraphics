@@ -3,6 +3,7 @@ import { defaultRosterDecor } from "@gwg/contracts";
 import { patchRosterDecor, rosterDecorSummary } from "./studio-roster-decor";
 import {
   cartRosterRowsFromDraft,
+  cartRosterRowsFromValidatedDraft,
   studioCartLineFields,
   studioCartRosterPayload,
   studioCheckoutConfiguration,
@@ -11,32 +12,42 @@ import {
   studioTeamRosterError,
 } from "./studio-cart-roster";
 
-const draft = [
+const incompleteDraft = [
   { size: "M", name: "Alex", number: "12" },
   { size: "L", name: "  ", number: "99" },
   { size: "XL", name: "Sam", number: "" },
 ];
 
-const namedRows = [
+const teamDraft = [
+  { size: "M", name: "Alex", number: "12" },
+  { size: "XL", name: "Sam", number: "" },
+];
+
+const teamRows = [
   { size: "M", name: "Alex", number: "12" },
   { size: "XL", name: "Sam" },
 ];
 
 describe("studio cart roster — pre-dedupe team-order contract", () => {
-  it("drops empty placeholder rows and trims name / number", () => {
-    expect(cartRosterRowsFromDraft(draft)).toEqual(namedRows);
+  it("summaries drop empty names; the cart line does not until validation fails", () => {
+    expect(cartRosterRowsFromDraft(incompleteDraft)).toEqual(teamRows);
+    expect(cartRosterRowsFromValidatedDraft(teamDraft)).toEqual(teamRows);
   });
 
-  it("requires at least one named row for a team order", () => {
+  it("uses the same team-order errors as catalog PDP", () => {
+    expect(studioTeamRosterError([])).toBe("Add at least one person.");
     expect(
       studioTeamRosterError([{ size: "", name: "", number: "" }]),
-    ).toBe("Add at least one name in the Names tab.");
-    expect(studioTeamRosterError(draft)).toBeNull();
+    ).toBe("Every row needs a name.");
+    expect(studioTeamRosterError(incompleteDraft)).toBe(
+      "Every row needs a name.",
+    );
+    expect(studioTeamRosterError(teamDraft)).toBeNull();
   });
 
-  it("prices team-order quantity from named Names-tab rows, not empty placeholders", () => {
-    expect(studioTeamOrderQuantity(false, draft, 48)).toBe(48);
-    expect(studioTeamOrderQuantity(true, draft, 48)).toBe(2);
+  it("prices a team order from roster.length, same as the old finish block", () => {
+    expect(studioTeamOrderQuantity(false, incompleteDraft, 48)).toBe(48);
+    expect(studioTeamOrderQuantity(true, teamDraft, 48)).toBe(2);
     expect(
       studioTeamOrderQuantity(true, [{ size: "", name: "", number: "" }], 48),
     ).toBe(1);
@@ -46,7 +57,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     const decor = defaultRosterDecor();
     const single = studioCartRosterPayload({
       teamOrder: false,
-      roster: draft,
+      roster: teamDraft,
       rosterDecor: decor,
     });
     expect(single).toEqual({
@@ -78,7 +89,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     });
     const team = studioCartRosterPayload({
       teamOrder: true,
-      roster: draft,
+      roster: teamDraft,
       rosterDecor: decor,
     });
     expect(team).toMatchObject({
@@ -88,7 +99,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
       rosterDecor: decor,
     });
     if (!team.ok || !team.teamOrder) throw new Error("expected team payload");
-    expect(team.roster).toEqual(namedRows);
+    expect(team.roster).toEqual(teamRows);
     expect(team.qty).toBe(team.roster.length);
     expect(team.namesMetaBit).toBe(` · ${rosterDecorSummary(decor)}`);
     expect(team.namesMetaBit).toContain('Names 2.5" print @ Upper Back');
@@ -100,8 +111,8 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
       sizeName: "M",
       designQty: 48,
     });
-    expect(line.roster).toEqual(namedRows);
-    expect(line.qty).toBe(namedRows.length);
+    expect(line.roster).toEqual(teamRows);
+    expect(line.qty).toBe(teamRows.length);
     expect(line.qty).toBe(line.roster!.length);
     expect(line.rosterDecor).toBe(decor);
     expect(line.meta).toBe(
@@ -109,7 +120,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     );
   });
 
-  it("rejects a checked team order with no names so the cart cannot drop the roster", () => {
+  it("rejects a checked team order the same way PDP does", () => {
     expect(
       studioCartRosterPayload({
         teamOrder: true,
@@ -118,7 +129,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
       }),
     ).toEqual({
       ok: false,
-      error: "Add at least one name in the Names tab.",
+      error: "Every row needs a name.",
     });
   });
 
@@ -126,7 +137,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
     const decor = defaultRosterDecor();
     const team = studioCartRosterPayload({
       teamOrder: true,
-      roster: draft,
+      roster: teamDraft,
       rosterDecor: decor,
     });
     if (!team.ok) throw new Error("expected team payload");
@@ -148,7 +159,7 @@ describe("studio cart roster — pre-dedupe team-order contract", () => {
 
     const regular = studioCartRosterPayload({
       teamOrder: false,
-      roster: draft,
+      roster: teamDraft,
       rosterDecor: decor,
     });
     if (!regular.ok) throw new Error("expected regular payload");
