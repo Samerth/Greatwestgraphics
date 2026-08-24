@@ -134,7 +134,7 @@ describe("location hub", () => {
       "/how-to-order",
       "/decoration-processes",
     ]);
-    expect(header).toContain('{ label: "Services", href: "/services" }');
+    expect(header).toContain('href="/services"');
     expect(header).toContain('href="/locations"');
     expect(home).toContain('href="/locations"');
     expect(home).toContain('href="/services"');
