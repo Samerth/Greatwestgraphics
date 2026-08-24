@@ -34,6 +34,8 @@ describe("content QA", () => {
       expect(containsBannedPhone(blob), page.path).toBe(false);
       expect(blob).not.toContain("Contact form not found");
       expect(blob).not.toContain("data-mce-type");
+      expect(blob, page.path).not.toContain("${GWG_PHONE_DISPLAY}");
+      expect(blob, page.path).not.toContain("${GWG_ADDRESS}");
     }
     const maple = LOCATION_PAGES.find(
       (page) => page.path === "/embroidery-service-in-maple-ridge",

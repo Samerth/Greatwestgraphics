@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   classifyContactHref,
@@ -19,6 +21,24 @@ afterEach(() => {
 describe("GA4 gtag helper", () => {
   it("reuses the existing Measurement ID", () => {
     expect(GA4_MEASUREMENT_ID).toBe("G-0M446YCNS9");
+  });
+
+  it("loads pageviews from one official App Router implementation", () => {
+    const layout = readFileSync(
+      resolve(process.cwd(), "app/layout.tsx"),
+      "utf8",
+    );
+    expect(layout).toContain('@next/third-parties/google');
+    expect(layout).toContain("GoogleAnalytics");
+    expect(layout).toContain("GA4_MEASUREMENT_ID");
+    expect(layout).not.toContain("googletagmanager.com/gtag/js");
+    expect(layout).not.toContain("@/components/seo/GoogleAnalytics");
+    expect(
+      existsSync(resolve(process.cwd(), "components/seo/GoogleAnalytics.tsx")),
+    ).toBe(false);
+    expect(existsSync(resolve(process.cwd(), "lib/seo/analytics.ts"))).toBe(
+      false,
+    );
   });
 
   it("exports the conversion event names used in code", () => {
