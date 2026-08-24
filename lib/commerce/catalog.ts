@@ -32,6 +32,8 @@ export type StorefrontCatalogProduct = {
   /** Manufacturer's descriptive name, e.g. "Men's Ultimate365 Elevated Hoodie". */
   title: string | null;
   colorName: string;
+  /** Colourways of this style that matched the listing filters. */
+  colorwayCount: number;
   categorySlugs: string[];
   retailMinor: number;
   costMinor: number;
@@ -62,6 +64,11 @@ export type StorefrontFilters = {
   brands?: string[];
   priceMinMinor?: number;
   priceMaxMinor?: number;
+  /**
+   * Default true: one tile per style. Set false for sitemap colour URLs,
+   * `/product/<slug>` lookup, and the quote builder colour list.
+   */
+  groupByStyle?: boolean;
 };
 
 export async function loadStorefrontCatalog(options?: StorefrontFilters): Promise<{
@@ -140,6 +147,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       brands: options?.brands,
       priceMinMinor: options?.priceMinMinor,
       priceMaxMinor: options?.priceMaxMinor,
+      groupByStyle: options?.groupByStyle,
     });
 
     if (filtered.length === 0 && total === 0) {
@@ -166,6 +174,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
         styleName: String(row.styleName || ""),
         title: (row.title as string | null) || null,
         colorName: String(row.colorName || ""),
+        colorwayCount: Math.max(1, Number(row.colorwayCount || 1)),
         categorySlugs: [],
         retailMinor,
         costMinor: Number(row.costMinor || 0),
