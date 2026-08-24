@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { defaultRosterDecor } from "@gwg/contracts";
-import { patchRosterDecor } from "./studio-roster-decor";
+import { patchRosterDecor, rosterDecorSummary } from "./studio-roster-decor";
 import {
   cartRosterRowsFromDraft,
+  studioCartLineFields,
   studioCartRosterPayload,
+  studioCheckoutConfiguration,
+  studioDesignNotesBit,
   studioTeamOrderQuantity,
   studioTeamRosterError,
 } from "./studio-cart-roster";
@@ -14,12 +17,14 @@ const draft = [
   { size: "XL", name: "Sam", number: "" },
 ];
 
-describe("studio cart roster — Names tab is the source of truth", () => {
+const namedRows = [
+  { size: "M", name: "Alex", number: "12" },
+  { size: "XL", name: "Sam" },
+];
+
+describe("studio cart roster — pre-dedupe team-order contract", () => {
   it("drops empty placeholder rows and trims name / number", () => {
-    expect(cartRosterRowsFromDraft(draft)).toEqual([
-      { size: "M", name: "Alex", number: "12" },
-      { size: "XL", name: "Sam" },
-    ]);
+    expect(cartRosterRowsFromDraft(draft)).toEqual(namedRows);
   });
 
   it("requires at least one named row for a team order", () => {
@@ -37,7 +42,7 @@ describe("studio cart roster — Names tab is the source of truth", () => {
     ).toBe(1);
   });
 
-  it("does not put a roster on the cart line unless team order is on", () => {
+  it("does not put a roster on the cart line unless the team-order flag is checked", () => {
     const decor = defaultRosterDecor();
     const single = studioCartRosterPayload({
       teamOrder: false,
@@ -52,9 +57,22 @@ describe("studio cart roster — Names tab is the source of truth", () => {
       namesMetaBit: "",
       qty: null,
     });
+    if (!single.ok) throw new Error("expected regular payload");
+    const line = studioCartLineFields(single, {
+      printLabel: "Front print",
+      notes: "  Keep names small  ",
+      sizeName: "L",
+      designQty: 48,
+    });
+    expect(line.roster).toBeUndefined();
+    expect(line.qty).toBe(48);
+    expect(line.rosterDecor).toBe(decor);
+    expect(line.meta).toBe(
+      `Custom design · Size L · Front print${studioDesignNotesBit("  Keep names small  ")}`,
+    );
   });
 
-  it("fills roster, qty, rosterDecor, and meta from the Names tab when team order is on", () => {
+  it("checked + named rows attach roster with qty === roster.length", () => {
     const decor = patchRosterDecor(defaultRosterDecor(), "numbers", {
       printMethod: "embroidery",
     });
@@ -70,15 +88,28 @@ describe("studio cart roster — Names tab is the source of truth", () => {
       rosterDecor: decor,
     });
     if (!team.ok || !team.teamOrder) throw new Error("expected team payload");
-    expect(team.roster).toEqual([
-      { size: "M", name: "Alex", number: "12" },
-      { size: "XL", name: "Sam" },
-    ]);
+    expect(team.roster).toEqual(namedRows);
+    expect(team.qty).toBe(team.roster.length);
+    expect(team.namesMetaBit).toBe(` · ${rosterDecorSummary(decor)}`);
     expect(team.namesMetaBit).toContain('Names 2.5" print @ Upper Back');
     expect(team.namesMetaBit).toContain('Numbers 8" embroidery @ Full Back');
+
+    const line = studioCartLineFields(team, {
+      printLabel: "Front print",
+      notes: "Rush Friday",
+      sizeName: "M",
+      designQty: 48,
+    });
+    expect(line.roster).toEqual(namedRows);
+    expect(line.qty).toBe(namedRows.length);
+    expect(line.qty).toBe(line.roster!.length);
+    expect(line.rosterDecor).toBe(decor);
+    expect(line.meta).toBe(
+      `Custom design · Team order · 2 pieces, mixed sizes · Front print · ${rosterDecorSummary(decor)}${studioDesignNotesBit("Rush Friday")}`,
+    );
   });
 
-  it("rejects a team order with no names so the cart cannot drop the roster", () => {
+  it("rejects a checked team order with no names so the cart cannot drop the roster", () => {
     expect(
       studioCartRosterPayload({
         teamOrder: true,
@@ -89,5 +120,47 @@ describe("studio cart roster — Names tab is the source of truth", () => {
       ok: false,
       error: "Add at least one name in the Names tab.",
     });
+  });
+
+  it("checkout configuration copies cart roster, qty, and rosterDecor unchanged", () => {
+    const decor = defaultRosterDecor();
+    const team = studioCartRosterPayload({
+      teamOrder: true,
+      roster: draft,
+      rosterDecor: decor,
+    });
+    if (!team.ok) throw new Error("expected team payload");
+    const line = studioCartLineFields(team, {
+      printLabel: "Back print",
+      notes: "",
+      sizeName: "M",
+      designQty: 24,
+    });
+    const configuration = studioCheckoutConfiguration({
+      ...line,
+      designNotes: undefined,
+    });
+    expect(configuration.roster).toEqual(line.roster);
+    expect(configuration.quantity).toBe(line.qty);
+    expect(configuration.quantity).toBe(configuration.roster!.length);
+    expect(configuration.rosterDecor).toBe(decor);
+    expect(configuration.productMetadata).toContain("Team order · 2 pieces");
+
+    const regular = studioCartRosterPayload({
+      teamOrder: false,
+      roster: draft,
+      rosterDecor: decor,
+    });
+    if (!regular.ok) throw new Error("expected regular payload");
+    const regularLine = studioCartLineFields(regular, {
+      printLabel: "Back print",
+      sizeName: "XL",
+      designQty: 24,
+    });
+    const regularConfig = studioCheckoutConfiguration(regularLine);
+    expect(regularConfig.roster).toBeUndefined();
+    expect(regularConfig.quantity).toBe(24);
+    expect(regularConfig.productMetadata).toContain("Size XL");
+    expect(regularConfig.productMetadata).not.toContain("Team order");
   });
 });

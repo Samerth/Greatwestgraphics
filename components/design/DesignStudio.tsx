@@ -84,6 +84,7 @@ import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-
 import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
 import {
   cartRosterRowsFromDraft,
+  studioCartLineFields,
   studioCartRosterPayload,
   studioTeamOrderQuantity,
 } from "@/lib/commerce/studio-cart-roster";
@@ -403,17 +404,11 @@ export function DesignStudio({
   const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
+  const [groupOrder, setGroupOrder] = useState(false);
   const [roster, setRoster] = useState<RosterRow[]>(() =>
     initialDesign
       ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
       : [{ size: "", name: "", number: "" }],
-  );
-  const [groupOrder, setGroupOrder] = useState(() =>
-    cartRosterRowsFromDraft(
-      initialDesign
-        ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
-        : [],
-    ).length > 0,
   );
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [studioTab, setStudioTab] = useState<StudioTab>("images");
@@ -633,13 +628,6 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
-  const hadNamedRosterRef = useRef(namedRosterCount > 0);
-  useEffect(() => {
-    if (namedRosterCount > 0 && !hadNamedRosterRef.current) {
-      setGroupOrder(true);
-    }
-    hadNamedRosterRef.current = namedRosterCount > 0;
-  }, [namedRosterCount]);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
@@ -696,7 +684,7 @@ export function DesignStudio({
     placementBySide,
     pricingConfig,
     productDetail,
-    roster.length,
+    roster,
     selectedColorway,
     selectedColorwayReady,
     selectedGarment,
@@ -1245,8 +1233,8 @@ export function DesignStudio({
 
     // Validate before uploading: an upload spent on a roster that is about to
     // be rejected is a round trip nobody asked for. The Names tab is the only
-    // roster editor — the finish checkbox only chooses whether that roster
-    // becomes the cart line.
+    // roster editor. The finish checkbox is the only switch that puts that
+    // roster on the cart line — filling names does not turn team order on.
     const rosterPayload = studioCartRosterPayload({
       teamOrder: groupOrder,
       roster,
@@ -1293,18 +1281,25 @@ export function DesignStudio({
       }
 
       const printLabel = cartPrintMetaLabel(decorated, placementBySide);
-      const notesBit = (design.notes ?? "").trim()
-        ? ` · Note: ${(design.notes ?? "").trim().slice(0, 80)}`
-        : "";
-      const namesBit = rosterPayload.namesMetaBit;
       const productName =
         `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
       const productSlug =
         productDetail.product.slug ??
         garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
+      const line = studioCartLineFields(rosterPayload, {
+        printLabel,
+        notes: design.notes,
+        sizeName: selectedVariant?.sizeName ?? "",
+        designQty,
+      });
 
       if (rosterPayload.teamOrder) {
-        const cartRoster = rosterPayload.roster;
+        const cartRoster = line.roster;
+        if (!cartRoster || line.qty !== cartRoster.length) {
+          setRosterError("Add at least one name in the Names tab.");
+          setStudioTab("names");
+          return;
+        }
         const priceVariant =
           productDetail.variants.find((v) => v.sizeName === cartRoster[0]?.size) ??
           selectedVariant;
@@ -1320,28 +1315,28 @@ export function DesignStudio({
           styleId: productDetail.style.id,
           variantId: priceVariant.id,
           name: productName,
-          meta: `Custom design · Team order · ${cartRoster.length} pieces, mixed sizes · ${printLabel}${namesBit}${notesBit}`,
+          meta: line.meta,
           color: productDetail.product.colorName,
-          qty: cartRoster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, cartRoster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
           image: artworkProofUrl || currentPhoto || "",
           artworkProofUrl,
           designProjectId,
           pricingSnapshot: quoted?.snapshot,
           roster: cartRoster,
           designNotes: (design.notes ?? "").trim() || undefined,
-          rosterDecor: rosterPayload.rosterDecor,
+          rosterDecor: line.rosterDecor,
         });
         trackCartItemAdded({
           id: productDetail.product.id,
           productId: productDetail.product.id,
           name: productName,
-          qty: cartRoster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, cartRoster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
         });
         router.push("/cart");
         return;
@@ -1358,27 +1353,27 @@ export function DesignStudio({
         styleId: productDetail.style.id,
         variantId: selectedVariant.id,
         name: productName,
-        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}${notesBit}`,
+        meta: line.meta,
         color: productDetail.product.colorName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
         image: artworkProofUrl || currentPhoto || "",
         artworkProofUrl,
         designProjectId,
         pricingSnapshot: quoted?.snapshot,
         designNotes: (design.notes ?? "").trim() || undefined,
-        rosterDecor: rosterPayload.rosterDecor,
+        rosterDecor: line.rosterDecor,
       });
       trackCartItemAdded({
         id: productDetail.product.id,
         productId: productDetail.product.id,
         name: productName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
       });
       router.push("/cart");
     } catch (caught) {
