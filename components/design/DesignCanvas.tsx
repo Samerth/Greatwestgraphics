@@ -11,7 +11,9 @@ import { useEffect, useRef, useState } from "react";
 // loading the whole canvas as one unit (this file) avoids that entirely.
 import { Group, Image as KonvaImage, Stage, Layer } from "react-konva";
 import useImage from "use-image";
-import { ArtworkLayer, type PlacedArtwork } from "@/components/design/ArtworkLayer";
+import type { PlacedArtwork, PlacedText } from "@gwg/contracts";
+import { ArtworkLayer } from "@/components/design/ArtworkLayer";
+import { TextLayer } from "@/components/design/TextLayer";
 import {
   SLEEVE_PLATE_INSET,
   cropPixels,
@@ -77,30 +79,46 @@ function GarmentLayer({
   );
 }
 
+export type StudioDragInfo = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export default function DesignCanvas({
   activeSide,
   artworks,
+  texts = [],
   selectedId,
   canvasSize,
+  zoom = 1,
   garmentImageUrl,
   mirrorGarment,
   garmentCrop,
   garmentPlate,
   stageRef,
   onSelect,
-  onChange,
+  onChangeArtwork,
+  onChangeText,
+  onDragMove,
 }: {
   activeSide: string;
   artworks: PlacedArtwork[];
+  texts?: PlacedText[];
   selectedId: string | null;
   canvasSize: number;
+  zoom?: number;
   garmentImageUrl: string;
   mirrorGarment: boolean;
   garmentCrop?: PhotoCrop;
   garmentPlate?: boolean;
   stageRef: React.RefObject<any>;
-  onSelect: (id: string) => void;
-  onChange: (next: PlacedArtwork) => void;
+  onSelect: (id: string | null) => void;
+  onChangeArtwork: (next: PlacedArtwork) => void;
+  onChangeText: (next: PlacedText) => void;
+  onDragMove?: (info: StudioDragInfo) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [displaySize, setDisplaySize] = useState(canvasSize);
@@ -113,9 +131,6 @@ export default function DesignCanvas({
     update();
     const observer = new ResizeObserver(update);
     observer.observe(container);
-    // ResizeObserver covers normal layout changes; the window event also
-    // covers mobile viewport/orientation changes in browsers that do not
-    // notify an absolutely positioned child promptly.
     window.addEventListener("resize", update);
     return () => {
       observer.disconnect();
@@ -123,7 +138,23 @@ export default function DesignCanvas({
     };
   }, [canvasSize]);
 
-  const displayScale = displaySize / canvasSize;
+  const displayScale = (displaySize / canvasSize) * zoom;
+  const offset = zoom < 1 ? (displaySize - displaySize * zoom) / 2 : 0;
+
+  const stacked = [
+    ...artworks.map((layer) => ({
+      kind: "artwork" as const,
+      z: layer.zIndex ?? 0,
+      id: layer.id,
+      layer,
+    })),
+    ...texts.map((layer) => ({
+      kind: "text" as const,
+      z: layer.zIndex ?? 0,
+      id: layer.id,
+      layer,
+    })),
+  ].sort((a, b) => a.z - b.z || a.id.localeCompare(b.id));
 
   return (
     <div ref={containerRef} className="absolute inset-0 max-w-full overflow-hidden">
@@ -133,9 +164,15 @@ export default function DesignCanvas({
         width={displaySize}
         height={displaySize}
         className="absolute inset-0"
+        onMouseDown={(event) => {
+          const name = event.target.name();
+          if (event.target === event.target.getStage() || name === "garment") {
+            onSelect(null);
+          }
+        }}
       >
         <Layer>
-          <Group scaleX={displayScale} scaleY={displayScale}>
+          <Group x={offset} y={offset} scaleX={displayScale} scaleY={displayScale}>
             {garmentImageUrl ? (
               <GarmentLayer
                 src={garmentImageUrl}
@@ -145,15 +182,27 @@ export default function DesignCanvas({
                 plate={garmentPlate}
               />
             ) : null}
-            {artworks.map((a) => (
-              <ArtworkLayer
-                key={a.id}
-                artwork={a}
-                isSelected={selectedId === a.id}
-                onSelect={() => onSelect(a.id)}
-                onChange={onChange}
-              />
-            ))}
+            {stacked.map((item) =>
+              item.kind === "artwork" ? (
+                <ArtworkLayer
+                  key={item.id}
+                  artwork={item.layer}
+                  isSelected={selectedId === item.id}
+                  onSelect={() => onSelect(item.id)}
+                  onChange={onChangeArtwork}
+                  onDragMove={onDragMove}
+                />
+              ) : (
+                <TextLayer
+                  key={item.id}
+                  layer={item.layer}
+                  isSelected={selectedId === item.id}
+                  onSelect={() => onSelect(item.id)}
+                  onChange={onChangeText}
+                  onDragMove={onDragMove}
+                />
+              ),
+            )}
           </Group>
         </Layer>
       </Stage>

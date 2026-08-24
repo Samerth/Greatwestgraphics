@@ -285,6 +285,12 @@ export default function CartPage() {
                         </div>
                       </details>
                     )}
+                    {item.designNotes ? (
+                      <p className="mt-sp-2 mb-0 text-[12.5px] text-text-secondary">
+                        <span className="font-bold text-text-tertiary">Notes: </span>
+                        {item.designNotes}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="shrink-0 text-right sm:text-right">

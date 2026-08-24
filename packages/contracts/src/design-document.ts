@@ -39,8 +39,86 @@ export const PlacedArtworkSchema = z.object({
   scaleX: z.number().finite(),
   scaleY: z.number().finite(),
   rotation: z.number().finite(),
+  outline: z.boolean().optional(),
+  outlineColor: z.string().max(40).optional(),
+  zIndex: z.number().finite().optional(),
 });
 export type PlacedArtwork = z.infer<typeof PlacedArtworkSchema>;
+
+export const TextAligns = ["left", "center", "right"] as const;
+export const TextAlignSchema = z.enum(TextAligns);
+export type TextAlign = (typeof TextAligns)[number];
+
+/** Per-text decoration. Independent of the garment-level cart print method. */
+export const TextPrintMethods = ["print", "embroidery"] as const;
+export const TextPrintMethodSchema = z.enum(TextPrintMethods);
+export type TextPrintMethod = (typeof TextPrintMethods)[number];
+
+export const PlacedTextSchema = z.object({
+  id: z.string().min(1).max(200),
+  text: z.string().max(500),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  scaleX: z.number().finite(),
+  scaleY: z.number().finite(),
+  rotation: z.number().finite(),
+  /** Studio font id from `STUDIO_FONTS`, not a raw CSS stack. */
+  fontFamily: z.string().min(1).max(80),
+  fontSize: z.number().finite().min(6).max(200),
+  fill: z.string().min(1).max(40),
+  align: TextAlignSchema,
+  printMethod: TextPrintMethodSchema,
+  letterSpacing: z.number().finite().min(-20).max(80).optional(),
+  /** Degrees of curvature. 0 is straight; positive arcs up. */
+  arc: z.number().finite().min(-180).max(180).optional(),
+  outline: z.boolean().optional(),
+  outlineColor: z.string().max(40).optional(),
+  outlineWidth: z.number().finite().min(0).max(20).optional(),
+  zIndex: z.number().finite().optional(),
+});
+export type PlacedText = z.infer<typeof PlacedTextSchema>;
+
+export const RosterDecorPartSchema = z.object({
+  printMethod: TextPrintMethodSchema,
+  heightIn: z.number().finite().min(0.25).max(12),
+  color: z.string().min(1).max(40),
+  location: z.string().min(1).max(80),
+});
+export type RosterDecorPart = z.infer<typeof RosterDecorPartSchema>;
+
+export const RosterDecorSchema = z.object({
+  names: RosterDecorPartSchema,
+  numbers: RosterDecorPartSchema,
+});
+export type RosterDecor = z.infer<typeof RosterDecorSchema>;
+
+export const DesignRosterRowSchema = z.object({
+  size: z.string().max(40),
+  name: z.string().max(80),
+  number: z.string().max(20).optional(),
+});
+export type DesignRosterRow = z.infer<typeof DesignRosterRowSchema>;
+
+export function defaultRosterDecor(): RosterDecor {
+  return {
+    names: {
+      printMethod: "print",
+      heightIn: 2.5,
+      color: "#111111",
+      location: "Upper Back",
+    },
+    numbers: {
+      printMethod: "print",
+      heightIn: 8,
+      color: "#111111",
+      location: "Full Back",
+    },
+  };
+}
+
+export function emptyTextsBySide(): Record<DesignSide, PlacedText[]> {
+  return { front: [], back: [], left: [], right: [] };
+}
 
 /**
  * Artwork coordinates are stored in the studio's own square canvas space, so
@@ -56,6 +134,11 @@ export interface DesignDocument {
   version: typeof DESIGN_DOCUMENT_VERSION;
   artworksBySide: Record<DesignSide, PlacedArtwork[]>;
   placementBySide: Record<DesignSide, string>;
+  /** Optional on the wire; `normalizeDesignDocument` always fills this. */
+  textsBySide: Record<DesignSide, PlacedText[]>;
+  notes: string;
+  rosterDecor: RosterDecor;
+  roster?: DesignRosterRow[];
 }
 
 export function defaultPlacementBySide(): Record<DesignSide, string> {
@@ -72,6 +155,9 @@ export function emptyDesignDocument(): DesignDocument {
     version: DESIGN_DOCUMENT_VERSION,
     artworksBySide: { front: [], back: [], left: [], right: [] },
     placementBySide: defaultPlacementBySide(),
+    textsBySide: emptyTextsBySide(),
+    notes: "",
+    rosterDecor: defaultRosterDecor(),
   };
 }
 
@@ -83,6 +169,10 @@ export function emptyDesignDocument(): DesignDocument {
 export interface StoredDesignDocument {
   artworksBySide: unknown;
   placementBySide?: unknown;
+  textsBySide?: unknown;
+  notes?: unknown;
+  rosterDecor?: unknown;
+  roster?: unknown;
 }
 
 function asArtworkList(input: unknown): PlacedArtwork[] {
@@ -100,6 +190,42 @@ function asPlacement(side: DesignSide, input: unknown): string {
   return typeof input === "string" && zones.includes(input)
     ? input
     : zones[0]!;
+}
+
+function asTextList(input: unknown): PlacedText[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((entry) => {
+    const parsed = PlacedTextSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+function asTextsBySide(input: unknown): Record<DesignSide, PlacedText[]> {
+  const map = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  return {
+    front: asTextList(map.front),
+    back: asTextList(map.back),
+    left: [...asTextList(map.left), ...asTextList(map.side)],
+    right: asTextList(map.right),
+  };
+}
+
+function asNotes(input: unknown): string {
+  return typeof input === "string" ? input.slice(0, 4_000) : "";
+}
+
+function asRosterDecor(input: unknown): RosterDecor {
+  const parsed = RosterDecorSchema.safeParse(input);
+  return parsed.success ? parsed.data : defaultRosterDecor();
+}
+
+function asRoster(input: unknown): DesignRosterRow[] | undefined {
+  if (!Array.isArray(input) || input.length === 0) return undefined;
+  const rows = input.flatMap((entry) => {
+    const parsed = DesignRosterRowSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return rows.length > 0 ? rows : undefined;
 }
 
 /**
@@ -122,6 +248,10 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
       ? {
           artworksBySide: record.artworksBySide,
           placementBySide: record.placementBySide,
+          textsBySide: record.textsBySide,
+          notes: record.notes,
+          rosterDecor: record.rosterDecor,
+          roster: record.roster,
         }
       : { artworksBySide: record };
 
@@ -139,6 +269,15 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
     ...asArtworkList(artworkMap.side),
   ];
 
+  const textsBySide = asTextsBySide(
+    stored.textsBySide ?? artworkMap.textsBySide,
+  );
+  const notes = asNotes(stored.notes ?? artworkMap.notes);
+  const rosterDecor = asRosterDecor(
+    stored.rosterDecor ?? artworkMap.rosterDecor,
+  );
+  const roster = asRoster(stored.roster ?? artworkMap.roster);
+
   return {
     version: DESIGN_DOCUMENT_VERSION,
     artworksBySide: {
@@ -153,6 +292,10 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
       left: asPlacement("left", placementMap.left ?? placementMap.side),
       right: asPlacement("right", placementMap.right),
     },
+    textsBySide,
+    notes,
+    rosterDecor,
+    ...(roster ? { roster } : {}),
   };
 }
 
@@ -164,13 +307,23 @@ export function toStoredDesignDocument(
     artworksBySide: {
       version: DESIGN_DOCUMENT_VERSION,
       ...document.artworksBySide,
+      textsBySide: document.textsBySide,
+      notes: document.notes,
+      rosterDecor: document.rosterDecor,
+      ...(document.roster && document.roster.length > 0
+        ? { roster: document.roster }
+        : {}),
     },
     placementBySide: document.placementBySide,
   };
 }
 
 export function designDocumentHasArtwork(document: DesignDocument): boolean {
-  return DesignSides.some((side) => document.artworksBySide[side].length > 0);
+  return DesignSides.some(
+    (side) =>
+      document.artworksBySide[side].length > 0 ||
+      (document.textsBySide?.[side]?.length ?? 0) > 0,
+  );
 }
 
 /**

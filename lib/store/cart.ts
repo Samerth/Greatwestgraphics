@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 import type {
   LinePricingSnapshot,
   LinePricingSnapshotV2,
+  RosterDecor,
 } from "@gwg/contracts";
 
 export interface CartItem {
@@ -37,6 +38,10 @@ export interface CartItem {
   designProjectId?: string;
   /** Team/group order: one row per piece with its own size, name and number. When present, `qty` equals `roster.length`. */
   roster?: { size: string; name: string; number?: string }[];
+  /** Studio special instructions. Additive — older cart lines omit this. */
+  designNotes?: string;
+  /** Independent names vs numbers print settings from the studio. */
+  rosterDecor?: RosterDecor;
   /**
    * Full quote breakdown, present when added from the Quote Builder. Carts
    * persisted before the v2 migration still hold a v1 snapshot, so both
