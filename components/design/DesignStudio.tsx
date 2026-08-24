@@ -59,9 +59,13 @@ import {
 } from "@/lib/commerce/studio-placement";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
+import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
 import {
   studioArticleLabel,
   studioColorwaysForArticle,
+  studioDetailColorwaysForSelection,
+  studioGarmentPhotos,
+  studioVariantIdForColorway,
   uniqueStudioArticles,
 } from "@/lib/commerce/studio-garments";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
@@ -125,8 +129,13 @@ type ProductDetailColorway = {
   id: string;
   slug?: string;
   colorName: string;
+  colorHex?: string | null;
+  color1?: string | null;
   swatchImageUrl?: string | null;
   frontImageUrl?: string | null;
+  sideImageUrl?: string | null;
+  backImageUrl?: string | null;
+  isDark?: boolean;
 };
 
 type ProductDetail = {
@@ -329,6 +338,7 @@ export function DesignStudio({
 
   const artworkInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<any>(null);
+  const preferredSizeNameRef = useRef<string | null>(null);
   const artworks = artworksBySide[activeSide];
   const selectedId = selectedBySide[activeSide];
 
@@ -353,8 +363,13 @@ export function DesignStudio({
 
   useEffect(() => {
     const variants = productDetail?.variants ?? [];
-    const inStock = variants.find((v) => v.qty > 0 && v.active !== false);
-    setSelectedVariantId((inStock ?? variants[0])?.id ?? null);
+    const nextId = studioVariantIdForColorway({
+      variants,
+      preferredSizeName: preferredSizeNameRef.current,
+    });
+    setSelectedVariantId(nextId);
+    const next = variants.find((variant) => variant.id === nextId);
+    if (next) preferredSizeNameRef.current = next.sizeName;
   }, [productDetail]);
 
   // Persistent design + 1-click apply: when arriving without an explicit
@@ -415,6 +430,7 @@ export function DesignStudio({
   const [extraGarment, setExtraGarment] = useState<DesignGarmentOption | null>(null);
   useEffect(() => {
     if (!productDetail || !selectedGarmentId) return;
+    if (productDetail.product.id !== selectedGarmentId) return;
     if (garments.some((g) => g.id === selectedGarmentId)) {
       setExtraGarment(null);
       return;
@@ -447,23 +463,50 @@ export function DesignStudio({
       studioColorwaysForArticle({
         selectedId: selectedGarmentId,
         garments: garmentOptions,
-        detailColorways: productDetail?.colorways,
+        detailColorways: studioDetailColorwaysForSelection({
+          selectedId: selectedGarmentId,
+          productId: productDetail?.product.id,
+          colorways: productDetail?.colorways,
+        }),
       }),
-    [selectedGarmentId, garmentOptions, productDetail?.colorways],
+    [
+      selectedGarmentId,
+      garmentOptions,
+      productDetail?.product.id,
+      productDetail?.colorways,
+    ],
+  );
+  const selectedColorway = colorwayOptions.find(
+    (colorway) => colorway.id === selectedGarmentId,
+  );
+  const selectedColorwayReady = Boolean(
+    selectedGarmentId && productDetail?.product.id === selectedGarmentId,
   );
   const selectedArticleLabel = selectedGarment
     ? studioArticleLabel(selectedGarment)
-    : "Garment";
+    : productDetail
+      ? `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim()
+      : "Garment";
   const sizeChartHref = useMemo(() => {
-    if (!selectedGarmentId || !productDetail) return null;
+    if (!selectedGarmentId || !productDetail || !selectedColorwayReady) {
+      return null;
+    }
     if (!readProductSizeChart(productDetail)) return null;
     const slug =
       productDetail.product.slug ??
+      selectedColorway?.slug ??
       selectedGarment?.slug ??
       garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
     if (!slug) return null;
     return `/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(selectedGarmentId)}#size-chart`;
-  }, [productDetail, selectedGarmentId, selectedGarment?.slug, garmentOptions]);
+  }, [
+    productDetail,
+    selectedGarmentId,
+    selectedColorwayReady,
+    selectedColorway?.slug,
+    selectedGarment?.slug,
+    garmentOptions,
+  ]);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
@@ -495,8 +538,17 @@ export function DesignStudio({
         quantity: groupOrder ? Math.max(1, roster.length) : designQty,
         mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
         colourName:
-          selectedGarment?.colorName ?? productDetail?.product.colorName ?? "",
-        isDark: selectedGarment?.isDark,
+          (selectedColorwayReady
+            ? productDetail?.product.colorName
+            : null) ||
+          selectedGarment?.colorName ||
+          selectedColorway?.colorName ||
+          "",
+        isDark:
+          selectedGarment?.isDark ??
+          (selectedColorwayReady
+            ? productDetail?.product.isDark
+            : selectedColorway?.isDark),
         methodKey: selectedMethod?.key,
         colours: methodVariableInputs(selectedMethod).colours
           ? colours
@@ -525,7 +577,11 @@ export function DesignStudio({
     placementBySide,
     pricingConfig,
     productDetail?.product.colorName,
+    productDetail?.product.isDark,
     roster.length,
+    selectedColorway?.colorName,
+    selectedColorway?.isDark,
+    selectedColorwayReady,
     selectedGarment?.colorName,
     selectedGarment?.costMinor,
     selectedGarment?.isDark,
@@ -539,21 +595,16 @@ export function DesignStudio({
   // vendor side shot when the catalog has one (the dedicated garment
   // angle), otherwise a framed sleeve-on-shirt crop of that colorway —
   // never the full chest frame, never a zoomed torso fill.
-  const backdrop = garmentBackdropForSide(activeSide, {
-    colorFrontImageUrl:
-      productDetail?.product.colorFrontImageUrl ||
-      selectedGarment?.imageUrl ||
-      null,
-    colorSideImageUrl:
-      productDetail?.product.colorSideImageUrl ||
-      selectedGarment?.sideImageUrl ||
-      null,
-    colorBackImageUrl:
-      productDetail?.product.colorBackImageUrl ||
-      selectedGarment?.backImageUrl ||
-      null,
-    styleImageUrl: productDetail?.style.styleImageUrl,
-  });
+  const backdrop = garmentBackdropForSide(
+    activeSide,
+    studioGarmentPhotos({
+      selectedId: selectedGarmentId,
+      product: productDetail?.product,
+      styleImageUrl: productDetail?.style.styleImageUrl,
+      selectedGarment,
+      selectedColorway,
+    }),
+  );
   const currentPhoto = backdrop.url;
   const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
@@ -567,6 +618,12 @@ export function DesignStudio({
 
   function setSelectedId(id: string | null) {
     setSelectedBySide((prev) => ({ ...prev, [activeSide]: id }));
+  }
+
+  function selectColorway(id: string) {
+    if (!id || id === selectedGarmentId) return;
+    setSelectedGarmentId(id);
+    setChangingGarment(false);
   }
 
   const updateArtworks = useCallback(
@@ -832,8 +889,12 @@ export function DesignStudio({
   }
 
   async function addDesignToCart() {
-    if (!productDetail) {
-      setCartError("Pick a garment first.");
+    if (!productDetail || productDetail.product.id !== selectedGarmentId) {
+      setCartError(
+        selectedGarmentId
+          ? "The selected colour is still loading. Try add to cart again in a moment."
+          : "Pick a garment first.",
+      );
       return;
     }
 
@@ -1096,24 +1157,14 @@ export function DesignStudio({
                 <h4 className="font-display text-[16px] mb-1 truncate">
                   {selectedArticleLabel}
                 </h4>
-                <p className="text-xs text-text-secondary m-0 mb-2 truncate">
-                  Colour: {selectedGarment?.colorName || "—"}
-                </p>
-                {colorwayOptions.length > 0 && (
-                  <StudioSelect
+                <div className="mb-2">
+                  <StudioColorSwitcher
                     tone="panel"
-                    ariaLabel="Colour"
-                    value={selectedGarmentId}
-                    onChange={(id) => {
-                      setSelectedGarmentId(id || null);
-                      setChangingGarment(false);
-                    }}
-                    options={colorwayOptions.map((colorway) => ({
-                      value: colorway.id,
-                      label: colorway.colorName,
-                    }))}
+                    colorways={colorwayOptions}
+                    selectedId={selectedGarmentId}
+                    onChange={selectColorway}
                   />
-                )}
+                </div>
                 {articleOptions.length > 1 && (
                   <button
                     type="button"
@@ -1253,6 +1304,17 @@ export function DesignStudio({
             </span>
           </div>
         </div>
+
+        {colorwayOptions.length > 0 && (
+          <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
+            <StudioColorSwitcher
+              tone="canvas"
+              colorways={colorwayOptions}
+              selectedId={selectedGarmentId}
+              onChange={selectColorway}
+            />
+          </div>
+        )}
 
         <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
           <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
@@ -1431,7 +1493,7 @@ export function DesignStudio({
             Downloads the selected garment view with all placed artwork.
           </p>
 
-          {productDetail && !isStaff && (
+          {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
               {sizeChartHref && groupOrder && (
                 <p className="m-0 mb-sp-3 text-xs">
@@ -1501,7 +1563,10 @@ export function DesignStudio({
                               key={v.id}
                               type="button"
                               disabled={!inStock}
-                              onClick={() => setSelectedVariantId(v.id)}
+                              onClick={() => {
+                                preferredSizeNameRef.current = v.sizeName;
+                                setSelectedVariantId(v.id);
+                              }}
                               className={cn(
                                 "min-w-9 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
                                 !inStock &&
@@ -1644,6 +1709,7 @@ export function DesignStudio({
                 variant="primary"
                 disabled={
                   addingToCart ||
+                  !selectedColorwayReady ||
                   (groupOrder
                     ? roster.length === 0
                     : !selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0)
@@ -1652,6 +1718,8 @@ export function DesignStudio({
               >
                 {addingToCart
                   ? "Attaching artwork…"
+                  : !selectedColorwayReady
+                    ? "Loading colour…"
                   : groupOrder
                     ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
