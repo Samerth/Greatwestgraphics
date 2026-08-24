@@ -78,20 +78,28 @@ export function StudioNamesNumbersTab({
   sizes,
   decor,
   onDecorChange,
+  rosterError,
 }: {
   roster: RosterRow[];
   onRosterChange: (rows: RosterRow[]) => void;
   sizes: { id: string; label: string }[];
   decor: RosterDecor;
   onDecorChange: (target: RosterDecorTarget, patch: Partial<RosterDecorPart>) => void;
+  rosterError?: string | null;
 }) {
   return (
     <div className="flex flex-col gap-3 min-w-0">
       <p className="m-0 text-[11px] leading-4 text-text-tertiary">
-        Names and numbers are configured separately. The roster travels with
-        the design and the cart line.
+        This is the only place to set team names, numbers, and how they print.
+        Check Team/group order next to Add to cart to put this roster on the
+        line.
       </p>
       <RosterEditor sizes={sizes} rows={roster} onChange={onRosterChange} />
+      {rosterError ? (
+        <p className="m-0 text-[12px] font-semibold text-red-600" role="alert">
+          {rosterError}
+        </p>
+      ) : null}
       <DecorFields
         title="Names"
         value={decor.names}

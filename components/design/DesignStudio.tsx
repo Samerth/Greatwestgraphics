@@ -49,7 +49,7 @@ import {
   stitchCountForPreset,
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
-import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
@@ -81,7 +81,13 @@ import {
   patchStudioText,
 } from "@/lib/commerce/studio-text";
 import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-zones";
-import { patchRosterDecor, rosterDecorSummary } from "@/lib/commerce/studio-roster-decor";
+import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
+import {
+  cartRosterRowsFromDraft,
+  studioCartLineFields,
+  studioCartRosterPayload,
+  studioTeamOrderQuantity,
+} from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
@@ -621,6 +627,7 @@ export function DesignStudio({
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
+  const namedRosterCount = cartRosterRowsFromDraft(roster).length;
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
@@ -635,7 +642,7 @@ export function DesignStudio({
     try {
       return priceShopperQuote(pricingConfig, {
         unitCostMinor,
-        quantity: groupOrder ? Math.max(1, roster.length) : designQty,
+        quantity: studioTeamOrderQuantity(groupOrder, roster, designQty),
         mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
         colourName:
           (selectedColorwayReady
@@ -677,7 +684,7 @@ export function DesignStudio({
     placementBySide,
     pricingConfig,
     productDetail,
-    roster.length,
+    roster,
     selectedColorway,
     selectedColorwayReady,
     selectedGarment,
@@ -1096,6 +1103,7 @@ export function DesignStudio({
 
   function setRosterRows(rows: RosterRow[]) {
     setRoster(rows);
+    setRosterError(null);
     setDesign((prev) => ({
       ...prev,
       roster: rows
@@ -1224,21 +1232,24 @@ export function DesignStudio({
     }
 
     // Validate before uploading: an upload spent on a roster that is about to
-    // be rejected is a round trip nobody asked for.
-    if (groupOrder) {
-      if (roster.length === 0) {
-        setRosterError("Add at least one person.");
-        return;
-      }
-      if (roster.some((r) => !r.name.trim())) {
-        setRosterError("Every row needs a name.");
-        return;
-      }
-      setRosterError(null);
-    } else if (!selectedVariant) {
+    // be rejected is a round trip nobody asked for. The Names tab is the only
+    // roster editor. The finish checkbox is the only switch that puts that
+    // roster on the cart line — filling names does not turn team order on.
+    const rosterPayload = studioCartRosterPayload({
+      teamOrder: groupOrder,
+      roster,
+      rosterDecor,
+    });
+    if (!rosterPayload.ok) {
+      setRosterError(rosterPayload.error);
+      setStudioTab("names");
+      return;
+    }
+    if (!rosterPayload.teamOrder && !selectedVariant) {
       setCartError("Select a size first.");
       return;
     }
+    setRosterError(null);
 
     // The proof has to end up somewhere staff can open. Carrying the canvas as
     // a data: URL looked like it worked and then died on the way to checkout,
@@ -1270,23 +1281,31 @@ export function DesignStudio({
       }
 
       const printLabel = cartPrintMetaLabel(decorated, placementBySide);
-      const rosterLabel = rosterDecorSummary(rosterDecor);
-      const notesBit = (design.notes ?? "").trim()
-        ? ` · Note: ${(design.notes ?? "").trim().slice(0, 80)}`
-        : "";
-      const namesBit = groupOrder ? ` · ${rosterLabel}` : "";
       const productName =
         `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
       const productSlug =
         productDetail.product.slug ??
         garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
+      const line = studioCartLineFields(rosterPayload, {
+        printLabel,
+        notes: design.notes,
+        sizeName: selectedVariant?.sizeName ?? "",
+        designQty,
+      });
 
-      if (groupOrder) {
+      if (rosterPayload.teamOrder) {
+        const cartRoster = line.roster;
+        if (!cartRoster || line.qty !== cartRoster.length) {
+          setRosterError("Add at least one person.");
+          setStudioTab("names");
+          return;
+        }
         const priceVariant =
-          productDetail.variants.find((v) => v.sizeName === roster[0]!.size) ??
+          productDetail.variants.find((v) => v.sizeName === cartRoster[0]?.size) ??
           selectedVariant;
         if (!priceVariant) {
           setCartError("Select a size for the first roster row.");
+          setStudioTab("names");
           return;
         }
         addItem({
@@ -1296,32 +1315,28 @@ export function DesignStudio({
           styleId: productDetail.style.id,
           variantId: priceVariant.id,
           name: productName,
-          meta: `Custom design · Team order · ${roster.length} pieces, mixed sizes · ${printLabel}${namesBit}${notesBit}`,
+          meta: line.meta,
           color: productDetail.product.colorName,
-          qty: roster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
           image: artworkProofUrl || currentPhoto || "",
           artworkProofUrl,
           designProjectId,
           pricingSnapshot: quoted?.snapshot,
-          roster: roster.map((r) => ({
-            size: r.size,
-            name: r.name.trim(),
-            number: r.number.trim() || undefined,
-          })),
+          roster: cartRoster,
           designNotes: (design.notes ?? "").trim() || undefined,
-          rosterDecor,
+          rosterDecor: line.rosterDecor,
         });
         trackCartItemAdded({
           id: productDetail.product.id,
           productId: productDetail.product.id,
           name: productName,
-          qty: roster.length,
+          qty: line.qty,
           unit:
             quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, roster.length, productDetail) / 100,
+            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
         });
         router.push("/cart");
         return;
@@ -1338,27 +1353,27 @@ export function DesignStudio({
         styleId: productDetail.style.id,
         variantId: selectedVariant.id,
         name: productName,
-        meta: `Custom design · Size ${selectedVariant.sizeName} · ${printLabel}${notesBit}`,
+        meta: line.meta,
         color: productDetail.product.colorName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
         image: artworkProofUrl || currentPhoto || "",
         artworkProofUrl,
         designProjectId,
         pricingSnapshot: quoted?.snapshot,
         designNotes: (design.notes ?? "").trim() || undefined,
-        rosterDecor,
+        rosterDecor: line.rosterDecor,
       });
       trackCartItemAdded({
         id: productDetail.product.id,
         productId: productDetail.product.id,
         name: productName,
-        qty: designQty,
+        qty: line.qty,
         unit:
           quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, designQty, productDetail) / 100,
+          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
       });
       router.push("/cart");
     } catch (caught) {
@@ -1623,6 +1638,7 @@ export function DesignStudio({
           <StudioNamesNumbersTab
             roster={roster}
             onRosterChange={setRosterRows}
+            rosterError={rosterError}
             sizes={(productDetail?.variants ?? [])
               .filter((variant) => variant.qty > 0 && variant.active !== false)
               .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
@@ -2124,16 +2140,6 @@ export function DesignStudio({
 
           {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              {sizeChartHref && groupOrder && (
-                <p className="m-0 mb-sp-3 text-xs">
-                  <a
-                    href={sizeChartHref}
-                    className="font-semibold text-accent hover:underline"
-                  >
-                    Size chart
-                  </a>
-                </p>
-              )}
               <label className="flex items-center gap-2 text-xs font-bold mb-sp-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -2143,21 +2149,37 @@ export function DesignStudio({
                     setRosterError(null);
                   }}
                 />
-                Team/group order — different sizes, names &amp; numbers
+                Team/group order — use the Names roster
               </label>
 
               {groupOrder ? (
-                <div className="mb-sp-3 border border-border rounded-md p-sp-3 bg-bg">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Roster
-                  </span>
-                  <RosterEditor
-                    sizes={productDetail.variants
-                      .filter((v) => v.qty > 0 && v.active !== false)
-                      .map((v) => ({ id: v.id, label: v.sizeName }))}
-                    rows={roster}
-                    onChange={setRoster}
-                  />
+                <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
+                  <p className="m-0 text-xs text-text-secondary">
+                    {roster.length === 0 || namedRosterCount === 0
+                      ? "Add names and numbers in the Names tab. Quantity will match that roster."
+                      : namedRosterCount < roster.length
+                        ? "Every row needs a name. Quantity will match the roster."
+                        : `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} from the Names tab (mixed sizes).`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setStudioTab("names")}
+                    className="mt-2 text-xs font-bold text-accent hover:underline"
+                  >
+                    {namedRosterCount === 0
+                      ? "Open Names tab"
+                      : "Edit names & numbers"}
+                  </button>
+                  {sizeChartHref && (
+                    <p className="m-0 mt-2 text-xs">
+                      <a
+                        href={sizeChartHref}
+                        className="font-semibold text-accent hover:underline"
+                      >
+                        Size chart
+                      </a>
+                    </p>
+                  )}
                   {rosterError && (
                     <p className="text-[12px] text-red-600 font-semibold mt-2 mb-0">
                       {rosterError}
@@ -2234,6 +2256,13 @@ export function DesignStudio({
                       </button>
                     ))}
                   </div>
+                  {namedRosterCount > 0 && (
+                    <p className="m-0 mb-sp-3 text-xs text-text-secondary">
+                      {namedRosterCount.toLocaleString()} name
+                      {namedRosterCount === 1 ? "" : "s"} sit in the Names tab.
+                      Check Team/group order to put them on this line.
+                    </p>
+                  )}
                 </>
               )}
 
@@ -2339,9 +2368,8 @@ export function DesignStudio({
                 disabled={
                   addingToCart ||
                   !selectedColorwayReady ||
-                  (groupOrder
-                    ? roster.length === 0
-                    : !selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0)
+                  (!groupOrder &&
+                    (!selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0))
                 }
                 onClick={addDesignToCart}
               >
@@ -2350,7 +2378,9 @@ export function DesignStudio({
                   : !selectedColorwayReady
                     ? "Loading colour…"
                   : groupOrder
-                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
+                    ? roster.length === 0
+                      ? "Add names in the Names tab"
+                      : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
                       : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
