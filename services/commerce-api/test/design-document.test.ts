@@ -80,10 +80,73 @@ describe("normalizeDesignDocument", () => {
         left: "Left Sleeve",
         right: "Right Side Panel",
       },
+      textsBySide: {
+        front: [
+          {
+            id: "word",
+            text: "Hawks",
+            x: 80,
+            y: 90,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            fontFamily: "arial",
+            fontSize: 28,
+            fill: "#111111",
+            align: "center",
+            printMethod: "print",
+          },
+        ],
+        back: [],
+        left: [],
+        right: [],
+      },
+      notes: "Keep the white ink bright.",
     };
     expect(normalizeDesignDocument(toStoredDesignDocument(before))).toEqual(
       before,
     );
+  });
+
+  it("fills missing text / notes / roster fields so older rows still load", () => {
+    const document = normalizeDesignDocument({
+      front: [layer({ id: "legacy" })],
+    });
+    expect(document.textsBySide).toEqual({
+      front: [],
+      back: [],
+      left: [],
+      right: [],
+    });
+    expect(document.notes).toBe("");
+    expect(document.rosterDecor.names.location).toBe("Upper Back");
+    expect(document.rosterDecor.numbers.location).toBe("Full Back");
+    expect(designDocumentHasArtwork(document)).toBe(true);
+  });
+
+  it("treats a text-only design as having artwork for save / cart gates", () => {
+    const document = normalizeDesignDocument({
+      textsBySide: {
+        front: [
+          {
+            id: "t",
+            text: "A",
+            x: 1,
+            y: 1,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            fontFamily: "arial",
+            fontSize: 20,
+            fill: "#000",
+            align: "left",
+            printMethod: "embroidery",
+          },
+        ],
+      },
+    });
+    expect(designDocumentHasArtwork(document)).toBe(true);
+    expect(document.textsBySide.front[0]?.printMethod).toBe("embroidery");
   });
 
   it("falls back to the first zone when a placement is not one this side offers", () => {

@@ -6,8 +6,13 @@ import {
 
 export function decoratedDesignSides(
   artworksBySide: Record<DesignSide, readonly unknown[]>,
+  textsBySide?: Record<DesignSide, readonly unknown[]>,
 ): DesignSide[] {
-  return DesignSides.filter((side) => artworksBySide[side].length > 0);
+  return DesignSides.filter(
+    (side) =>
+      artworksBySide[side].length > 0 ||
+      (textsBySide?.[side]?.length ?? 0) > 0,
+  );
 }
 
 /** Cart / job meta, e.g. `Left Chest (front) + Full Back (back)`. */

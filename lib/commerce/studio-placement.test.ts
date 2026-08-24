@@ -29,6 +29,15 @@ describe("decoratedDesignSides", () => {
       }),
     ).toEqual(["front", "left"]);
   });
+
+  it("counts text layers as decoration too", () => {
+    expect(
+      decoratedDesignSides(
+        { front: [], back: [], left: [], right: [] },
+        { front: [], back: [{ id: "name" }], left: [], right: [] },
+      ),
+    ).toEqual(["back"]);
+  });
 });
 
 describe("cartPrintMetaLabel", () => {
