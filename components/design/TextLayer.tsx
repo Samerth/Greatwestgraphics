@@ -45,11 +45,14 @@ export function TextLayer({
   );
 
   useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
-      trRef.current.nodes([shapeRef.current]);
-      trRef.current.getLayer()?.batchDraw();
-    }
-  }, [isSelected, curved, layer.text, layer.fontFamily, layer.fontSize]);
+    const frame = requestAnimationFrame(() => {
+      if (isSelected && trRef.current && shapeRef.current) {
+        trRef.current.nodes([shapeRef.current]);
+        trRef.current.getLayer()?.batchDraw();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isSelected, curved, layer.text, layer.fontFamily, layer.fontSize, family]);
 
   const shared = {
     x: layer.x,

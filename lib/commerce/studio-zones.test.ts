@@ -87,7 +87,7 @@ describe("detectPlacementZone", () => {
         side: "front",
         x: area.x,
         y: area.y,
-        width: area.width * 0.7,
+        width: area.width * 0.8,
         height: 40,
         canvasSize: canvas,
       }),

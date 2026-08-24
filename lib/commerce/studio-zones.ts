@@ -34,9 +34,9 @@ export const STUDIO_ZONE_INCHES: Record<
 };
 
 /** Layer is "full" when it covers at least this share of the print-area width. */
-export const STUDIO_ZONE_FULL_WIDTH_RATIO = 0.5;
+export const STUDIO_ZONE_FULL_WIDTH_RATIO = 0.65;
 /** Or this share of the print-area height. */
-export const STUDIO_ZONE_FULL_HEIGHT_RATIO = 0.55;
+export const STUDIO_ZONE_FULL_HEIGHT_RATIO = 0.7;
 
 function formatInch(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);

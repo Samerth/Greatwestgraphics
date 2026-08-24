@@ -416,6 +416,8 @@ export function DesignStudio({
   const [historyTick, setHistoryTick] = useState(0);
   const historyRef = useRef(createStudioHistory());
   const sliderHistoryArmedRef = useRef(false);
+  const designRef = useRef(design);
+  designRef.current = design;
 
   const [savedDesignId, setSavedDesignId] = useState<string | null>(
     initialDesign?.id ?? null,
@@ -738,30 +740,33 @@ export function DesignStudio({
   );
 
   function commitDesign(updater: (prev: DesignDocument) => DesignDocument) {
-    setDesign((prev) => {
-      historyRef.current.push(snapshotOf(prev));
-      return updater(prev);
-    });
+    const prev = designRef.current;
+    historyRef.current.push(snapshotOf(prev));
+    const next = updater(prev);
+    designRef.current = next;
+    setDesign(next);
     setHistoryTick((tick) => tick + 1);
     setExportError(null);
   }
 
   function undoStudio() {
-    setDesign((prev) => {
-      const next = historyRef.current.undo(snapshotOf(prev));
-      if (!next) return prev;
-      return applyHistorySnapshot(prev, next);
-    });
+    const prev = designRef.current;
+    const restored = historyRef.current.undo(snapshotOf(prev));
+    if (!restored) return;
+    const next = applyHistorySnapshot(prev, restored);
+    designRef.current = next;
+    setDesign(next);
     setHistoryTick((tick) => tick + 1);
     setLiveZone(null);
   }
 
   function redoStudio() {
-    setDesign((prev) => {
-      const next = historyRef.current.redo(snapshotOf(prev));
-      if (!next) return prev;
-      return applyHistorySnapshot(prev, next);
-    });
+    const prev = designRef.current;
+    const restored = historyRef.current.redo(snapshotOf(prev));
+    if (!restored) return;
+    const next = applyHistorySnapshot(prev, restored);
+    designRef.current = next;
+    setDesign(next);
     setHistoryTick((tick) => tick + 1);
     setLiveZone(null);
   }
@@ -960,28 +965,16 @@ export function DesignStudio({
       align: textAlign,
       printMethod: textPrintMethod,
     });
-    const display = estimateTextDisplaySize(text, layer.fontSize);
-    commitDesign((prev) => {
-      const next: DesignDocument = {
-        ...prev,
-        textsBySide: {
-          ...(prev.textsBySide ?? emptyTextsBySide()),
-          [activeSide]: [...(prev.textsBySide ?? emptyTextsBySide())[activeSide], layer],
-        },
-      };
-      const zone = detectPlacementZone({
-        side: activeSide,
-        x: layer.x,
-        y: layer.y,
-        width: display.width,
-        height: display.height,
-        canvasSize: CANVAS_SIZE,
-      });
-      return {
-        ...next,
-        placementBySide: { ...next.placementBySide, [activeSide]: zone },
-      };
-    });
+    commitDesign((prev) => ({
+      ...prev,
+      textsBySide: {
+        ...(prev.textsBySide ?? emptyTextsBySide()),
+        [activeSide]: [
+          ...(prev.textsBySide ?? emptyTextsBySide())[activeSide],
+          layer,
+        ],
+      },
+    }));
     setSelectedId(layer.id);
     setTextDraft("");
   }
@@ -1086,10 +1079,8 @@ export function DesignStudio({
   function beginSliderHistory() {
     if (sliderHistoryArmedRef.current) return;
     sliderHistoryArmedRef.current = true;
-    setDesign((prev) => {
-      historyRef.current.push(snapshotOf(prev));
-      return prev;
-    });
+    historyRef.current.push(snapshotOf(designRef.current));
+    setHistoryTick((tick) => tick + 1);
   }
 
   function endSliderHistory() {
@@ -1876,7 +1867,7 @@ export function DesignStudio({
                   height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                 }}
               >
-                <span className="absolute left-1 top-0.5 right-1 text-[8px] font-bold uppercase tracking-[0.08em] text-white/70">
+                <span className="absolute left-1 top-0.5 right-1 rounded-[2px] bg-black/45 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
                   {formatZoneInchLabel(guideZone)}
                 </span>
               </div>
