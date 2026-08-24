@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PrintMethods, ServicesBreakdown } from "@/components/home/FigmaHomeSections";
+import { HowToOrder, PrintMethods } from "@/components/home/FigmaHomeSections";
 import { Gallery } from "@/components/home/StaticSections";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
@@ -173,7 +173,7 @@ export function SeoLanding({ page }: { page: LandingPage }) {
       page.path === "/decoration-processes/custom-screen-printing" ? (
         <>
           <PrintMethods />
-          <ServicesBreakdown />
+          <HowToOrder />
         </>
       ) : null}
 

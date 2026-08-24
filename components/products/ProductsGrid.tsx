@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import type {
@@ -75,7 +76,13 @@ export function ProductsGrid({
   );
   const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [brandsOpen, setBrandsOpen] = useState(true);
+  const [showAllBrands, setShowAllBrands] = useState(false);
   const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
+  const BRAND_PREVIEW_COUNT = 8;
+  const visibleBrands = showAllBrands
+    ? dbBrands
+    : dbBrands.slice(0, BRAND_PREVIEW_COUNT);
 
   function navigate(next: {
     category?: string;
@@ -192,24 +199,61 @@ export function ProductsGrid({
       </FacetGroup>
 
       {dbBrands.length > 0 && (
-        <FacetGroup title="Brand">
-          <div className="space-y-1.5">
-            {dbBrands.map((brand) => (
-              <FacetCheck
-                key={brand}
-                label={brand}
-                checked={selectedBrands.includes(brand)}
-                onChange={() => {
-                  setSelectedBrands((prev) =>
-                    prev.includes(brand)
-                      ? prev.filter((b) => b !== brand)
-                      : [...prev, brand],
-                  );
-                }}
-              />
-            ))}
-          </div>
-        </FacetGroup>
+        <div className="border-t border-border pt-sp-4">
+          <button
+            type="button"
+            onClick={() => setBrandsOpen((v) => !v)}
+            aria-expanded={brandsOpen}
+            className="w-full flex items-center justify-between gap-2 group"
+          >
+            <h3 className="font-display font-bold text-sm m-0 flex items-center gap-2">
+              Brand
+              {selectedBrands.length > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[11px] font-bold leading-none">
+                  {selectedBrands.length}
+                </span>
+              )}
+            </h3>
+            <ChevronDown
+              size={16}
+              className={cn(
+                "text-text-tertiary transition-transform duration-200 group-hover:text-text-secondary",
+                brandsOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          {brandsOpen && (
+            <div className="mt-sp-2.5 space-y-1.5">
+              {visibleBrands.map((brand) => (
+                <FacetCheck
+                  key={brand}
+                  label={brand}
+                  checked={selectedBrands.includes(brand)}
+                  onChange={() => {
+                    setSelectedBrands((prev) =>
+                      prev.includes(brand)
+                        ? prev.filter((b) => b !== brand)
+                        : [...prev, brand],
+                    );
+                  }}
+                />
+              ))}
+
+              {dbBrands.length > BRAND_PREVIEW_COUNT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllBrands((v) => !v)}
+                  className="text-xs font-bold text-accent hover:text-accent-hover transition-colors pt-1"
+                >
+                  {showAllBrands
+                    ? "Show less"
+                    : `Show ${dbBrands.length - BRAND_PREVIEW_COUNT} more`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <FacetGroup title="Price">
@@ -264,13 +308,13 @@ export function ProductsGrid({
   );
 
   return (
-    <div className="lg:grid lg:grid-cols-[280px_1fr] gap-sp-5 items-start">
+    <div className="lg:grid lg:grid-cols-[264px_1fr] xl:grid-cols-[288px_1fr] gap-sp-5 items-start">
       <div className="hidden lg:block sticky top-[calc(var(--header-offset)+24px)] max-h-[calc(100vh-var(--header-offset)-40px)] overflow-y-auto pr-1 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
         {sidebar}
       </div>
 
       <div>
-        <div className="flex flex-wrap justify-between items-center gap-3 mb-sp-4">
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-sp-4 sticky top-[var(--header-offset)] z-30 -mx-1 px-1 py-3 bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80 border-b border-border/70">
           <button
             type="button"
             className="lg:hidden rounded-sm border border-border px-3 py-2 text-sm font-bold"
@@ -331,12 +375,12 @@ export function ProductsGrid({
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-sp-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-sp-3">
             {tiles.map((tile) => (
               <article
                 key={tile.key}
                 className={cn(
-                  "border border-border rounded-md bg-bg-raised overflow-hidden flex flex-col",
+                  "group border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover",
                   !tile.available && "opacity-90",
                 )}
               >
@@ -346,8 +390,8 @@ export function ProductsGrid({
                       src={tile.imageUrl}
                       alt={tile.name}
                       fill
-                      className="object-contain p-4"
-                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, (max-width: 1536px) 33vw, 25vw"
                     />
                   ) : (
                     <div className="absolute inset-0 bg-fill-subtle-15" />

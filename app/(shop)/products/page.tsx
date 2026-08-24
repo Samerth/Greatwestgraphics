@@ -68,6 +68,17 @@ export async function generateMetadata({
 
 const PAGE_SIZE = 60;
 
+/** The catalogue is the widest surface on the site: a 280px filter rail plus
+ * a product grid. The default container caps out too early and left the grid
+ * two columns wide on a desktop monitor, so the shop opts into a wider shell. */
+const SHOP_SHELL = "max-w-[1680px] xl:px-10 2xl:px-12";
+
+const SHOP_ASSURANCES = [
+  "Free digital proof on every order",
+  "In-house printing since 1980",
+  "Vancouver pickup or Canada-wide courier",
+];
+
 export default async function ProductsPage({
   searchParams,
 }: {
@@ -112,7 +123,7 @@ export default async function ProductsPage({
   const retryHref = `/products${retryQuery ? `?${retryQuery}` : ""}`;
   const overlayTiles = catalog.categories
     .filter((c) => TILE_META[c.slug])
-    .slice(0, 4)
+    .slice(0, 6)
     .map((c) => ({ name: c.name, slug: c.slug, ...TILE_META[c.slug] }));
   // The heading was hardcoded to "Shop All Products" whatever the filter was,
   // so every category link in the footer, the header menu and the tiles below
@@ -137,8 +148,8 @@ export default async function ProductsPage({
 
   return (
     <>
-      <section className="pt-sp-8">
-        <Container>
+      <section className="pt-sp-6 pb-sp-5 border-b border-border bg-bg-raised">
+        <Container className={SHOP_SHELL}>
           <div className="text-[13px] text-text-tertiary mb-sp-3">
             Home /{" "}
             {category ? (
@@ -152,23 +163,45 @@ export default async function ProductsPage({
               <b className="text-text-primary">Shop All Products</b>
             )}
           </div>
-          <h1 className="font-display font-bold text-display leading-display max-w-[16ch]">
-            {heading}
-          </h1>
-          {!catalogFailed && (
-            <p className="text-text-secondary max-w-[60ch] mt-sp-3">
-              Live blanks from the local S&amp;S catalog. Out-of-stock colours
-              stay visible as unavailable.
-            </p>
-          )}
+          <div className="flex flex-wrap items-end justify-between gap-sp-4">
+            <div className="min-w-0">
+              <h1 className="font-display font-bold text-display leading-display max-w-[16ch] m-0">
+                {heading}
+              </h1>
+              {!catalogFailed && (
+                <p className="text-text-secondary max-w-[60ch] mt-sp-3 mb-0">
+                  Live blanks from the local S&amp;S catalog. Out-of-stock
+                  colours stay visible as unavailable.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SHOP_ASSURANCES.map((line) => (
+                <span
+                  key={line}
+                  className="rounded-full border border-border bg-bg px-3 py-1.5 text-[12.5px] font-semibold text-text-secondary"
+                >
+                  {line}
+                </span>
+              ))}
+            </div>
+          </div>
         </Container>
       </section>
 
       {overlayTiles.length > 0 && (
         <section className="pt-sp-5 pb-0">
-          <Container>
-            <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
-            <div className="mt-sp-3 grid grid-cols-2 lg:grid-cols-4 gap-sp-3">
+          <Container className={SHOP_SHELL}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-display font-bold text-[19px] m-0">Shop by Category</h2>
+              <Link
+                href="/products"
+                className="text-sm font-bold text-accent hover:underline"
+              >
+                View the full catalogue
+              </Link>
+            </div>
+            <div className="mt-sp-3 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-sp-3">
               {overlayTiles.map((tile) => {
                 const selected =
                   category?.toLowerCase() === tile.slug.toLowerCase();
@@ -178,7 +211,7 @@ export default async function ProductsPage({
                   href={`/products?category=${encodeURIComponent(tile.slug)}`}
                   aria-current={selected ? "page" : undefined}
                   className={cn(
-                    "group relative overflow-hidden rounded-md border min-h-[140px] flex items-end p-sp-3 text-white",
+                    "group relative overflow-hidden rounded-lg border min-h-[168px] flex items-end p-sp-3 text-white transition-shadow hover:shadow-card-hover",
                     selected ? "border-accent ring-2 ring-accent/40" : "border-border",
                   )}
                 >
@@ -208,8 +241,8 @@ export default async function ProductsPage({
         </section>
       )}
 
-      <section className="py-sp-8">
-        <Container>
+      <section className="py-sp-6 lg:py-sp-8">
+        <Container className={SHOP_SHELL}>
           {catalogFailed ? (
             <CatalogUnavailable retryHref={retryHref} />
           ) : (

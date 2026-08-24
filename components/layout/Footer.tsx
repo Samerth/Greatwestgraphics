@@ -131,11 +131,13 @@ export function Footer({
           )}
         </div>
 
-        <FooterCol title="Shop" links={shopLinks} />
-        <FooterCol title="Services" links={serviceLinks} />
-        {!isBranded && <FooterCol title="Locations" links={locationLinks} />}
+        <FooterCol title="Shop" titleHref="/products" links={shopLinks} />
+        <FooterCol title="Services" titleHref="/services" links={serviceLinks} />
+        {!isBranded && (
+          <FooterCol title="Locations" titleHref="/locations" links={locationLinks} />
+        )}
         <FooterCol title="Important Pages" links={importantLinks} />
-        <FooterCol title="About Us" links={aboutLinks} />
+        <FooterCol title="About Us" titleHref="/about" links={aboutLinks} />
       </Container>
 
       <Container className="flex justify-between flex-wrap gap-2 text-[12.5px] text-white/50 border-t border-white/15 mt-sp-6 pt-sp-3">
@@ -167,14 +169,24 @@ export function Footer({
 
 function FooterCol({
   title,
+  titleHref,
   links,
 }: {
   title: string;
+  titleHref?: string;
   links: { label: string; href: string }[];
 }) {
   return (
     <div>
-      <h5 className="text-white font-display text-sm mb-sp-2">{title}</h5>
+      <h5 className="text-white font-display text-sm mb-sp-2">
+        {titleHref ? (
+          <Link href={titleHref} className="hover:text-accent transition-colors">
+            {title}
+          </Link>
+        ) : (
+          title
+        )}
+      </h5>
       <ul className="space-y-2">
         {links.map((l) => (
           <li key={l.label} className="text-sm">
