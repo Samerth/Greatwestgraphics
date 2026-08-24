@@ -57,7 +57,6 @@ import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
-  garmentBackdropForSide,
   garmentBackdrops,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
@@ -96,7 +95,6 @@ import {
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
-import { SleeveIllustration } from "@/components/design/SleeveIllustration";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
 import { StudioElementEditor } from "@/components/design/StudioElementEditor";
@@ -113,8 +111,6 @@ import {
 import {
   DESIGN_SIDE_THUMB_LABELS,
   isStudioSleeveSide,
-  sleeveIllustrationDataUrl,
-  studioSleeveFillFromColorway,
 } from "@/lib/commerce/studio-sleeve";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 
@@ -728,8 +724,9 @@ export function DesignStudio({
     stitchPreset,
   ]);
 
-  // Front/back stay photographic. Left/right sleeves are original line-art
-  // plates whose fill follows the selected colourway hex.
+  // All four views are photographic. Sleeves use a vendor side shot when
+  // the catalog has one, otherwise a framed sleeve-on-shirt crop of that
+  // colorway — never a cartoon plate.
   const garmentPhotos = studioGarmentPhotos({
     selectedId: selectedGarmentId,
     product: productDetail?.product,
@@ -739,18 +736,11 @@ export function DesignStudio({
   });
   const sideBackdrops = garmentBackdrops(garmentPhotos);
   const backdrop = sideBackdrops[activeSide];
-  const sleeveFillHex = studioSleeveFillFromColorway(
-    selectedColorway,
-    (selectedColorwayReady ? productDetail?.product.colorName : null) ||
-      selectedGarment?.colorName,
-  );
   const sleeveView = isStudioSleeveSide(activeSide);
-  const currentPhoto = sleeveView ? null : backdrop.url;
-  const mirrorPhoto = sleeveView ? false : backdrop.mirror;
+  const currentPhoto = backdrop.url;
+  const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  const canvasGarmentImageUrl = isStudioSleeveSide(activeSide)
-    ? sleeveIllustrationDataUrl({ side: activeSide, fillHex: sleeveFillHex })
-    : studioCanvasImageUrl(backdrop);
+  const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
   const framedBackdrop = framedBackdropStyles(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
@@ -1853,24 +1843,13 @@ export function DesignStudio({
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex items-center justify-center">
             <div
-              className={cn(
-                "relative w-full max-w-[600px] aspect-square",
-                sleeveView && "gwg-sleeve-breathe",
-              )}
+              className="relative w-full max-w-[600px] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {isStudioSleeveSide(activeSide) ? (
-                <div className="absolute inset-0 overflow-visible pointer-events-none">
-                  <SleeveIllustration
-                    side={activeSide}
-                    fillHex={sleeveFillHex}
-                    animated
-                  />
-                </div>
-              ) : currentPhoto ? (
+              {currentPhoto ? (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                   <div style={framedBackdrop.frame}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
@@ -1882,7 +1861,7 @@ export function DesignStudio({
                   </div>
                 </div>
               ) : null}
-              {isLoadingGarment && !currentPhoto && !sleeveView && (
+              {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
@@ -1899,8 +1878,8 @@ export function DesignStudio({
                 zoom={zoom}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
-                garmentCrop={sleeveView ? undefined : backdrop.crop}
-                garmentPlate={sleeveView ? undefined : backdrop.plate}
+                garmentCrop={backdrop.crop}
+                garmentPlate={backdrop.plate}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChangeArtwork={commitArtworkChange}
@@ -1966,14 +1945,7 @@ export function DesignStudio({
                     )}
                   >
                     <span className="block aspect-square relative bg-[#1a1a1a]">
-                      {isStudioSleeveSide(side) ? (
-                        <span className="absolute inset-1">
-                          <SleeveIllustration
-                            side={side}
-                            fillHex={sleeveFillHex}
-                          />
-                        </span>
-                      ) : thumbBackdrop.url ? (
+                      {thumbBackdrop.url ? (
                         <span className="absolute inset-0 overflow-hidden">
                           <span style={thumbFrame.frame}>
                             {/* eslint-disable-next-line @next/next/no-img-element -- tiny side thumb */}

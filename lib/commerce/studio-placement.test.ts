@@ -95,6 +95,14 @@ describe("studio print areas", () => {
     expect(front.height).toBeLessThan(0.5);
     expect(front.y).toBeGreaterThan(0.15);
   });
+
+  it("puts sleeve plates on the photographed sleeve, not canvas center", () => {
+    const left = STUDIO_PRINT_AREAS.left;
+    const right = STUDIO_PRINT_AREAS.right;
+    expect(left.x).toBeGreaterThan(0.45);
+    expect(right.x + right.width).toBeLessThan(0.55);
+    expect(left.x).toBeGreaterThan(right.x + right.width);
+  });
 });
 
 describe("placementIntent", () => {

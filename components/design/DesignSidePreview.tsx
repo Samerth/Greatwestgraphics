@@ -10,17 +10,11 @@ import {
   estimateTextDisplaySize,
   studioTextArcSvgPath,
 } from "@/lib/commerce/studio-text";
-import { SleeveIllustration } from "@/components/design/SleeveIllustration";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
   type PhotoCrop,
 } from "@/lib/commerce/garment-backdrop";
-import {
-  DEFAULT_SLEEVE_FILL_HEX,
-  isStudioSleeveSide,
-  studioSleeveFillHex,
-} from "@/lib/commerce/studio-sleeve";
 
 /**
  * A read-only rendering of one garment view, faithful to what the customer
@@ -44,7 +38,6 @@ export function DesignSidePreview({
   mirrorGarment,
   garmentCrop,
   garmentPlate,
-  sleeveFillHex,
   size = DESIGN_CANVAS_SIZE,
   className,
 }: {
@@ -54,14 +47,11 @@ export function DesignSidePreview({
   mirrorGarment?: boolean;
   garmentCrop?: PhotoCrop;
   garmentPlate?: boolean;
-  sleeveFillHex?: string | null;
   size?: number;
   className?: string;
 }) {
   const artworks = design.artworksBySide[side] ?? [];
   const texts = design.textsBySide?.[side] ?? [];
-  const sleeveView = isStudioSleeveSide(side);
-  const fillHex = studioSleeveFillHex({ hex: sleeveFillHex }) || DEFAULT_SLEEVE_FILL_HEX;
   const fallback = garmentBackdropForSide(side, {});
   const imageUrl = garmentImageUrl || fallback.url;
   const mirrored = mirrorGarment ?? fallback.mirror;
@@ -89,23 +79,17 @@ export function DesignSidePreview({
           transformOrigin: "top left",
         }}
       >
-        {isStudioSleeveSide(side) ? (
-          <div style={{ position: "absolute", inset: 0 }}>
-            <SleeveIllustration side={side} fillHex={fillHex} />
-          </div>
-        ) : (
-          <div style={framed.frame}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageUrl}
-              alt=""
-              style={{
-                ...framed.image,
-                opacity: garmentImageUrl ? 1 : 0.9,
-              }}
-            />
-          </div>
-        )}
+        <div style={framed.frame}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            style={{
+              ...framed.image,
+              opacity: garmentImageUrl ? 1 : 0.9,
+            }}
+          />
+        </div>
 
         {artworks.map((artwork) => (
           // eslint-disable-next-line @next/next/no-img-element
