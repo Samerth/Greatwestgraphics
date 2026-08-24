@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
+import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 
 /**
  * The main garment → design hand-off on the PDP. Always visible (not
@@ -23,9 +24,20 @@ export function PreviewDesignButton({
   useEffect(() => setMounted(true), []);
 
   const hasDesign = mounted && hasActiveArtwork(design);
+  const setGarment = useActiveDesignStore((state) => state.setGarment);
 
   return (
-    <Link href={`/design?garmentId=${encodeURIComponent(productId)}`} className={className}>
+    <Link
+      href={`/design?garmentId=${encodeURIComponent(productId)}`}
+      className={className}
+      onClick={() => {
+        setGarment(productId);
+        const current = usePdpStudioHandoff.getState().handoff;
+        if (current?.productId !== productId) {
+          usePdpStudioHandoff.getState().save({ productId });
+        }
+      }}
+    >
       {hasDesign ? "Continue my design on this garment" : "Add your logo or artwork to this"}
       {" →"}
     </Link>

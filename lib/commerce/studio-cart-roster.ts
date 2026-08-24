@@ -1,7 +1,7 @@
 import type { RosterDecor } from "@gwg/contracts";
 import { rosterDecorSummary } from "./studio-roster-decor";
 
-/** Draft row from the Names tab editor (empty placeholders are allowed). */
+/** Draft row from the Team order panel (empty placeholders are allowed). */
 export type StudioRosterDraftRow = {
   size: string;
   name: string;
@@ -55,12 +55,24 @@ export function studioTeamRosterError(
   return null;
 }
 
+/** A complete roster is a team order. One name on a jersey belongs on Text. */
+export function studioIsCompleteTeamRoster(
+  rows: StudioRosterDraftRow[],
+): boolean {
+  return studioTeamRosterError(rows) === null;
+}
+
+export function studioHasStartedTeamRoster(
+  rows: StudioRosterDraftRow[],
+): boolean {
+  return cartRosterRowsFromDraft(rows).length > 0;
+}
+
 export function studioTeamOrderQuantity(
-  teamOrder: boolean,
   roster: StudioRosterDraftRow[],
   designQty: number,
 ): number {
-  if (!teamOrder) return designQty;
+  if (!studioIsCompleteTeamRoster(roster)) return designQty;
   return Math.max(1, roster.length);
 }
 
@@ -84,18 +96,15 @@ export type StudioCartRosterPayload =
     };
 
 /**
- * Maps the Names tab (and the slim team-order flag) onto the cart fields the
- * finish-block checkbox used to fill. One source of truth — no second roster.
- *
- * The flag is the only switch. A filled Names tab does not attach a roster
- * unless Team/group order is checked — same as the pre-dedupe checkbox.
+ * A finished Team order panel is the only studio switch. Empty / placeholder
+ * rows stay a regular size+qty line. A started-but-incomplete roster errors
+ * so we do not silently drop names. Checkout still reads `roster` + qty.
  */
 export function studioCartRosterPayload(input: {
-  teamOrder: boolean;
   roster: StudioRosterDraftRow[];
   rosterDecor: RosterDecor;
 }): StudioCartRosterPayload {
-  if (!input.teamOrder) {
+  if (!studioHasStartedTeamRoster(input.roster)) {
     return {
       ok: true,
       teamOrder: false,

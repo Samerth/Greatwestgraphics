@@ -20,9 +20,9 @@ function DecorFields({
   onChange: (patch: Partial<RosterDecorPart>) => void;
 }) {
   return (
-    <div className="rounded-md border border-border bg-bg p-sp-3 flex flex-col gap-2 min-w-0">
+    <div className="rounded-md border border-border bg-bg p-sp-4 flex flex-col gap-2 min-w-0">
       <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-tertiary">
-        {title}
+        {title} print
       </span>
       <StudioSelect
         tone="panel"
@@ -72,7 +72,7 @@ function DecorFields({
   );
 }
 
-export function StudioNamesNumbersTab({
+export function StudioTeamOrderPanel({
   roster,
   onRosterChange,
   sizes,
@@ -88,28 +88,38 @@ export function StudioNamesNumbersTab({
   rosterError?: string | null;
 }) {
   return (
-    <div className="flex flex-col gap-3 min-w-0">
-      <p className="m-0 text-[11px] leading-4 text-text-tertiary">
-        This is the only place to set team names, numbers, and how they print.
-        Check Team/group order next to Add to cart to put this roster on the
-        line.
-      </p>
-      <RosterEditor sizes={sizes} rows={roster} onChange={onRosterChange} />
+    <div className="flex flex-col gap-4 min-w-0">
+      <div>
+        <h3 className="font-display text-[18px] m-0">Team order</h3>
+        <p className="m-0 mt-1 text-sm text-text-secondary max-w-[62ch]">
+          One row per shirt — size, name, and number. A finished list becomes
+          the order quantity. For a single name or number on one jersey, use
+          the Text tab instead.
+        </p>
+      </div>
+      <RosterEditor
+        layout="wide"
+        sizes={sizes}
+        rows={roster}
+        onChange={onRosterChange}
+      />
       {rosterError ? (
         <p className="m-0 text-[12px] font-semibold text-red-600" role="alert">
           {rosterError}
         </p>
       ) : null}
-      <DecorFields
-        title="Names"
-        value={decor.names}
-        onChange={(patch) => onDecorChange("names", patch)}
-      />
-      <DecorFields
-        title="Numbers"
-        value={decor.numbers}
-        onChange={(patch) => onDecorChange("numbers", patch)}
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <DecorFields
+          title="Names"
+          value={decor.names}
+          onChange={(patch) => onDecorChange("names", patch)}
+        />
+        <DecorFields
+          title="Numbers"
+          value={decor.numbers}
+          onChange={(patch) => onDecorChange("numbers", patch)}
+        />
+      </div>
     </div>
   );
 }

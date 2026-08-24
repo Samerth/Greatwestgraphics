@@ -28,6 +28,10 @@ import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import {
+  rosterLooksStarted,
+  usePdpStudioHandoff,
+} from "@/lib/store/pdp-studio-handoff";
+import {
   artworkSrcForDraft,
   dataUrlToBlob,
   filenameForArtworkBlob,
@@ -86,6 +90,7 @@ import {
   cartRosterRowsFromDraft,
   studioCartLineFields,
   studioCartRosterPayload,
+  studioIsCompleteTeamRoster,
   studioTeamOrderQuantity,
 } from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
@@ -95,7 +100,7 @@ import { SleeveIllustration } from "@/components/design/SleeveIllustration";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
 import { StudioElementEditor } from "@/components/design/StudioElementEditor";
-import { StudioNamesNumbersTab } from "@/components/design/StudioNamesNumbersTab";
+import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
 import {
   studioArticleLabel,
@@ -208,7 +213,7 @@ const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
 const STUDIO_TABS = [
   { id: "images", label: "Images" },
   { id: "text", label: "Text" },
-  { id: "names", label: "Names" },
+  { id: "team", label: "Team" },
   { id: "notes", label: "Notes" },
 ] as const;
 type StudioTab = (typeof STUDIO_TABS)[number]["id"];
@@ -404,7 +409,6 @@ export function DesignStudio({
   const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
-  const [groupOrder, setGroupOrder] = useState(false);
   const [roster, setRoster] = useState<RosterRow[]>(() =>
     initialDesign
       ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
@@ -517,6 +521,37 @@ export function DesignStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Size, qty, and a roster started on the product page follow "Design this".
+  useEffect(() => {
+    if (isStaff || !garmentIdOverride || initialDesign) return;
+    const applyHandoff = () => {
+      const handoff = usePdpStudioHandoff.getState().handoff;
+      if (!handoff || handoff.productId !== garmentIdOverride) return;
+      if (handoff.sizeName) preferredSizeNameRef.current = handoff.sizeName;
+      if (handoff.qty && handoff.qty > 0) setDesignQty(handoff.qty);
+      if (rosterLooksStarted(handoff.roster)) {
+        setRoster(handoff.roster ?? [{ size: "", name: "", number: "" }]);
+        setDesign((prev) => ({
+          ...prev,
+          roster: (handoff.roster ?? [])
+            .filter((row) => row.name.trim() || row.number.trim() || row.size)
+            .map((row) => ({
+              size: row.size,
+              name: row.name,
+              number: row.number.trim() || undefined,
+            })),
+        }));
+        setStudioTab("team");
+      }
+    };
+    const persistApi = usePdpStudioHandoff.persist;
+    if (persistApi.hasHydrated()) {
+      applyHandoff();
+      return;
+    }
+    return persistApi.onFinishHydration(applyHandoff);
+  }, [garmentIdOverride, initialDesign, isStaff]);
+
   // Mirror the working design into the persistent store as it changes so
   // it's there when the customer clicks through to another product.
   useEffect(() => {
@@ -628,6 +663,7 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
+  const teamOrderReady = studioIsCompleteTeamRoster(roster);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
@@ -642,7 +678,7 @@ export function DesignStudio({
     try {
       return priceShopperQuote(pricingConfig, {
         unitCostMinor,
-        quantity: studioTeamOrderQuantity(groupOrder, roster, designQty),
+        quantity: studioTeamOrderQuantity(roster, designQty),
         mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
         colourName:
           (selectedColorwayReady
@@ -679,7 +715,6 @@ export function DesignStudio({
     colours,
     decoratedSides,
     designQty,
-    groupOrder,
     optionKey,
     placementBySide,
     pricingConfig,
@@ -1232,17 +1267,15 @@ export function DesignStudio({
     }
 
     // Validate before uploading: an upload spent on a roster that is about to
-    // be rejected is a round trip nobody asked for. The Names tab is the only
-    // roster editor. The finish checkbox is the only switch that puts that
-    // roster on the cart line — filling names does not turn team order on.
+    // be rejected is a round trip nobody asked for. A finished Team panel is
+    // the order. An empty panel stays a regular size + qty line.
     const rosterPayload = studioCartRosterPayload({
-      teamOrder: groupOrder,
       roster,
       rosterDecor,
     });
     if (!rosterPayload.ok) {
       setRosterError(rosterPayload.error);
-      setStudioTab("names");
+      setStudioTab("team");
       return;
     }
     if (!rosterPayload.teamOrder && !selectedVariant) {
@@ -1297,7 +1330,7 @@ export function DesignStudio({
         const cartRoster = line.roster;
         if (!cartRoster || line.qty !== cartRoster.length) {
           setRosterError("Add at least one person.");
-          setStudioTab("names");
+          setStudioTab("team");
           return;
         }
         const priceVariant =
@@ -1305,7 +1338,7 @@ export function DesignStudio({
           selectedVariant;
         if (!priceVariant) {
           setCartError("Select a size for the first roster row.");
-          setStudioTab("names");
+          setStudioTab("team");
           return;
         }
         addItem({
@@ -1634,26 +1667,28 @@ export function DesignStudio({
           />
         )}
 
-        {studioTab === "names" && (
-          <StudioNamesNumbersTab
-            roster={roster}
-            onRosterChange={setRosterRows}
-            rosterError={rosterError}
-            sizes={(productDetail?.variants ?? [])
-              .filter((variant) => variant.qty > 0 && variant.active !== false)
-              .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
-            decor={rosterDecor}
-            onDecorChange={(target, patch) =>
-              setDesign((prev) => ({
-                ...prev,
-                rosterDecor: patchRosterDecor(
-                  prev.rosterDecor ?? defaultRosterDecor(),
-                  target,
-                  patch,
-                ),
-              }))
-            }
-          />
+        {studioTab === "team" && (
+          <div className="flex flex-col gap-2">
+            <p className="m-0 text-[13px] leading-5 text-text-secondary">
+              {teamOrderReady
+                ? `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} on the team list below.`
+                : namedRosterCount > 0
+                  ? "Finish every row on the team list below — or use Text for one name."
+                  : "The team list is below the canvas, with room for names."}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("studio-team-order")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+              className="text-left text-[12.5px] font-semibold text-accent hover:underline"
+            >
+              {namedRosterCount > 0 ? "Jump to team list" : "Add a team list"}
+            </button>
+          </div>
         )}
 
         {studioTab === "notes" && (
@@ -2061,6 +2096,33 @@ export function DesignStudio({
         )}
       </div>
 
+      {studioTab === "team" && (
+        <div
+          id="studio-team-order"
+          className="lg:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+        >
+          <StudioTeamOrderPanel
+            roster={roster}
+            onRosterChange={setRosterRows}
+            rosterError={rosterError}
+            sizes={(productDetail?.variants ?? [])
+              .filter((variant) => variant.qty > 0 && variant.active !== false)
+              .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
+            decor={rosterDecor}
+            onDecorChange={(target, patch) =>
+              setDesign((prev) => ({
+                ...prev,
+                rosterDecor: patchRosterDecor(
+                  prev.rosterDecor ?? defaultRosterDecor(),
+                  target,
+                  patch,
+                ),
+              }))
+            }
+          />
+        </div>
+      )}
+
       {/* Saving, proof download and ordering belong to the main workspace,
           below the canvas they act on — not in a duplicate preview panel. */}
       <div className="lg:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
@@ -2140,35 +2202,19 @@ export function DesignStudio({
 
           {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              <label className="flex items-center gap-2 text-xs font-bold mb-sp-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={groupOrder}
-                  onChange={(e) => {
-                    setGroupOrder(e.target.checked);
-                    setRosterError(null);
-                  }}
-                />
-                Team/group order — use the Names roster
-              </label>
-
-              {groupOrder ? (
+              {teamOrderReady ? (
                 <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
                   <p className="m-0 text-xs text-text-secondary">
-                    {roster.length === 0 || namedRosterCount === 0
-                      ? "Add names and numbers in the Names tab. Quantity will match that roster."
-                      : namedRosterCount < roster.length
-                        ? "Every row needs a name. Quantity will match the roster."
-                        : `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} from the Names tab (mixed sizes).`}
+                    Team order · {roster.length.toLocaleString()} piece
+                    {roster.length === 1 ? "" : "s"} from the team list
+                    (mixed sizes).
                   </p>
                   <button
                     type="button"
-                    onClick={() => setStudioTab("names")}
+                    onClick={() => setStudioTab("team")}
                     className="mt-2 text-xs font-bold text-accent hover:underline"
                   >
-                    {namedRosterCount === 0
-                      ? "Open Names tab"
-                      : "Edit names & numbers"}
+                    Edit team list
                   </button>
                   {sizeChartHref && (
                     <p className="m-0 mt-2 text-xs">
@@ -2258,9 +2304,8 @@ export function DesignStudio({
                   </div>
                   {namedRosterCount > 0 && (
                     <p className="m-0 mb-sp-3 text-xs text-text-secondary">
-                      {namedRosterCount.toLocaleString()} name
-                      {namedRosterCount === 1 ? "" : "s"} sit in the Names tab.
-                      Check Team/group order to put them on this line.
+                      Team list is incomplete — every row needs a name. A single
+                      name on one jersey belongs on the Text tab.
                     </p>
                   )}
                 </>
@@ -2368,7 +2413,7 @@ export function DesignStudio({
                 disabled={
                   addingToCart ||
                   !selectedColorwayReady ||
-                  (!groupOrder &&
+                  (!teamOrderReady &&
                     (!selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0))
                 }
                 onClick={addDesignToCart}
@@ -2377,10 +2422,8 @@ export function DesignStudio({
                   ? "Attaching artwork…"
                   : !selectedColorwayReady
                     ? "Loading colour…"
-                  : groupOrder
-                    ? roster.length === 0
-                      ? "Add names in the Names tab"
-                      : `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
+                  : teamOrderReady
+                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
                     : !selectedVariant || selectedVariant.qty <= 0
                       ? "Unavailable"
                       : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
