@@ -33,9 +33,8 @@ describe("normalizeDesignDocument", () => {
     expect(Object.keys(document.artworksBySide).sort()).toEqual(
       [...DesignSides].sort(),
     );
-    expect(document.placementBySide.front).toBe(
-      DESIGN_PLACEMENT_ZONES.front[0],
-    );
+    expect(document.placementBySide.front).toBe("Center Chest");
+    expect(DESIGN_PLACEMENT_ZONES.front).toContain("Right Chest");
     expect(document.placementBySide.right).toBe(
       DESIGN_PLACEMENT_ZONES.right[0],
     );

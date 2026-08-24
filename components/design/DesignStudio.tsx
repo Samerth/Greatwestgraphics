@@ -52,9 +52,11 @@ import {
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
 import {
+  STUDIO_PRINT_AREAS,
   cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
+  placeArtworkInZone,
 } from "@/lib/commerce/studio-placement";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
@@ -209,6 +211,31 @@ function canLoadImage(src: string): Promise<boolean> {
     probe.crossOrigin = "anonymous";
     probe.onload = () => resolve(true);
     probe.onerror = () => resolve(false);
+    probe.src = src;
+  });
+}
+
+/**
+ * Natural pixel size, so default scale can be a fraction of the print area
+ * instead of `0.4 × whatever the camera dumped`.
+ */
+function measureArtworkSize(
+  src: string,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const probe = new window.Image();
+    const local = /^(blob:|data:)/i.test(src) || src.startsWith("/");
+    if (!local) probe.crossOrigin = "anonymous";
+    probe.onload = () => {
+      const width = probe.naturalWidth || probe.width;
+      const height = probe.naturalHeight || probe.height;
+      if (width < 1 || height < 1) {
+        reject(new Error("Artwork has no size"));
+        return;
+      }
+      resolve({ width, height });
+    };
+    probe.onerror = () => reject(new Error("Could not measure artwork"));
     probe.src = src;
   });
 }
@@ -568,6 +595,38 @@ export function DesignStudio({
       ...prev,
       placementBySide: { ...prev.placementBySide, [side]: zone },
     }));
+    const layers = artworksBySide[side];
+    const targetId =
+      (side === activeSide ? selectedId : null) ??
+      (layers.length === 1 ? layers[0]!.id : null);
+    const target = targetId
+      ? layers.find((layer) => layer.id === targetId)
+      : undefined;
+    if (target) void snapArtworkToZone(side, zone, target);
+  }
+
+  async function snapArtworkToZone(
+    side: DesignSide,
+    zone: string,
+    artwork: PlacedArtwork,
+  ) {
+    try {
+      const size = await measureArtworkSize(artwork.src);
+      const placed = placeArtworkInZone({
+        side,
+        zone,
+        imageWidth: size.width,
+        imageHeight: size.height,
+        canvasSize: CANVAS_SIZE,
+      });
+      updateArtworks(side, (layers) =>
+        layers.map((layer) =>
+          layer.id === artwork.id ? { ...layer, ...placed } : layer,
+        ),
+      );
+    } catch {
+      // Zone name still saves for the press ticket; geometry stays put.
+    }
   }
 
   /**
@@ -677,14 +736,19 @@ export function DesignStudio({
    * URL with a hosted one. Both steps matter: the object URL is what makes
    * placement feel instant, and the hosted URL is the only part that still
    * exists after the tab closes.
+   *
+   * Size and position come from the active print area: a 4000px phone photo
+   * and a 200px logo both start as a small centered (or left/right) chest
+   * mark. The old `scale = 0.4` was 40% of the file's natural pixels, which
+   * is why uploads covered the shirt.
    */
   async function addArtworkFromBlob(
     blob: Blob,
     filename: string,
-    scale = 0.4,
   ): Promise<string | null> {
     const id = crypto.randomUUID();
     const side = activeSide;
+    const zone = placementBySide[side];
     // Unsigned visitors cannot upload. A `blob:` URL dies when they leave
     // to confirm an account, so the draft is stored as a data URL that
     // localStorage can bring back onto the canvas after sign-in.
@@ -692,13 +756,27 @@ export function DesignStudio({
       ? URL.createObjectURL(blob)
       : await artworkSrcForDraft(blob);
 
+    let imageWidth = 1024;
+    let imageHeight = 1024;
+    try {
+      const size = await measureArtworkSize(src);
+      imageWidth = size.width;
+      imageHeight = size.height;
+    } catch {
+      // Assumed square keeps the mark small instead of covering the garment.
+    }
+    const placed = placeArtworkInZone({
+      side,
+      zone,
+      imageWidth,
+      imageHeight,
+      canvasSize: CANVAS_SIZE,
+    });
+
     const newArtwork: PlacedArtwork = {
       id,
       src,
-      x: CANVAS_SIZE / 2,
-      y: CANVAS_SIZE / 2,
-      scaleX: scale,
-      scaleY: scale,
+      ...placed,
       rotation: 0,
     };
 
@@ -742,7 +820,7 @@ export function DesignStudio({
       // used to live only as an object URL, so a design built entirely from
       // an AI concept saved as an empty design — the worst version of the
       // bug, because the customer had nothing on disk to re-upload.
-      await addArtworkFromBlob(blob, "ai-concept.png", 0.45);
+      await addArtworkFromBlob(blob, "ai-concept.png");
       setShowAiPrompt(false);
       setAiPrompt("");
     } catch {
@@ -1255,11 +1333,11 @@ export function DesignStudio({
 
           <div className="min-w-0 w-full max-w-full sm:w-auto sm:max-w-[12.5rem]">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
-              Print location
+              Placement on this side
             </span>
             <StudioSelect
               tone="canvas"
-              ariaLabel="Print location"
+              ariaLabel="Placement on this side"
               value={placementBySide[activeSide]}
               onChange={(zone) => setPlacement(activeSide, zone)}
               options={DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => ({
@@ -1316,6 +1394,21 @@ export function DesignStudio({
                   )
                 }
               />
+              {/* CSS overlay so the guide never lands in the Konva proof. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+                style={{
+                  left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
+                  top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
+                  width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
+                  height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
+                }}
+              >
+                <span className="absolute left-1 top-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-white/50">
+                  Print area
+                </span>
+              </div>
             </div>
           </div>
         </div>
