@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { GoogleAnalytics } from "@/components/seo/GoogleAnalytics";
 import { publicRobots } from "@/lib/seo/indexing";
 import "./globals.css";
 
@@ -72,7 +73,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="font-body text-body">{children}</body>
+      <body className="font-body text-body">
+        {children}
+        <GoogleAnalytics />
+      </body>
     </html>
   );
 }

@@ -1,5 +1,5 @@
 import { canonicalizePath } from "./paths";
-import { cleanSeoText } from "./clean";
+import { cleanSeoText, isProductWidgetCopy } from "./clean";
 import { uniqueThinSections } from "./thin-copy";
 import records from "./data/location-pages.json";
 
@@ -64,10 +64,18 @@ export function locationSections(page: LocationPage): LocationSection[] {
   if (page.thin || !page.sections?.length) {
     return uniqueThinSections(page);
   }
-  return page.sections.map((section) => ({
-    heading: section.heading ? cleanSeoText(section.heading) : null,
-    paragraphs: section.paragraphs.map(cleanSeoText).filter(Boolean),
-  }));
+  return page.sections
+    .map((section) => {
+      const heading = section.heading ? cleanSeoText(section.heading) : null;
+      const paragraphs = section.paragraphs
+        .map(cleanSeoText)
+        .filter((paragraph) => paragraph && !isProductWidgetCopy(paragraph));
+      if (heading && isProductWidgetCopy(heading)) {
+        return { heading: null, paragraphs };
+      }
+      return { heading, paragraphs };
+    })
+    .filter((section) => section.paragraphs.length > 0 || section.heading);
 }
 
 export function locationPlaceLabel(page: LocationPage): string {
