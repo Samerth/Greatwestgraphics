@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DESIGN_CANVAS_SIZE,
-  DESIGN_PLACEMENT_ZONES,
   DESIGN_SIDE_LABELS,
   DesignSides,
   emptyDesignDocument,
@@ -590,45 +589,6 @@ export function DesignStudio({
     setExportError(null);
   }
 
-  function setPlacement(side: DesignSide, zone: string) {
-    setDesign((prev) => ({
-      ...prev,
-      placementBySide: { ...prev.placementBySide, [side]: zone },
-    }));
-    const layers = artworksBySide[side];
-    const targetId =
-      (side === activeSide ? selectedId : null) ??
-      (layers.length === 1 ? layers[0]!.id : null);
-    const target = targetId
-      ? layers.find((layer) => layer.id === targetId)
-      : undefined;
-    if (target) void snapArtworkToZone(side, zone, target);
-  }
-
-  async function snapArtworkToZone(
-    side: DesignSide,
-    zone: string,
-    artwork: PlacedArtwork,
-  ) {
-    try {
-      const size = await measureArtworkSize(artwork.src);
-      const placed = placeArtworkInZone({
-        side,
-        zone,
-        imageWidth: size.width,
-        imageHeight: size.height,
-        canvasSize: CANVAS_SIZE,
-      });
-      updateArtworks(side, (layers) =>
-        layers.map((layer) =>
-          layer.id === artwork.id ? { ...layer, ...placed } : layer,
-        ),
-      );
-    } catch {
-      // Zone name still saves for the press ticket; geometry stays put.
-    }
-  }
-
   /**
    * Puts a file somewhere durable and swaps the layer's temporary object URL
    * for the hosted one. Failures are surfaced rather than swallowed: the
@@ -738,9 +698,9 @@ export function DesignStudio({
    * exists after the tab closes.
    *
    * Size and position come from the active print area: a 4000px phone photo
-   * and a 200px logo both start as a small centered (or left/right) chest
-   * mark. The old `scale = 0.4` was 40% of the file's natural pixels, which
-   * is why uploads covered the shirt.
+   * and a 200px logo both start as a small centered chest mark. The old
+   * `scale = 0.4` was 40% of the file's natural pixels, which is why
+   * uploads covered the shirt.
    */
   async function addArtworkFromBlob(
     blob: Blob,
@@ -1294,57 +1254,39 @@ export function DesignStudio({
           </div>
         </div>
 
-        <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-end justify-between gap-sp-3 min-w-0">
-          <div className="min-w-0">
-            <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
-              Which side are you designing?
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {availableViews.map((side) => (
-                <button
-                  key={side}
-                  onClick={() => {
-                    setActiveSide(side);
-                    setExportError(null);
-                  }}
-                  aria-pressed={activeSide === side}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-[13px] font-bold transition-colors",
-                    activeSide === side
-                      ? "bg-accent border-accent text-white"
-                      : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
-                  )}
-                >
-                  {DESIGN_SIDE_LABELS[side]}
-                  {artworksBySide[side].length > 0 && (
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 text-[10px] font-bold",
-                        activeSide === side ? "bg-white/25" : "bg-white/15"
-                      )}
-                    >
-                      {artworksBySide[side].length}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="min-w-0 w-full max-w-full sm:w-auto sm:max-w-[12.5rem]">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35 mb-1">
-              Placement on this side
-            </span>
-            <StudioSelect
-              tone="canvas"
-              ariaLabel="Placement on this side"
-              value={placementBySide[activeSide]}
-              onChange={(zone) => setPlacement(activeSide, zone)}
-              options={DESIGN_PLACEMENT_ZONES[activeSide].map((zone) => ({
-                value: zone,
-                label: zone,
-              }))}
-            />
+        <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-white/45 mb-1.5">
+            Which side are you designing?
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {availableViews.map((side) => (
+              <button
+                key={side}
+                onClick={() => {
+                  setActiveSide(side);
+                  setExportError(null);
+                }}
+                aria-pressed={activeSide === side}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-[13px] font-bold transition-colors",
+                  activeSide === side
+                    ? "bg-accent border-accent text-white"
+                    : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
+                )}
+              >
+                {DESIGN_SIDE_LABELS[side]}
+                {artworksBySide[side].length > 0 && (
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[10px] font-bold",
+                      activeSide === side ? "bg-white/25" : "bg-white/15"
+                    )}
+                  >
+                    {artworksBySide[side].length}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
