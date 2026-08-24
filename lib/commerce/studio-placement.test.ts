@@ -59,6 +59,12 @@ describe("cartPlacementSuffix", () => {
   it("uses the active view when nothing is decorated yet", () => {
     expect(cartPlacementSuffix([], placement, "back")).toBe("Full Back");
   });
+
+  it("defaults an empty studio to Center Chest for the press ticket", () => {
+    const defaults = defaultPlacementBySide();
+    expect(defaults.front).toBe("Center Chest");
+    expect(cartPlacementSuffix([], defaults, "front")).toBe("Center Chest");
+  });
 });
 
 describe("studio print areas", () => {

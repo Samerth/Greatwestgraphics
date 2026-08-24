@@ -20,9 +20,9 @@ export const DESIGN_SIDE_LABELS: Record<DesignSide, string> = {
 
 /**
  * Named slot on a view. The artwork transform is the exact geometry; this
- * string is what a press operator reads and what the studio uses as the
- * left / center / right (or full) alignment preset inside the print area.
- * It has to survive a save.
+ * string is what a press operator reads. The studio still uses it to default
+ * a new upload (Center Chest on the front) inside the print area. It has to
+ * survive a save even though the customer no longer picks a zone in the UI.
  */
 export const DESIGN_PLACEMENT_ZONES: Record<DesignSide, readonly string[]> = {
   front: ["Left Chest", "Center Chest", "Right Chest", "Full Front"],

@@ -24,8 +24,9 @@ export function cartPrintMetaLabel(
 }
 
 /**
- * Add-to-cart suffix. Same zone names as the dropdown — no extra sentence.
- * Falls back to the view the shopper is on when nothing is decorated yet.
+ * Add-to-cart suffix. Echoes stored zone names for the press ticket —
+ * no extra sentence. Falls back to the view the shopper is on when
+ * nothing is decorated yet.
  */
 export function cartPlacementSuffix(
   sides: readonly DesignSide[],
@@ -167,7 +168,7 @@ export function artworkOriginInPrintArea({
   return { x, y };
 }
 
-/** Default transform for a new layer (or a placement-dropdown snap). */
+/** Default transform for a new layer inside the print-area plate. */
 export function placeArtworkInZone({
   side,
   zone,
