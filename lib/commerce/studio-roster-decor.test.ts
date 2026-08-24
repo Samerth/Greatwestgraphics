@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultRosterDecor } from "@gwg/contracts";
 import {
+  ROSTER_DECOR_LOCATIONS,
   emptyRosterDecor,
   patchRosterDecor,
   rosterDecorSummary,
@@ -40,6 +41,11 @@ describe("roster names vs numbers independence", () => {
     expect(numbersOnly.numbers.color).toBe("#1e4bd1");
     expect(numbersOnly.numbers.heightIn).toBe(10);
     expect(numbersOnly.numbers.location).toBe("Full Front");
+  });
+
+  it("includes side panels among team location options", () => {
+    expect(ROSTER_DECOR_LOCATIONS).toContain("Left Side Panel");
+    expect(ROSTER_DECOR_LOCATIONS).toContain("Right Side Panel");
   });
 
   it("summarizes each target separately for cart meta", () => {

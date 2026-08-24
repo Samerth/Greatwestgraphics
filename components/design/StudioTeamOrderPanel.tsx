@@ -9,6 +9,7 @@ import {
   ROSTER_DECOR_PRINT_METHODS,
   type RosterDecorTarget,
 } from "@/lib/commerce/studio-roster-decor";
+import { formatZoneInchLabel } from "@/lib/commerce/studio-zones";
 
 function DecorFields({
   title,
@@ -65,9 +66,15 @@ function DecorFields({
         onChange={(location) => onChange({ location })}
         options={ROSTER_DECOR_LOCATIONS.map((location) => ({
           value: location,
-          label: location,
+          label: formatZoneInchLabel(location),
         }))}
       />
+      {value.printMethod === "embroidery" ? (
+        <p className="m-0 text-[11px] leading-4 text-text-tertiary">
+          Embroidery hoops are often smaller than this print plate. We will
+          confirm the size before we stitch.
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -36,7 +36,9 @@ export const ROSTER_DECOR_LOCATIONS = [
   "Upper Back",
   "Full Back",
   "Left Sleeve",
+  "Left Side Panel",
   "Right Sleeve",
+  "Right Side Panel",
 ] as const;
 
 export function rosterDecorSummary(decor: RosterDecor): string {

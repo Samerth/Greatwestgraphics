@@ -50,13 +50,13 @@ export function RosterEditor({
             <input
               value={row.name}
               onChange={(e) => updateRow(i, { name: e.target.value })}
-              placeholder="Name"
+              placeholder={layout === "wide" ? "e.g. Alex" : "Name"}
               className="border border-border rounded-sm bg-bg-raised px-2.5 py-2 text-sm min-w-0"
             />
             <input
               value={row.number}
               onChange={(e) => updateRow(i, { number: e.target.value })}
-              placeholder="#"
+              placeholder={layout === "wide" ? "e.g. 07" : "#"}
               className="border border-border rounded-sm bg-bg-raised px-2 py-2 text-sm min-w-0"
             />
             <button

@@ -76,6 +76,17 @@ export function studioTeamOrderQuantity(
   return Math.max(1, roster.length);
 }
 
+/** Live quote qty: named rows while the list is in progress, else bulk qty. */
+export function studioTeamQuoteQuantity(
+  roster: StudioRosterDraftRow[],
+  designQty: number,
+): number {
+  if (studioIsCompleteTeamRoster(roster)) return Math.max(1, roster.length);
+  const named = cartRosterRowsFromDraft(roster).length;
+  if (named > 0) return named;
+  return designQty;
+}
+
 export type StudioCartRosterPayload =
   | { ok: false; error: string }
   | {

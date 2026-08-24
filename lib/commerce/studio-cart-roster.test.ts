@@ -11,6 +11,7 @@ import {
   studioHasStartedTeamRoster,
   studioIsCompleteTeamRoster,
   studioTeamOrderQuantity,
+  studioTeamQuoteQuantity,
   studioTeamRosterError,
 } from "./studio-cart-roster";
 
@@ -54,6 +55,13 @@ describe("studio cart roster — team panel is the order switch", () => {
   it("prices a complete team roster from roster.length", () => {
     expect(studioTeamOrderQuantity(emptyDraft, 48)).toBe(48);
     expect(studioTeamOrderQuantity(teamDraft, 48)).toBe(2);
+  });
+
+  it("quotes complete → row count, in-progress → named count, else bulk qty", () => {
+    expect(studioTeamQuoteQuantity(emptyDraft, 48)).toBe(48);
+    expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(2);
+    expect(studioTeamQuoteQuantity(teamDraft, 48)).toBe(2);
+    expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
   });
 
   it("empty Team panel stays a regular size + qty line", () => {
