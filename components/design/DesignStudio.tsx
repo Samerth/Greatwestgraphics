@@ -403,11 +403,17 @@ export function DesignStudio({
   const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
-  const [groupOrder, setGroupOrder] = useState(false);
   const [roster, setRoster] = useState<RosterRow[]>(() =>
     initialDesign
       ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
       : [{ size: "", name: "", number: "" }],
+  );
+  const [groupOrder, setGroupOrder] = useState(() =>
+    cartRosterRowsFromDraft(
+      initialDesign
+        ? rosterRowsFromDesign(normalizeDesignDocument(initialDesign.design))
+        : [],
+    ).length > 0,
   );
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [studioTab, setStudioTab] = useState<StudioTab>("images");
@@ -627,6 +633,13 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
+  const hadNamedRosterRef = useRef(namedRosterCount > 0);
+  useEffect(() => {
+    if (namedRosterCount > 0 && !hadNamedRosterRef.current) {
+      setGroupOrder(true);
+    }
+    hadNamedRosterRef.current = namedRosterCount > 0;
+  }, [namedRosterCount]);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
