@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -137,9 +138,11 @@ export default function AboutPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <ButtonLink href="/quote" className="bg-white !text-text-primary hover:!bg-white/90">
-                Request a quote
-              </ButtonLink>
+              {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+                <ButtonLink href="/quote" className="bg-white !text-text-primary hover:!bg-white/90">
+                  Request a quote
+                </ButtonLink>
+              ) : null}
               <ButtonLink href="/contact" variant="secondary" className="!border-white/40 !text-white hover:!bg-white/10">
                 Contact the team
               </ButtonLink>

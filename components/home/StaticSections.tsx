@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ButtonLink } from "@/components/shared/Button";
 import { Container } from "@/components/shared/Container";
+import { publicQuoteOrFallback, SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 const TRUST_LOGOS = [
   { name: "Marriott", src: "/images/marriott.png" },
@@ -191,7 +192,7 @@ function GalleryTile({
 }) {
   return (
     <Link
-      href="/quote"
+      href={publicQuoteOrFallback("/design")}
       className={`relative rounded-md overflow-hidden ${aspect} group block`}
     >
       <Image
@@ -270,13 +271,15 @@ export function CtaBand() {
             >
               Start Designing
             </ButtonLink>
-            <ButtonLink
-              href="/quote"
-              variant="secondary"
-              className="border-white/60 !text-white hover:bg-white/15 hover:!border-white flex-1 sm:flex-none justify-center"
-            >
-              Get a Quote
-            </ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink
+                href="/quote"
+                variant="secondary"
+                className="border-white/60 !text-white hover:bg-white/15 hover:!border-white flex-1 sm:flex-none justify-center"
+              >
+                Get a Quote
+              </ButtonLink>
+            ) : null}
           </div>
         </div>
       </Container>

@@ -2,30 +2,31 @@ import Link from "next/link";
 import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+import { publicPrintMethodHref, publicQuoteOrFallback } from "@/lib/features";
 
 const METHODS = [
   {
     title: "Embroidery",
     body: "Stitched, durable, premium finish for logos and text.",
-    href: "/quote?method=embroidery",
+    href: publicPrintMethodHref("embroidery"),
     image: "/images/shop-embroidery.jpg",
   },
   {
     title: "Screen Printing",
     body: "Long-lasting quality, favoured for bulk apparel runs.",
-    href: "/quote?method=screen",
+    href: publicPrintMethodHref("screen"),
     image: "/images/shop-ink.jpg",
   },
   {
     title: "Direct to Film (DTF)",
     body: "Versatile, high-quality prints on nearly any fabric.",
-    href: "/quote?method=dtf",
+    href: publicPrintMethodHref("dtf"),
     image: "/images/shop-press.jpg",
   },
   {
     title: "Sublimation Printing",
     body: "All-over, full-colour prints for jerseys and uniforms.",
-    href: "/quote?method=sublimation",
+    href: publicPrintMethodHref("sublimation"),
     image: "/images/printing_2.jpg",
   },
 ];
@@ -142,7 +143,7 @@ export function OrderNowBand() {
         </p>
         <div className="mt-sp-4 flex justify-center">
           <ButtonLink
-            href="/quote"
+            href={publicQuoteOrFallback("/products")}
             variant="secondary"
             className="!bg-white !text-accent hover:!bg-white/90 border-transparent"
           >

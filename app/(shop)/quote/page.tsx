@@ -5,6 +5,8 @@ import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { publicRobots } from "@/lib/seo/indexing";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,7 @@ export const metadata: Metadata = {
   description:
     "Build a live custom print quote — choose a product, quantity and decoration method (screen printing, embroidery or DTF) and see instant estimated pricing.",
   alternates: { canonical: "/get-a-quote" },
+  robots: publicRobots(SHOW_PUBLIC_QUOTE_CALCULATOR),
 };
 
 /**

@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export function Hero() {
   const reduceMotion = useReducedMotion();
@@ -39,12 +40,14 @@ export function Hero() {
             getting it right, proofed before a single sheet runs.
           </p>
           <div className="flex gap-3 mt-sp-4 flex-wrap">
-            <ButtonLink href="/quote" variant="primary">
-              Get a Quote
-            </ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href="/quote" variant="primary">
+                Get a Quote
+              </ButtonLink>
+            ) : null}
             <ButtonLink
               href="/design"
-              variant="secondary"
+              variant={SHOW_PUBLIC_QUOTE_CALCULATOR ? "secondary" : "primary"}
               className="border-white/50 text-white hover:border-white hover:bg-white/10"
             >
               Start Designing

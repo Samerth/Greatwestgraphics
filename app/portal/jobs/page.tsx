@@ -7,6 +7,7 @@ import { teamMemberships } from "@/lib/commerce/membership";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -134,8 +135,8 @@ export default async function JobsPage() {
               You haven&apos;t submitted any jobs yet. Once you do, proofs and
               status updates appear here.
             </span>
-            <ButtonLink href="/quote" size="sm">
-              Request a quote
+            <ButtonLink href={publicQuoteOrFallback("/design")} size="sm">
+              Open Design Studio
             </ButtonLink>
           </div>
         )}

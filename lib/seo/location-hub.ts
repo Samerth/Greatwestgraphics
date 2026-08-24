@@ -1,3 +1,4 @@
+import { withoutPublicQuoteLinks } from "../features";
 import { CONTENT_PAGES, type ContentPage } from "./content-pages";
 import {
   LOCATION_PAGES,
@@ -225,16 +226,18 @@ export function relatedLandingLinks(
   page: LocationPage | (ContentPage & { city?: string }),
 ): RelatedLink[] {
   if ("thin" in page) {
-    return uniqueLinks([
-      ...locationHubLinks(),
-      ...(page.relatedLinks ?? []),
-      ...relatedLocationPages(page, 4).map((item) => ({
-        path: item.path,
-        label: item.h1,
-      })),
-    ]).slice(0, 8);
+    return withoutPublicQuoteLinks(
+      uniqueLinks([
+        ...locationHubLinks(),
+        ...(page.relatedLinks ?? []),
+        ...relatedLocationPages(page, 4).map((item) => ({
+          path: item.path,
+          label: item.h1,
+        })),
+      ]),
+    ).slice(0, 8);
   }
-  return relatedContentLinks(page);
+  return withoutPublicQuoteLinks(relatedContentLinks(page));
 }
 
 /** General-content landings that should stay one click from the footer. */

@@ -5,6 +5,7 @@ import { CheckoutWizard } from "@/components/checkout/CheckoutWizard";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -43,9 +44,11 @@ export default async function CheckoutPage() {
             Preferencing Card, Apple Pay, Interac, or Net-30 is forward-looking —
             checkout still submits for design review. No payment is collected today.
           </p>
-          <ButtonLink href="/quote" variant="secondary" size="sm">
-            Request Formal Quote
-          </ButtonLink>
+          {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+            <ButtonLink href="/quote" variant="secondary" size="sm">
+              Request Formal Quote
+            </ButtonLink>
+          ) : null}
         </Container>
       </div>
 

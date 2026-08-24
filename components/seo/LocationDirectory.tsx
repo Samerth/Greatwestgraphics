@@ -7,6 +7,7 @@ import {
   locationServiceGroups,
 } from "@/lib/seo/location-hub";
 import { LOCATION_PAGES } from "@/lib/seo/location-pages";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export function LocationDirectory({
   heading = "Locations we serve",
@@ -38,9 +39,11 @@ export function LocationDirectory({
           </p>
           <div className="mt-sp-4 flex flex-wrap gap-2.5">
             <ButtonLink href="/services">All print services</ButtonLink>
-            <ButtonLink href="/quote" variant="secondary">
-              Request a quote
-            </ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href="/quote" variant="secondary">
+                Request a quote
+              </ButtonLink>
+            ) : null}
           </div>
         </Container>
       </section>

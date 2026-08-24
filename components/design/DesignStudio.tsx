@@ -45,6 +45,7 @@ import {
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
@@ -1174,14 +1175,16 @@ export function DesignStudio({
           PNG, JPG or SVG. You can add more than one layer.
         </p>
 
+        {SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
         <button
           onClick={() => setShowAiPrompt((open) => !open)}
           className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
         >
           Generate an AI concept
         </button>
+        ) : null}
 
-        {showAiPrompt && (
+        {SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
           <div className="rounded-md border border-border bg-bg p-sp-3">
             <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
               Describe your concept

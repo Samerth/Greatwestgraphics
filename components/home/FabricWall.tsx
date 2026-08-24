@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { RecolorGarment } from "@/components/pdp/RecolorGarment";
 import { ButtonLink } from "@/components/shared/Button";
+import { publicQuoteOrFallback } from "@/lib/features";
 
 // `search` is the catalogue term the "Shop this colour" link uses. It is
 // deliberately broader than the ink name: these are Great West's stock ink
@@ -78,7 +79,11 @@ export function FabricWall() {
             >
               Shop garments in this colour
             </ButtonLink>
-            <ButtonLink href="/quote" variant="secondary" size="sm">
+            <ButtonLink
+              href={publicQuoteOrFallback("/contact")}
+              variant="secondary"
+              size="sm"
+            >
               Ask about Pantone matching
             </ButtonLink>
           </div>

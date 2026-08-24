@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -173,7 +174,9 @@ export default function FaqPage() {
             Tell us what you&apos;re making and we&apos;ll help you plan it.
           </p>
           <div className="flex flex-wrap justify-center gap-2.5">
-            <ButtonLink href="/quote">Request a Quote</ButtonLink>
+            {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
+              <ButtonLink href="/quote">Request a Quote</ButtonLink>
+            ) : null}
             <ButtonLink href="/contact" variant="secondary">
               Contact the Team
             </ButtonLink>
