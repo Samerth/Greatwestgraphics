@@ -36,7 +36,10 @@ function GarmentLayer({
   // Next's optimizer does not send Access-Control-Allow-Origin, so
   // crossOrigin=anonymous makes the garment fail to paint and the canvas
   // reads as a black box. Same-origin pixels are already readable for proofs.
-  const sameOrigin = src.startsWith("/") && !src.startsWith("//");
+  const sameOrigin =
+    (src.startsWith("/") && !src.startsWith("//")) ||
+    src.startsWith("data:") ||
+    src.startsWith("blob:");
   const [image] = useImage(src, sameOrigin ? undefined : "anonymous");
   if (!image) return null;
 
