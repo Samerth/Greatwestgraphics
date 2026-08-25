@@ -186,7 +186,7 @@ describe("studioBackdropFallbackUrl", () => {
   it("falls back from a vendor sleeve photo to the local plate", () => {
     expect(
       studioBackdropFallbackUrl(
-        { url: PHOTOS.colorSideImageUrl, source: "photo", mirror: false, plate: true },
+        { url: PHOTOS.colorSideImageUrl, source: "photo", plate: true },
         { styleName: "A2009", styleTitle: "Men's Ultimate365 Elevated Hoodie" },
       ),
     ).toBe(STUDIO_SIDE_HOODIE);
@@ -197,7 +197,6 @@ describe("studioBackdropFallbackUrl", () => {
       studioBackdropFallbackUrl({
         url: PHOTOS.colorFrontImageUrl,
         source: "photo",
-        mirror: false,
       }),
     ).toBe(GARMENT_FALLBACK);
   });
