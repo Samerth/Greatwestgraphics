@@ -280,6 +280,7 @@ export function studioGarmentPhotos({
   selectedId,
   product,
   styleImageUrl,
+  styleName,
   selectedGarment,
   selectedColorway,
 }: {
@@ -291,10 +292,12 @@ export function studioGarmentPhotos({
     colorBackImageUrl?: string | null;
   } | null;
   styleImageUrl?: string | null;
+  styleName?: string | null;
   selectedGarment?: {
     imageUrl?: string | null;
     sideImageUrl?: string | null;
     backImageUrl?: string | null;
+    styleName?: string | null;
   } | null;
   selectedColorway?: Pick<
     StudioColorwayOption,
@@ -321,6 +324,7 @@ export function studioGarmentPhotos({
       selectedGarment?.backImageUrl ||
       null,
     styleImageUrl: styleImageUrl ?? null,
+    styleName: styleName ?? selectedGarment?.styleName ?? null,
   };
 }
 

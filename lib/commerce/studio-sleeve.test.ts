@@ -79,7 +79,7 @@ describe("sleeve illustrations", () => {
 });
 
 describe("photo sides stay photographic", () => {
-  it("still prefers vendor front/back images when they exist", () => {
+  it("uses vendor photos for front, back, and both sleeves", () => {
     expect(isStudioSleeveSide("front")).toBe(false);
     expect(isStudioSleeveSide("back")).toBe(false);
     expect(isStudioSleeveSide("left")).toBe(true);
@@ -93,6 +93,22 @@ describe("photo sides stay photographic", () => {
       url: PHOTOS.colorBackImageUrl,
       source: "photo",
       mirror: false,
+    });
+    expect(garmentBackdropForSide("left", PHOTOS)).toEqual({
+      url: PHOTOS.colorSideImageUrl,
+      source: "photo",
+      mirror: false,
+      plate: true,
+    });
+    expect(garmentBackdropForSide("right", PHOTOS)).toEqual({
+      url: PHOTOS.colorSideImageUrl,
+      source: "photo",
+      mirror: true,
+      plate: true,
+    });
+    expect(garmentBackdropForSide("left", { ...PHOTOS, colorSideImageUrl: null })).toMatchObject({
+      source: "side-view",
+      plate: true,
     });
     expect(DESIGN_SIDE_THUMB_LABELS.left).toBe("L.Sleeve");
     expect(DESIGN_SIDE_THUMB_LABELS.right).toBe("R.Sleeve");

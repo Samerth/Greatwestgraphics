@@ -60,8 +60,10 @@ export type NormalizedRect = {
 export const STUDIO_PRINT_AREAS: Record<DesignSide, NormalizedRect> = {
   front: { x: 0.3, y: 0.26, width: 0.4, height: 0.36 },
   back: { x: 0.3, y: 0.24, width: 0.4, height: 0.4 },
-  left: { x: 0.36, y: 0.22, width: 0.3, height: 0.4 },
-  right: { x: 0.36, y: 0.22, width: 0.3, height: 0.4 },
+  // 3/4 plates face left. The near sleeve is on the right of the photo
+  // (~3.5" face, not a front plate). Right view mirrors that plate.
+  left: { x: 0.54, y: 0.22, width: 0.16, height: 0.26 },
+  right: { x: 0.3, y: 0.22, width: 0.16, height: 0.26 },
 };
 
 /** Chest / sleeve mark — ~32% of the print-area width, not of the canvas. */
@@ -72,6 +74,15 @@ export const STUDIO_FULL_WIDTH_FRACTION = 0.76;
 export const STUDIO_MAX_HEIGHT_FRACTION = 0.82;
 /** Upper-chest / upper-back sit slightly below the top of the plate. */
 export const STUDIO_UPPER_INSET_FRACTION = 0.1;
+
+/** Front chest stamps drawn while the shopper drags a logo. */
+export const FRONT_CHEST_ZONES = [
+  "Left Chest",
+  "Center Chest",
+  "Right Chest",
+] as const;
+
+export type FrontChestZone = (typeof FRONT_CHEST_ZONES)[number];
 
 export type PlacementAlignX = "left" | "center" | "right";
 export type PlacementAlignY = "upper" | "center";
@@ -84,9 +95,9 @@ export type PlacementIntent = {
 };
 
 /**
- * Maps the press-operator zone name onto alignment inside the print area.
- * Left/right/center are horizontal slots on the same plate — not a different
- * garment photo.
+ * Maps the press-operator zone name onto alignment.
+ * Front Left / Center / Right Chest are the 5×5 boxes from
+ * `frontChestGuideRects()` — not left/center/right of the full plate.
  */
 export function placementIntent(
   _side: DesignSide,
@@ -114,17 +125,68 @@ export function placementIntent(
   }
 }
 
+export function pixelsFromNormalizedRect(
+  rect: NormalizedRect,
+  canvasSize: number,
+): { x: number; y: number; width: number; height: number } {
+  return {
+    x: rect.x * canvasSize,
+    y: rect.y * canvasSize,
+    width: rect.width * canvasSize,
+    height: rect.height * canvasSize,
+  };
+}
+
 export function printAreaPixels(
   side: DesignSide,
   canvasSize: number,
 ): { x: number; y: number; width: number; height: number } {
-  const area = STUDIO_PRINT_AREAS[side];
-  return {
-    x: area.x * canvasSize,
-    y: area.y * canvasSize,
-    width: area.width * canvasSize,
-    height: area.height * canvasSize,
-  };
+  return pixelsFromNormalizedRect(STUDIO_PRINT_AREAS[side], canvasSize);
+}
+
+/**
+ * 5×5 chest marks inside the 13×16 front plate. Left / center / right are
+ * real boxes on the shirt — not just a label on one shared rectangle.
+ */
+export function frontChestGuideRects(): {
+  zone: FrontChestZone;
+  rect: NormalizedRect;
+}[] {
+  const plate = STUDIO_PRINT_AREAS.front;
+  const width = plate.width * (5 / 13);
+  const height = plate.height * (5 / 16);
+  const y = plate.y + plate.height * STUDIO_UPPER_INSET_FRACTION;
+  const left = plate.x;
+  const center = plate.x + (plate.width - width) / 2;
+  const right = plate.x + plate.width - width;
+  return [
+    { zone: "Left Chest", rect: { x: left, y, width, height } },
+    { zone: "Center Chest", rect: { x: center, y, width, height } },
+    { zone: "Right Chest", rect: { x: right, y, width, height } },
+  ];
+}
+
+export function isFrontChestZone(zone: string): zone is FrontChestZone {
+  return (FRONT_CHEST_ZONES as readonly string[]).includes(zone);
+}
+
+export function frontChestZoneForAlign(alignX: PlacementAlignX): FrontChestZone {
+  if (alignX === "left") return "Left Chest";
+  if (alignX === "right") return "Right Chest";
+  return "Center Chest";
+}
+
+/** Pixel plate, or the matching 5×5 chest box on the front. */
+export function placementAreaPixels(
+  side: DesignSide,
+  zone: string,
+  canvasSize: number,
+): { x: number; y: number; width: number; height: number } {
+  if (side === "front" && isFrontChestZone(zone)) {
+    const guide = frontChestGuideRects().find((box) => box.zone === zone);
+    if (guide) return pixelsFromNormalizedRect(guide.rect, canvasSize);
+  }
+  return printAreaPixels(side, canvasSize);
 }
 
 /**
@@ -188,20 +250,32 @@ export function placeArtworkInZone({
   canvasSize: number;
 }): { x: number; y: number; scaleX: number; scaleY: number } {
   const intent = placementIntent(side, zone);
-  const area = printAreaPixels(side, canvasSize);
-  const scale = scaleForPrintArea(
+  const plate = printAreaPixels(side, canvasSize);
+  const area = placementAreaPixels(side, zone, canvasSize);
+  const inChestBox = side === "front" && isFrontChestZone(zone);
+  const plateScale = scaleForPrintArea(
     imageWidth,
     imageHeight,
-    area.width,
-    area.height,
+    plate.width,
+    plate.height,
     intent.extent,
   );
+  const boxScale = inChestBox
+    ? scaleForPrintArea(
+        imageWidth,
+        imageHeight,
+        area.width,
+        area.height,
+        "full",
+      )
+    : plateScale;
+  const scale = inChestBox ? Math.min(plateScale, boxScale) : plateScale;
   const origin = artworkOriginInPrintArea({
     area,
     displayWidth: imageWidth * scale,
     displayHeight: imageHeight * scale,
-    alignX: intent.alignX,
-    alignY: intent.alignY,
+    alignX: inChestBox ? "center" : intent.alignX,
+    alignY: inChestBox ? "center" : intent.alignY,
   });
   return { x: origin.x, y: origin.y, scaleX: scale, scaleY: scale };
 }

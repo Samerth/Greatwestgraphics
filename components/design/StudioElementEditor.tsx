@@ -48,25 +48,85 @@ function SliderRow({
   );
 }
 
+/** Left / Center / Right snap a layer into the 5×5 front chest boxes. */
+export function StudioChestAlign({
+  value,
+  onChange,
+  tone = "panel",
+  compact,
+}: {
+  value: "left" | "center" | "right" | null;
+  onChange: (align: "left" | "center" | "right") => void;
+  tone?: "panel" | "canvas";
+  compact?: boolean;
+}) {
+  const canvas = tone === "canvas";
+  return (
+    <div
+      className={cn(
+        compact
+          ? "flex items-center gap-2 min-w-[13.5rem] max-w-[18rem] flex-1"
+          : "min-w-0",
+      )}
+    >
+      <span
+        className={cn(
+          "font-bold uppercase tracking-[0.12em]",
+          compact ? "text-[10px] shrink-0" : "block text-[10px] mb-1.5",
+          canvas ? "text-white/45" : "text-text-tertiary",
+        )}
+      >
+        Chest
+      </span>
+      <div
+        className="flex gap-1 min-w-0 flex-1"
+        role="group"
+        aria-label="Chest placement"
+      >
+        {(["left", "center", "right"] as const).map((align) => (
+          <button
+            key={align}
+            type="button"
+            aria-label={`${align} chest`}
+            aria-pressed={value === align}
+            onClick={() => onChange(align)}
+            className={cn(
+              "flex-1 h-8 rounded-sm border text-[12px] font-bold capitalize transition-colors",
+              value === align
+                ? canvas
+                  ? "bg-white text-text-primary border-white"
+                  : "bg-accent text-white border-accent"
+                : canvas
+                  ? "border-white/20 text-white/80 hover:border-white/50"
+                  : "border-border hover:border-text-tertiary",
+            )}
+          >
+            {align}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function StudioElementEditor({
   kind,
   activeSide,
   text,
   onPatchText,
-  onPatchArtwork,
   outline,
   rotation,
   size,
   onOutline,
   onRotation,
   onSize,
-  onCenter,
   onForward,
   onBack,
   onDuplicate,
   onDelete,
   onMoveToSide,
   onSliderCommit,
+  className,
 }: {
   kind: "text" | "artwork";
   activeSide: DesignSide;
@@ -89,23 +149,22 @@ export function StudioElementEditor({
       arc: number;
     }>,
   ) => void;
-  onPatchArtwork?: (patch: { outline?: boolean }) => void;
   outline: boolean;
   rotation: number;
   size: number;
   onOutline: (next: boolean) => void;
   onRotation: (next: number) => void;
   onSize: (next: number) => void;
-  onCenter: () => void;
   onForward: () => void;
   onBack: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onMoveToSide: (side: DesignSide) => void;
   onSliderCommit: () => void;
+  className?: string;
 }) {
   return (
-    <div className="border-t border-white/10 px-sp-4 py-sp-3 flex flex-col gap-3">
+    <div className={cn("px-sp-4 py-sp-3 flex flex-col gap-3", className)}>
       <div className="flex items-center justify-between gap-2">
         <b className="font-display text-[13px] text-white">
           Edit {kind === "text" ? "text" : "artwork"}
@@ -120,24 +179,47 @@ export function StudioElementEditor({
         </label>
       </div>
 
+      <SliderRow
+        label="Size"
+        value={size}
+        min={kind === "text" ? 10 : 8}
+        max={kind === "text" ? 96 : 220}
+        onChange={onSize}
+        onCommit={onSliderCommit}
+      />
+      <SliderRow
+        label="Rotate"
+        value={Math.round(rotation)}
+        min={-180}
+        max={180}
+        suffix="°"
+        onChange={onRotation}
+        onCommit={onSliderCommit}
+      />
+
       {text && onPatchText ? (
         <>
-          <div className="flex gap-1">
-            {(["left", "center", "right"] as const).map((align) => (
-              <button
-                key={align}
-                type="button"
-                onClick={() => onPatchText({ align })}
-                className={cn(
-                  "flex-1 h-7 rounded-sm border text-[11px] font-bold capitalize",
-                  text.align === align
-                    ? "bg-white text-text-primary border-white"
-                    : "border-white/20 text-white/70 hover:border-white/40",
-                )}
-              >
-                {align}
-              </button>
-            ))}
+          <div>
+            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-white/45 mb-1.5">
+              Text align
+            </span>
+            <div className="flex gap-1">
+              {(["left", "center", "right"] as const).map((align) => (
+                <button
+                  key={align}
+                  type="button"
+                  onClick={() => onPatchText({ align })}
+                  className={cn(
+                    "flex-1 h-7 rounded-sm border text-[11px] font-bold capitalize",
+                    text.align === align
+                      ? "bg-white text-text-primary border-white"
+                      : "border-white/20 text-white/70 hover:border-white/40",
+                  )}
+                >
+                  {align}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-1">
             {(["print", "embroidery"] as const).map((method) => (
@@ -187,26 +269,7 @@ export function StudioElementEditor({
         </>
       ) : null}
 
-      <SliderRow
-        label="Size"
-        value={size}
-        min={kind === "text" ? 10 : 8}
-        max={kind === "text" ? 96 : 220}
-        onChange={onSize}
-        onCommit={onSliderCommit}
-      />
-      <SliderRow
-        label="Rotate"
-        value={Math.round(rotation)}
-        min={-180}
-        max={180}
-        suffix="°"
-        onChange={onRotation}
-        onCommit={onSliderCommit}
-      />
-
       <div className="flex flex-wrap gap-1.5">
-        <EditorAction onClick={onCenter}>Center</EditorAction>
         <EditorAction onClick={onForward}>Forward</EditorAction>
         <EditorAction onClick={onBack}>Back</EditorAction>
         <EditorAction onClick={onDuplicate}>Duplicate</EditorAction>

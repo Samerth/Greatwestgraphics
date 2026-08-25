@@ -5,10 +5,13 @@ import {
   type PlacedArtwork,
 } from "@gwg/contracts";
 import {
+  alignStudioLayer,
   createStudioTextLayer,
+  estimateTextDisplaySize,
   moveStudioLayerToSide,
   studioTextArcSvgPath,
 } from "./studio-text";
+import { frontChestGuideRects, placementAreaPixels } from "./studio-placement";
 
 const artwork = (id: string): PlacedArtwork => ({
   id,
@@ -38,6 +41,16 @@ describe("createStudioTextLayer", () => {
     expect(layer.x).toBeGreaterThan(0);
     expect(layer.y).toBeGreaterThan(0);
     expect(layer.rotation).toBe(0);
+    const box = placementAreaPixels(
+      "front",
+      "Center Chest",
+      DESIGN_CANVAS_SIZE,
+    );
+    const display = estimateTextDisplaySize(layer.text, layer.fontSize);
+    const midX = layer.x + display.width / 2;
+    expect(midX).toBeCloseTo(box.x + box.width / 2, 5);
+    expect(layer.y).toBeGreaterThanOrEqual(box.y - 0.01);
+    expect(layer.y).toBeLessThan(box.y + box.height);
   });
 
   it("keeps per-text print method and alignment when provided", () => {
@@ -54,6 +67,33 @@ describe("createStudioTextLayer", () => {
     expect(layer.align).toBe("right");
     expect(layer.fill).toBe("#c41e3a");
     expect(layer.fontFamily).toBe("impact");
+  });
+});
+
+describe("alignStudioLayer", () => {
+  it("moves a front layer into the matching 5×5 chest box", () => {
+    const start = emptyDesignDocument();
+    start.artworksBySide.front = [artwork("art-align")];
+    const canvas = DESIGN_CANVAS_SIZE;
+    const left = alignStudioLayer(start, "art-align", "left", canvas, 30, 30);
+    const center = alignStudioLayer(start, "art-align", "center", canvas, 30, 30);
+    const right = alignStudioLayer(start, "art-align", "right", canvas, 30, 30);
+    const boxes = frontChestGuideRects();
+    const leftBox = boxes.find((box) => box.zone === "Left Chest")!.rect;
+    const centerBox = boxes.find((box) => box.zone === "Center Chest")!.rect;
+    const rightBox = boxes.find((box) => box.zone === "Right Chest")!.rect;
+    expect(left.placementBySide.front).toBe("Left Chest");
+    expect(center.placementBySide.front).toBe("Center Chest");
+    expect(right.placementBySide.front).toBe("Right Chest");
+    const leftLayer = left.artworksBySide.front[0]!;
+    const centerLayer = center.artworksBySide.front[0]!;
+    const rightLayer = right.artworksBySide.front[0]!;
+    expect(leftLayer.x).toBeGreaterThanOrEqual(leftBox.x * canvas - 0.01);
+    expect(leftLayer.x).toBeLessThan(centerLayer.x);
+    expect(centerLayer.x).toBeGreaterThanOrEqual(centerBox.x * canvas - 0.01);
+    expect(rightLayer.x).toBeGreaterThan(centerLayer.x);
+    expect(rightLayer.x).toBeGreaterThanOrEqual(rightBox.x * canvas - 0.01);
+    expect(leftLayer.y).toBeCloseTo(centerLayer.y, 5);
   });
 });
 

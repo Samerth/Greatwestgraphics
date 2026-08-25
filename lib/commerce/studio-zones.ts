@@ -1,6 +1,12 @@
 import { DESIGN_CANVAS_SIZE, type DesignSide } from "@gwg/contracts";
 import { printAreaPixels } from "./studio-placement";
 
+export {
+  FRONT_CHEST_ZONES,
+  frontChestGuideRects,
+  type FrontChestZone,
+} from "./studio-placement";
+
 /**
  * Typical adult unisex tee / fleece print plates, in inches.
  *

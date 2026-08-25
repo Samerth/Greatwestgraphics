@@ -10,6 +10,7 @@ import {
   garmentBackdrops,
   type GarmentBackdrop,
 } from "@/lib/commerce/garment-backdrop";
+import { DEFAULT_SLEEVE_FILL_HEX } from "@/lib/commerce/studio-sleeve";
 import { adminToken, getStaffSession } from "@/lib/admin/auth";
 import {
   formatDesignTimestamp,
@@ -42,6 +43,7 @@ async function loadGarmentBackdrops(
       colorSideImageUrl: pick(product, "colorSideImageUrl"),
       colorBackImageUrl: pick(product, "colorBackImageUrl"),
       styleImageUrl: pick(style, "styleImageUrl"),
+      styleName: pick(style, "styleName"),
     });
   } catch {
     return garmentBackdrops({});
@@ -186,6 +188,11 @@ export default async function AdminDesignDetailPage({
                     mirrorGarment={garmentBackdropsBySide[side].mirror}
                     garmentCrop={garmentBackdropsBySide[side].crop}
                     garmentPlate={garmentBackdropsBySide[side].plate}
+                    garmentTintHex={
+                      garmentBackdropsBySide[side].source === "side-view"
+                        ? DEFAULT_SLEEVE_FILL_HEX
+                        : undefined
+                    }
                     size={200}
                   />
                 </div>

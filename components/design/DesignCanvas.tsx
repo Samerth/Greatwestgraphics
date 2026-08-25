@@ -27,12 +27,14 @@ function GarmentLayer({
   mirrored,
   crop,
   plate,
+  tintHex,
 }: {
   src: string;
   canvasSize: number;
   mirrored: boolean;
   crop?: PhotoCrop;
   plate?: boolean;
+  tintHex?: string;
 }) {
   // Same-origin URLs (/_next/image, /api/uploads) must not request CORS.
   // Next's optimizer does not send Access-Control-Allow-Origin, so
@@ -43,17 +45,39 @@ function GarmentLayer({
     src.startsWith("data:") ||
     src.startsWith("blob:");
   const [image] = useImage(src, sameOrigin ? undefined : "anonymous");
-  if (!image) return null;
+  const [tinted, setTinted] = useState<HTMLCanvasElement | null>(null);
 
+  useEffect(() => {
+    if (!image || !tintHex) {
+      setTinted(null);
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(image, 0, 0);
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = tintHex;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setTinted(canvas);
+  }, [image, tintHex]);
+
+  const painted = tintHex ? tinted : image;
+  if (!image || !painted) return null;
+
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
   const source = crop
-    ? cropPixels(crop, image.naturalWidth, image.naturalHeight)
+    ? cropPixels(crop, naturalWidth, naturalHeight)
     : {
         x: 0,
         y: 0,
-        width: image.naturalWidth,
-        height: image.naturalHeight,
+        width: naturalWidth,
+        height: naturalHeight,
       };
-  const sourceAspect = image.naturalWidth / image.naturalHeight;
+  const sourceAspect = naturalWidth / naturalHeight;
   const box = plateContainRect(
     crop,
     sourceAspect,
@@ -66,7 +90,7 @@ function GarmentLayer({
 
   return (
     <KonvaImage
-      image={image}
+      image={painted}
       crop={crop ? source : undefined}
       x={mirrored ? x + width : x}
       y={y}
@@ -98,6 +122,7 @@ export default function DesignCanvas({
   mirrorGarment,
   garmentCrop,
   garmentPlate,
+  garmentTintHex,
   stageRef,
   onSelect,
   onChangeArtwork,
@@ -114,6 +139,7 @@ export default function DesignCanvas({
   mirrorGarment: boolean;
   garmentCrop?: PhotoCrop;
   garmentPlate?: boolean;
+  garmentTintHex?: string;
   stageRef: React.RefObject<any>;
   onSelect: (id: string | null) => void;
   onChangeArtwork: (next: PlacedArtwork) => void;
@@ -180,6 +206,7 @@ export default function DesignCanvas({
                 mirrored={mirrorGarment}
                 crop={garmentCrop}
                 plate={garmentPlate}
+                tintHex={garmentTintHex}
               />
             ) : null}
             {stacked.map((item) =>

@@ -46,7 +46,6 @@ import {
 } from "@gwg/pricing";
 import {
   STITCH_PRESETS,
-  colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
@@ -57,7 +56,6 @@ import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
-  garmentBackdropForSide,
   garmentBackdrops,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
@@ -66,6 +64,7 @@ import {
   cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
+  frontChestZoneForAlign,
   placeArtworkInZone,
 } from "@/lib/commerce/studio-placement";
 import { STUDIO_DEFAULT_FONT_ID } from "@/lib/commerce/studio-fonts";
@@ -74,7 +73,7 @@ import {
   type StudioHistorySnapshot,
 } from "@/lib/commerce/studio-history";
 import {
-  centerStudioLayer,
+  alignStudioLayer,
   createStudioTextLayer,
   deleteStudioLayer,
   duplicateStudioLayer,
@@ -84,7 +83,11 @@ import {
   patchStudioArtwork,
   patchStudioText,
 } from "@/lib/commerce/studio-text";
-import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-zones";
+import {
+  detectPlacementZone,
+  formatZoneInchLabel,
+  frontChestGuideRects,
+} from "@/lib/commerce/studio-zones";
 import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
 import {
   cartRosterRowsFromDraft,
@@ -96,10 +99,13 @@ import {
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
-import { SleeveIllustration } from "@/components/design/SleeveIllustration";
+import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
-import { StudioElementEditor } from "@/components/design/StudioElementEditor";
+import {
+  StudioChestAlign,
+  StudioElementEditor,
+} from "@/components/design/StudioElementEditor";
 import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
 import {
@@ -113,7 +119,6 @@ import {
 import {
   DESIGN_SIDE_THUMB_LABELS,
   isStudioSleeveSide,
-  sleeveIllustrationDataUrl,
   studioSleeveFillFromColorway,
 } from "@/lib/commerce/studio-sleeve";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
@@ -312,6 +317,10 @@ function canLoadImage(src: string): Promise<boolean> {
  * Natural pixel size, so default scale can be a fraction of the print area
  * instead of `0.4 × whatever the camera dumped`.
  */
+function nextPollinationsSeed() {
+  return Math.floor(Math.random() * 1_000_000_000);
+}
+
 function measureArtworkSize(
   src: string,
 ): Promise<{ width: number; height: number }> {
@@ -402,7 +411,9 @@ export function DesignStudio({
       quoteMethods[0]?.key ??
       "screenPrint",
   );
-  const [colours, setColours] = useState(
+  // Quotes still need a colour count. Do not render ink-count chips in the
+  // finish panel — shoppers read those as garment colour, not screen count.
+  const [colours] = useState(
     pricingConfig.storefront?.defaultColours ?? 1,
   );
   const [stitchPreset, setStitchPreset] = useState<StitchPresetId>("medium");
@@ -423,11 +434,13 @@ export function DesignStudio({
   const [textFontId, setTextFontId] = useState(STUDIO_DEFAULT_FONT_ID);
   const [zoom, setZoom] = useState(1);
   const [liveZone, setLiveZone] = useState<string | null>(null);
-  const [historyTick, setHistoryTick] = useState(0);
+  const [historyFlags, setHistoryFlags] = useState({
+    canUndo: false,
+    canRedo: false,
+  });
   const historyRef = useRef(createStudioHistory());
   const sliderHistoryArmedRef = useRef(false);
   const designRef = useRef(design);
-  designRef.current = design;
 
   const [savedDesignId, setSavedDesignId] = useState<string | null>(
     initialDesign?.id ?? null,
@@ -449,6 +462,10 @@ export function DesignStudio({
   const selectedArtwork = artworks.find((layer) => layer.id === selectedId) ?? null;
   const sideLayerCount = (side: DesignSide) =>
     artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
+
+  useEffect(() => {
+    designRef.current = design;
+  }, [design]);
 
   useEffect(() => {
     if (!selectedGarmentId) {
@@ -728,29 +745,32 @@ export function DesignStudio({
     stitchPreset,
   ]);
 
-  // Front/back stay photographic. Left/right sleeves are original line-art
-  // plates whose fill follows the selected colourway hex.
+  // Front/back stay the vendor photos. Sleeves use a vendor side shot
+  // when the catalog has one, otherwise a photorealistic 3/4 side plate
+  // tinted to the colourway — never a crop of the chest photo.
   const garmentPhotos = studioGarmentPhotos({
     selectedId: selectedGarmentId,
     product: productDetail?.product,
     styleImageUrl: productDetail?.style.styleImageUrl,
+    styleName:
+      selectedGarment?.styleName ?? productDetail?.style.styleName ?? null,
     selectedGarment,
     selectedColorway,
   });
   const sideBackdrops = garmentBackdrops(garmentPhotos);
   const backdrop = sideBackdrops[activeSide];
+  const sleeveView = isStudioSleeveSide(activeSide);
   const sleeveFillHex = studioSleeveFillFromColorway(
     selectedColorway,
     (selectedColorwayReady ? productDetail?.product.colorName : null) ||
       selectedGarment?.colorName,
   );
-  const sleeveView = isStudioSleeveSide(activeSide);
-  const currentPhoto = sleeveView ? null : backdrop.url;
-  const mirrorPhoto = sleeveView ? false : backdrop.mirror;
+  const sleeveTintHex =
+    backdrop.source === "side-view" ? sleeveFillHex : undefined;
+  const currentPhoto = backdrop.url;
+  const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
-  const canvasGarmentImageUrl = isStudioSleeveSide(activeSide)
-    ? sleeveIllustrationDataUrl({ side: activeSide, fillHex: sleeveFillHex })
-    : studioCanvasImageUrl(backdrop);
+  const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
   const framedBackdrop = framedBackdropStyles(backdrop);
 
   // All four views are always offered. A sleeve print is a real thing a
@@ -787,7 +807,10 @@ export function DesignStudio({
     const next = updater(prev);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setExportError(null);
   }
 
@@ -798,7 +821,10 @@ export function DesignStudio({
     const next = applyHistorySnapshot(prev, restored);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setLiveZone(null);
   }
 
@@ -809,7 +835,10 @@ export function DesignStudio({
     const next = applyHistorySnapshot(prev, restored);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setLiveZone(null);
   }
 
@@ -1122,12 +1151,18 @@ export function DesignStudio({
     if (sliderHistoryArmedRef.current) return;
     sliderHistoryArmedRef.current = true;
     historyRef.current.push(snapshotOf(designRef.current));
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
   }
 
   function endSliderHistory() {
     sliderHistoryArmedRef.current = false;
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
   }
 
   function patchSelectedWhileSliding(textPatch?: Partial<PlacedText>, artPatch?: Partial<PlacedArtwork>) {
@@ -1182,7 +1217,7 @@ export function DesignStudio({
     if (!prompt) return;
     setGenerating(true);
     setAiError(null);
-    const seed = Math.floor(Math.random() * 1_000_000_000);
+    const seed = nextPollinationsSeed();
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
       `${prompt}, print-ready logo design, clean vector art style, isolated on white background`,
     )}?width=1024&height=1024&seed=${seed}&nologo=true`;
@@ -1521,9 +1556,91 @@ export function DesignStudio({
     activeSide,
   );
 
-  const canUndo = historyTick >= 0 && historyRef.current.canUndo;
-  const canRedo = historyTick >= 0 && historyRef.current.canRedo;
-  const guideZone = liveZone ?? placementBySide[activeSide];
+  const canUndo = historyFlags.canUndo;
+  const canRedo = historyFlags.canRedo;
+  const chestGuides = frontChestGuideRects();
+  const draggingOnFront = liveZone !== null && activeSide === "front";
+  const frontAlign =
+    activeSide === "front"
+      ? placementBySide.front === "Left Chest"
+        ? "left"
+        : placementBySide.front === "Right Chest"
+          ? "right"
+          : placementBySide.front === "Center Chest"
+            ? "center"
+            : null
+      : null;
+
+  function applyAlign(alignX: "left" | "center" | "right") {
+    const zone = frontChestZoneForAlign(alignX);
+    const artworkToSnap =
+      selectedArtwork ??
+      (selectedText
+        ? null
+        : artworks.length === 1
+          ? artworks[0]
+          : null);
+
+    if (activeSide === "front" && artworkToSnap) {
+      void (async () => {
+        let imageWidth = 80;
+        let imageHeight = 80;
+        try {
+          const size = await measureArtworkSize(artworkToSnap.src);
+          imageWidth = size.width;
+          imageHeight = size.height;
+        } catch {
+          // Assumed square still lands the mark inside the 5×5 box.
+        }
+        const placed = placeArtworkInZone({
+          side: "front",
+          zone,
+          imageWidth,
+          imageHeight,
+          canvasSize: CANVAS_SIZE,
+        });
+        commitDesign((prev) => ({
+          ...patchStudioArtwork(prev, artworkToSnap.id, placed),
+          placementBySide: { ...prev.placementBySide, front: zone },
+        }));
+      })();
+      return;
+    }
+
+    if (selectedId) {
+      const display = selectedText
+        ? estimateTextDisplaySize(
+            selectedText.text,
+            selectedText.fontSize,
+            selectedText.letterSpacing,
+          )
+        : {
+            width: 80 * Math.abs(selectedArtwork?.scaleX ?? 1),
+            height: 80 * Math.abs(selectedArtwork?.scaleY ?? 1),
+          };
+      commitDesign((prev) =>
+        alignStudioLayer(
+          prev,
+          selectedId,
+          alignX,
+          CANVAS_SIZE,
+          display.width,
+          display.height,
+        ),
+      );
+      return;
+    }
+
+    if (activeSide === "front") {
+      commitDesign((prev) => ({
+        ...prev,
+        placementBySide: {
+          ...prev.placementBySide,
+          front: zone,
+        },
+      }));
+    }
+  }
   const selectedPrintLabel = selectedText
     ? selectedText.printMethod === "embroidery"
       ? "Embroidery"
@@ -1533,10 +1650,10 @@ export function DesignStudio({
   const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px] min-w-0">
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:overflow-y-auto">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
@@ -1787,30 +1904,22 @@ export function DesignStudio({
       {/* Canvas */}
       <div className="min-w-0 w-full bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
         <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
               {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
           </div>
+          {activeSide === "front" ? (
+            <StudioChestAlign
+              tone="canvas"
+              compact
+              value={frontAlign}
+              onChange={applyAlign}
+            />
+          ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={undoStudio}
-              disabled={!canUndo}
-              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              onClick={redoStudio}
-              disabled={!canRedo}
-              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
-            >
-              Redo
-            </button>
-            <div className="flex items-center gap-1 ml-1" aria-label="Zoom">
+            <div className="flex items-center gap-1" aria-label="Zoom">
               <button
                 type="button"
                 aria-label="Zoom out"
@@ -1838,51 +1947,28 @@ export function DesignStudio({
           </div>
         </div>
 
-        {colorwayOptions.length > 0 && (
-          <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
-            <StudioColorSwitcher
-              tone="canvas"
-              colorways={colorwayOptions}
-              selectedId={selectedGarmentId}
-              onChange={selectColorway}
-            />
-          </div>
-        )}
-
-        <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
+        <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
+        <div className="p-sp-3 min-h-[280px] sm:min-h-[360px] lg:min-h-[520px] overflow-x-auto flex-1 min-w-0">
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
-            <div className="min-w-0 flex-1 flex items-center justify-center">
+            <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
-              className={cn(
-                "relative w-full max-w-[600px] aspect-square",
-                sleeveView && "gwg-sleeve-breathe",
-              )}
+              className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {isStudioSleeveSide(activeSide) ? (
-                <div className="absolute inset-0 overflow-visible pointer-events-none">
-                  <SleeveIllustration
-                    side={activeSide}
-                    fillHex={sleeveFillHex}
-                    animated
+              {currentPhoto ? (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <GarmentBackdropImage
+                    url={currentPhoto}
+                    frame={framedBackdrop.frame}
+                    image={framedBackdrop.image}
+                    tintHex={sleeveTintHex}
                   />
                 </div>
-              ) : currentPhoto ? (
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <div style={framedBackdrop.frame}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- paint immediately; Konva still waits on the canvas URL */}
-                    <img
-                      src={currentPhoto}
-                      alt=""
-                      style={framedBackdrop.image}
-                    />
-                  </div>
-                </div>
               ) : null}
-              {isLoadingGarment && !currentPhoto && !sleeveView && (
+              {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
                 </div>
@@ -1899,8 +1985,9 @@ export function DesignStudio({
                 zoom={zoom}
                 garmentImageUrl={canvasGarmentImageUrl}
                 mirrorGarment={mirrorPhoto}
-                garmentCrop={sleeveView ? undefined : backdrop.crop}
-                garmentPlate={sleeveView ? undefined : backdrop.plate}
+                garmentCrop={backdrop.crop}
+                garmentPlate={backdrop.plate}
+                garmentTintHex={sleeveTintHex}
                 stageRef={stageRef}
                 onSelect={setSelectedId}
                 onChangeArtwork={commitArtworkChange}
@@ -1908,6 +1995,45 @@ export function DesignStudio({
                 onDragMove={handleLayerDragMove}
               />
               {/* CSS overlay so the guide never lands in the Konva proof. */}
+              {draggingOnFront ? (
+                <>
+                  {/* Chest marks only — do not draw the leftover full-plate box
+                      that sat flush to the top of the printable area. */}
+                  {chestGuides.map(({ zone, rect }) => {
+                    const active = liveZone === zone;
+                    return (
+                      <div
+                        key={zone}
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none absolute z-[3] rounded-[2px] border border-dashed",
+                          active
+                            ? "border-accent bg-accent/25 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+                            : "border-white/40 bg-white/5",
+                        )}
+                        style={{
+                          left: `${rect.x * 100}%`,
+                          top: `${rect.y * 100}%`,
+                          width: `${rect.width * 100}%`,
+                          height: `${rect.height * 100}%`,
+                        }}
+                      />
+                    );
+                  })}
+                  {liveZone === "Full Front" ? (
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute z-[4] rounded-[2px] border-2 border-dashed border-accent bg-accent/10"
+                      style={{
+                        left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
+                        top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
+                        width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
+                        height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
+                      }}
+                    />
+                  ) : null}
+                </>
+              ) : (
               <div
                 aria-hidden
                 className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
@@ -1917,11 +2043,8 @@ export function DesignStudio({
                   width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
                   height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                 }}
-              >
-                <span className="absolute left-1 top-0.5 right-1 rounded-[2px] bg-black/45 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
-                  {formatZoneInchLabel(guideZone)}
-                </span>
-              </div>
+              />
+              )}
               {sleeveView && artworks.length === 0 && texts.length === 0 && (
                 <div
                   className="absolute z-[3] flex flex-col items-center justify-center gap-2"
@@ -1942,8 +2065,33 @@ export function DesignStudio({
                 </div>
               )}
             </div>
+            {/* Zone + inch size sits under the whole mockup — not a chip on the plate. */}
+            <p
+              data-studio="print-location"
+              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-white/80"
+            >
+              {formatZoneInchLabel(liveZone ?? placementBySide[activeSide])}
+            </p>
             </div>
             <div className="flex sm:flex-col gap-2 shrink-0 sm:w-[92px]">
+              <div className="flex sm:flex-col gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={undoStudio}
+                  disabled={!canUndo}
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={redoStudio}
+                  disabled={!canRedo}
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                >
+                  Redo
+                </button>
+              </div>
               {availableViews.map((side) => {
                 const selected = activeSide === side;
                 const thumbBackdrop = sideBackdrops[side];
@@ -1966,23 +2114,18 @@ export function DesignStudio({
                     )}
                   >
                     <span className="block aspect-square relative bg-[#1a1a1a]">
-                      {isStudioSleeveSide(side) ? (
-                        <span className="absolute inset-1">
-                          <SleeveIllustration
-                            side={side}
-                            fillHex={sleeveFillHex}
-                          />
-                        </span>
-                      ) : thumbBackdrop.url ? (
+                      {thumbBackdrop.url ? (
                         <span className="absolute inset-0 overflow-hidden">
-                          <span style={thumbFrame.frame}>
-                            {/* eslint-disable-next-line @next/next/no-img-element -- tiny side thumb */}
-                            <img
-                              src={thumbBackdrop.url}
-                              alt=""
-                              style={thumbFrame.image}
-                            />
-                          </span>
+                          <GarmentBackdropImage
+                            url={thumbBackdrop.url}
+                            frame={thumbFrame.frame}
+                            image={thumbFrame.image}
+                            tintHex={
+                              thumbBackdrop.source === "side-view"
+                                ? sleeveFillHex
+                                : undefined
+                            }
+                          />
                         </span>
                       ) : (
                         <span className="absolute inset-0 bg-white/5" />
@@ -2008,98 +2151,82 @@ export function DesignStudio({
           </div>
         </div>
         {(selectedText || selectedArtwork) && (
-          <StudioElementEditor
-            kind={selectedText ? "text" : "artwork"}
-            activeSide={activeSide}
-            text={
-              selectedText
-                ? {
-                    align: selectedText.align,
-                    printMethod: selectedText.printMethod,
-                    fill: selectedText.fill,
-                    fontFamily: selectedText.fontFamily,
-                    letterSpacing: selectedText.letterSpacing ?? 0,
-                    arc: selectedText.arc ?? 0,
-                    sample: selectedText.text,
-                  }
-                : undefined
-            }
-            onPatchText={(patch) => {
-              const sliding =
-                patch.arc !== undefined || patch.letterSpacing !== undefined;
-              if (sliding) patchSelectedWhileSliding(patch);
-              else applySelectedTextPatch(patch);
-            }}
-            outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
-            rotation={
-              selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
-            }
-            size={
-              selectedText
-                ? selectedText.fontSize
-                : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
-            }
-            onOutline={(next) => {
-              if (selectedText) applySelectedTextPatch({ outline: next });
-              else applySelectedArtworkPatch({ outline: next });
-            }}
-            onRotation={(next) => {
-              if (selectedText) patchSelectedWhileSliding({ rotation: next });
-              else patchSelectedWhileSliding(undefined, { rotation: next });
-            }}
-            onSize={(next) => {
-              if (selectedText) patchSelectedWhileSliding({ fontSize: next });
-              else {
-                const scale = next / 500;
-                patchSelectedWhileSliding(undefined, {
-                  scaleX: scale,
-                  scaleY: scale,
-                });
+          <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(260px,36%)] lg:shrink-0 lg:max-h-[min(36rem,calc(100dvh-8rem))] lg:overflow-y-auto">
+            <StudioElementEditor
+              kind={selectedText ? "text" : "artwork"}
+              activeSide={activeSide}
+              text={
+                selectedText
+                  ? {
+                      align: selectedText.align,
+                      printMethod: selectedText.printMethod,
+                      fill: selectedText.fill,
+                      fontFamily: selectedText.fontFamily,
+                      letterSpacing: selectedText.letterSpacing ?? 0,
+                      arc: selectedText.arc ?? 0,
+                      sample: selectedText.text,
+                    }
+                  : undefined
               }
-            }}
-            onCenter={() => {
-              if (!selectedId) return;
-              const display = selectedText
-                ? estimateTextDisplaySize(
-                    selectedText.text,
-                    selectedText.fontSize,
-                    selectedText.letterSpacing,
-                  )
-                : { width: 80, height: 80 };
-              commitDesign((prev) =>
-                centerStudioLayer(
-                  prev,
-                  selectedId,
-                  CANVAS_SIZE,
-                  display.width,
-                  display.height,
-                ),
-              );
-            }}
-            onForward={() => {
-              if (!selectedId) return;
-              commitDesign((prev) =>
-                nudgeStudioLayerOrder(prev, selectedId, "forward"),
-              );
-            }}
-            onBack={() => {
-              if (!selectedId) return;
-              commitDesign((prev) =>
-                nudgeStudioLayerOrder(prev, selectedId, "back"),
-              );
-            }}
-            onDuplicate={duplicateSelected}
-            onDelete={removeSelected}
-            onMoveToSide={moveSelectedToSide}
-            onSliderCommit={endSliderHistory}
-          />
+              onPatchText={(patch) => {
+                const sliding =
+                  patch.arc !== undefined || patch.letterSpacing !== undefined;
+                if (sliding) patchSelectedWhileSliding(patch);
+                else applySelectedTextPatch(patch);
+              }}
+              outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
+              rotation={
+                selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
+              }
+              size={
+                selectedText
+                  ? selectedText.fontSize
+                  : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
+              }
+              onOutline={(next) => {
+                if (selectedText) applySelectedTextPatch({ outline: next });
+                else applySelectedArtworkPatch({ outline: next });
+              }}
+              onRotation={(next) => {
+                if (selectedText) patchSelectedWhileSliding({ rotation: next });
+                else patchSelectedWhileSliding(undefined, { rotation: next });
+              }}
+              onSize={(next) => {
+                if (selectedText) patchSelectedWhileSliding({ fontSize: next });
+                else {
+                  const scale = next / 500;
+                  patchSelectedWhileSliding(undefined, {
+                    scaleX: scale,
+                    scaleY: scale,
+                  });
+                }
+              }}
+              onForward={() => {
+                if (!selectedId) return;
+                commitDesign((prev) =>
+                  nudgeStudioLayerOrder(prev, selectedId, "forward"),
+                );
+              }}
+              onBack={() => {
+                if (!selectedId) return;
+                commitDesign((prev) =>
+                  nudgeStudioLayerOrder(prev, selectedId, "back"),
+                );
+              }}
+              onDuplicate={duplicateSelected}
+              onDelete={removeSelected}
+              onMoveToSide={moveSelectedToSide}
+              onSliderCommit={endSliderHistory}
+            />
+          </div>
         )}
+        </div>
       </div>
 
       {studioTab === "team" && (
         <div
           id="studio-team-order"
-          className="lg:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+          className="md:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
         >
           <StudioTeamOrderPanel
             roster={roster}
@@ -2125,7 +2252,7 @@ export function DesignStudio({
 
       {/* Saving, proof download and ordering belong to the main workspace,
           below the canvas they act on — not in a duplicate preview panel. */}
-      <div className="lg:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
+      <div className="md:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
         <h3 className="font-display text-[18px] mb-sp-3">Finish your design</h3>
         <div className="flex flex-col gap-2">
           {signedIn ? (
@@ -2312,10 +2439,12 @@ export function DesignStudio({
               )}
 
               <div className="mb-sp-3">
-                <span className="text-xs font-bold block mb-1.5">Print method</span>
+                <span className="text-xs font-bold block mb-1.5">
+                  Print method (optional)
+                </span>
                 <StudioSelect
                   tone="panel"
-                  ariaLabel="Print method"
+                  ariaLabel="Print method (optional)"
                   value={selectedMethod?.key ?? methodKey}
                   onChange={(value) => {
                     const next = quoteMethods.find((method) => method.key === value);
@@ -2328,30 +2457,6 @@ export function DesignStudio({
                   }))}
                 />
               </div>
-              {methodVariableInputs(selectedMethod).colours && (
-                <div className="mb-sp-3">
-                  <span className="text-xs font-bold block mb-1.5">
-                    Colours in the design
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {colourOptions(selectedMethod).map((count) => (
-                      <button
-                        key={count}
-                        type="button"
-                        onClick={() => setColours(count)}
-                        className={cn(
-                          "min-w-8 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                          colours === count
-                            ? "bg-accent text-white border-accent"
-                            : "border-border bg-bg-raised hover:border-text-tertiary",
-                        )}
-                      >
-                        {count}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               {methodVariableInputs(selectedMethod).stitches && (
                 <div className="mb-sp-3">
                   <span className="text-xs font-bold block mb-1.5">Logo size</span>

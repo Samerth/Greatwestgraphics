@@ -28,4 +28,20 @@ describe("hidden shopper chrome", () => {
     expect(studio).toContain("Generate an AI concept");
     expect(designPage).not.toMatch(/sample AI concept/i);
   });
+
+  it("hides ink-colour count chips from the Design Studio finish panel", () => {
+    const studio = read("components/design/DesignStudio.tsx");
+    expect(studio).not.toContain("Colours in the design");
+    expect(studio).not.toMatch(/\bcolourOptions\b/);
+    expect(studio).toContain("Print method (optional)");
+    expect(studio).toContain("defaultColours");
+  });
+
+  it("keeps one garment colour switcher and the print location under the mockup", () => {
+    const studio = read("components/design/DesignStudio.tsx");
+    expect(studio.match(/<StudioColorSwitcher/g)).toHaveLength(1);
+    expect(studio).toContain('tone="panel"');
+    expect(studio).toContain('data-studio="print-location"');
+    expect(studio).toContain("max-w-[min(820px,calc(100dvh-12rem))]");
+  });
 });

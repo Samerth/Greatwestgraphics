@@ -12,8 +12,12 @@ import { STUDIO_DEFAULT_FONT_ID } from "./studio-fonts";
 import {
   STUDIO_PRINT_AREAS,
   artworkOriginInPrintArea,
+  frontChestZoneForAlign,
+  isFrontChestZone,
+  placementAreaPixels,
   placementIntent,
   printAreaPixels,
+  type PlacementAlignX,
 } from "./studio-placement";
 import { detectPlacementZone } from "./studio-zones";
 
@@ -50,14 +54,15 @@ export function createStudioTextLayer(input: {
   const fontSize = input.fontSize ?? STUDIO_DEFAULT_FONT_SIZE;
   const text = input.text?.trim() ? input.text : STUDIO_DEFAULT_TEXT;
   const display = estimateTextDisplaySize(text, fontSize);
-  const area = printAreaPixels(input.side, canvasSize);
+  const area = placementAreaPixels(input.side, zone, canvasSize);
   const intent = placementIntent(input.side, zone);
+  const inChestBox = input.side === "front" && isFrontChestZone(zone);
   const origin = artworkOriginInPrintArea({
     area,
     displayWidth: display.width,
     displayHeight: display.height,
-    alignX: intent.alignX,
-    alignY: intent.alignY,
+    alignX: inChestBox ? "center" : intent.alignX,
+    alignY: inChestBox ? "center" : intent.alignY,
   });
   return {
     id: input.id ?? `text-${cryptoRandomId()}`,
@@ -319,6 +324,61 @@ export function deleteStudioLayer(
   };
 }
 
+export function alignStudioLayer(
+  document: DesignDocument,
+  layerId: string,
+  alignX: PlacementAlignX,
+  canvasSize = DESIGN_CANVAS_SIZE,
+  displayWidth = 80,
+  displayHeight = 40,
+): DesignDocument {
+  const found = findStudioLayerSide(document, layerId);
+  if (!found) return document;
+  const zone =
+    found.side === "front"
+      ? frontChestZoneForAlign(alignX)
+      : document.placementBySide[found.side];
+  const area =
+    found.side === "front"
+      ? placementAreaPixels(found.side, zone, canvasSize)
+      : printAreaPixels(found.side, canvasSize);
+  const origin = artworkOriginInPrintArea({
+    area,
+    displayWidth,
+    displayHeight,
+    alignX: found.side === "front" ? "center" : alignX,
+    alignY: "center",
+  });
+  const nextPlacement =
+    found.side === "front"
+      ? { ...document.placementBySide, front: zone }
+      : document.placementBySide;
+  if (found.kind === "artwork") {
+    return {
+      ...document,
+      placementBySide: nextPlacement,
+      artworksBySide: {
+        ...document.artworksBySide,
+        [found.side]: document.artworksBySide[found.side].map((item) =>
+          item.id === layerId
+            ? { ...item, x: origin.x, y: origin.y }
+            : item,
+        ),
+      },
+    };
+  }
+  return {
+    ...document,
+    placementBySide: nextPlacement,
+    textsBySide: {
+      ...document.textsBySide,
+      [found.side]: document.textsBySide[found.side].map((item) =>
+        item.id === layerId ? { ...item, x: origin.x, y: origin.y } : item,
+      ),
+    },
+  };
+}
+
 export function centerStudioLayer(
   document: DesignDocument,
   layerId: string,
@@ -326,31 +386,14 @@ export function centerStudioLayer(
   displayWidth = 80,
   displayHeight = 40,
 ): DesignDocument {
-  const found = findStudioLayerSide(document, layerId);
-  if (!found) return document;
-  const area = printAreaPixels(found.side, canvasSize);
-  const x = area.x + (area.width - displayWidth) / 2;
-  const y = area.y + (area.height - displayHeight) / 2;
-  if (found.kind === "artwork") {
-    return {
-      ...document,
-      artworksBySide: {
-        ...document.artworksBySide,
-        [found.side]: document.artworksBySide[found.side].map((item) =>
-          item.id === layerId ? { ...item, x, y } : item,
-        ),
-      },
-    };
-  }
-  return {
-    ...document,
-    textsBySide: {
-      ...document.textsBySide,
-      [found.side]: document.textsBySide[found.side].map((item) =>
-        item.id === layerId ? { ...item, x, y } : item,
-      ),
-    },
-  };
+  return alignStudioLayer(
+    document,
+    layerId,
+    "center",
+    canvasSize,
+    displayWidth,
+    displayHeight,
+  );
 }
 
 export function nudgeStudioLayerOrder(

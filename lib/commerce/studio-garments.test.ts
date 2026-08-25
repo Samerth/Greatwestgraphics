@@ -205,6 +205,7 @@ describe("studioGarmentPhotos", () => {
       colorSideImageUrl: navyProduct.colorSideImageUrl,
       colorBackImageUrl: navyProduct.colorBackImageUrl,
       styleImageUrl: "https://cdn.example/style.jpg",
+      styleName: null,
     });
   });
 
@@ -221,6 +222,7 @@ describe("studioGarmentPhotos", () => {
       colorSideImageUrl: redColorway.sideImageUrl,
       colorBackImageUrl: redColorway.backImageUrl,
       styleImageUrl: "https://cdn.example/style.jpg",
+      styleName: null,
     });
   });
 
@@ -236,6 +238,7 @@ describe("studioGarmentPhotos", () => {
       colorSideImageUrl: null,
       colorBackImageUrl: null,
       styleImageUrl: null,
+      styleName: null,
     });
   });
 });

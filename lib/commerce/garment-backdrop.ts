@@ -5,6 +5,7 @@ export type GarmentPhotoSet = {
   colorBackImageUrl?: string | null;
   colorSideImageUrl?: string | null;
   styleImageUrl?: string | null;
+  styleName?: string | null;
 };
 
 /** Fractional crop of a source photo, origin top-left. */
@@ -24,7 +25,7 @@ export type PlateRect = {
 
 export type GarmentBackdrop = {
   url: string;
-  source: "photo" | "template";
+  source: "photo" | "template" | "side-view";
   mirror: boolean;
   crop?: PhotoCrop;
   /**
@@ -46,6 +47,7 @@ export type BackdropImageStyle = {
   maxWidth?: string;
   objectFit: "contain" | "fill";
   transform?: string;
+  opacity?: number;
 };
 
 export const GARMENT_FALLBACK = "/images/t-shirt.png";
@@ -53,24 +55,15 @@ export const GARMENT_FALLBACK = "/images/t-shirt.png";
 /** Padding around a sleeve plate, as a fraction of the square canvas. */
 export const SLEEVE_PLATE_INSET = 0.08;
 
-/**
- * Sleeve-on-shirt crop of a front-facing colorway. Viewer-right is the
- * garment's left sleeve. Keeps the shoulder, collar edge, and a band of
- * the body so the plate still reads as a shirt — not a half-torso zoom.
- * Used only when the vendor did not send a distinct side shot.
- */
-export const SLEEVE_CROP_LEFT: PhotoCrop = {
-  x: 0.46,
-  y: 0.02,
-  width: 0.52,
-  height: 0.7,
-};
-export const SLEEVE_CROP_RIGHT: PhotoCrop = {
-  x: 0.02,
-  y: 0.02,
-  width: 0.52,
-  height: 0.7,
-};
+/** Photorealistic 3/4 side plates — not a crop of the front photo. */
+export const STUDIO_SIDE_HOODIE = "/images/studio/side-hoodie.png";
+export const STUDIO_SIDE_TEE = "/images/studio/side-tee.png";
+
+export function studioSideViewTemplate(styleName?: string | null): string {
+  const name = (styleName ?? "").toLowerCase();
+  if (/(hood|fleece|sweat|jacket|zip)/.test(name)) return STUDIO_SIDE_HOODIE;
+  return STUDIO_SIDE_TEE;
+}
 
 function photoUrl(url: string | null | undefined): string | null {
   if (typeof url !== "string") return null;
@@ -123,14 +116,16 @@ export function usableSidePhoto(
   return value;
 }
 
-function sleeveFromColorway(
-  photos: { front: string | null },
-  crop: PhotoCrop,
+function sleeveSideView(
+  styleName: string | null | undefined,
+  mirror: boolean,
 ): GarmentBackdrop {
-  if (photos.front) {
-    return { url: photos.front, source: "photo", mirror: false, crop, plate: true };
-  }
-  return { url: GARMENT_FALLBACK, source: "template", mirror: false, crop, plate: true };
+  return {
+    url: studioSideViewTemplate(styleName),
+    source: "side-view",
+    mirror,
+    plate: true,
+  };
 }
 
 /**
@@ -138,11 +133,9 @@ function sleeveFromColorway(
  *
  * Neither S&S nor SanMar ships a dedicated left/right sleeve close-up.
  * Sleeves use a vendor side photo when one exists and is not the chest
- * or back shot — that 3/4 plate is the Coastal Reign L/R sleeve idea.
- * Otherwise they crop the sleeve from that colorway's real front photo
- * and frame it as a contained plate. Never the full chest frame, never
- * a fake heather mock, never a cartoon shell. Front/back still use the
- * vendor photos uncropped.
+ * or back shot. Otherwise they use a photorealistic 3/4 side plate
+ * tinted to the colourway — never a crop of the front photo, never a
+ * cartoon outline. Front/back still use the vendor photos uncropped.
  */
 export function garmentBackdropForSide(
   side: DesignSide,
@@ -180,13 +173,13 @@ export function garmentBackdropForSide(
     if (sidePhoto) {
       return { url: sidePhoto, source: "photo", mirror: false, plate: true };
     }
-    return sleeveFromColorway({ front }, SLEEVE_CROP_LEFT);
+    return sleeveSideView(photos.styleName, false);
   }
 
   if (sidePhoto) {
     return { url: sidePhoto, source: "photo", mirror: true, plate: true };
   }
-  return sleeveFromColorway({ front }, SLEEVE_CROP_RIGHT);
+  return sleeveSideView(photos.styleName, true);
 }
 
 /** Konva proofs need a same-origin URL. Local `/images/` and SVGs must not
@@ -196,6 +189,7 @@ export function studioCanvasImageUrl(backdrop: GarmentBackdrop): string {
   if (!backdrop.url) return "";
   if (
     backdrop.source === "template" ||
+    backdrop.source === "side-view" ||
     backdrop.url.startsWith("/images/") ||
     /\.svg(\?|#|$)/i.test(backdrop.url)
   ) {

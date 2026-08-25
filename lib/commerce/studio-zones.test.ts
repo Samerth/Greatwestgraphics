@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DESIGN_CANVAS_SIZE } from "@gwg/contracts";
-import { printAreaPixels } from "./studio-placement";
+import { STUDIO_PRINT_AREAS, printAreaPixels } from "./studio-placement";
 import {
   STUDIO_ZONE_INCHES,
   detectPlacementZone,
   formatZoneInchLabel,
+  frontChestGuideRects,
 } from "./studio-zones";
 
 const canvas = DESIGN_CANVAS_SIZE;
@@ -69,7 +70,28 @@ describe("STUDIO_ZONE_INCHES", () => {
     expect(formatZoneInchLabel("Left Sleeve")).toBe(
       'Left Sleeve · 3.5"W × 3.5"H',
     );
+    expect(formatZoneInchLabel("Left Side Panel")).toBe(
+      'Left Side Panel · 4"W × 12"H',
+    );
     expect(formatZoneInchLabel("Unknown Zone")).toBe("Unknown Zone");
+  });
+});
+
+describe("frontChestGuideRects", () => {
+  it("draws three distinct upper-chest boxes on the front plate", () => {
+    const boxes = frontChestGuideRects();
+    expect(boxes.map((box) => box.zone)).toEqual([
+      "Left Chest",
+      "Center Chest",
+      "Right Chest",
+    ]);
+    const [left, center, right] = boxes;
+    expect(left!.rect.x).toBeLessThan(center!.rect.x);
+    expect(center!.rect.x).toBeLessThan(right!.rect.x);
+    expect(left!.rect.y).toBe(center!.rect.y);
+    expect(left!.rect.width).toBeCloseTo(center!.rect.width);
+    const plate = STUDIO_PRINT_AREAS.front;
+    expect(right!.rect.x + right!.rect.width).toBeCloseTo(plate.x + plate.width);
   });
 });
 
