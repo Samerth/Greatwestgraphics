@@ -1,6 +1,5 @@
 "use client";
 
-import { DESIGN_SIDE_LABELS, DesignSides, type DesignSide } from "@gwg/contracts";
 import { StudioColorSwatches } from "@/components/design/StudioColorSwatches";
 import { StudioFontPicker } from "@/components/design/StudioFontPicker";
 import { cn } from "@/lib/utils/cn";
@@ -111,7 +110,6 @@ export function StudioChestAlign({
 
 export function StudioElementEditor({
   kind,
-  activeSide,
   text,
   onPatchText,
   outline,
@@ -124,12 +122,10 @@ export function StudioElementEditor({
   onBack,
   onDuplicate,
   onDelete,
-  onMoveToSide,
   onSliderCommit,
   className,
 }: {
   kind: "text" | "artwork";
-  activeSide: DesignSide;
   text?: {
     align: "left" | "center" | "right";
     printMethod: "print" | "embroidery";
@@ -159,7 +155,6 @@ export function StudioElementEditor({
   onBack: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onMoveToSide: (side: DesignSide) => void;
   onSliderCommit: () => void;
   className?: string;
 }) {
@@ -276,30 +271,6 @@ export function StudioElementEditor({
         <EditorAction onClick={onDelete} danger>
           Delete
         </EditorAction>
-      </div>
-
-      <div>
-        <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-white/45 mb-1.5">
-          Move design location
-        </span>
-        <div className="grid grid-cols-2 gap-1.5">
-          {DesignSides.map((side) => (
-            <button
-              key={side}
-              type="button"
-              onClick={() => onMoveToSide(side)}
-              disabled={side === activeSide}
-              className={cn(
-                "h-8 rounded-sm border text-[11px] font-bold transition-colors",
-                side === activeSide
-                  ? "border-accent bg-accent/20 text-white"
-                  : "border-white/20 text-white/80 hover:border-white/50",
-              )}
-            >
-              {DESIGN_SIDE_LABELS[side]}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
