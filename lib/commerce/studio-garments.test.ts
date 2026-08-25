@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   filterStudioArticles,
   hexForColorName,
   normalizeStudioHex,
+  pdpColorwaySwatch,
   studioArticleKey,
   studioArticleLabel,
   studioColorwayFill,
@@ -207,6 +210,7 @@ describe("studioGarmentPhotos", () => {
       colorBackImageUrl: navyProduct.colorBackImageUrl,
       styleImageUrl: "https://cdn.example/style.jpg",
       styleName: null,
+      styleTitle: null,
     });
   });
 
@@ -224,6 +228,7 @@ describe("studioGarmentPhotos", () => {
       colorBackImageUrl: redColorway.backImageUrl,
       styleImageUrl: "https://cdn.example/style.jpg",
       styleName: null,
+      styleTitle: null,
     });
   });
 
@@ -240,6 +245,20 @@ describe("studioGarmentPhotos", () => {
       colorBackImageUrl: null,
       styleImageUrl: null,
       styleName: null,
+      styleTitle: null,
+    });
+  });
+
+  it("keeps the manufacturer title so hoodie plates can key off it", () => {
+    expect(
+      studioGarmentPhotos({
+        selectedId: "p-hoodie",
+        styleName: "A2009",
+        styleTitle: "Men's Ultimate365 Elevated Hoodie",
+      }),
+    ).toMatchObject({
+      styleName: "A2009",
+      styleTitle: "Men's Ultimate365 Elevated Hoodie",
     });
   });
 });
@@ -298,9 +317,46 @@ describe("studioColorwayFill", () => {
   it("normalizes vendor hex and maps common colour names", () => {
     expect(normalizeStudioHex("1B2A4A")).toBe("#1b2a4a");
     expect(hexForColorName("Sport Grey")).toBe("#8a8a8a");
+    expect(hexForColorName("Arctic Blue")).toBe("#7eb8d4");
+    expect(hexForColorName("Athletic Gold")).toBe("#d4a017");
     expect(studioColorwayFill({ id: "p-navy", colorName: "Navy" }).hex).toBe(
       "#1b2a4a",
     );
+  });
+
+  it("fills PDP swatches from hex or the colour name, never a shared style shot", () => {
+    expect(
+      pdpColorwaySwatch({
+        colorName: "Arctic Blue",
+        colorHex: null,
+        swatchImageUrl: null,
+        frontImageUrl: null,
+      }),
+    ).toEqual({ imageUrl: null, hex: "#7eb8d4" });
+    expect(
+      pdpColorwaySwatch({
+        colorName: "Athletic Gold",
+        color1: null,
+        swatchImageUrl: "",
+        frontImageUrl: "",
+      }),
+    ).toEqual({ imageUrl: null, hex: "#d4a017" });
+    expect(
+      pdpColorwaySwatch({
+        colorName: "Black / Black",
+        colorHex: null,
+      }),
+    ).toEqual({ imageUrl: null, hex: "#111111" });
+    expect(
+      pdpColorwaySwatch({
+        colorName: "Navy",
+        colorHex: "1b2a4a",
+        swatchImageUrl: "https://cdn.example/navy-swatch.jpg",
+      }),
+    ).toEqual({
+      imageUrl: "https://cdn.example/navy-swatch.jpg",
+      hex: "#1b2a4a",
+    });
   });
 
   it("uses swatches when a hex or photo exists, otherwise a named select", () => {
@@ -315,6 +371,21 @@ describe("studioColorwayFill", () => {
     expect(
       studioColorwaysUseSwatches([{ id: "p-x", colorName: "Azalea Blast" }]),
     ).toBe(false);
+  });
+});
+
+describe("PDP colour row", () => {
+  it("shows Colour for a single colorway and paints from pdpColorwaySwatch", () => {
+    const page = readFileSync(
+      resolve(process.cwd(), "app/(shop)/product/[slug]/page.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("pdpColorwaySwatch");
+    expect(page).toContain("colorways.length > 0");
+    expect(page).not.toContain("colorways.length > 1");
+    expect(page).not.toMatch(
+      /swatchImageUrl[\s\S]{0,80}styleImageUrl|styleImageUrl[\s\S]{0,80}swatch/,
+    );
   });
 });
 

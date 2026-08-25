@@ -27,6 +27,7 @@ import { readProductSizeChart } from "@/lib/utils/size-specs";
 import type { GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { pdpColorwaySwatch } from "@/lib/commerce/studio-garments";
 
 export const dynamic = "force-dynamic";
 
@@ -261,7 +262,7 @@ export default async function ProductPage({
                   {product.isDark ? " · Dark garment" : ""}
                 </p>
 
-                {colorways.length > 1 && (
+                {colorways.length > 0 && (
                   <div className="mt-sp-3">
                     <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary mb-2">
                       Colour: <span className="text-text-primary normal-case">{String(product.colorName || "")}</span>
@@ -269,9 +270,7 @@ export default async function ProductPage({
                     <div className="flex flex-wrap gap-2">
                       {colorways.map((c) => {
                         const cId = String(c.id);
-                        const swatchUrl =
-                          (c.swatchImageUrl as string | null) ||
-                          (c.frontImageUrl as string | null);
+                        const swatch = pdpColorwaySwatch(c);
                         const isActive = cId === String(product.id);
                         return (
                           <Link
@@ -284,16 +283,27 @@ export default async function ProductPage({
                                 : "border-border hover:border-text-tertiary"
                             }`}
                           >
-                            {swatchUrl ? (
+                            {swatch.imageUrl ? (
                               <Image
-                                src={swatchUrl}
+                                src={swatch.imageUrl}
                                 alt={String(c.colorName || "")}
                                 fill
                                 className="object-cover"
                                 sizes="44px"
                               />
                             ) : (
-                              <div className="absolute inset-0 bg-fill-subtle-15" />
+                              <div
+                                className={
+                                  swatch.hex
+                                    ? "absolute inset-0"
+                                    : "absolute inset-0 bg-fill-subtle-15"
+                                }
+                                style={
+                                  swatch.hex
+                                    ? { backgroundColor: swatch.hex }
+                                    : undefined
+                                }
+                              />
                             )}
                           </Link>
                         );

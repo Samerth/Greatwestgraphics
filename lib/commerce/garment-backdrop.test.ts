@@ -11,6 +11,7 @@ import {
   isStudioSideRepresentation,
   namedVendorView,
   plateContainRect,
+  studioBackdropFallbackUrl,
   studioCanvasImageUrl,
   studioSideViewTemplate,
   usableSidePhoto,
@@ -163,6 +164,42 @@ describe("studioSideViewTemplate", () => {
     expect(studioSideViewTemplate("Crew Fleece")).toBe(STUDIO_SIDE_HOODIE);
     expect(studioSideViewTemplate("Ring-spun Tee")).toBe(STUDIO_SIDE_TEE);
     expect(studioSideViewTemplate(null)).toBe(STUDIO_SIDE_TEE);
+  });
+
+  it("reads the manufacturer title when the style code is not a garment kind", () => {
+    expect(
+      studioSideViewTemplate("A2009", "Men's Ultimate365 Elevated Hoodie"),
+    ).toBe(STUDIO_SIDE_HOODIE);
+    expect(studioSideViewTemplate("A2009")).toBe(STUDIO_SIDE_TEE);
+    expect(
+      garmentBackdropForSide("left", {
+        ...PHOTOS,
+        colorSideImageUrl: null,
+        styleName: "A2009",
+        styleTitle: "Men's Ultimate365 Elevated Hoodie",
+      }),
+    ).toMatchObject({ url: STUDIO_SIDE_HOODIE, source: "side-view" });
+  });
+});
+
+describe("studioBackdropFallbackUrl", () => {
+  it("falls back from a vendor sleeve photo to the local plate", () => {
+    expect(
+      studioBackdropFallbackUrl(
+        { url: PHOTOS.colorSideImageUrl, source: "photo", mirror: false, plate: true },
+        { styleName: "A2009", styleTitle: "Men's Ultimate365 Elevated Hoodie" },
+      ),
+    ).toBe(STUDIO_SIDE_HOODIE);
+  });
+
+  it("falls back from a chest photo to the generic tee", () => {
+    expect(
+      studioBackdropFallbackUrl({
+        url: PHOTOS.colorFrontImageUrl,
+        source: "photo",
+        mirror: false,
+      }),
+    ).toBe(GARMENT_FALLBACK);
   });
 });
 

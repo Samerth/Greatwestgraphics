@@ -57,6 +57,7 @@ import {
   framedBackdropStyles,
   garmentBackdrops,
   isStudioSideRepresentation,
+  studioBackdropFallbackUrl,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
 import {
@@ -123,6 +124,7 @@ import {
   DESIGN_SIDE_THUMB_LABELS,
   isStudioSleeveSide,
   studioSleeveFillFromColorway,
+  studioVisiblePlateTint,
 } from "@/lib/commerce/studio-sleeve";
 import { readProductSizeChart } from "@/lib/utils/size-specs";
 
@@ -137,6 +139,7 @@ export type DesignGarmentOption = {
   slug?: string;
   brandName?: string;
   styleName?: string;
+  styleTitle?: string | null;
   /** Vendor cost; used when the size-level cost has not loaded yet. */
   costMinor?: number;
 };
@@ -208,6 +211,7 @@ type ProductDetail = {
     id: string;
     brandName: string;
     styleName: string;
+    title?: string | null;
     styleImageUrl: string | null;
     sizeSpecs?: unknown;
   };
@@ -604,6 +608,7 @@ export function DesignStudio({
       colorName: productDetail.product.colorName,
       brandName: productDetail.style.brandName,
       styleName: productDetail.style.styleName,
+      styleTitle: productDetail.style.title,
       imageUrl: productDetail.product.colorFrontImageUrl || productDetail.style.styleImageUrl,
       sideImageUrl: productDetail.product.colorSideImageUrl,
       backImageUrl: productDetail.product.colorBackImageUrl,
@@ -788,6 +793,8 @@ export function DesignStudio({
     styleImageUrl: productDetail?.style.styleImageUrl,
     styleName:
       selectedGarment?.styleName ?? productDetail?.style.styleName ?? null,
+    styleTitle:
+      selectedGarment?.styleTitle ?? productDetail?.style.title ?? null,
     selectedGarment,
     selectedColorway,
   });
@@ -800,8 +807,10 @@ export function DesignStudio({
       selectedGarment?.colorName,
   );
   const sleeveTintHex =
-    backdrop.source === "side-view" ? sleeveFillHex : undefined;
-  const currentPhoto = backdrop.url;
+    backdrop.source === "side-view"
+      ? studioVisiblePlateTint(sleeveFillHex)
+      : undefined;
+  const currentPhoto = studioCanvasImageUrl(backdrop);
   const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
   const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
@@ -1701,7 +1710,7 @@ export function DesignStudio({
     <div className="grid grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:overflow-y-auto">
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-[calc(var(--header-offset)+1rem)] md:max-h-[calc(100dvh-var(--header-offset)-2rem)] md:overflow-y-auto">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
@@ -2013,6 +2022,10 @@ export function DesignStudio({
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                   <GarmentBackdropImage
                     url={currentPhoto}
+                    fallbackUrl={studioBackdropFallbackUrl(
+                      backdrop,
+                      garmentPhotos,
+                    )}
                     frame={framedBackdrop.frame}
                     image={framedBackdrop.image}
                     tintHex={sleeveTintHex}
@@ -2189,12 +2202,16 @@ export function DesignStudio({
                       {thumbBackdrop.url ? (
                         <span className="absolute inset-0 overflow-hidden">
                           <GarmentBackdropImage
-                            url={thumbBackdrop.url}
+                            url={studioCanvasImageUrl(thumbBackdrop)}
+                            fallbackUrl={studioBackdropFallbackUrl(
+                              thumbBackdrop,
+                              garmentPhotos,
+                            )}
                             frame={thumbFrame.frame}
                             image={thumbFrame.image}
                             tintHex={
                               thumbBackdrop.source === "side-view"
-                                ? sleeveFillHex
+                                ? studioVisiblePlateTint(sleeveFillHex)
                                 : undefined
                             }
                           />
@@ -2296,7 +2313,7 @@ export function DesignStudio({
       {studioTab === "team" && (
         <div
           id="studio-team-order"
-          className="md:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+          className="md:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
         >
           <StudioTeamOrderPanel
             roster={roster}

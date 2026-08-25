@@ -9,6 +9,7 @@ import {
   sleeveOutlineHex,
   studioSleeveFillFromColorway,
   studioSleeveFillHex,
+  studioVisiblePlateTint,
 } from "./studio-sleeve";
 
 const PHOTOS = {
@@ -75,6 +76,16 @@ describe("sleeve illustrations", () => {
   it("uses a contrasting outline so the line-art stays visible", () => {
     expect(sleeveOutlineHex("#111111")).toBe("#f3f1ec");
     expect(sleeveOutlineHex("#f4f4f4")).toBe("#1c1c1c");
+  });
+});
+
+describe("studioVisiblePlateTint", () => {
+  it("lifts near-black fills so multiply on a dark thumb stays visible", () => {
+    expect(studioVisiblePlateTint("#000000")).not.toBe("#000000");
+    expect(studioVisiblePlateTint("#111111")).not.toBe("#111111");
+    expect(studioVisiblePlateTint("#000000")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(studioVisiblePlateTint("#c41e3a")).toBe("#c41e3a");
+    expect(studioVisiblePlateTint("#d4a017")).toBe("#d4a017");
   });
 });
 
