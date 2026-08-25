@@ -59,6 +59,7 @@ export type SanmarProduct = {
   colors?: Array<{
     colorName: string;
     colorCode?: string;
+    hex?: string;
     images?: string[];
   }>;
   sizes?: Array<{
@@ -79,6 +80,8 @@ export type SanmarSKU = {
   price?: number;
   mapPrice?: number;
   imageUrl?: string;
+  /** Vendor hex when PromoStandards actually sent one — never guessed. */
+  colorHex?: string;
   gtin?: string;
   sizeOrder?: number;
   discontinued?: boolean;
@@ -115,6 +118,8 @@ export type SanmarBulkProduct = {
   quantity: number;
   price?: number;
   imageUrl?: string;
+  /** Present only when Bulk XML includes a hex/htmlColor field. */
+  colorHex?: string;
   productName?: string;
   brandName?: string;
 };
@@ -152,6 +157,8 @@ const NS_INV = "http://www.promostandards.org/WSDL/Inventory/2.0.0/";
 const NS_PRICE =
   "http://www.promostandards.org/WSDL/PricingAndConfiguration/1.0.0/";
 const NS_MEDIA = "http://www.promostandards.org/WSDL/MediaService/1.0.0/";
+/** ATC Bulk Data WSDL targetNamespace (elementFormDefault=qualified). */
+export const NS_BULK = "https://edi.atc-apparel.com/bulk-data/";
 
 function splitCsvLine(line: string): string[] {
   return line.split(",").map((v) => v.trim());
@@ -186,8 +193,57 @@ function firstTag(xml: string, localName: string): string | undefined {
   return extractTags(xml, localName)[0];
 }
 
+/** Accept a PromoStandards hex / htmlColor value. Do not invent from a name. */
+export function extractVendorHex(
+  value: string | null | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const six = trimmed.match(/^#?([0-9a-fA-F]{6})$/);
+  if (six) return `#${six[1]!.toLowerCase()}`;
+  const three = trimmed.match(/^#?([0-9a-fA-F]{3})$/);
+  if (!three) return undefined;
+  const [r, g, b] = three[1]!;
+  return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+}
+
+function firstVendorHex(block: string): string | undefined {
+  for (const tag of ["hex", "hexColor", "colorHex", "htmlColor"]) {
+    const hex = extractVendorHex(firstTag(block, tag));
+    if (hex) return hex;
+  }
+  return undefined;
+}
+
 function serviceCode(xml: string): string | undefined {
   return firstTag(xml, "code");
+}
+
+export function soapFaultString(xml: string): string | undefined {
+  return firstTag(xml, "faultstring") || firstTag(xml, "Text");
+}
+
+/** SOAP 200/500 body that means Bulk already ran today (not a missing xmlns). */
+export function isBulkLimitResponse(xml: string): boolean {
+  return (
+    /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
+    serviceCode(xml) === "125"
+  );
+}
+
+/**
+ * Qualified GetBulkDataRequest. Without this xmlns, ATC's PHP SOAP server
+ * returns HTTP 500 / "Procedure 'GetBulkDataRequest' not present".
+ */
+export function buildGetBulkDataRequestXml(
+  accountId: string,
+  loginEmail: string,
+): string {
+  return `<GetBulkDataRequest xmlns="${NS_BULK}">
+        <wsVersion>1.0.0</wsVersion>
+        <id>${escapeXml(accountId)}</id>
+        <password>${escapeXml(loginEmail)}</password>
+      </GetBulkDataRequest>`;
 }
 
 /**
@@ -336,6 +392,7 @@ export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
     const quantity = Number.parseInt(firstTag(block, "quantity") || "0", 10) || 0;
     const priceText = firstTag(block, "price");
     const price = priceText ? Number.parseFloat(priceText) : undefined;
+    const colorHex = firstVendorHex(block);
     products.push({
       partId,
       styleId,
@@ -345,11 +402,81 @@ export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
       quantity,
       price: Number.isFinite(price) ? price : undefined,
       imageUrl: firstTag(block, "image"),
+      ...(colorHex ? { colorHex } : {}),
       productName: firstTag(block, "productName"),
       brandName: firstTag(block, "brand"),
     });
   }
   return products;
+}
+
+export function parseProductColorBlocks(
+  xml: string,
+): Array<{ colorName: string; hex?: string }> {
+  const byName = new Map<string, { colorName: string; hex?: string }>();
+  const colorBlocks =
+    xml.match(/<(?:[\w.-]+:)?Color\b[\s\S]*?<\/(?:[\w.-]+:)?Color>/gi) ?? [];
+  for (const block of colorBlocks) {
+    const colorName =
+      firstTag(block, "colorName") || firstTag(block, "standardColorName");
+    if (!colorName) continue;
+    const key = colorName.trim().toLowerCase();
+    const existing = byName.get(key) ?? { colorName: colorName.trim() };
+    const hex = firstVendorHex(block);
+    if (hex) existing.hex = hex;
+    byName.set(key, existing);
+  }
+  if (byName.size === 0) {
+    for (const colorName of extractTags(xml, "colorName")) {
+      const key = colorName.trim().toLowerCase();
+      if (!key || byName.has(key)) continue;
+      byName.set(key, { colorName: colorName.trim() });
+    }
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Part-level SKUs from getProduct XML. A missing ProductPart <url> stays
+ * empty — do not copy product.images[0] onto every colour.
+ */
+export function productPartsToSkus(
+  product: SanmarProduct,
+  rawXml: string,
+): SanmarSKU[] {
+  const partBlocks =
+    rawXml.match(
+      /<(?:[\w.-]+:)?ProductPart\b[\s\S]*?<\/(?:[\w.-]+:)?ProductPart>/gi,
+    ) ?? [];
+
+  if (partBlocks.length === 0) return [];
+
+  const hexByColor = new Map(
+    (product.colors ?? [])
+      .filter((color) => color.hex)
+      .map((color) => [color.colorName.trim().toLowerCase(), color.hex!]),
+  );
+
+  return partBlocks.map((block, index) => {
+    const partId =
+      firstTag(block, "partId") || `${product.productId}-${index + 1}`;
+    const colorName =
+      firstTag(block, "colorName") ||
+      firstTag(block, "standardColorName") ||
+      "Standard";
+    const partUrl = firstTag(block, "url");
+    return {
+      skuId: partId,
+      productId: product.productId,
+      sku: partId,
+      colorName,
+      sizeName: firstTag(block, "labelSize") || "OSFA",
+      quantity: 0,
+      imageUrl: partUrl && /^https?:\/\//i.test(partUrl) ? partUrl : undefined,
+      colorHex: firstVendorHex(block) || hexByColor.get(colorName.toLowerCase()),
+      gtin: firstTag(block, "gtin"),
+    };
+  });
 }
 
 /**
@@ -540,7 +667,7 @@ export class SanmarClient {
 
     const product = await this.getProduct(productId);
     const raw = await this.getProductRaw(productId);
-    return this.productPartsToSkus(product, raw);
+    return productPartsToSkus(product, raw);
   }
 
   async listAllSkus(): Promise<SanmarSKU[]> {
@@ -660,21 +787,32 @@ export class SanmarClient {
    * Bulk Data — limited to ~1 call/day. Returns part-level qty + price + base image.
    */
   async getBulkProducts(): Promise<SanmarBulkProduct[]> {
-    const xml = await this.postSoap(
-      this.endpoints.bulk,
-      "getBulkData",
-      `<GetBulkDataRequest>
-        <wsVersion>1.0.0</wsVersion>
-        <id>${escapeXml(this.options.accountId)}</id>
-        <password>${escapeXml(this.options.loginEmail)}</password>
-      </GetBulkDataRequest>`,
-    );
+    let xml: string;
+    try {
+      xml = await this.postSoap(
+        this.endpoints.bulk,
+        "getBulkData",
+        buildGetBulkDataRequestXml(
+          this.options.accountId,
+          this.options.loginEmail,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof SanmarSOAPError &&
+        typeof error.details === "string" &&
+        isBulkLimitResponse(error.details)
+      ) {
+        throw new SanmarBulkLimitError(
+          firstTag(error.details, "description") ||
+            "Bulk Data daily limit reached (1 call/day)",
+        );
+      }
+      throw error;
+    }
     this.assertAuth(xml);
 
-    if (
-      /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
-      serviceCode(xml) === "125"
-    ) {
+    if (isBulkLimitResponse(xml)) {
       throw new SanmarBulkLimitError(
         firstTag(xml, "description") ||
           "Bulk Data daily limit reached (1 call/day)",
@@ -704,7 +842,7 @@ export class SanmarClient {
     if (!product) {
       throw new SanmarNotFoundError(`Product ${productId} not found`);
     }
-    return { product, skus: this.productPartsToSkus(product, xml) };
+    return { product, skus: productPartsToSkus(product, xml) };
   }
 
   async getProductRaw(productId: string): Promise<string> {
@@ -811,7 +949,7 @@ export class SanmarClient {
       firstTag(xml, "productName") || firstTag(xml, "ProductName");
     if (!productName) return null;
 
-    const colors = [...new Set(extractTags(xml, "colorName"))];
+    const colors = parseProductColorBlocks(xml);
     const sizes = [...new Set(extractTags(xml, "labelSize"))];
     const images = extractTags(xml, "url").filter((u) =>
       /^https?:\/\//i.test(u),
@@ -830,40 +968,10 @@ export class SanmarClient {
         firstTag(xml, "description") ||
         firstTag(xml, "productDescription"),
       partNumber: firstTag(xml, "productId") || productId,
-      images: [...new Set(images)].slice(0, 8),
-      colors: colors.map((colorName) => ({ colorName })),
+      images: [...new Set(images)],
+      colors,
       sizes: sizes.map((sizeName) => ({ sizeName })),
     };
-  }
-
-  private productPartsToSkus(
-    product: SanmarProduct,
-    rawXml: string,
-  ): SanmarSKU[] {
-    const partBlocks =
-      rawXml.match(
-        /<(?:[\w.-]+:)?ProductPart\b[\s\S]*?<\/(?:[\w.-]+:)?ProductPart>/gi,
-      ) ?? [];
-
-    if (partBlocks.length === 0) return [];
-
-    return partBlocks.map((block, index) => {
-      const partId =
-        firstTag(block, "partId") || `${product.productId}-${index + 1}`;
-      return {
-        skuId: partId,
-        productId: product.productId,
-        sku: partId,
-        colorName:
-          firstTag(block, "colorName") ||
-          firstTag(block, "standardColorName") ||
-          "Standard",
-        sizeName: firstTag(block, "labelSize") || "OSFA",
-        quantity: 0,
-        imageUrl: firstTag(block, "url") || product.images?.[0],
-        gtin: firstTag(block, "gtin"),
-      };
-    });
   }
 
   private assertAuth(xml: string) {
@@ -920,8 +1028,11 @@ export class SanmarClient {
       );
     }
     if (!response.ok) {
+      const fault = soapFaultString(text);
       throw new SanmarSOAPError(
-        `SOAP call failed: ${response.status} ${soapAction}`,
+        fault
+          ? `SOAP call failed: ${response.status} ${soapAction} — ${fault}`
+          : `SOAP call failed: ${response.status} ${soapAction}`,
         text.slice(0, 2000),
       );
     }

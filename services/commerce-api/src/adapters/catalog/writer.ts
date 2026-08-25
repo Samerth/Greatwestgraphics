@@ -508,7 +508,7 @@ export class CatalogWriter {
               description: sql`excluded.description`,
               baseCategory: sql`excluded.base_category`,
               ssCategories: sql`excluded.ss_categories`,
-              styleImageUrl: sql`excluded.style_image_url`,
+              styleImageUrl: sql`COALESCE(excluded.style_image_url, ${ssStyles.styleImageUrl})`,
               active: sql`excluded.active`,
               updatedAt: now,
             },
@@ -637,11 +637,11 @@ export class CatalogWriter {
           set: {
             styleUuid: sql`excluded.style_uuid`,
             colorCode: sql`excluded.color_code`,
-            color1: sql`excluded.color1`,
-            colorFrontImageUrl: sql`excluded.color_front_image_url`,
-            colorSideImageUrl: sql`excluded.color_side_image_url`,
-            colorBackImageUrl: sql`excluded.color_back_image_url`,
-            colorSwatchImageUrl: sql`excluded.color_swatch_image_url`,
+            color1: sql`COALESCE(excluded.color1, ${ssProducts.color1})`,
+            colorFrontImageUrl: sql`COALESCE(excluded.color_front_image_url, ${ssProducts.colorFrontImageUrl})`,
+            colorSideImageUrl: sql`COALESCE(excluded.color_side_image_url, ${ssProducts.colorSideImageUrl})`,
+            colorBackImageUrl: sql`COALESCE(excluded.color_back_image_url, ${ssProducts.colorBackImageUrl})`,
+            colorSwatchImageUrl: sql`COALESCE(excluded.color_swatch_image_url, ${ssProducts.colorSwatchImageUrl})`,
             qty: sql`excluded.qty`,
             // Vendor discontinued flag only. Never touch storefront_visible,
             // hidden_at, hidden_by, is_dark, or slug (staff/editorial fields).
@@ -825,6 +825,103 @@ export class CatalogWriter {
         .returning({ id: ssStyles.id });
       if (result.length) updated += 1;
     }
+    return updated;
+  }
+
+  /**
+   * Write per-colour photos / vendor hex onto existing ss_products rows.
+   * Used after SanMar enrich (media bag) and Bulk qty/price (part <image>).
+   * Does not invent hex. Empty fields are left untouched.
+   */
+  async patchColorwayMedia(
+    tenantId: string,
+    vendor: string,
+    patches: Array<{
+      styleKey: string;
+      colorName: string;
+      imageFront?: string | null;
+      imageSide?: string | null;
+      imageBack?: string | null;
+      colorHex?: string | null;
+    }>,
+  ): Promise<number> {
+    if (patches.length === 0) return 0;
+
+    const styleRows = await this.db
+      .select({
+        styleId: ssStyles.styleId,
+        externalKey: ssStyles.externalKey,
+      })
+      .from(ssStyles)
+      .where(and(eq(ssStyles.tenantId, tenantId), eq(ssStyles.vendor, vendor)));
+    const styleByKey = new Map(
+      styleRows
+        .filter((row) => row.externalKey)
+        .map((row) => [row.externalKey!, row.styleId]),
+    );
+
+    let updated = 0;
+    const styleFront = new Map<string, string>();
+    for (const patch of patches) {
+      const styleId = styleByKey.get(patch.styleKey);
+      if (styleId == null) continue;
+      const colorName = patch.colorName.trim();
+      if (!colorName) continue;
+
+      const set: {
+        colorFrontImageUrl?: string;
+        colorSideImageUrl?: string;
+        colorBackImageUrl?: string;
+        color1?: string;
+        updatedAt: Date;
+      } = { updatedAt: new Date() };
+      if (patch.imageFront) set.colorFrontImageUrl = patch.imageFront;
+      if (patch.imageSide) set.colorSideImageUrl = patch.imageSide;
+      if (patch.imageBack) set.colorBackImageUrl = patch.imageBack;
+      if (patch.colorHex) set.color1 = patch.colorHex;
+      if (
+        !set.colorFrontImageUrl &&
+        !set.colorSideImageUrl &&
+        !set.colorBackImageUrl &&
+        !set.color1
+      ) {
+        continue;
+      }
+
+      const result = await this.db
+        .update(ssProducts)
+        .set(set)
+        .where(
+          and(
+            eq(ssProducts.tenantId, tenantId),
+            eq(ssProducts.vendor, vendor),
+            eq(ssProducts.styleId, styleId),
+            sql`lower(${ssProducts.colorName}) = ${colorName.toLowerCase()}`,
+          ),
+        )
+        .returning({ id: ssProducts.id });
+      if (result.length) updated += 1;
+      if (patch.imageFront && !styleFront.has(patch.styleKey)) {
+        styleFront.set(patch.styleKey, patch.imageFront);
+      }
+    }
+
+    for (const [styleKey, imageFront] of styleFront) {
+      await this.db
+        .update(ssStyles)
+        .set({
+          styleImageUrl: sql`COALESCE(${ssStyles.styleImageUrl}, ${imageFront})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(ssStyles.tenantId, tenantId),
+            eq(ssStyles.vendor, vendor),
+            eq(ssStyles.externalKey, styleKey),
+          ),
+        );
+    }
+
     return updated;
   }
 
