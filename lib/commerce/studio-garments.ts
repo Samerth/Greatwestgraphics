@@ -73,6 +73,10 @@ const NAMED_GARMENT_HEX: Record<string, string> = {
   teal: "#167a7a",
   arctic: "#7eb8d4",
   "arctic blue": "#7eb8d4",
+  "beacon blue": "#4f8fba",
+  "canyon drift": "#c2a07a",
+  lime: "#b5d33d",
+  hunter: "#355e3b",
 };
 
 function trimText(value: unknown): string {
@@ -90,10 +94,13 @@ export function normalizeStudioHex(value: unknown): string | null {
 }
 
 export function hexForColorName(name: string): string | null {
-  const raw = name.trim().toLowerCase();
+  const raw = name.trim();
   if (!raw) return null;
-  if (NAMED_GARMENT_HEX[raw]) return NAMED_GARMENT_HEX[raw];
-  const tokens = raw.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/);
+  const lower = raw.toLowerCase();
+  if (NAMED_GARMENT_HEX[lower]) return NAMED_GARMENT_HEX[lower];
+  const spaced = raw.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  if (NAMED_GARMENT_HEX[spaced]) return NAMED_GARMENT_HEX[spaced];
+  const tokens = spaced.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/);
   for (const token of [...tokens].reverse()) {
     if (NAMED_GARMENT_HEX[token]) return NAMED_GARMENT_HEX[token];
   }

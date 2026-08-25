@@ -319,6 +319,11 @@ describe("studioColorwayFill", () => {
     expect(hexForColorName("Sport Grey")).toBe("#8a8a8a");
     expect(hexForColorName("Arctic Blue")).toBe("#7eb8d4");
     expect(hexForColorName("Athletic Gold")).toBe("#d4a017");
+    expect(hexForColorName("NightSkyNavy")).toBe("#1b2a4a");
+    expect(hexForColorName("RevolutionRed")).toBe("#c41e3a");
+    expect(hexForColorName("Beacon Blue")).toBe("#4f8fba");
+    expect(hexForColorName("Lime")).toBe("#b5d33d");
+    expect(hexForColorName("Hunter")).toBe("#355e3b");
     expect(studioColorwayFill({ id: "p-navy", colorName: "Navy" }).hex).toBe(
       "#1b2a4a",
     );
