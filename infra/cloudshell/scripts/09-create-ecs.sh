@@ -226,8 +226,20 @@ secret_has_key() {
 }
 WEB_HAS_STRIPE_WEBHOOK=false
 API_HAS_STRIPE_SECRET=false
+VENDOR_HAS_MEDIA_PASSWORD=false
+API_HAS_MEDIA_PASSWORD=false
 secret_has_key "$WEB_SECRET_ARN" STRIPE_WEBHOOK_SECRET && WEB_HAS_STRIPE_WEBHOOK=true
 secret_has_key "$API_SECRET_ARN" STRIPE_SECRET_KEY && API_HAS_STRIPE_SECRET=true
+# Media is a separate PromoStandards password. Do not send it to Bulk.
+# Only reference the JSON key when it is already present — ECS fails to start
+# if valueFrom points at a missing field.
+if [[ -n "${VENDOR_SECRET_ARN:-}" ]]; then
+  secret_has_key "$VENDOR_SECRET_ARN" SANMAR_MEDIA_PASSWORD && VENDOR_HAS_MEDIA_PASSWORD=true
+fi
+secret_has_key "$API_SECRET_ARN" SANMAR_MEDIA_PASSWORD && API_HAS_MEDIA_PASSWORD=true
+if [[ "$VENDOR_HAS_MEDIA_PASSWORD" != "true" && "$API_HAS_MEDIA_PASSWORD" != "true" ]]; then
+  echo "Note: SANMAR_MEDIA_PASSWORD is not set on the vendor or API secret. getMediaContent colour photos will be skipped. This password does not authorize Bulk Data."
+fi
 
 WEB_TASK="$(jq -nc \
   --arg family "$NAME_PREFIX-web" \
@@ -324,6 +336,8 @@ API_TASK="$(jq -nc \
   --arg from_email "${NOTIFICATIONS_FROM_EMAIL:-}" \
   --arg store_base_domain "${COMMERCE_STOREFRONT_BASE_DOMAIN:-}" \
   --arg stripe_secret "$API_HAS_STRIPE_SECRET" \
+  --arg vendor_has_media "$VENDOR_HAS_MEDIA_PASSWORD" \
+  --arg api_has_media "$API_HAS_MEDIA_PASSWORD" \
   '{
     family:$family,
     networkMode:"awsvpc",
@@ -375,7 +389,11 @@ API_TASK="$(jq -nc \
           {name:"SANMAR_API_PASSWORD",valueFrom:($vendor_secret+":SANMAR_API_PASSWORD::")},
           {name:"SS_ACCOUNT_NUMBER",valueFrom:($vendor_secret+":SS_ACCOUNT_NUMBER::")},
           {name:"SS_API_KEY",valueFrom:($vendor_secret+":SS_API_KEY::")}
-        ] else [] end)),
+        ] else [] end)
+      # PromoStandards Media — same account id, separate SANMAR_MEDIA_PASSWORD.
+      # Prefer the vendor secret; fall back to gwg-*/api if that is where it was stored.
+      + (if $vendor_has_media == "true" then [{name:"SANMAR_MEDIA_PASSWORD",valueFrom:($vendor_secret+":SANMAR_MEDIA_PASSWORD::")}] else [] end)
+      + (if $vendor_has_media != "true" and $api_has_media == "true" then [{name:"SANMAR_MEDIA_PASSWORD",valueFrom:($api_secret+":SANMAR_MEDIA_PASSWORD::")}] else [] end)),
       logConfiguration:{
         logDriver:"awslogs",
         options:{"awslogs-group":$logs,"awslogs-region":$region,"awslogs-stream-prefix":"api"}

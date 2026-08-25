@@ -187,7 +187,8 @@ Map these from `.env.example` (values never committed):
 | `COGNITO_REGION` / `COGNITO_USER_POOL_ID` / `COGNITO_APP_CLIENT_ID` / `COGNITO_APP_CLIENT_SECRET` | Web | Yes when customer auth is live |
 | `AWS_S3_BUCKET` / `AWS_REGION` / optional `AWS_S3_PUBLIC_BASE_URL` | Web | Yes for durable uploads |
 | `SS_ACCOUNT_NUMBER` / `SS_API_KEY` | API | If S&S sync is used |
-| `SANMAR_ACCOUNT_ID` / `SANMAR_LOGIN_EMAIL` (or `SANMAR_API_PASSWORD`) | API | If SanMar sync is used |
+| `SANMAR_ACCOUNT_ID` / `SANMAR_LOGIN_EMAIL` (or `SANMAR_API_PASSWORD`) | API (vendor secret) | If SanMar sync is used. These authenticate Product / Inventory / Pricing / Bulk — not Media. |
+| `SANMAR_MEDIA_PASSWORD` | API (vendor secret, or `gwg-*/api` fallback) | PromoStandards Media colour photos. Separate from Bulk. `09-create-ecs.sh` / `18-retarget-ecs.sh` inject the key only when it is already present on the secret. GitHub Actions secrets are not sent to the API task. |
 | `RESEND_API_KEY` / `CONTACT_FROM_EMAIL` / `CONTACT_TO_EMAIL` | Web | If contact form sends mail |
 | `DEV_ADMIN_TOKEN` | — | **Do not set in production** |
 | `STRIPE_SECRET_KEY` | API (`$NAME_PREFIX/api`) | If card checkout is offered (`sk_test_` on staging) |

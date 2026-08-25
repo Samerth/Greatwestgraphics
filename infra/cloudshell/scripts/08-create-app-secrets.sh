@@ -59,12 +59,25 @@ if aws secretsmanager describe-secret --secret-id "$API_SECRET_NAME" >/dev/null 
   echo "API secret $API_SECRET_NAME already exists; not rotating DATABASE_URL."
 else
   API_JSON="$(jq -nc --arg url "$DATABASE_URL" \
-    '{DATABASE_URL:$url,SS_ACCOUNT_NUMBER:"",SS_API_KEY:"",SANMAR_ACCOUNT_ID:"",SANMAR_LOGIN_EMAIL:""}')"
+    '{DATABASE_URL:$url,SS_ACCOUNT_NUMBER:"",SS_API_KEY:"",SANMAR_ACCOUNT_ID:"",SANMAR_LOGIN_EMAIL:"",SANMAR_MEDIA_PASSWORD:""}')"
   aws secretsmanager create-secret --name "$API_SECRET_NAME" --secret-string "$API_JSON" \
     --tags Key=Project,Value="$PROJECT" Key=Environment,Value="$ENVIRONMENT" >/dev/null
   unset API_JSON
 fi
 unset DATABASE_URL COGNITO_APP_CLIENT_SECRET COGNITO_JSON
+
+# Existing api secrets were created without SANMAR_MEDIA_PASSWORD. Add an
+# empty key so it can be filled later; do not overwrite a value already there.
+if aws secretsmanager describe-secret --secret-id "$API_SECRET_NAME" >/dev/null 2>&1; then
+  CURRENT_API_JSON="$(aws secretsmanager get-secret-value --secret-id "$API_SECRET_NAME" --query SecretString --output text)"
+  if ! jq -e 'has("SANMAR_MEDIA_PASSWORD")' >/dev/null <<< "$CURRENT_API_JSON"; then
+    UPDATED_API_JSON="$(jq '. + {SANMAR_MEDIA_PASSWORD:""}' <<< "$CURRENT_API_JSON")"
+    aws secretsmanager put-secret-value --secret-id "$API_SECRET_NAME" --secret-string "$UPDATED_API_JSON" >/dev/null
+    echo "Added empty SANMAR_MEDIA_PASSWORD key to $API_SECRET_NAME (fill it in; do not print the value)."
+    unset UPDATED_API_JSON
+  fi
+  unset CURRENT_API_JSON
+fi
 
 WEB_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "$WEB_SECRET_NAME" --query ARN --output text)"
 API_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "$API_SECRET_NAME" --query ARN --output text)"
@@ -77,3 +90,5 @@ echo "  $API_SECRET_NAME  (DATABASE_URL + empty vendor placeholders)"
 echo "Retrieve the staff password only in a trusted CloudShell session:"
 echo "  aws secretsmanager get-secret-value --secret-id $WEB_SECRET_NAME --query SecretString --output text | jq -r .STAFF_ADMIN_PASSWORD"
 echo "Put RESEND_API_KEY / SS_* / SANMAR_* into those JSON secrets when you have them."
+echo "SANMAR_MEDIA_PASSWORD is a separate PromoStandards Media password (not Bulk)."
+echo "ECS injects it from VENDOR_SECRET_ARN when that JSON key is set, or from $API_SECRET_NAME as a fallback. GitHub Actions secrets are not sent to the API task."

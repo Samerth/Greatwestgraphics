@@ -1,6 +1,6 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import type { CommerceDatabase } from "../../db/client.js";
-import { ssStyles } from "../../db/schema.js";
+import { ssProducts, ssStyles } from "../../db/schema.js";
 import {
   parseInventoryCsv,
   parseSanmarEdiPair,
@@ -208,6 +208,17 @@ export class SanmarSyncService implements VendorCatalogAdapter {
           styleIds,
           errors,
         );
+        let photos = imagesWritten;
+        // Bulk photos cover the catalog in one call. When Bulk is unauthorized
+        // (or otherwise unavailable), Media can still split colour photos —
+        // capped at SANMAR_MAX_PRODUCTS so we do not hammer every style.
+        if (imagesWritten === 0 && this.client.hasMediaPassword) {
+          photos += await this.enrichMediaForCatalogStyles(
+            ctx.tenantId,
+            styleIds,
+            errors,
+          );
+        }
         const result: SyncRunResult = {
           id: run.id,
           vendor: VENDOR,
@@ -215,7 +226,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
           status: errors.length ? "completed_with_errors" : "completed",
           stylesProcessed: styleIds.length,
           skusUpserted: updated,
-          imagesDownloaded: imagesWritten,
+          imagesDownloaded: photos,
           errors,
           rateLimitRemaining: this.client.rateLimitRemaining,
         };
@@ -384,6 +395,8 @@ export class SanmarSyncService implements VendorCatalogAdapter {
   /**
    * Prefer Bulk Data (1 call/day, qty+price for all parts). Fall back to
    * concurrent per-style inventory + pricing SOAP over catalog style keys.
+   * Bulk "not authorized" is an entitlement miss — do not treat it as a
+   * login failure, and do not send SANMAR_MEDIA_PASSWORD to Bulk.
    */
   private async refreshQtyAndPrice(
     tenantId: string,
@@ -516,6 +529,121 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     return rows
       .map((r) => r.externalKey)
       .filter((k): k is string => Boolean(k));
+  }
+
+  /** Styles that still have at least one storefront-visible colourway. */
+  private async listStorefrontStyleKeys(tenantId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ externalKey: ssStyles.externalKey })
+      .from(ssStyles)
+      .innerJoin(ssProducts, eq(ssProducts.styleUuid, ssStyles.id))
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.vendor, VENDOR),
+          eq(ssProducts.storefrontVisible, true),
+          isNotNull(ssStyles.externalKey),
+        ),
+      );
+    return [
+      ...new Set(
+        rows
+          .map((row) => row.externalKey)
+          .filter((key): key is string => Boolean(key)),
+      ),
+    ];
+  }
+
+  private async listStyleColorNames(
+    tenantId: string,
+    styleKeys: string[],
+  ): Promise<Map<string, string[]>> {
+    const byStyle = new Map<string, string[]>();
+    if (styleKeys.length === 0) return byStyle;
+    const rows = await this.db
+      .select({
+        externalKey: ssStyles.externalKey,
+        colorName: ssProducts.colorName,
+      })
+      .from(ssStyles)
+      .innerJoin(ssProducts, eq(ssProducts.styleUuid, ssStyles.id))
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.vendor, VENDOR),
+          inArray(ssStyles.externalKey, styleKeys),
+        ),
+      );
+    for (const row of rows) {
+      if (!row.externalKey) continue;
+      const list = byStyle.get(row.externalKey) ?? [];
+      list.push(row.colorName);
+      byStyle.set(row.externalKey, list);
+    }
+    return byStyle;
+  }
+
+  /**
+   * When Bulk cannot supply part photos, call getMediaContent for a capped
+   * set of storefront styles. Default cap is SANMAR_MAX_PRODUCTS (50) so a
+   * 400+ style catalog is not crawled in one inventory run.
+   */
+  private async enrichMediaForCatalogStyles(
+    tenantId: string,
+    preferredStyleIds: string[],
+    errors: string[],
+  ): Promise<number> {
+    if (!this.client.hasMediaPassword) return 0;
+    const enrichLimit = Number(process.env.SANMAR_MAX_PRODUCTS || "50");
+    const storefront = await this.listStorefrontStyleKeys(tenantId);
+    const ordered = [
+      ...new Set(
+        [...storefront, ...preferredStyleIds]
+          .map((styleId) => styleId.trim())
+          .filter(Boolean),
+      ),
+    ];
+    const toEnrich = ordered.slice(0, Math.max(0, enrichLimit));
+    if (toEnrich.length === 0) return 0;
+
+    const concurrency = Number(process.env.SANMAR_ENRICH_CONCURRENCY || "4");
+    console.log(
+      `[sanmar] media fallback styles=${toEnrich.length}/${ordered.length} (cap=${enrichLimit}, concurrency=${concurrency})`,
+    );
+
+    const colorsByStyle = await this.listStyleColorNames(tenantId, toEnrich);
+    const colorPatches: ReturnType<typeof buildColorwayMediaPatches> = [];
+
+    await mapPool(toEnrich, concurrency, async (styleId) => {
+      try {
+        const urls = await this.client.getMediaContent(styleId);
+        if (!urls.length) return;
+        colorPatches.push(
+          ...buildColorwayMediaPatches({
+            styleKey: styleId,
+            colorNames: colorsByStyle.get(styleId) ?? [],
+            mediaUrls: urls,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof SanmarAuthError) throw error;
+        errors.push(
+          `media ${styleId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    });
+
+    const colourPhotos = await this.writer.patchColorwayMedia(
+      tenantId,
+      VENDOR,
+      colorPatches,
+    );
+    console.log(
+      `[sanmar] media fallback colour photos written=${colourPhotos}/${colorPatches.length}`,
+    );
+    return colourPhotos;
   }
 
   /**

@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildGetBulkDataRequestXml,
+  buildGetMediaContentRequestXml,
+  createSanmarClientFromEnv,
   extractVendorHex,
   isBulkLimitResponse,
+  isBulkUnauthorizedResponse,
   NS_BULK,
   parseConfigurationAndPricingXml,
   parseInventoryLevelsXml,
@@ -211,6 +216,65 @@ describe("getBulkData request / SOAP faults", () => {
         </ServiceMessage>
       </GetBulkDataResponse>`;
     expect(isBulkLimitResponse(xml)).toBe(true);
+  });
+
+  it("treats Bulk 'not authorized user' as an entitlement miss, not the daily limit", () => {
+    const xml = `
+      <GetBulkDataResponse>
+        <ServiceMessage>
+          <code>104</code>
+          <description>You are not authorized user for this call</description>
+        </ServiceMessage>
+      </GetBulkDataResponse>`;
+    expect(isBulkUnauthorizedResponse(xml)).toBe(true);
+    expect(isBulkLimitResponse(xml)).toBe(false);
+  });
+});
+
+describe("Media vs Bulk credentials", () => {
+  it("sends the login e-mail to Bulk and the media password only to Media", () => {
+    const bulk = buildGetBulkDataRequestXml("161", "buyer@example.com");
+    const media = buildGetMediaContentRequestXml(
+      "161",
+      "edi-media-password",
+      "108085",
+    );
+    expect(bulk).toContain("<password>buyer@example.com</password>");
+    expect(bulk).not.toContain("edi-media-password");
+    expect(media).toContain(">edi-media-password</password>");
+    expect(media).not.toContain("buyer@example.com");
+  });
+
+  it("reads SANMAR_MEDIA_PASSWORD from env for Media only", () => {
+    const withMedia = createSanmarClientFromEnv({
+      SANMAR_ACCOUNT_ID: "161",
+      SANMAR_LOGIN_EMAIL: "buyer@example.com",
+      SANMAR_MEDIA_PASSWORD: "edi-media-password",
+    });
+    const withoutMedia = createSanmarClientFromEnv({
+      SANMAR_ACCOUNT_ID: "161",
+      SANMAR_LOGIN_EMAIL: "buyer@example.com",
+    });
+    expect(withMedia?.hasMediaPassword).toBe(true);
+    expect(withoutMedia?.hasMediaPassword).toBe(false);
+  });
+
+  it("maps SANMAR_MEDIA_PASSWORD in the ECS vendor-secret task definition", () => {
+    const root = resolve(import.meta.dirname, "../../../../../");
+    const ecs = readFileSync(
+      resolve(root, "infra/cloudshell/scripts/09-create-ecs.sh"),
+      "utf8",
+    );
+    const retarget = readFileSync(
+      resolve(root, "infra/cloudshell/scripts/18-retarget-ecs.sh"),
+      "utf8",
+    );
+    expect(ecs).toContain('name:"SANMAR_MEDIA_PASSWORD"');
+    expect(ecs).toContain("SANMAR_ACCOUNT_ID");
+    expect(ecs).not.toMatch(
+      /buildGetBulkDataRequestXml\([\s\S]*SANMAR_MEDIA_PASSWORD/,
+    );
+    expect(retarget).toContain("SANMAR_MEDIA_PASSWORD");
   });
 });
 

@@ -133,7 +133,7 @@ the environment's config, or in its state file for the ARNs.
 | `NOTIFICATIONS_FROM_EMAIL` | Falls back to `noreply@greatwestgraphics.com`, which delivers only once that domain is verified in Resend — sends fail loudly until it is, rather than reaching nobody quietly |
 | `SERVICE_TOKEN_SECRET_ARN` | The commerce API refuses every tenant-scoped request in production, so the catalogue is empty |
 | `ADMIN_TOKEN_SECRET_ARN` | Admin API routes are not mounted at all |
-| `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import |
+| `VENDOR_SECRET_ARN` | No vendor credentials, so catalogue sync has nothing to import. The API task maps `SANMAR_ACCOUNT_ID` / `SANMAR_LOGIN_EMAIL` / `SANMAR_API_PASSWORD` / S&S keys from this secret. `SANMAR_MEDIA_PASSWORD` is mapped only when that JSON key is already present — it is a separate PromoStandards Media password and does not authorize Bulk Data. |
 | `COMMERCE_DEFAULT_TENANT_ID` / `_ACCOUNT_ID` / `_STORE_ID` | The storefront has no store to be and serves a marketing shell with no products. Written into state by `16-create-store.sh` rather than set by hand |
 | `COMMERCE_DEFAULT_STORE_SLUG` / `_STORE_NAME` | The pinned store shows the built-in `great-west-graphics` / `Great West Graphics` labels rather than the row's own |
 | `COMMERCE_STOREFRONT_BASE_DOMAIN` | The commerce API resolves a host only against a registered `stores.custom_domain`. Only a stack serving several stores off one wildcard domain needs it |

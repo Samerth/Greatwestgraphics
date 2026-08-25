@@ -47,6 +47,11 @@ export class SanmarBulkLimitError extends Error {
   readonly code = "SANMAR_BULK_LIMIT";
 }
 
+/** Bulk Data entitlement miss — not a login-email failure, not Media. */
+export class SanmarBulkUnauthorizedError extends Error {
+  readonly code = "SANMAR_BULK_UNAUTHORIZED";
+}
+
 export type SanmarProduct = {
   productId: string;
   productName: string;
@@ -232,6 +237,14 @@ export function isBulkLimitResponse(xml: string): boolean {
 }
 
 /**
+ * Bulk Data entitlement miss. The account can still call Product / Inventory /
+ * Pricing / Media. The media password does not fix this.
+ */
+export function isBulkUnauthorizedResponse(xml: string): boolean {
+  return /not authorized user for this call/i.test(xml);
+}
+
+/**
  * Qualified GetBulkDataRequest. Without this xmlns, ATC's PHP SOAP server
  * returns HTTP 500 / "Procedure 'GetBulkDataRequest' not present".
  */
@@ -244,6 +257,27 @@ export function buildGetBulkDataRequestXml(
         <id>${escapeXml(accountId)}</id>
         <password>${escapeXml(loginEmail)}</password>
       </GetBulkDataRequest>`;
+}
+
+/**
+ * PromoStandards Media uses SANMAR_MEDIA_PASSWORD, not the login e-mail.
+ * Do not send this password to Bulk — Bulk will still say unauthorized.
+ */
+export function buildGetMediaContentRequestXml(
+  accountId: string,
+  mediaPassword: string,
+  productId: string,
+): string {
+  return `<GetMediaContentRequest xmlns="${NS_MEDIA}">
+        <wsVersion xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">1.1.0</wsVersion>
+        <id xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(accountId)}</id>
+        <password xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(mediaPassword)}</password>
+        <cultureName xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">en</cultureName>
+        <mediaType xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">Image</mediaType>
+        <productId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(productId)}</productId>
+        <partId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/"></partId>
+        <classType>1006</classType>
+      </GetMediaContentRequest>`;
 }
 
 /**
@@ -763,21 +797,17 @@ export class SanmarClient {
    * Requires mediaPassword. Returns [] when password is unset.
    */
   async getMediaContent(productId: string): Promise<string[]> {
-    if (!this.options.mediaPassword?.trim()) return [];
+    const mediaPassword = this.options.mediaPassword?.trim();
+    if (!mediaPassword) return [];
 
     const xml = await this.postSoap(
       this.endpoints.media,
       "getMediaContent",
-      `<GetMediaContentRequest xmlns="${NS_MEDIA}">
-        <wsVersion xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">1.1.0</wsVersion>
-        <id xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(this.options.accountId)}</id>
-        <password xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(this.options.mediaPassword)}</password>
-        <cultureName xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">en</cultureName>
-        <mediaType xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">Image</mediaType>
-        <productId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">${escapeXml(productId)}</productId>
-        <partId xmlns="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/"></partId>
-        <classType>1006</classType>
-      </GetMediaContentRequest>`,
+      buildGetMediaContentRequestXml(
+        this.options.accountId,
+        mediaPassword,
+        productId,
+      ),
     );
     this.assertAuth(xml);
     return parseMediaContentXml(xml);
@@ -808,7 +838,27 @@ export class SanmarClient {
             "Bulk Data daily limit reached (1 call/day)",
         );
       }
+      const unauthorizedText =
+        error instanceof Error
+          ? `${error.message} ${
+              error instanceof SanmarSOAPError &&
+              typeof error.details === "string"
+                ? error.details
+                : ""
+            }`
+          : String(error);
+      if (isBulkUnauthorizedResponse(unauthorizedText)) {
+        throw new SanmarBulkUnauthorizedError(
+          "You are not authorized user for this call (Bulk Data is a separate SanMar entitlement; SANMAR_MEDIA_PASSWORD does not unlock Bulk)",
+        );
+      }
       throw error;
+    }
+    if (isBulkUnauthorizedResponse(xml)) {
+      throw new SanmarBulkUnauthorizedError(
+        firstTag(xml, "description") ||
+          "You are not authorized user for this call (Bulk Data is a separate SanMar entitlement; SANMAR_MEDIA_PASSWORD does not unlock Bulk)",
+      );
     }
     this.assertAuth(xml);
 

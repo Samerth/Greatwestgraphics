@@ -63,7 +63,52 @@ raw = subprocess.check_output(
 td = json.loads(raw)["taskDefinition"]
 if not td.get("containerDefinitions"):
     sys.exit(f"{family} has no container definitions")
-td["containerDefinitions"][0]["image"] = image
+container = td["containerDefinitions"][0]
+container["image"] = image
+
+# Staging/prod already inject SANMAR_ACCOUNT_ID from the vendor secret, but
+# SANMAR_MEDIA_PASSWORD was never mapped. Attach it when the JSON key exists
+# so a retarget (not only a full 09 re-run) actually gives Media to the API.
+# Do not print secret values. Skip quietly if the key is absent or unreadable.
+if family.endswith("-api"):
+    secrets = container.setdefault("secrets", [])
+    if not any(item.get("name") == "SANMAR_MEDIA_PASSWORD" for item in secrets):
+        candidates = []
+        for item in secrets:
+            name = item.get("name") or ""
+            value_from = item.get("valueFrom") or ""
+            for key in ("SANMAR_ACCOUNT_ID", "DATABASE_URL"):
+                suffix = f":{key}::"
+                if name == key and value_from.endswith(suffix):
+                    candidates.append(value_from[: -len(suffix)])
+        seen = set()
+        for secret_id in candidates:
+            if secret_id in seen:
+                continue
+            seen.add(secret_id)
+            try:
+                payload = subprocess.check_output(
+                    [
+                        "aws", "secretsmanager", "get-secret-value",
+                        "--secret-id", secret_id,
+                        "--region", region,
+                        "--query", "SecretString",
+                        "--output", "text",
+                    ],
+                    text=True,
+                )
+                data = json.loads(payload)
+            except (subprocess.CalledProcessError, json.JSONDecodeError):
+                continue
+            password = data.get("SANMAR_MEDIA_PASSWORD")
+            if isinstance(password, str) and password.strip():
+                secrets.append({
+                    "name": "SANMAR_MEDIA_PASSWORD",
+                    "valueFrom": f"{secret_id}:SANMAR_MEDIA_PASSWORD::",
+                })
+                print(f"{family} will inject SANMAR_MEDIA_PASSWORD from an existing secret")
+                break
+
 for k in (
     "taskDefinitionArn",
     "revision",
