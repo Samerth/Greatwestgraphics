@@ -1974,7 +1974,7 @@ export function DesignStudio({
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row md:items-start min-w-0">
+        <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
         <div className="p-sp-3 min-h-[240px] sm:min-h-[300px] overflow-x-auto flex-1 min-w-0">
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex items-center justify-center">
@@ -2166,7 +2166,7 @@ export function DesignStudio({
           </div>
         </div>
         {(selectedText || selectedArtwork) && (
-          <div className="border-t border-white/10 md:border-t-0 md:border-l md:w-[min(260px,40%)] md:shrink-0 md:max-h-[min(36rem,calc(100dvh-8rem))] md:overflow-y-auto">
+          <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(260px,36%)] lg:shrink-0 lg:max-h-[min(36rem,calc(100dvh-8rem))] lg:overflow-y-auto">
             <StudioElementEditor
               kind={selectedText ? "text" : "artwork"}
               activeSide={activeSide}

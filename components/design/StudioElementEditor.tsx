@@ -272,7 +272,7 @@ export function StudioElementEditor({
       ) : null}
 
       <div className="flex flex-wrap gap-1.5">
-        <EditorAction onClick={onCenter}>Center</EditorAction>
+        <EditorAction onClick={onCenter}>Center chest</EditorAction>
         <EditorAction onClick={onForward}>Forward</EditorAction>
         <EditorAction onClick={onBack}>Back</EditorAction>
         <EditorAction onClick={onDuplicate}>Duplicate</EditorAction>
