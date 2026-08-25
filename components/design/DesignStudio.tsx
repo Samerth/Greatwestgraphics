@@ -403,8 +403,8 @@ export function DesignStudio({
       quoteMethods[0]?.key ??
       "screenPrint",
   );
-  // Quotes still need a colour count. Do not render "Colours in the design"
-  // chips — shoppers read those as garment colour, not ink/screen count.
+  // Quotes still need a colour count. Do not render ink-count chips in the
+  // finish panel — shoppers read those as garment colour, not screen count.
   const [colours] = useState(
     pricingConfig.storefront?.defaultColours ?? 1,
   );
