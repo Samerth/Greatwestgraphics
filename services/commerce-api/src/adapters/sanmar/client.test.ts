@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGetBulkDataRequestXml,
   extractVendorHex,
+  isBulkLimitResponse,
+  NS_BULK,
   parseConfigurationAndPricingXml,
   parseInventoryLevelsXml,
   parseMediaContentXml,
@@ -9,6 +12,7 @@ import {
   parseProductColorBlocks,
   parseSellableProductId,
   productPartsToSkus,
+  soapFaultString,
 } from "./client.js";
 
 describe("parseSellableProductId", () => {
@@ -179,6 +183,34 @@ https://media.example.com/side.jpg</url>
     expect(parseMediaContentXml(xml)[0]).toBe(
       "https://media.example.com/primary.jpg",
     );
+  });
+});
+
+describe("getBulkData request / SOAP faults", () => {
+  it("qualifies GetBulkDataRequest with the ATC Bulk namespace", () => {
+    const xml = buildGetBulkDataRequestXml("161", "buyer@example.com");
+    expect(xml).toContain(`xmlns="${NS_BULK}"`);
+    expect(xml).toContain("<id>161</id>");
+    expect(xml).toContain("<password>buyer@example.com</password>");
+  });
+
+  it("reads the SanMar 500 fault when the request is unqualified", () => {
+    // Live ATC response to <GetBulkDataRequest> without xmlns.
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>Procedure 'GetBulkDataRequest' not present</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
+    expect(soapFaultString(xml)).toBe("Procedure 'GetBulkDataRequest' not present");
+    expect(isBulkLimitResponse(xml)).toBe(false);
+  });
+
+  it("treats service code 125 as the Bulk daily limit, not a 500", () => {
+    const xml = `
+      <GetBulkDataResponse>
+        <ServiceMessage>
+          <code>125</code>
+          <description>Bulk Data daily limit reached</description>
+        </ServiceMessage>
+      </GetBulkDataResponse>`;
+    expect(isBulkLimitResponse(xml)).toBe(true);
   });
 });
 

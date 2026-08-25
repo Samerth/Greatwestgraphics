@@ -157,6 +157,8 @@ const NS_INV = "http://www.promostandards.org/WSDL/Inventory/2.0.0/";
 const NS_PRICE =
   "http://www.promostandards.org/WSDL/PricingAndConfiguration/1.0.0/";
 const NS_MEDIA = "http://www.promostandards.org/WSDL/MediaService/1.0.0/";
+/** ATC Bulk Data WSDL targetNamespace (elementFormDefault=qualified). */
+export const NS_BULK = "https://edi.atc-apparel.com/bulk-data/";
 
 function splitCsvLine(line: string): string[] {
   return line.split(",").map((v) => v.trim());
@@ -215,6 +217,33 @@ function firstVendorHex(block: string): string | undefined {
 
 function serviceCode(xml: string): string | undefined {
   return firstTag(xml, "code");
+}
+
+export function soapFaultString(xml: string): string | undefined {
+  return firstTag(xml, "faultstring") || firstTag(xml, "Text");
+}
+
+/** SOAP 200/500 body that means Bulk already ran today (not a missing xmlns). */
+export function isBulkLimitResponse(xml: string): boolean {
+  return (
+    /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
+    serviceCode(xml) === "125"
+  );
+}
+
+/**
+ * Qualified GetBulkDataRequest. Without this xmlns, ATC's PHP SOAP server
+ * returns HTTP 500 / "Procedure 'GetBulkDataRequest' not present".
+ */
+export function buildGetBulkDataRequestXml(
+  accountId: string,
+  loginEmail: string,
+): string {
+  return `<GetBulkDataRequest xmlns="${NS_BULK}">
+        <wsVersion>1.0.0</wsVersion>
+        <id>${escapeXml(accountId)}</id>
+        <password>${escapeXml(loginEmail)}</password>
+      </GetBulkDataRequest>`;
 }
 
 /**
@@ -758,21 +787,32 @@ export class SanmarClient {
    * Bulk Data — limited to ~1 call/day. Returns part-level qty + price + base image.
    */
   async getBulkProducts(): Promise<SanmarBulkProduct[]> {
-    const xml = await this.postSoap(
-      this.endpoints.bulk,
-      "getBulkData",
-      `<GetBulkDataRequest>
-        <wsVersion>1.0.0</wsVersion>
-        <id>${escapeXml(this.options.accountId)}</id>
-        <password>${escapeXml(this.options.loginEmail)}</password>
-      </GetBulkDataRequest>`,
-    );
+    let xml: string;
+    try {
+      xml = await this.postSoap(
+        this.endpoints.bulk,
+        "getBulkData",
+        buildGetBulkDataRequestXml(
+          this.options.accountId,
+          this.options.loginEmail,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof SanmarSOAPError &&
+        typeof error.details === "string" &&
+        isBulkLimitResponse(error.details)
+      ) {
+        throw new SanmarBulkLimitError(
+          firstTag(error.details, "description") ||
+            "Bulk Data daily limit reached (1 call/day)",
+        );
+      }
+      throw error;
+    }
     this.assertAuth(xml);
 
-    if (
-      /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
-      serviceCode(xml) === "125"
-    ) {
+    if (isBulkLimitResponse(xml)) {
       throw new SanmarBulkLimitError(
         firstTag(xml, "description") ||
           "Bulk Data daily limit reached (1 call/day)",
@@ -988,8 +1028,11 @@ export class SanmarClient {
       );
     }
     if (!response.ok) {
+      const fault = soapFaultString(text);
       throw new SanmarSOAPError(
-        `SOAP call failed: ${response.status} ${soapAction}`,
+        fault
+          ? `SOAP call failed: ${response.status} ${soapAction} — ${fault}`
+          : `SOAP call failed: ${response.status} ${soapAction}`,
         text.slice(0, 2000),
       );
     }

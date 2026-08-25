@@ -67,7 +67,7 @@ Also required by SanMar: static IP whitelist + EDI agreement (`edi@sanmarcanada.
 | Button | When to use | What it does |
 |--------|-------------|--------------|
 | **Full sync** | First import, or weekly catalog refresh | 1) Import all ACTIVE sellable parts 2) Enrich names + **per-colour photos** (capped) 3) Refresh **stock + CUSTOMER price + Bulk part photos** |
-| **Update stock & price** | Daily stock/price update after catalog exists, or to backfill SanMar colour photos | Bulk Data qty+price+part `<image>` (1 call/day), else per-style inventory + pricing SOAP (no photos) |
+| **Update stock & price** | Daily stock/price update after catalog exists, or to backfill SanMar colour photos | Bulk Data qty+price+part `<image>` (1 call/day), else per-style inventory + pricing SOAP (no photos). A Bulk HTTP 500 with `Procedure 'GetBulkDataRequest' not present` is a client xmlns bug, not the daily limit — qty/price still updates via the fallback. |
 | **CSV import** | Offline / EDI file drop | Paste products+skus or inventory CSV |
 
 Storefront shoppers never run sync — they only see products after staff sync + soft-hide controls on Catalog.
@@ -77,9 +77,9 @@ Storefront shoppers never run sync — they only see products after staff sync +
 1. `getProductSellable` (`ACTIVE` or `ALL`) — upsert **all** active parts (style code as name fallback; qty starts at 0)
 2. Optional `getProduct` + `getMediaContent` for up to `SANMAR_MAX_PRODUCTS` styles (default 50). Names/brand go on the style; the media bag and each ProductPart `<url>` are matched onto `ss_products.color_front_image_url` (side/back when the filename names the angle). `urls[0]` is only the style-level fallback.
 3. Qty + price refresh:
-   - Prefer **Bulk Data** (qty + price + per-part `<image>` for all parts; **1 call/day**). Images are written onto the matching colourway — they are no longer dropped.
-   - Else concurrent `getInventoryLevels` + `getConfigurationAndPricing` (Customer / CAD / Blank) over catalog styles (no photos)
-4. Standalone **Update stock & price** runs step 3 only. After a code deploy, that Bulk path is enough to backfill existing SanMar colour photos. Existing rows are not rewritten until a sync runs.
+   - Prefer **Bulk Data** (qty + price + per-part `<image>` for all parts; **1 call/day**). The request must set `xmlns="https://edi.atc-apparel.com/bulk-data/"` or ATC returns HTTP 500 `Procedure 'GetBulkDataRequest' not present`. Images are written onto the matching colourway — they are no longer dropped.
+   - Else concurrent `getInventoryLevels` + `getConfigurationAndPricing` (Customer / CAD / Blank) over catalog styles (no photos). That fallback still writes qty/price; `completed_with_errors` is expected when Bulk failed.
+4. Standalone **Update stock & price** runs step 3 only. After a code deploy, that Bulk path is enough to backfill existing SanMar colour photos. Existing rows are not rewritten until a sync runs. Do not retry Bulk the same day after a **successful** Bulk call. A 500 “procedure not present” does not consume the daily limit.
 
 Sellable `productId` values look like `NF0A529K(TNF Black,S,)` — parsed into style/color/size; trailing `S|M|X|C` means discontinued.
 

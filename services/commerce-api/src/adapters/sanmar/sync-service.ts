@@ -157,11 +157,12 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       );
 
       const stockErrors: string[] = [];
-      const stockUpdated = await this.refreshQtyAndPrice(
-        ctx.tenantId,
-        activeParts.map((p) => p.styleId),
-        stockErrors,
-      );
+      const { updated: stockUpdated, imagesWritten } =
+        await this.refreshQtyAndPrice(
+          ctx.tenantId,
+          activeParts.map((p) => p.styleId),
+          stockErrors,
+        );
       console.log(`[sanmar] stock/price rows updated=${stockUpdated}`);
 
       const allErrors = [...errors, ...enrichErrors, ...stockErrors];
@@ -172,7 +173,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         status: allErrors.length ? "completed_with_errors" : "completed",
         stylesProcessed,
         skusUpserted: skusUpserted + stockUpdated,
-        imagesDownloaded: 0,
+        imagesDownloaded: imagesWritten,
         errors: allErrors,
         rateLimitRemaining: this.client.rateLimitRemaining,
       };
@@ -202,7 +203,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         items = parseInventoryCsv(ctx.csvContent);
       } else {
         const styleIds = await this.listCatalogStyleKeys(ctx.tenantId);
-        const updated = await this.refreshQtyAndPrice(
+        const { updated, imagesWritten } = await this.refreshQtyAndPrice(
           ctx.tenantId,
           styleIds,
           errors,
@@ -214,7 +215,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
           status: errors.length ? "completed_with_errors" : "completed",
           stylesProcessed: styleIds.length,
           skusUpserted: updated,
-          imagesDownloaded: 0,
+          imagesDownloaded: imagesWritten,
           errors,
           rateLimitRemaining: this.client.rateLimitRemaining,
         };
@@ -388,7 +389,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     tenantId: string,
     preferredStyleIds: string[],
     errors: string[],
-  ): Promise<number> {
+  ): Promise<{ updated: number; imagesWritten: number }> {
     // 1) Bulk Data path
     try {
       const bulk = await this.client.getBulkProducts();
@@ -413,7 +414,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       console.log(
         `[sanmar] bulk colour photos written=${imagesWritten}/${imagePatches.length}`,
       );
-      return updated;
+      return { updated, imagesWritten };
     } catch (error) {
       if (error instanceof SanmarAuthError) throw error;
       const message =
@@ -491,14 +492,14 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       }
     });
 
-    if (items.length === 0) return 0;
+    if (items.length === 0) return { updated: 0, imagesWritten: 0 };
     const { updated, errors: writeErrors } = await this.writer.updateInventory(
       tenantId,
       VENDOR,
       items,
     );
     errors.push(...writeErrors);
-    return updated;
+    return { updated, imagesWritten: 0 };
   }
 
   private async listCatalogStyleKeys(tenantId: string): Promise<string[]> {
