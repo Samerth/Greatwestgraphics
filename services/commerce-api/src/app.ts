@@ -1677,8 +1677,20 @@ export function buildApp(input: {
         csvInventory: body.csvInventory,
       };
 
+      const failInBackground = (error: unknown) => {
+        request.log.error(
+          { err: error, vendor: body.vendor, type: body.type },
+          "catalog sync failed after accept",
+        );
+      };
+
+      // Full / inventory jobs run for minutes (SanMar SOAP, S&S rate limits).
+      // The Next admin client cannot wait that out — it used to look like the
+      // click did nothing, then fail the POST. Accept after validation and
+      // write progress to sync_runs; do not change adapter business logic.
       if (body.type === "inventory") {
-        return adapter.runInventorySync(ctx);
+        void adapter.runInventorySync(ctx).catch(failInBackground);
+        return { accepted: true, vendor: body.vendor, type: body.type };
       }
       if (body.type === "csv_import") {
         if (!adapter.importCsv) {
@@ -1691,7 +1703,8 @@ export function buildApp(input: {
       // Keep requireSsClient side-effect for clearer error when SS selected
       // without credentials (registry also checks, this preserves old message).
       if (body.vendor === "ss_activewear") requireSsClient();
-      return adapter.runFullSync(ctx);
+      void adapter.runFullSync(ctx).catch(failInBackground);
+      return { accepted: true, vendor: body.vendor, type: body.type };
     });
   }
 

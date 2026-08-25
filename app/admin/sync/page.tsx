@@ -1,7 +1,6 @@
-import {
-  runCsvImportAction,
-  runSyncAction,
-} from "@/app/admin/actions";
+import { runCsvImportAction } from "@/app/admin/actions";
+import { AdminPendingSubmit } from "@/components/admin/AdminPendingSubmit";
+import { CatalogSyncPanel } from "@/components/admin/CatalogSyncPanel";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import Link from "next/link";
 
@@ -115,211 +114,94 @@ export default async function AdminSyncPage() {
         </p>
       )}
 
-      <section className="space-y-3">
-        <h2 className="font-display font-bold text-xl m-0">Vendors</h2>
-        {vendors.map((vendor) => {
-          const guidance = vendorGuidance(vendor.key);
-          return (
-            <article
-              key={vendor.key}
-              className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3"
-            >
-              <div className="flex flex-wrap justify-between gap-2">
-                <div>
-                  <p className="font-semibold m-0">{vendor.displayName}</p>
-                  <p className="text-sm text-text-secondary m-0 mt-1">
-                    {vendor.configured ? "Ready to sync" : "Not configured"}
-                    {vendor.notes ? ` · ${vendor.notes}` : ""}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {vendor.capabilities.fullSync && (
-                    <form
-                      action={async () => {
-                        "use server";
-                        await runSyncAction("full", vendor.key);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="bg-accent text-white font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
-                        disabled={!vendor.configured && vendor.key !== "csv"}
-                      >
-                        {guidance.fullLabel}
-                      </button>
-                    </form>
-                  )}
-                  {vendor.capabilities.inventorySync && (
-                    <form
-                      action={async () => {
-                        "use server";
-                        await runSyncAction("inventory", vendor.key);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="border border-border font-bold px-3 py-1.5 rounded-sm text-sm disabled:opacity-50"
-                        disabled={!vendor.configured && vendor.key !== "csv"}
-                      >
-                        {guidance.stockLabel}
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2 text-sm text-text-secondary">
-                {vendor.capabilities.fullSync && (
-                  <p className="m-0">
-                    <span className="font-semibold text-text-primary">
-                      {guidance.fullLabel}:
-                    </span>{" "}
-                    {guidance.fullWhen}
-                  </p>
-                )}
-                {vendor.capabilities.inventorySync && (
-                  <p className="m-0">
-                    <span className="font-semibold text-text-primary">
-                      {guidance.stockLabel}:
-                    </span>{" "}
-                    {guidance.stockWhen}
-                  </p>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-display font-bold text-xl m-0">
-          CSV fallback (optional)
-        </h2>
-        <p className="text-sm text-text-secondary m-0">
-          Only needed when live API sync is unavailable or you have a vendor
-          file drop. Prefer the vendor buttons above for SanMar and S&amp;S.
-          Paste a GWG canonical CSV, or SanMar <code>products.csv</code> +{" "}
-          <code>skus.csv</code>. Use a custom vendor key (e.g.{" "}
-          <code>acme_blanks</code>) so a future partner stays namespaced.
-        </p>
-        <form action={runCsvImportAction} className="space-y-3 border border-border rounded-md p-sp-3 bg-bg-raised">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-sm block">
-              <span className="font-semibold">Vendor</span>
-              <select
-                name="vendor"
-                defaultValue="csv"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
-              >
-                <option value="csv">Generic CSV</option>
-                <option value="sanmar">Sanmar (file paste)</option>
-              </select>
-            </label>
-            <label className="text-sm block">
-              <span className="font-semibold">Custom vendor key</span>
-              <input
-                name="vendorKey"
-                placeholder="optional, e.g. acme_blanks"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm block">
-              <span className="font-semibold">Mode</span>
-              <select
-                name="mode"
-                defaultValue="full"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
-              >
-                <option value="full">Full catalog from CSV</option>
-                <option value="inventory">Stock &amp; price from CSV only</option>
-              </select>
-            </label>
-          </div>
-          <label className="text-sm block">
-            <span className="font-semibold">Canonical CSV (or inventory CSV)</span>
-            <textarea
-              name="csvContent"
-              rows={6}
-              placeholder="style_key,brand_name,style_name,color_name,size_name,sku_key,sku,qty,price"
-              className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm block">
-              <span className="font-semibold">Sanmar products.csv (optional)</span>
-              <textarea
-                name="csvProducts"
-                rows={4}
-                placeholder="productId,productName,brandName,category,price,imageUrl"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-            <label className="text-sm block">
-              <span className="font-semibold">Sanmar skus.csv (optional)</span>
-              <textarea
-                name="csvSkus"
-                rows={4}
-                placeholder="skuId,productId,sku,colorName,sizeName,quantity,price,imageUrl"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-          </div>
-          <button
-            type="submit"
-            className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-          >
-            Import CSV
-          </button>
-        </form>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="font-display font-bold text-xl m-0">Recent runs</h2>
-        <p className="text-sm text-text-secondary m-0">
-          Wait for <b>completed</b> (or read errors if{" "}
-          <b>completed_with_errors</b>). Then verify results in{" "}
-          <Link href="/admin/catalog" className="text-accent font-bold">
-            Catalog
-          </Link>
-          .
-        </p>
-        {runs.length === 0 && (
-          <p className="text-sm text-text-secondary m-0">No runs logged yet.</p>
-        )}
-        {runs.map((run) => (
-          <article
-            key={String(run.id)}
-            className="border border-border rounded-md p-sp-3 text-sm bg-bg-raised"
-          >
-            <div className="flex flex-wrap justify-between gap-2">
-              <p className="font-semibold m-0">
-                {run.vendor ? `${String(run.vendor)} · ` : ""}
-                {String(run.type)} · {String(run.status)}
-              </p>
-              <p className="text-text-tertiary m-0">
-                {run.startedAt
-                  ? new Date(String(run.startedAt)).toLocaleString("en-CA")
-                  : ""}
-              </p>
+      <CatalogSyncPanel
+        vendors={vendors.map((vendor) => ({
+          ...vendor,
+          ...vendorGuidance(vendor.key),
+        }))}
+        initialRuns={runs}
+      >
+        <section className="space-y-3">
+          <h2 className="font-display font-bold text-xl m-0">
+            CSV fallback (optional)
+          </h2>
+          <p className="text-sm text-text-secondary m-0">
+            Only needed when live API sync is unavailable or you have a vendor
+            file drop. Prefer the vendor buttons above for SanMar and S&amp;S.
+            Paste a GWG canonical CSV, or SanMar <code>products.csv</code> +{" "}
+            <code>skus.csv</code>. Use a custom vendor key (e.g.{" "}
+            <code>acme_blanks</code>) so a future partner stays namespaced.
+          </p>
+          <form action={runCsvImportAction} className="space-y-3 border border-border rounded-md p-sp-3 bg-bg-raised">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-sm block">
+                <span className="font-semibold">Vendor</span>
+                <select
+                  name="vendor"
+                  defaultValue="csv"
+                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
+                >
+                  <option value="csv">Generic CSV</option>
+                  <option value="sanmar">Sanmar (file paste)</option>
+                </select>
+              </label>
+              <label className="text-sm block">
+                <span className="font-semibold">Custom vendor key</span>
+                <input
+                  name="vendorKey"
+                  placeholder="optional, e.g. acme_blanks"
+                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5"
+                />
+              </label>
+              <label className="text-sm block">
+                <span className="font-semibold">Mode</span>
+                <select
+                  name="mode"
+                  defaultValue="full"
+                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
+                >
+                  <option value="full">Full catalog from CSV</option>
+                  <option value="inventory">Stock &amp; price from CSV only</option>
+                </select>
+              </label>
             </div>
-            <p className="mt-2 mb-0 text-text-secondary">
-              styles {String(run.stylesProcessed ?? "—")} · skus{" "}
-              {String(run.skusUpserted ?? "—")} · images{" "}
-              {String(run.imagesDownloaded ?? "—")}
-              {run.rateLimitRemaining != null
-                ? ` · rate-limit ${String(run.rateLimitRemaining)}`
-                : ""}
-            </p>
-            {run.errorSummary ? (
-              <pre className="mt-2 mb-0 text-xs whitespace-pre-wrap text-red-800">
-                {typeof run.errorSummary === "string"
-                  ? run.errorSummary
-                  : JSON.stringify(run.errorSummary, null, 2)}
-              </pre>
-            ) : null}
-          </article>
-        ))}
-      </section>
+            <label className="text-sm block">
+              <span className="font-semibold">Canonical CSV (or inventory CSV)</span>
+              <textarea
+                name="csvContent"
+                rows={6}
+                placeholder="style_key,brand_name,style_name,color_name,size_name,sku_key,sku,qty,price"
+                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm block">
+                <span className="font-semibold">Sanmar products.csv (optional)</span>
+                <textarea
+                  name="csvProducts"
+                  rows={4}
+                  placeholder="productId,productName,brandName,category,price,imageUrl"
+                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
+                />
+              </label>
+              <label className="text-sm block">
+                <span className="font-semibold">Sanmar skus.csv (optional)</span>
+                <textarea
+                  name="csvSkus"
+                  rows={4}
+                  placeholder="skuId,productId,sku,colorName,sizeName,quantity,price,imageUrl"
+                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
+                />
+              </label>
+            </div>
+            <AdminPendingSubmit
+              idleLabel="Import CSV"
+              pendingLabel="Importing…"
+              className="bg-accent text-white font-bold px-4 py-2 rounded-sm disabled:opacity-60"
+            />
+          </form>
+        </section>
+      </CatalogSyncPanel>
     </div>
   );
 }
