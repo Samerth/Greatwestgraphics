@@ -46,7 +46,6 @@ import {
 } from "@gwg/pricing";
 import {
   STITCH_PRESETS,
-  colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
@@ -404,7 +403,7 @@ export function DesignStudio({
       quoteMethods[0]?.key ??
       "screenPrint",
   );
-  const [colours, setColours] = useState(
+  const [colours] = useState(
     pricingConfig.storefront?.defaultColours ?? 1,
   );
   const [stitchPreset, setStitchPreset] = useState<StitchPresetId>("medium");
@@ -2353,10 +2352,12 @@ export function DesignStudio({
               )}
 
               <div className="mb-sp-3">
-                <span className="text-xs font-bold block mb-1.5">Print method</span>
+                <span className="text-xs font-bold block mb-1.5">
+                  Print method (optional)
+                </span>
                 <StudioSelect
                   tone="panel"
-                  ariaLabel="Print method"
+                  ariaLabel="Print method (optional)"
                   value={selectedMethod?.key ?? methodKey}
                   onChange={(value) => {
                     const next = quoteMethods.find((method) => method.key === value);
@@ -2369,30 +2370,6 @@ export function DesignStudio({
                   }))}
                 />
               </div>
-              {methodVariableInputs(selectedMethod).colours && (
-                <div className="mb-sp-3">
-                  <span className="text-xs font-bold block mb-1.5">
-                    Colours in the design
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {colourOptions(selectedMethod).map((count) => (
-                      <button
-                        key={count}
-                        type="button"
-                        onClick={() => setColours(count)}
-                        className={cn(
-                          "min-w-8 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                          colours === count
-                            ? "bg-accent text-white border-accent"
-                            : "border-border bg-bg-raised hover:border-text-tertiary",
-                        )}
-                      >
-                        {count}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               {methodVariableInputs(selectedMethod).stitches && (
                 <div className="mb-sp-3">
                   <span className="text-xs font-bold block mb-1.5">Logo size</span>
