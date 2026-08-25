@@ -173,18 +173,43 @@ export async function decideProofAction(formData: FormData) {
   revalidatePath(`/admin/jobs/${jobId}`);
 }
 
+export interface RunSyncState {
+  error?: string;
+  accepted?: boolean;
+  vendor?: string;
+  type?: "full" | "inventory";
+}
+
 export async function runSyncAction(
-  type: "full" | "inventory" | "csv_import",
-  vendor = "ss_activewear",
-) {
-  const client = await adminClient();
-  const result = await client.runCatalogSync(
-    { type, vendor },
-    requireAdminToken(),
-  );
-  revalidatePath("/admin/sync");
-  revalidatePath("/admin");
-  return result;
+  _previous: RunSyncState,
+  formData: FormData,
+): Promise<RunSyncState> {
+  await requireStaff();
+  const vendor = String(formData.get("vendor") || "");
+  const type = String(formData.get("type") || "");
+  if (!vendor) {
+    return { error: "Vendor is required." };
+  }
+  if (type !== "full" && type !== "inventory") {
+    return { error: "Unknown sync type." };
+  }
+  try {
+    const client = await adminClient();
+    await client.runCatalogSync({ type, vendor }, requireAdminToken());
+    // Recent runs on /admin/sync is polled by the client so a remount cannot
+    // drop the Starting… state before sync_runs has a row.
+    revalidatePath("/admin");
+    return { accepted: true, vendor, type };
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "Could not start the catalog sync.",
+      vendor,
+      type,
+    };
+  }
 }
 
 export async function runCsvImportAction(formData: FormData) {
