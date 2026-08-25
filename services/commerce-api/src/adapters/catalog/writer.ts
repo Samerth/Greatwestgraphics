@@ -46,6 +46,10 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bcoverall(s)?\b/i, categorySlug: "coveralls" },
   { pattern: /\b(fr|flame[- ]resistant)\b.*\b(shirt|apparel|coverall)\b/i, categorySlug: "fr-apparel" },
   { pattern: /\bwork\s?shirt(s)?\b/i, categorySlug: "work-shirts" },
+  // "Work Pants" exists as a leaf under both Workwear and Pants & Shorts
+  // (disambiguated as pants-shorts-work-pants) — same product, can't tell
+  // which department from text alone, so assign both.
+  { pattern: /\bwork\s?pant(s)?\b/i, categorySlug: "work-pants" },
 
   // Safety catch-all (kept, now runs after the specific hi-vis rules above)
   {
@@ -60,6 +64,13 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bpocket\s?tee(s)?\b/i, categorySlug: "pocket-tees" },
   { pattern: /\borganic\b.*\b(tee|t-shirt|cotton)\b/i, categorySlug: "organic" },
   { pattern: /\btall\b/i, categorySlug: "tall" },
+  // Bare modifiers scoped to tee/t-shirt context so they don't collide with
+  // the hoodie/polo/vest compound versions of the same words above.
+  { pattern: /\bheavyweight\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "heavyweight" },
+  { pattern: /\blightweight\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "lightweight" },
+  { pattern: /\bperformance\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "performance" },
+  { pattern: /\bwomen'?s\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "women-s" },
+  { pattern: /\byouth\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "youth" },
 
   // Hoodies & Sweatshirts sub-attributes (compound: modifier + hoodie context)
   { pattern: /\bpullover\s?hoodie(s)?\b/i, categorySlug: "pullover-hoodies" },
@@ -71,6 +82,9 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bperformance\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-performance" },
   { pattern: /\byouth\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-youth" },
   { pattern: /\bwomen'?s\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-women-s" },
+  // Plain "Fleece" as its own Hoodies & Sweatshirts product line — excludes
+  // Fleece Jackets and Fleece Vests, which already have their own rules.
+  { pattern: /\bfleece\b(?!.*\b(jacket|vest)\b)/i, categorySlug: "fleece" },
 
   // Polos sub-attributes
   { pattern: /\bperformance\b.*\bpolo\b/i, categorySlug: "polos-performance" },
@@ -177,19 +191,22 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bbackdrop(s)?\b/i, categorySlug: "backdrops" },
   { pattern: /\bkiosk(s)?\b/i, categorySlug: "kiosks" },
 
-  // Outdoor
-  { pattern: /\bcooler(s)?\b/i, categorySlug: "coolers" },
-  { pattern: /\bbbq\b|barbecue\b/i, categorySlug: "bbq-sets" },
-  { pattern: /\bchair(s)?\b/i, categorySlug: "chairs" },
+  { pattern: /\bbackdrop(s)?\b/i, categorySlug: "backdrops" },
+  { pattern: /\bkiosk(s)?\b/i, categorySlug: "kiosks" },
+  // "Blankets" exists under both Accessories and Outdoor (disambiguated as
+  // outdoor-blankets) — same reasoning as Work Pants above.
+  { pattern: /\bblanket(s)?\b/i, categorySlug: "outdoor-blankets" },
 
   // Health & Wellness
   { pattern: /\bfirst\s?aid\b/i, categorySlug: "first-aid" },
   { pattern: /\bsanitizer(s)?\b/i, categorySlug: "sanitizer" },
+  { pattern: /\bfitness\b|\bworkout\s?gear\b|\byoga\s?mat(s)?\b|\bresistance\s?band(s)?\b/i, categorySlug: "fitness-items" },
 
   // Eco-Friendly
   { pattern: /\bbamboo\b/i, categorySlug: "bamboo" },
   { pattern: /\brecycled\b/i, categorySlug: "recycled-products" },
   { pattern: /\bwheat\s?straw\b/i, categorySlug: "wheat-straw-products" },
+  { pattern: /\bsustainable\b.*\b(drinkware|bottle|tumbler|mug)\b/i, categorySlug: "sustainable-drinkware" },
 
   // Signs & Displays
   { pattern: /\bfoam\s?board\b/i, categorySlug: "foam-board" },
@@ -199,12 +216,14 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bsintra\b/i, categorySlug: "sintra" },
   { pattern: /\bdibond\b/i, categorySlug: "dibond" },
   { pattern: /\bcoroplast\b/i, categorySlug: "coroplast" },
+  { pattern: /\bpvc\b/i, categorySlug: "pvc" },
   { pattern: /\byard\s?sign(s)?\b/i, categorySlug: "yard-signs" },
   { pattern: /\bparking\s?sign(s)?\b/i, categorySlug: "parking-signs" },
   { pattern: /\bconstruction\s?sign(s)?\b/i, categorySlug: "construction-signs" },
   { pattern: /\bvinyl\s?banner(s)?\b/i, categorySlug: "vinyl-banners" },
   { pattern: /\bmesh\s?banner(s)?\b/i, categorySlug: "mesh-banners" },
   { pattern: /\bpole\s?banner(s)?\b/i, categorySlug: "pole-banners" },
+  { pattern: /\bdouble[- ]sided\s?banner(s)?\b/i, categorySlug: "double-sided-banners" },
   { pattern: /\bwindow\s?decal(s)?\b/i, categorySlug: "window-decals" },
   { pattern: /\bperforated\s?vinyl\b/i, categorySlug: "perforated-vinyl" },
   { pattern: /\bfrosted\s?vinyl\b/i, categorySlug: "frosted-vinyl" },
@@ -253,7 +272,7 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   },
   {
     pattern: /\b(tote|bag|bags|backpack|duffel|duffle|cinch|pack)\b/i,
-    categorySlug: "tote-bags",
+    categorySlug: "bags",
   },
   { pattern: /\b(jacket|parka|windbreaker|shell|anorak)\b/i, categorySlug: "jackets" },
   { pattern: /\b(vest|bodywarmer|gilet)\b/i, categorySlug: "vests" },
@@ -261,10 +280,10 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\b(polo|polos)\b/i, categorySlug: "polos" },
   { pattern: /\b(sock|socks)\b/i, categorySlug: "socks" },
   {
-    pattern: /\b(tumbler|mug|bottle|drinkware|flask|growler|can cooler)\b/i,
+    pattern: /\b(tumbler|mug|bottle|drinkware|flask|growler|(?<!\d[\s-])can cooler)\b/i,
     categorySlug: "drinkware",
   },
-  { pattern: /\b(notebook|journal|notepad|planner)\b/i, categorySlug: "notebooks" },
+  { pattern: /\b(notebook|notepad|planner)\b/i, categorySlug: "notebooks" },
   { pattern: /\b(patch|patches)\b/i, categorySlug: "patches" },
 ];
 
