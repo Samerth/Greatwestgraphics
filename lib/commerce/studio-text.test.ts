@@ -8,7 +8,9 @@ import {
   alignStudioLayer,
   createStudioTextLayer,
   estimateTextDisplaySize,
+  duplicateStudioLayer,
   moveStudioLayerToSide,
+  nudgeStudioLayerOrder,
   studioTextArcSvgPath,
 } from "./studio-text";
 import { frontChestGuideRects, placementAreaPixels } from "./studio-placement";
@@ -138,6 +140,25 @@ describe("moveStudioLayerToSide", () => {
     const moved = moveStudioLayerToSide(start, "stay", "right");
     expect(moved.fromSide).toBe("right");
     expect(moved.document.textsBySide.right).toHaveLength(1);
+  });
+});
+
+describe("studio layer chrome", () => {
+  it("brings a layer forward, sends it backward, and duplicates on top", () => {
+    const start = emptyDesignDocument();
+    start.artworksBySide.front = [
+      { ...artwork("under"), zIndex: 1 },
+      { ...artwork("over"), zIndex: 2 },
+    ];
+    const forward = nudgeStudioLayerOrder(start, "under", "forward");
+    expect(forward.artworksBySide.front.find((item) => item.id === "under")?.zIndex).toBe(3);
+    const back = nudgeStudioLayerOrder(start, "over", "back");
+    expect(back.artworksBySide.front.find((item) => item.id === "over")?.zIndex).toBe(0);
+    const copied = duplicateStudioLayer(start, "under", "copy");
+    expect(copied.duplicateId).toBe("copy");
+    expect(
+      copied.document.artworksBySide.front.find((item) => item.id === "copy")?.zIndex,
+    ).toBe(3);
   });
 });
 

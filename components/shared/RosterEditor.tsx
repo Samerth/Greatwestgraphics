@@ -2,6 +2,16 @@
 
 export type RosterRow = { size: string; name: string; number: string };
 
+function wideRosterCountLabel(rows: RosterRow[]): string {
+  const started = rows.filter(
+    (row) => row.name.trim() || row.number.trim(),
+  ).length;
+  if (started === 0) {
+    return "No team shirts yet — Size and quantity below still apply.";
+  }
+  return `${started} team shirt${started === 1 ? "" : "s"}`;
+}
+
 export function RosterEditor({
   sizes,
   rows,
@@ -18,10 +28,22 @@ export function RosterEditor({
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
   function addRow() {
-    onChange([...rows, { size: sizes[0]?.label ?? "", name: "", number: "" }]);
+    onChange([
+      ...rows,
+      {
+        size: layout === "wide" ? "" : (sizes[0]?.label ?? ""),
+        name: "",
+        number: "",
+      },
+    ]);
   }
   function removeRow(index: number) {
-    onChange(rows.filter((_, i) => i !== index));
+    const next = rows.filter((_, i) => i !== index);
+    if (layout === "wide" && next.length === 0) {
+      onChange([{ size: "", name: "", number: "" }]);
+      return;
+    }
+    onChange(next);
   }
 
   return (
@@ -79,7 +101,9 @@ export function RosterEditor({
         + Add person
       </button>
       <p className="text-xs text-text-tertiary mt-1.5 mb-0">
-        {rows.length} piece{rows.length === 1 ? "" : "s"} total
+        {layout === "wide"
+          ? wideRosterCountLabel(rows)
+          : `${rows.length} piece${rows.length === 1 ? "" : "s"} total`}
       </p>
     </div>
   );

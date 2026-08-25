@@ -82,14 +82,43 @@ describe("studio cart roster — team panel is the order switch", () => {
     ]);
   });
 
+  it("does not size empty placeholder rows", () => {
+    expect(withDefaultRosterSizes(emptyDraft, "M")).toEqual(emptyDraft);
+    expect(
+      withDefaultRosterSizes(
+        [
+          { size: "", name: "", number: "12" },
+          { size: "", name: "", number: "" },
+        ],
+        "L",
+      ),
+    ).toEqual([
+      { size: "L", name: "", number: "12" },
+      { size: "", name: "", number: "" },
+    ]);
+  });
+
+  it("treats a number without a name as a started, incomplete team list", () => {
+    const numberOnly = [{ size: "M", name: "", number: "12" }];
+    expect(studioHasStartedTeamRoster(numberOnly)).toBe(true);
+    expect(studioFinishMode(numberOnly)).toBe("team-progress");
+    expect(studioTeamRosterError(numberOnly)).toBe("Every row needs a name.");
+    expect(
+      studioCartRosterPayload({
+        roster: numberOnly,
+        rosterDecor: defaultRosterDecor(),
+      }),
+    ).toEqual({ ok: false, error: "Every row needs a name." });
+  });
+
   it("prices a complete team roster from roster.length", () => {
     expect(studioTeamOrderQuantity(emptyDraft, 48)).toBe(48);
     expect(studioTeamOrderQuantity(teamDraft, 48)).toBe(2);
   });
 
-  it("quotes complete → row count, in-progress → named count, else bulk qty", () => {
+  it("quotes complete → row count, started → active count, else bulk qty", () => {
     expect(studioTeamQuoteQuantity(emptyDraft, 48)).toBe(48);
-    expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(2);
+    expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(3);
     expect(studioTeamQuoteQuantity(teamDraft, 48)).toBe(2);
     expect(
       studioTeamQuoteQuantity(
@@ -97,6 +126,9 @@ describe("studio cart roster — team panel is the order switch", () => {
         48,
       ),
     ).toBe(2);
+    expect(
+      studioTeamQuoteQuantity([{ size: "M", name: "", number: "12" }], 48),
+    ).toBe(1);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
   });
 

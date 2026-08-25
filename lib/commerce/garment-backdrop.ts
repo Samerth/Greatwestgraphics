@@ -313,6 +313,13 @@ export function cropPixels(
   };
 }
 
+/** Photorealistic L/R plates — not a real vendor side photo. */
+export function isStudioSideRepresentation(
+  backdrop: Pick<GarmentBackdrop, "source">,
+): boolean {
+  return backdrop.source === "side-view";
+}
+
 export function garmentBackdrops(
   photos: GarmentPhotoSet,
 ): Record<DesignSide, GarmentBackdrop> {

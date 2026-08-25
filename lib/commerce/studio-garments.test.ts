@@ -10,6 +10,7 @@ import {
   studioColorwaysUseSwatches,
   studioDetailColorwaysForSelection,
   studioGarmentPhotos,
+  studioRosterSizeOptions,
   studioVariantIdForColorway,
   uniqueStudioArticles,
 } from "./studio-garments";
@@ -240,6 +241,30 @@ describe("studioGarmentPhotos", () => {
       styleImageUrl: null,
       styleName: null,
     });
+  });
+});
+
+describe("studioRosterSizeOptions", () => {
+  it("uses in-stock sizes, or every size when none are in stock", () => {
+    expect(
+      studioRosterSizeOptions([
+        { id: "v-s", sizeName: "S", qty: 12, active: true },
+        { id: "v-m", sizeName: "M", qty: 0, active: true },
+        { id: "v-l", sizeName: "L", qty: 4, active: true },
+      ]),
+    ).toEqual([
+      { id: "v-s", label: "S" },
+      { id: "v-l", label: "L" },
+    ]);
+    expect(
+      studioRosterSizeOptions([
+        { id: "v-s", sizeName: "S", qty: 0, active: true },
+        { id: "v-m", sizeName: "M", qty: 0, active: true },
+      ]),
+    ).toEqual([
+      { id: "v-s", label: "S" },
+      { id: "v-m", label: "M" },
+    ]);
   });
 });
 

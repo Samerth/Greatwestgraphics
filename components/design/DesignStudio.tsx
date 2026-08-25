@@ -56,6 +56,7 @@ import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
   framedBackdropStyles,
   garmentBackdrops,
+  isStudioSideRepresentation,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
 import {
@@ -89,7 +90,7 @@ import {
 } from "@/lib/commerce/studio-zones";
 import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
 import {
-  cartRosterRowsFromDraft,
+  studioActiveTeamRows,
   studioCartLineFields,
   studioCartRosterPayload,
   studioFinishCtaLabel,
@@ -114,6 +115,7 @@ import {
   studioColorwaysForArticle,
   studioDetailColorwaysForSelection,
   studioGarmentPhotos,
+  studioRosterSizeOptions,
   studioVariantIdForColorway,
   uniqueStudioArticles,
 } from "@/lib/commerce/studio-garments";
@@ -708,7 +710,7 @@ export function DesignStudio({
     });
   }, [defaultRosterSize]);
 
-  const namedRosterCount = cartRosterRowsFromDraft(roster).length;
+  const rosterPlayerCount = studioActiveTeamRows(roster).length;
   const finishMode = studioFinishMode(roster);
   const teamOrderReady = finishMode === "team-ready";
   const teamOrderStarted = finishMode !== "bulk";
@@ -1204,11 +1206,12 @@ export function DesignStudio({
   }
 
   function setRosterRows(rows: RosterRow[]) {
-    setRoster(rows);
+    const next = withDefaultRosterSizes(rows, defaultRosterSize);
+    setRoster(next);
     setRosterError(null);
     setDesign((prev) => ({
       ...prev,
-      roster: rows
+      roster: next
         .filter((row) => row.name.trim() || row.number.trim() || row.size)
         .map((row) => ({
           size: row.size,
@@ -1836,8 +1839,8 @@ export function DesignStudio({
           <div className="flex flex-col gap-2">
             <p className="m-0 text-[13px] leading-5 text-text-secondary">
               {teamOrderReady
-                ? `${namedRosterCount.toLocaleString()} piece${namedRosterCount === 1 ? "" : "s"} on the team list below.`
-                : namedRosterCount > 0
+                ? `${rosterPlayerCount.toLocaleString()} piece${rosterPlayerCount === 1 ? "" : "s"} on the team list below.`
+                : teamOrderStarted
                   ? "Finish every row on the team list below — or use Text for one name."
                   : "The team list is below the canvas, with room for names."}
             </p>
@@ -1851,7 +1854,7 @@ export function DesignStudio({
               }}
               className="text-left text-[12.5px] font-semibold text-accent hover:underline"
             >
-              {namedRosterCount > 0 ? "Jump to team list" : "Add a team list"}
+              {teamOrderStarted ? "Jump to team list" : "Add a team list"}
             </button>
           </div>
         )}
@@ -2120,6 +2123,14 @@ export function DesignStudio({
             >
               {formatZoneInchLabel(liveZone ?? placementBySide[activeSide])}
             </p>
+            {sleeveView && isStudioSideRepresentation(backdrop) ? (
+              <p
+                data-studio="sleeve-representation"
+                className="m-0 mt-1 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[11px] font-medium tracking-[0.01em] text-white/55"
+              >
+                This side view is for representation only.
+              </p>
+            ) : null}
             </div>
             <div className="flex sm:flex-col gap-2 shrink-0 sm:w-[92px]">
               <div className="flex sm:flex-col gap-1.5 shrink-0">
@@ -2157,7 +2168,16 @@ export function DesignStudio({
                       setExportError(null);
                     }}
                     aria-pressed={selected}
-                    aria-label={DESIGN_SIDE_LABELS[side]}
+                    aria-label={
+                      selectedId && side !== activeSide
+                        ? `Move selected artwork to ${DESIGN_SIDE_LABELS[side]}`
+                        : `View ${DESIGN_SIDE_LABELS[side]}`
+                    }
+                    title={
+                      selectedId && side !== activeSide
+                        ? `Move selected artwork to ${DESIGN_SIDE_LABELS[side]}`
+                        : `View ${DESIGN_SIDE_LABELS[side]}`
+                    }
                     className={cn(
                       "flex-1 sm:flex-none rounded-md border overflow-hidden bg-black/30 text-left transition-colors",
                       selected
@@ -2282,9 +2302,7 @@ export function DesignStudio({
             roster={roster}
             onRosterChange={setRosterRows}
             rosterError={rosterError}
-            sizes={(productDetail?.variants ?? [])
-              .filter((variant) => variant.qty > 0 && variant.active !== false)
-              .map((variant) => ({ id: variant.id, label: variant.sizeName }))}
+            sizes={studioRosterSizeOptions(productDetail?.variants ?? [])}
             decor={rosterDecor}
             onDecorChange={(target, patch) =>
               setDesign((prev) => ({
@@ -2384,8 +2402,8 @@ export function DesignStudio({
                   {teamOrderReady ? (
                     <>
                       <p className="m-0 text-xs text-text-secondary">
-                        {namedRosterCount.toLocaleString()} team shirt
-                        {namedRosterCount === 1 ? "" : "s"} · size per player
+                        {rosterPlayerCount.toLocaleString()} team shirt
+                        {rosterPlayerCount === 1 ? "" : "s"} · size per player
                       </p>
                       <button
                         type="button"
@@ -2399,9 +2417,8 @@ export function DesignStudio({
                     <>
                       <p className="m-0 text-xs text-text-secondary">
                         Team list in progress ·{" "}
-                        {namedRosterCount.toLocaleString()} named
-                        {namedRosterCount === 1 ? " player" : " players"}. Every
-                        row needs a name and size.
+                        {rosterPlayerCount.toLocaleString()} started. Every row
+                        needs a name and size.
                       </p>
                       <button
                         type="button"

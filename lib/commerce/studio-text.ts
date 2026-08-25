@@ -246,6 +246,13 @@ export function withDetectedZone<
   };
 }
 
+function studioLayerZIndexes(document: DesignDocument, side: DesignSide): number[] {
+  return [
+    ...document.artworksBySide[side].map((item) => item.zIndex ?? 0),
+    ...document.textsBySide[side].map((item) => item.zIndex ?? 0),
+  ];
+}
+
 export function duplicateStudioLayer(
   document: DesignDocument,
   layerId: string,
@@ -254,6 +261,8 @@ export function duplicateStudioLayer(
   const found = findStudioLayerSide(document, layerId);
   if (!found) return { document, duplicateId: null };
   const offset = 14;
+  const zs = studioLayerZIndexes(document, found.side);
+  const zIndex = (zs.length ? Math.max(...zs) : 0) + 1;
   if (found.kind === "artwork") {
     const layer = document.artworksBySide[found.side].find(
       (item) => item.id === layerId,
@@ -263,6 +272,7 @@ export function duplicateStudioLayer(
       id: newId,
       x: layer.x + offset,
       y: layer.y + offset,
+      zIndex,
     };
     return {
       document: {
@@ -283,6 +293,7 @@ export function duplicateStudioLayer(
     id: newId,
     x: layer.x + offset,
     y: layer.y + offset,
+    zIndex,
   };
   return {
     document: {
@@ -403,9 +414,7 @@ export function nudgeStudioLayerOrder(
 ): DesignDocument {
   const found = findStudioLayerSide(document, layerId);
   if (!found) return document;
-  const artZs = document.artworksBySide[found.side].map((item) => item.zIndex ?? 0);
-  const textZs = document.textsBySide[found.side].map((item) => item.zIndex ?? 0);
-  const zs = [...artZs, ...textZs];
+  const zs = studioLayerZIndexes(document, found.side);
   const nextZ =
     direction === "forward"
       ? (zs.length ? Math.max(...zs) : 0) + 1
