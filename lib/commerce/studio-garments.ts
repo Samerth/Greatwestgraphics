@@ -6,6 +6,7 @@ export type StudioGarmentFields = {
   colorName: string;
   brandName?: string;
   styleName?: string;
+  styleTitle?: string | null;
   slug?: string;
   imageUrl?: string | null;
   sideImageUrl?: string | null;
@@ -70,6 +71,12 @@ const NAMED_GARMENT_HEX: Record<string, string> = {
   cream: "#fff1d6",
   silver: "#c0c0c0",
   teal: "#167a7a",
+  arctic: "#7eb8d4",
+  "arctic blue": "#7eb8d4",
+  "beacon blue": "#4f8fba",
+  "canyon drift": "#c2a07a",
+  lime: "#b5d33d",
+  hunter: "#355e3b",
 };
 
 function trimText(value: unknown): string {
@@ -87,10 +94,13 @@ export function normalizeStudioHex(value: unknown): string | null {
 }
 
 export function hexForColorName(name: string): string | null {
-  const raw = name.trim().toLowerCase();
+  const raw = name.trim();
   if (!raw) return null;
-  if (NAMED_GARMENT_HEX[raw]) return NAMED_GARMENT_HEX[raw];
-  const tokens = raw.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/);
+  const lower = raw.toLowerCase();
+  if (NAMED_GARMENT_HEX[lower]) return NAMED_GARMENT_HEX[lower];
+  const spaced = raw.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  if (NAMED_GARMENT_HEX[spaced]) return NAMED_GARMENT_HEX[spaced];
+  const tokens = spaced.replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/);
   for (const token of [...tokens].reverse()) {
     if (NAMED_GARMENT_HEX[token]) return NAMED_GARMENT_HEX[token];
   }
@@ -105,6 +115,29 @@ export function studioColorwayFill(colorway: StudioColorwayOption): {
     hex: colorway.hex ?? hexForColorName(colorway.colorName),
     imageUrl: colorway.swatchImageUrl || colorway.frontImageUrl || null,
   };
+}
+
+/**
+ * PDP swatch paint. Uses a colourway photo when the vendor shipped one;
+ * otherwise vendor hex / a named-colour guess. Never the shared style shot —
+ * that is the same model photo for every colour.
+ */
+export function pdpColorwaySwatch(colorway: {
+  colorName?: unknown;
+  colorHex?: unknown;
+  color1?: unknown;
+  hex?: unknown;
+  swatchImageUrl?: unknown;
+  frontImageUrl?: unknown;
+}): { imageUrl: string | null; hex: string | null } {
+  const imageUrl =
+    trimText(colorway.swatchImageUrl) || trimText(colorway.frontImageUrl) || null;
+  const hex =
+    normalizeStudioHex(colorway.colorHex) ??
+    normalizeStudioHex(colorway.color1) ??
+    normalizeStudioHex(colorway.hex) ??
+    hexForColorName(trimText(colorway.colorName));
+  return { imageUrl, hex };
 }
 
 /** Swatches when a hex or photo exists; otherwise a named select. */
@@ -281,6 +314,7 @@ export function studioGarmentPhotos({
   product,
   styleImageUrl,
   styleName,
+  styleTitle,
   selectedGarment,
   selectedColorway,
 }: {
@@ -293,11 +327,13 @@ export function studioGarmentPhotos({
   } | null;
   styleImageUrl?: string | null;
   styleName?: string | null;
+  styleTitle?: string | null;
   selectedGarment?: {
     imageUrl?: string | null;
     sideImageUrl?: string | null;
     backImageUrl?: string | null;
     styleName?: string | null;
+    styleTitle?: string | null;
   } | null;
   selectedColorway?: Pick<
     StudioColorwayOption,
@@ -325,6 +361,7 @@ export function studioGarmentPhotos({
       null,
     styleImageUrl: styleImageUrl ?? null,
     styleName: styleName ?? selectedGarment?.styleName ?? null,
+    styleTitle: styleTitle ?? selectedGarment?.styleTitle ?? null,
   };
 }
 

@@ -6,6 +6,8 @@ export type GarmentPhotoSet = {
   colorSideImageUrl?: string | null;
   styleImageUrl?: string | null;
   styleName?: string | null;
+  /** Manufacturer title, e.g. "Men's Ultimate365 Elevated Hoodie". */
+  styleTitle?: string | null;
 };
 
 /** Fractional crop of a source photo, origin top-left. */
@@ -59,8 +61,10 @@ export const SLEEVE_PLATE_INSET = 0.08;
 export const STUDIO_SIDE_HOODIE = "/images/studio/side-hoodie.png";
 export const STUDIO_SIDE_TEE = "/images/studio/side-tee.png";
 
-export function studioSideViewTemplate(styleName?: string | null): string {
-  const name = (styleName ?? "").toLowerCase();
+export function studioSideViewTemplate(
+  ...names: Array<string | null | undefined>
+): string {
+  const name = names.filter(Boolean).join(" ").toLowerCase();
   if (/(hood|fleece|sweat|jacket|zip)/.test(name)) return STUDIO_SIDE_HOODIE;
   return STUDIO_SIDE_TEE;
 }
@@ -117,11 +121,11 @@ export function usableSidePhoto(
 }
 
 function sleeveSideView(
-  styleName: string | null | undefined,
+  photos: Pick<GarmentPhotoSet, "styleName" | "styleTitle">,
   mirror: boolean,
 ): GarmentBackdrop {
   return {
-    url: studioSideViewTemplate(styleName),
+    url: studioSideViewTemplate(photos.styleName, photos.styleTitle),
     source: "side-view",
     mirror,
     plate: true,
@@ -173,13 +177,25 @@ export function garmentBackdropForSide(
     if (sidePhoto) {
       return { url: sidePhoto, source: "photo", mirror: false, plate: true };
     }
-    return sleeveSideView(photos.styleName, false);
+    return sleeveSideView(photos, false);
   }
 
   if (sidePhoto) {
     return { url: sidePhoto, source: "photo", mirror: true, plate: true };
   }
-  return sleeveSideView(photos.styleName, true);
+  return sleeveSideView(photos, true);
+}
+
+/** When a vendor photo 403s in the browser, fall back to a local plate. */
+export function studioBackdropFallbackUrl(
+  backdrop: Pick<GarmentBackdrop, "url" | "source" | "plate">,
+  photos: Pick<GarmentPhotoSet, "styleName" | "styleTitle"> = {},
+): string {
+  if (backdrop.source === "photo" && backdrop.plate) {
+    const plate = studioSideViewTemplate(photos.styleName, photos.styleTitle);
+    return plate !== backdrop.url ? plate : GARMENT_FALLBACK;
+  }
+  return GARMENT_FALLBACK;
 }
 
 /** Konva proofs need a same-origin URL. Local `/images/` and SVGs must not

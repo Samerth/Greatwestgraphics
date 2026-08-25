@@ -44,4 +44,15 @@ describe("hidden shopper chrome", () => {
     expect(studio).toContain('data-studio="print-location"');
     expect(studio).toContain("max-w-[min(820px,calc(100dvh-12rem))]");
   });
+
+  it("keeps Team in the canvas column and the left pane below the header", () => {
+    const studio = read("components/design/DesignStudio.tsx");
+    expect(studio).toContain('id="studio-team-order"');
+    expect(studio).toContain("md:col-start-2");
+    expect(studio).not.toMatch(/id="studio-team-order"[\s\S]{0,80}md:col-span-2/);
+    expect(studio).toContain("md:top-[calc(var(--header-offset)+1rem)]");
+    expect(studio).toContain("studioCanvasImageUrl(thumbBackdrop)");
+    expect(studio).toContain("studioVisiblePlateTint");
+    expect(studio).toContain("styleTitle");
+  });
 });

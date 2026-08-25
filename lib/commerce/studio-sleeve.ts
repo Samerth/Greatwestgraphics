@@ -82,6 +82,19 @@ export function sleeveOutlineHex(fillHex: string): string {
   return hexLuminance(fillHex) < 0.42 ? "#f3f1ec" : "#1c1c1c";
 }
 
+const DARK_PLATE_LUMINANCE = 0.05;
+const VISIBLE_PLATE_GREY = "#6e6e6e";
+
+/**
+ * Multiply-tint on a dark thumb (#1a1a1a) with #000 disappears. Lift
+ * near-black fills toward a visible grey so the plate still reads.
+ */
+export function studioVisiblePlateTint(fillHex: string): string {
+  const hex = studioSleeveFillHex({ hex: fillHex });
+  if (hexLuminance(hex) >= DARK_PLATE_LUMINANCE) return hex;
+  return mixHex(hex, VISIBLE_PLATE_GREY, 0.55);
+}
+
 export type SleeveIllustrationModel = {
   side: StudioSleeveSide;
   fillHex: string;

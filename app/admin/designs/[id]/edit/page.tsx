@@ -59,6 +59,7 @@ export default async function AdminDesignEditPage({
       colorName: p.colorName,
       brandName: p.brandName,
       styleName: p.styleName,
+      styleTitle: p.title,
       imageUrl: p.imageUrl,
       sideImageUrl: p.sideImageUrl,
       backImageUrl: p.backImageUrl,
