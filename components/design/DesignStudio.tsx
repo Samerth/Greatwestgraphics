@@ -1905,16 +1905,6 @@ export function DesignStudio({
               {/* CSS overlay so the guide never lands in the Konva proof. */}
               {draggingOnFront ? (
                 <>
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/25"
-                    style={{
-                      left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
-                      top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
-                      width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
-                      height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
-                    }}
-                  />
                   {chestGuides.map(({ zone, rect }) => {
                     const active = liveZone === zone;
                     return (
