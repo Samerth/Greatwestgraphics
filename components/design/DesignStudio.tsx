@@ -1650,10 +1650,10 @@ export function DesignStudio({
   const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:overflow-y-auto">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
@@ -1974,7 +1974,7 @@ export function DesignStudio({
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
+        <div className="flex flex-col md:flex-row md:items-start min-w-0">
         <div className="p-sp-3 min-h-[240px] sm:min-h-[300px] overflow-x-auto flex-1 min-w-0">
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex items-center justify-center">
@@ -2166,7 +2166,7 @@ export function DesignStudio({
           </div>
         </div>
         {(selectedText || selectedArtwork) && (
-          <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(280px,38%)] lg:shrink-0 lg:max-h-[min(40rem,calc(100dvh-8rem))] lg:overflow-y-auto">
+          <div className="border-t border-white/10 md:border-t-0 md:border-l md:w-[min(260px,40%)] md:shrink-0 md:max-h-[min(36rem,calc(100dvh-8rem))] md:overflow-y-auto">
             <StudioElementEditor
               kind={selectedText ? "text" : "artwork"}
               activeSide={activeSide}
@@ -2242,7 +2242,7 @@ export function DesignStudio({
       {studioTab === "team" && (
         <div
           id="studio-team-order"
-          className="lg:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+          className="md:col-span-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
         >
           <StudioTeamOrderPanel
             roster={roster}
@@ -2268,7 +2268,7 @@ export function DesignStudio({
 
       {/* Saving, proof download and ordering belong to the main workspace,
           below the canvas they act on — not in a duplicate preview panel. */}
-      <div className="lg:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
+      <div className="md:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
         <h3 className="font-display text-[18px] mb-sp-3">Finish your design</h3>
         <div className="flex flex-col gap-2">
           {signedIn ? (

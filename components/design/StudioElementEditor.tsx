@@ -181,6 +181,24 @@ export function StudioElementEditor({
         </label>
       </div>
 
+      <SliderRow
+        label="Size"
+        value={size}
+        min={kind === "text" ? 10 : 8}
+        max={kind === "text" ? 96 : 220}
+        onChange={onSize}
+        onCommit={onSliderCommit}
+      />
+      <SliderRow
+        label="Rotate"
+        value={Math.round(rotation)}
+        min={-180}
+        max={180}
+        suffix="°"
+        onChange={onRotation}
+        onCommit={onSliderCommit}
+      />
+
       {text && onPatchText ? (
         <>
           <div>
@@ -252,24 +270,6 @@ export function StudioElementEditor({
           />
         </>
       ) : null}
-
-      <SliderRow
-        label="Size"
-        value={size}
-        min={kind === "text" ? 10 : 8}
-        max={kind === "text" ? 96 : 220}
-        onChange={onSize}
-        onCommit={onSliderCommit}
-      />
-      <SliderRow
-        label="Rotate"
-        value={Math.round(rotation)}
-        min={-180}
-        max={180}
-        suffix="°"
-        onChange={onRotation}
-        onCommit={onSliderCommit}
-      />
 
       <div className="flex flex-wrap gap-1.5">
         <EditorAction onClick={onCenter}>Center</EditorAction>
