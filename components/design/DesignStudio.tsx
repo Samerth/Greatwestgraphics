@@ -83,7 +83,11 @@ import {
   patchStudioArtwork,
   patchStudioText,
 } from "@/lib/commerce/studio-text";
-import { detectPlacementZone, formatZoneInchLabel } from "@/lib/commerce/studio-zones";
+import {
+  detectPlacementZone,
+  formatZoneInchLabel,
+  frontChestGuideRects,
+} from "@/lib/commerce/studio-zones";
 import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
 import {
   cartRosterRowsFromDraft,
@@ -1525,6 +1529,8 @@ export function DesignStudio({
   const canUndo = historyTick >= 0 && historyRef.current.canUndo;
   const canRedo = historyTick >= 0 && historyRef.current.canRedo;
   const guideZone = liveZone ?? placementBySide[activeSide];
+  const chestGuides = frontChestGuideRects();
+  const draggingOnFront = liveZone !== null && activeSide === "front";
   const selectedPrintLabel = selectedText
     ? selectedText.printMethod === "embroidery"
       ? "Embroidery"
@@ -1897,6 +1903,66 @@ export function DesignStudio({
                 onDragMove={handleLayerDragMove}
               />
               {/* CSS overlay so the guide never lands in the Konva proof. */}
+              {draggingOnFront ? (
+                <>
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/25"
+                    style={{
+                      left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
+                      top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
+                      width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
+                      height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
+                    }}
+                  />
+                  {chestGuides.map(({ zone, rect }) => {
+                    const active = liveZone === zone;
+                    return (
+                      <div
+                        key={zone}
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none absolute z-[3] rounded-[2px] border border-dashed",
+                          active
+                            ? "border-accent bg-accent/25 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+                            : "border-white/40 bg-white/5",
+                        )}
+                        style={{
+                          left: `${rect.x * 100}%`,
+                          top: `${rect.y * 100}%`,
+                          width: `${rect.width * 100}%`,
+                          height: `${rect.height * 100}%`,
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            "absolute left-0.5 top-0.5 right-0.5 rounded-[2px] px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-white",
+                            active ? "bg-accent" : "bg-black/50",
+                          )}
+                        >
+                          {formatZoneInchLabel(zone)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {liveZone === "Full Front" ? (
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute z-[4] rounded-[2px] border-2 border-dashed border-accent bg-accent/10"
+                      style={{
+                        left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
+                        top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
+                        width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
+                        height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
+                      }}
+                    >
+                      <span className="absolute left-1 top-0.5 rounded-[2px] bg-accent px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
+                        {formatZoneInchLabel("Full Front")}
+                      </span>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
               <div
                 aria-hidden
                 className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
@@ -1911,6 +1977,7 @@ export function DesignStudio({
                   {formatZoneInchLabel(guideZone)}
                 </span>
               </div>
+              )}
               {sleeveView && artworks.length === 0 && texts.length === 0 && (
                 <div
                   className="absolute z-[3] flex flex-col items-center justify-center gap-2"
