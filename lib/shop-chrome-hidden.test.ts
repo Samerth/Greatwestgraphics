@@ -28,4 +28,12 @@ describe("hidden shopper chrome", () => {
     expect(studio).toContain("Generate an AI concept");
     expect(designPage).not.toMatch(/sample AI concept/i);
   });
+
+  it("hides ink-colour count chips from the Design Studio finish panel", () => {
+    const studio = read("components/design/DesignStudio.tsx");
+    expect(studio).not.toContain("Colours in the design");
+    expect(studio).not.toMatch(/\bcolourOptions\b/);
+    expect(studio).toContain("Print method (optional)");
+    expect(studio).toContain("defaultColours");
+  });
 });
