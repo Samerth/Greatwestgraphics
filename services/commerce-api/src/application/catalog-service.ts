@@ -201,14 +201,17 @@ export class CatalogService {
         );
       const directlyNonEmpty = new Set(withProducts.map((row) => row.categoryId));
 
-      // A parent counts as non-empty if a direct child has products, even
-      // with nothing tagged to the parent itself — mirrors
-      // expandCategoryIds' one-level browsing behaviour so the nav never
-      // hides a category that browsing would actually return results for.
+      // Bubble non-empty state through every ancestor. The published taxonomy
+      // is deeper than two levels, so checking only direct parents hides a
+      // department whose products are assigned to grandchildren.
       const nonEmpty = new Set(directlyNonEmpty);
-      for (const row of rows) {
-        if (row.parentId && directlyNonEmpty.has(row.id)) {
-          nonEmpty.add(row.parentId);
+      const parentById = new Map(rows.map((row) => [row.id, row.parentId]));
+      for (const categoryId of directlyNonEmpty) {
+        let parentId = parentById.get(categoryId) ?? null;
+        while (parentId) {
+          if (nonEmpty.has(parentId)) break;
+          nonEmpty.add(parentId);
+          parentId = parentById.get(parentId) ?? null;
         }
       }
 
@@ -679,21 +682,34 @@ export class CatalogService {
     }
   }
 
-  /** A category filter also matches products tagged to any direct
-   * subcategory, so browsing "T-Shirts" surfaces "Short Sleeve" products
-   * too without every product needing the parent tag as well. Only one
-   * level deep — the admin UI only allows two levels of nesting. */
+    /** A category filter matches products tagged anywhere below it (any depth). */
   private async expandCategoryIds(
     tenantId: string,
     categoryId: string,
   ): Promise<string[]> {
-    const children = await this.db
-      .select({ id: categories.id })
+    const rows = await this.db
+      .select({ id: categories.id, parentId: categories.parentId })
       .from(categories)
-      .where(
-        and(eq(categories.tenantId, tenantId), eq(categories.parentId, categoryId)),
-      );
-    return [categoryId, ...children.map((c) => c.id)];
+      .where(eq(categories.tenantId, tenantId));
+    const childrenByParent = new Map<string, string[]>();
+    for (const row of rows) {
+      if (!row.parentId) continue;
+      childrenByParent.set(row.parentId, [
+        ...(childrenByParent.get(row.parentId) ?? []),
+        row.id,
+      ]);
+    }
+    const expanded: string[] = [];
+    const pending = [categoryId];
+    const seen = new Set<string>();
+    while (pending.length > 0) {
+      const current = pending.pop();
+      if (!current || seen.has(current)) continue;
+      seen.add(current);
+      expanded.push(current);
+      pending.push(...(childrenByParent.get(current) ?? []));
+    }
+    return expanded;
   }
 
   async countProducts(

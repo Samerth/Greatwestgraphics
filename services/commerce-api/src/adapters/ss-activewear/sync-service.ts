@@ -751,7 +751,11 @@ export class SsSyncService {
       for (const map of maps) mappedIds.add(map.categoryId);
     }
 
-    if (mappedIds.size === 0) {
+    // Vendor mappings and taxonomy keyword matches are complementary — a
+    // broad S&S category mapping (e.g. their own "Drinkware" bucket) must
+    // not block the specific taxonomy leaf (Travel Mugs) from also being
+    // assigned. This mirrors the same fix in CatalogWriter.assignCategories.
+    {
       const text = `${style.styleName} ${style.title ?? ""} ${style.baseCategory ?? ""}`;
       const candidates = fallbackCategorySlugs(text);
       if (candidates.length > 0) {
@@ -765,9 +769,7 @@ export class SsSyncService {
               inArray(categories.slug, candidates),
             ),
           );
-        const bySlug = new Map(found.map((row) => [row.slug, row.id]));
-        const best = candidates.map((slug) => bySlug.get(slug)).find(Boolean);
-        if (best) mappedIds.add(best);
+        for (const category of found) mappedIds.add(category.id);
       }
     }
 

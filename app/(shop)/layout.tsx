@@ -74,7 +74,11 @@ export default async function ShopLayout({
   // Store resolution must never take down the whole shop shell — layout
   // errors bubble past (shop)/error.tsx into global-error.
   const [categories, customerSession, store] = await Promise.all([
-    loadStorefrontCategories(),
+    // Nav must mirror the published taxonomy, not current synced inventory —
+    // otherwise whole departments (Drinkware, Signs, Print) vanish from the
+    // menu just because no supplier rows are attached yet.
+    loadStorefrontCategories(false),
+
     getCustomerSession().catch(() => null),
     resolveStoreContext().catch(() => PUBLIC_STOREFRONT_FALLBACK),
   ]);
