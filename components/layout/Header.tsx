@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { Container } from "@/components/shared/Container";
@@ -13,8 +14,10 @@ import {
   buildCategoryTree,
   buildShopSections,
   SHOP_SERVICES,
+  SHOP_INDUSTRIES,
   type CategoryNode,
 } from "@/lib/navigation/shop-section";
+
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 // Used only when the commerce API returned no categories.
@@ -462,13 +465,18 @@ export function Header({
           )}
           <Link
             href="/cart"
-            className="relative inline-flex items-center gap-sp-2 px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
+            aria-label={`Cart, ${pieceCount} item${pieceCount === 1 ? "" : "s"}`}
+            className="relative inline-flex items-center gap-sp-2 px-3 sm:px-3.5 py-2 text-sm font-bold rounded-md border border-border hover:border-text-tertiary hover:bg-fill-subtle-15 transition-colors"
           >
+            <ShoppingBag size={18} strokeWidth={2} aria-hidden className="shrink-0" />
             <span className="hidden sm:inline">Cart</span>
-            <span className="absolute -top-2 -right-2 bg-text-primary text-white text-[11px] font-bold min-w-[18px] h-[18px] rounded-full grid place-items-center px-1">
-              {pieceCount}
-            </span>
+            {pieceCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-text-primary text-white text-[11px] font-bold min-w-[18px] h-[18px] rounded-full grid place-items-center px-1">
+                {pieceCount}
+              </span>
+            )}
           </Link>
+
           {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
             <ButtonLink
               href="/quote"
@@ -537,18 +545,34 @@ export function Header({
                               <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
                                 {group.label}
                               </p>
-                              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                              <div className="space-y-1.5">
                                 {group.categories.map((cat) => (
-                                  <Link
-                                    key={cat.id}
-                                    href={`/products?category=${encodeURIComponent(cat.slug)}`}
-                                    onClick={() => setMobileOpen(false)}
-                                    className="text-xs font-semibold text-text-primary"
-                                  >
-                                    {cat.name}
-                                  </Link>
+                                  <div key={cat.id}>
+                                    <Link
+                                      href={cat.href}
+                                      onClick={() => setMobileOpen(false)}
+                                      className={`text-xs font-semibold text-text-primary ${cat.isLive ? "" : "opacity-60"}`}
+                                    >
+                                      {cat.name}
+                                    </Link>
+                                    {cat.children.length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-2 border-l border-border">
+                                        {cat.children.map((child) => (
+                                          <Link
+                                            key={child.id}
+                                            href={child.href}
+                                            onClick={() => setMobileOpen(false)}
+                                            className={`text-[11px] text-text-secondary ${child.isLive ? "" : "opacity-60"}`}
+                                          >
+                                            {child.name}
+                                          </Link>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 ))}
                               </div>
+
                             </div>
                           ))}
                         </div>
@@ -724,10 +748,12 @@ function NavTrigger({
 }
 
 type CategoryGroup = ReturnType<typeof buildShopSections>[number]["groups"][number];
+type ShopNodeView = CategoryGroup["categories"][number];
 
-/** One category group column: a heading plus its categories, each with any
- * subcategories nested underneath. Shared by the department panels and the
- * flattened "Shop All Categories" view so both stay visually identical. */
+/** One category group column: the taxonomy category as a heading, then its
+ * subcategories, then any third-level entries. Entries that exist in the
+ * taxonomy but not yet in the synced catalogue render muted, so the menu
+ * mirrors the taxonomy without pretending every leaf has inventory. */
 function CategoryGroupBlock({
   group,
   onNavigate,
@@ -738,36 +764,52 @@ function CategoryGroupBlock({
   return (
     <div className="min-w-0">
       <p className="m-0 mb-2 pb-1.5 border-b border-border text-[11px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
-        {group.label}
+        {group.href ? (
+          <Link href={group.href} onClick={onNavigate} className="hover:text-accent transition-colors">
+            {group.label}
+          </Link>
+        ) : (
+          group.label
+        )}
       </p>
       <ul className="m-0 p-0 list-none space-y-2.5">
         {group.categories.map((cat) => (
-          <li key={cat.id} className="min-w-0">
-            <Link
-              href={`/products?category=${encodeURIComponent(cat.slug)}`}
-              onClick={onNavigate}
-              className="block text-sm font-bold text-text-primary hover:text-accent transition-colors"
-            >
-              {cat.name}
-            </Link>
-            {cat.children.length > 0 && (
-              <ul className="mt-1 m-0 p-0 list-none space-y-1">
-                {cat.children.map((child) => (
-                  <li key={child.id}>
-                    <Link
-                      href={`/products?category=${encodeURIComponent(child.slug)}`}
-                      onClick={onNavigate}
-                      className="block text-xs text-text-secondary hover:text-accent transition-colors"
-                    >
-                      {child.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
+          <ShopNodeItem key={cat.id} node={cat} depth={0} onNavigate={onNavigate} />
         ))}
       </ul>
     </div>
+  );
+}
+
+function ShopNodeItem({
+  node,
+  depth,
+  onNavigate,
+}: {
+  node: ShopNodeView;
+  depth: number;
+  onNavigate: () => void;
+}) {
+  const tone =
+    depth === 0
+      ? "text-sm font-bold text-text-primary"
+      : "text-xs text-text-secondary";
+  return (
+    <li className="min-w-0">
+      <Link
+        href={node.href}
+        onClick={onNavigate}
+        className={`block ${tone} ${node.isLive ? "" : "opacity-60"} hover:text-accent transition-colors`}
+      >
+        {node.name}
+      </Link>
+      {node.children.length > 0 && (
+        <ul className="mt-1 m-0 p-0 list-none space-y-1 pl-2 border-l border-border">
+          {node.children.map((child) => (
+            <ShopNodeItem key={child.id} node={child} depth={depth + 1} onNavigate={onNavigate} />
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }

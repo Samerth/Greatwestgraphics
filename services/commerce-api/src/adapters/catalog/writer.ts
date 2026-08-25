@@ -1001,19 +1001,21 @@ export class CatalogWriter {
       const searchText = [row.styleName, row.title, row.baseCategory]
         .filter(Boolean)
         .join(" ");
-      const categoryId = fallbackCategorySlugs(searchText)
+      const categoryIds = fallbackCategorySlugs(searchText)
         .map((slug) => categoryIdBySlug.get(slug))
-        .find(Boolean);
-      if (!categoryId) {
+        .filter((categoryId): categoryId is string => Boolean(categoryId));
+      if (categoryIds.length === 0) {
         unmatched += 1;
         continue;
       }
-      values.push({
-        tenantId,
-        productUuid: row.productUuid,
-        categoryId,
-        assignmentSource: "map",
-      });
+      for (const categoryId of new Set(categoryIds)) {
+        values.push({
+          tenantId,
+          productUuid: row.productUuid,
+          categoryId,
+          assignmentSource: "map",
+        });
+      }
     }
 
     for (let i = 0; i < values.length; i += 500) {
@@ -1416,8 +1418,9 @@ export class CatalogWriter {
       const candidates = fallbackCategorySlugs(searchText);
       if (candidates.length === 0) return;
 
-      // One query for every candidate, then the best-ranked slug that this
-      // tenant actually has. Previously this issued a query per matching rule.
+      // Assign every confident match, not only the first one. A product can be
+      // both a specific leaf (e.g. Travel Mugs) and a broader category
+      // (Drinkware), which keeps leaf and parent browsing populated.
       const found = await this.db
         .select({ id: categories.id, slug: categories.slug })
         .from(categories)
@@ -1427,10 +1430,7 @@ export class CatalogWriter {
             inArray(categories.slug, candidates),
           ),
         );
-      const bySlug = new Map(found.map((row) => [row.slug, row.id]));
-      const matched =
-        candidates.map((slug) => bySlug.get(slug)).find(Boolean) ?? null;
-      if (!matched) return;
+      if (found.length === 0) return;
       await this.db
         .delete(ssProductCategories)
         .where(
@@ -1439,12 +1439,14 @@ export class CatalogWriter {
             eq(ssProductCategories.productUuid, productUuid),
           ),
         );
-      await this.db.insert(ssProductCategories).values({
-        tenantId,
-        productUuid,
-        categoryId: matched,
-        assignmentSource: "map",
-      });
+      await this.db.insert(ssProductCategories).values(
+        found.map((category) => ({
+          tenantId,
+          productUuid,
+          categoryId: category.id,
+          assignmentSource: "map",
+        })),
+      );
       return;
     }
 
@@ -1471,21 +1473,21 @@ export class CatalogWriter {
       for (const map of maps) mappedIds.add(map.categoryId);
     }
 
-    if (mappedIds.size === 0) {
-      for (const rule of KEYWORD_FALLBACKS) {
-        if (!rule.pattern.test(searchText)) continue;
-        const [cat] = await this.db
-          .select()
-          .from(categories)
-          .where(
-            and(
-              eq(categories.tenantId, tenantId),
-              eq(categories.slug, rule.categorySlug),
-            ),
-          )
-          .limit(1);
-        if (cat) mappedIds.add(cat.id);
-      }
+    // Vendor mappings and taxonomy keyword matches are complementary. Keeping
+    // the old `mappedIds.size === 0` guard meant a broad vendor mapping (such
+    // as Drinkware) permanently blocked the new specific leaf (Travel Mugs).
+    const fallbackSlugs = fallbackCategorySlugs(searchText);
+    if (fallbackSlugs.length > 0) {
+      const fallbackCategories = await this.db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.tenantId, tenantId),
+            inArray(categories.slug, fallbackSlugs),
+          ),
+        );
+      for (const category of fallbackCategories) mappedIds.add(category.id);
     }
 
     if (mappedIds.size === 0) {

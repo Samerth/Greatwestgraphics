@@ -27,7 +27,9 @@
     "db:migrate": "npm run db:migrate --workspace @gwg/commerce-api",
     "db:seed": "npm run db:seed --workspace @gwg/commerce-api",
     "db:studio": "npm run db:studio --workspace @gwg/commerce-api",
-    "sync:ss": "npm run sync:ss --workspace @gwg/commerce-api"
+    "sync:ss": "npm run sync:ss --workspace @gwg/commerce-api",
+    "catalog:reclassify": "npm exec --workspace @gwg/commerce-api -- tsx src/scripts/reclassify-categories.ts",
+    "catalog:seed-categories": "npm exec --workspace @gwg/commerce-api -- tsx src/scripts/seed-categories.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1098.0",
