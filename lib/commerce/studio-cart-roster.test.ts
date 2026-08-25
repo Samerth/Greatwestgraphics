@@ -15,6 +15,7 @@ import {
   studioTeamOrderQuantity,
   studioTeamQuoteQuantity,
   studioTeamRosterError,
+  withDefaultRosterSizes,
 } from "./studio-cart-roster";
 
 const incompleteDraft = [
@@ -43,11 +44,14 @@ describe("studio cart roster — team panel is the order switch", () => {
 
   it("uses the same team-order errors as catalog PDP", () => {
     expect(studioTeamRosterError([])).toBe("Add at least one person.");
-    expect(studioTeamRosterError(emptyDraft)).toBe("Every row needs a name.");
+    expect(studioTeamRosterError(emptyDraft)).toBe("Add at least one person.");
     expect(studioTeamRosterError(incompleteDraft)).toBe(
       "Every row needs a name.",
     );
     expect(studioTeamRosterError(teamDraft)).toBeNull();
+    expect(
+      studioTeamRosterError([{ size: "", name: "Alex", number: "12" }]),
+    ).toBe("Every row needs a size.");
     expect(studioIsCompleteTeamRoster(teamDraft)).toBe(true);
     expect(studioIsCompleteTeamRoster(emptyDraft)).toBe(false);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
@@ -55,6 +59,27 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(studioFinishMode(emptyDraft)).toBe("bulk");
     expect(studioFinishMode(incompleteDraft)).toBe("team-progress");
     expect(studioFinishMode(teamDraft)).toBe("team-ready");
+    expect(
+      studioFinishMode([
+        ...teamDraft,
+        { size: "M", name: "", number: "" },
+      ]),
+    ).toBe("team-ready");
+  });
+
+  it("fills blank roster sizes once the garment list is known", () => {
+    expect(
+      withDefaultRosterSizes(
+        [
+          { size: "", name: "Alex", number: "12" },
+          { size: "XL", name: "Sam", number: "" },
+        ],
+        "M",
+      ),
+    ).toEqual([
+      { size: "M", name: "Alex", number: "12" },
+      { size: "XL", name: "Sam", number: "" },
+    ]);
   });
 
   it("prices a complete team roster from roster.length", () => {
@@ -66,6 +91,12 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(studioTeamQuoteQuantity(emptyDraft, 48)).toBe(48);
     expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(2);
     expect(studioTeamQuoteQuantity(teamDraft, 48)).toBe(2);
+    expect(
+      studioTeamQuoteQuantity(
+        [...teamDraft, { size: "S", name: "", number: "" }],
+        48,
+      ),
+    ).toBe(2);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
   });
 
@@ -144,6 +175,17 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(line.meta).toBe(
       `Custom design · Team order · 2 pieces, mixed sizes · Front print · ${rosterDecorSummary(decor)}${studioDesignNotesBit("Rush Friday")}`,
     );
+  });
+
+  it("ignores leftover empty rows so a finished list plus Add person still carts", () => {
+    const team = studioCartRosterPayload({
+      roster: [...teamDraft, { size: "S", name: "", number: "" }],
+      rosterDecor: defaultRosterDecor(),
+    });
+    expect(team).toMatchObject({ ok: true, teamOrder: true, qty: 2 });
+    if (!team.ok || !team.teamOrder) throw new Error("expected team payload");
+    expect(team.roster).toEqual(teamRows);
+    expect(team.qty).toBe(team.roster.length);
   });
 
   it("rejects a started roster with a blank name so names are not dropped", () => {

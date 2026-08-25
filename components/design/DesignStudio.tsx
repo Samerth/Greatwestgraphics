@@ -95,6 +95,7 @@ import {
   studioFinishCtaLabel,
   studioFinishMode,
   studioTeamQuoteQuantity,
+  withDefaultRosterSizes,
 } from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
@@ -427,6 +428,7 @@ export function DesignStudio({
   );
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [studioTab, setStudioTab] = useState<StudioTab>("images");
+  const [teamPanelReveal, setTeamPanelReveal] = useState(0);
   const [textDraft, setTextDraft] = useState("");
   const [textAlign, setTextAlign] = useState<TextAlign>("center");
   const [textPrintMethod, setTextPrintMethod] = useState<TextPrintMethod>("print");
@@ -679,6 +681,33 @@ export function DesignStudio({
   const selectedVariant = productDetail?.variants.find(
     (v) => v.id === selectedVariantId,
   );
+  const defaultRosterSize =
+    selectedVariant?.sizeName ??
+    productDetail?.variants.find(
+      (variant) => variant.qty > 0 && variant.active !== false,
+    )?.sizeName ??
+    productDetail?.variants[0]?.sizeName ??
+    "";
+
+  useEffect(() => {
+    if (!defaultRosterSize) return;
+    setRoster((prev) => {
+      const next = withDefaultRosterSizes(prev, defaultRosterSize);
+      if (next === prev) return prev;
+      setDesign((current) => ({
+        ...current,
+        roster: next
+          .filter((row) => row.name.trim() || row.number.trim() || row.size)
+          .map((row) => ({
+            size: row.size,
+            name: row.name,
+            number: row.number.trim() || undefined,
+          })),
+      }));
+      return next;
+    });
+  }, [defaultRosterSize]);
+
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
   const finishMode = studioFinishMode(roster);
   const teamOrderReady = finishMode === "team-ready";
@@ -1189,6 +1218,19 @@ export function DesignStudio({
     }));
   }
 
+  function revealTeamPanel() {
+    setStudioTab("team");
+    setTeamPanelReveal((tick) => tick + 1);
+  }
+
+  useEffect(() => {
+    if (!teamPanelReveal) return;
+    document.getElementById("studio-team-order")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [teamPanelReveal]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -1313,7 +1355,7 @@ export function DesignStudio({
     });
     if (!rosterPayload.ok) {
       setRosterError(rosterPayload.error);
-      setStudioTab("team");
+      revealTeamPanel();
       return;
     }
     if (!rosterPayload.teamOrder && !selectedVariant) {
@@ -1368,7 +1410,7 @@ export function DesignStudio({
         const cartRoster = line.roster;
         if (!cartRoster || line.qty !== cartRoster.length) {
           setRosterError("Add at least one person.");
-          setStudioTab("team");
+          revealTeamPanel();
           return;
         }
         const priceVariant =
@@ -1376,7 +1418,7 @@ export function DesignStudio({
           selectedVariant;
         if (!priceVariant) {
           setCartError("Select a size for the first roster row.");
-          setStudioTab("team");
+          revealTeamPanel();
           return;
         }
         addItem({
@@ -1721,7 +1763,10 @@ export function DesignStudio({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setStudioTab(tab.id)}
+              onClick={() => {
+                if (tab.id === "team") revealTeamPanel();
+                else setStudioTab(tab.id);
+              }}
               className={cn(
                 "h-8 rounded-sm border text-[10px] font-bold uppercase tracking-[0.06em] transition-colors",
                 studioTab === tab.id
@@ -1791,7 +1836,7 @@ export function DesignStudio({
           <div className="flex flex-col gap-2">
             <p className="m-0 text-[13px] leading-5 text-text-secondary">
               {teamOrderReady
-                ? `${roster.length.toLocaleString()} piece${roster.length === 1 ? "" : "s"} on the team list below.`
+                ? `${namedRosterCount.toLocaleString()} piece${namedRosterCount === 1 ? "" : "s"} on the team list below.`
                 : namedRosterCount > 0
                   ? "Finish every row on the team list below — or use Text for one name."
                   : "The team list is below the canvas, with room for names."}
@@ -2104,7 +2149,11 @@ export function DesignStudio({
                     key={side}
                     type="button"
                     onClick={() => {
-                      setActiveSide(side);
+                      if (selectedId && side !== activeSide) {
+                        moveSelectedToSide(side);
+                      } else {
+                        setActiveSide(side);
+                      }
                       setExportError(null);
                     }}
                     aria-pressed={selected}
@@ -2157,7 +2206,6 @@ export function DesignStudio({
           <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(260px,36%)] lg:shrink-0 lg:max-h-[min(36rem,calc(100dvh-8rem))] lg:overflow-y-auto">
             <StudioElementEditor
               kind={selectedText ? "text" : "artwork"}
-              activeSide={activeSide}
               text={
                 selectedText
                   ? {
@@ -2218,7 +2266,6 @@ export function DesignStudio({
               }}
               onDuplicate={duplicateSelected}
               onDelete={removeSelected}
-              onMoveToSide={moveSelectedToSide}
               onSliderCommit={endSliderHistory}
             />
           </div>
@@ -2337,12 +2384,12 @@ export function DesignStudio({
                   {teamOrderReady ? (
                     <>
                       <p className="m-0 text-xs text-text-secondary">
-                        {roster.length.toLocaleString()} team shirt
-                        {roster.length === 1 ? "" : "s"} · size per player
+                        {namedRosterCount.toLocaleString()} team shirt
+                        {namedRosterCount === 1 ? "" : "s"} · size per player
                       </p>
                       <button
                         type="button"
-                        onClick={() => setStudioTab("team")}
+                        onClick={revealTeamPanel}
                         className="mt-2 text-xs font-bold text-accent hover:underline"
                       >
                         Edit team list
@@ -2358,7 +2405,7 @@ export function DesignStudio({
                       </p>
                       <button
                         type="button"
-                        onClick={() => setStudioTab("team")}
+                        onClick={revealTeamPanel}
                         className="mt-2 text-xs font-bold text-accent hover:underline"
                       >
                         Finish team list

@@ -29,11 +29,18 @@ export function cartRosterRowsFromDraft(
     }));
 }
 
+/** Size-only leftovers from "+ Add person" are not part of the order. */
+export function studioActiveTeamRows(
+  rows: StudioRosterDraftRow[],
+): StudioRosterDraftRow[] {
+  return rows.filter((row) => row.name.trim() || row.number.trim());
+}
+
 /** Same mapping the pre-dedupe finish block wrote after validation. */
 export function cartRosterRowsFromValidatedDraft(
   rows: StudioRosterDraftRow[],
 ): StudioCartRosterRow[] {
-  return rows.map((row) => ({
+  return studioActiveTeamRows(rows).map((row) => ({
     size: row.size,
     name: row.name.trim(),
     number: row.number.trim() || undefined,
@@ -41,17 +48,42 @@ export function cartRosterRowsFromValidatedDraft(
 }
 
 /**
+ * Fill blank size cells once the garment's size list is known. The first
+ * studio row starts empty; a native <select> then looks chosen while React
+ * still holds "".
+ */
+export function withDefaultRosterSizes(
+  rows: StudioRosterDraftRow[],
+  defaultSize: string,
+): StudioRosterDraftRow[] {
+  const size = defaultSize.trim();
+  if (!size) return rows;
+  let changed = false;
+  const next = rows.map((row) => {
+    if (row.size.trim()) return row;
+    changed = true;
+    return { ...row, size };
+  });
+  return changed ? next : rows;
+}
+
+/**
  * Same rules as catalog PDP and the pre-dedupe studio checkbox:
- * at least one row, and every row needs a name.
+ * at least one player row, and every player row needs a name and size.
+ * Empty placeholder rows are ignored so "+ Add person" does not block cart.
  */
 export function studioTeamRosterError(
   rows: StudioRosterDraftRow[],
 ): string | null {
-  if (rows.length === 0) {
+  const active = studioActiveTeamRows(rows);
+  if (active.length === 0) {
     return "Add at least one person.";
   }
-  if (rows.some((row) => !row.name.trim())) {
+  if (active.some((row) => !row.name.trim())) {
     return "Every row needs a name.";
+  }
+  if (active.some((row) => !row.size.trim())) {
+    return "Every row needs a size.";
   }
   return null;
 }
@@ -85,7 +117,7 @@ export function studioTeamOrderQuantity(
   designQty: number,
 ): number {
   if (!studioIsCompleteTeamRoster(roster)) return designQty;
-  return Math.max(1, roster.length);
+  return Math.max(1, studioActiveTeamRows(roster).length);
 }
 
 /** Live quote qty: named rows while the list is in progress, else bulk qty. */
@@ -93,7 +125,9 @@ export function studioTeamQuoteQuantity(
   roster: StudioRosterDraftRow[],
   designQty: number,
 ): number {
-  if (studioIsCompleteTeamRoster(roster)) return Math.max(1, roster.length);
+  if (studioIsCompleteTeamRoster(roster)) {
+    return Math.max(1, studioActiveTeamRows(roster).length);
+  }
   const named = cartRosterRowsFromDraft(roster).length;
   if (named > 0) return named;
   return designQty;

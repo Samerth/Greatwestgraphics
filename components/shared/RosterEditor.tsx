@@ -41,6 +41,7 @@ export function RosterEditor({
               onChange={(e) => updateRow(i, { size: e.target.value })}
               className="border border-border rounded-sm bg-bg-raised px-1.5 py-2 text-[12.5px] font-semibold"
             >
+              {layout === "wide" ? <option value="">Size</option> : null}
               {sizes.map((s) => (
                 <option key={s.id} value={s.label}>
                   {s.label}
