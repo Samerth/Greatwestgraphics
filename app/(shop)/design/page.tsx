@@ -85,7 +85,7 @@ export default async function DesignPage({
       </section>
 
       <section className="py-sp-7">
-        <Container>
+        <Container className="max-w-[1400px] xl:px-8">
           <div className="text-[13px] text-text-tertiary mb-sp-4">
             Home / <b className="text-text-primary">Design Studio</b>
           </div>

@@ -1650,7 +1650,7 @@ export function DesignStudio({
   const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] gap-sp-3 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
       <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:overflow-y-auto">
@@ -1919,23 +1919,7 @@ export function DesignStudio({
             />
           ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={undoStudio}
-              disabled={!canUndo}
-              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              onClick={redoStudio}
-              disabled={!canRedo}
-              className="h-8 px-2 rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
-            >
-              Redo
-            </button>
-            <div className="flex items-center gap-1 ml-1" aria-label="Zoom">
+            <div className="flex items-center gap-1" aria-label="Zoom">
               <button
                 type="button"
                 aria-label="Zoom out"
@@ -1963,23 +1947,12 @@ export function DesignStudio({
           </div>
         </div>
 
-        {colorwayOptions.length > 0 && (
-          <div className="relative z-10 px-sp-4 py-sp-3 border-b border-white/10">
-            <StudioColorSwitcher
-              tone="canvas"
-              colorways={colorwayOptions}
-              selectedId={selectedGarmentId}
-              onChange={selectColorway}
-            />
-          </div>
-        )}
-
         <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
-        <div className="p-sp-3 min-h-[240px] sm:min-h-[300px] overflow-x-auto flex-1 min-w-0">
+        <div className="p-sp-3 min-h-[280px] sm:min-h-[360px] lg:min-h-[520px] overflow-x-auto flex-1 min-w-0">
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
-            <div className="min-w-0 flex-1 flex items-center justify-center">
+            <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
-              className="relative w-full max-w-[min(600px,calc(100dvh-16rem))] aspect-square"
+              className="relative w-full max-w-[min(820px,calc(100dvh-9rem))] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
@@ -2044,16 +2017,7 @@ export function DesignStudio({
                           width: `${rect.width * 100}%`,
                           height: `${rect.height * 100}%`,
                         }}
-                      >
-                        <span
-                          className={cn(
-                            "absolute left-0.5 top-0.5 right-0.5 rounded-[2px] px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-white",
-                            active ? "bg-accent" : "bg-black/50",
-                          )}
-                        >
-                          {formatZoneInchLabel(zone)}
-                        </span>
-                      </div>
+                      />
                     );
                   })}
                   {liveZone === "Full Front" ? (
@@ -2066,11 +2030,7 @@ export function DesignStudio({
                         width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
                         height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
                       }}
-                    >
-                      <span className="absolute left-1 top-0.5 rounded-[2px] bg-accent px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
-                        {formatZoneInchLabel("Full Front")}
-                      </span>
-                    </div>
+                    />
                   ) : null}
                 </>
               ) : (
@@ -2105,8 +2065,33 @@ export function DesignStudio({
                 </div>
               )}
             </div>
+            {/* Zone + inch size sits under the whole mockup — not a chip on the plate. */}
+            <p
+              data-studio="print-location"
+              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-9rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-white/80"
+            >
+              {formatZoneInchLabel(liveZone ?? placementBySide[activeSide])}
+            </p>
             </div>
             <div className="flex sm:flex-col gap-2 shrink-0 sm:w-[92px]">
+              <div className="flex sm:flex-col gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={undoStudio}
+                  disabled={!canUndo}
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={redoStudio}
+                  disabled={!canRedo}
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                >
+                  Redo
+                </button>
+              </div>
               {availableViews.map((side) => {
                 const selected = activeSide === side;
                 const thumbBackdrop = sideBackdrops[side];

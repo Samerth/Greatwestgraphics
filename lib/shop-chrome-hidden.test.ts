@@ -36,4 +36,12 @@ describe("hidden shopper chrome", () => {
     expect(studio).toContain("Print method (optional)");
     expect(studio).toContain("defaultColours");
   });
+
+  it("keeps one garment colour switcher and the print location under the mockup", () => {
+    const studio = read("components/design/DesignStudio.tsx");
+    expect(studio.match(/<StudioColorSwitcher/g)).toHaveLength(1);
+    expect(studio).toContain('tone="panel"');
+    expect(studio).toContain('data-studio="print-location"');
+    expect(studio).toContain("max-w-[min(820px,calc(100dvh-9rem))]");
+  });
 });
