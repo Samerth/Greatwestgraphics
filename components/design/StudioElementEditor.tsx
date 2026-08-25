@@ -120,7 +120,6 @@ export function StudioElementEditor({
   onOutline,
   onRotation,
   onSize,
-  onCenter,
   onForward,
   onBack,
   onDuplicate,
@@ -156,7 +155,6 @@ export function StudioElementEditor({
   onOutline: (next: boolean) => void;
   onRotation: (next: number) => void;
   onSize: (next: number) => void;
-  onCenter: () => void;
   onForward: () => void;
   onBack: () => void;
   onDuplicate: () => void;
@@ -272,7 +270,6 @@ export function StudioElementEditor({
       ) : null}
 
       <div className="flex flex-wrap gap-1.5">
-        <EditorAction onClick={onCenter}>Center chest</EditorAction>
         <EditorAction onClick={onForward}>Forward</EditorAction>
         <EditorAction onClick={onBack}>Back</EditorAction>
         <EditorAction onClick={onDuplicate}>Duplicate</EditorAction>

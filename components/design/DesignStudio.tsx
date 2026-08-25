@@ -2216,7 +2216,6 @@ export function DesignStudio({
                   });
                 }
               }}
-              onCenter={() => applyAlign("center")}
               onForward={() => {
                 if (!selectedId) return;
                 commitDesign((prev) =>
