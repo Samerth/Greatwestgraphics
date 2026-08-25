@@ -102,7 +102,10 @@ import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
 import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
-import { StudioElementEditor } from "@/components/design/StudioElementEditor";
+import {
+  StudioChestAlign,
+  StudioElementEditor,
+} from "@/components/design/StudioElementEditor";
 import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
 import {
@@ -1569,36 +1572,41 @@ export function DesignStudio({
       : null;
 
   function applyAlign(alignX: "left" | "center" | "right") {
-    if (activeSide === "front") {
-      const zone = frontChestZoneForAlign(alignX);
-      const targetArtwork =
-        selectedArtwork ?? (artworks.length === 1 ? artworks[0] : null);
-      if (targetArtwork) {
-        void (async () => {
-          let imageWidth = 80;
-          let imageHeight = 80;
-          try {
-            const size = await measureArtworkSize(targetArtwork.src);
-            imageWidth = size.width;
-            imageHeight = size.height;
-          } catch {
-            // Assumed square still lands the mark inside the 5×5 box.
-          }
-          const placed = placeArtworkInZone({
-            side: "front",
-            zone,
-            imageWidth,
-            imageHeight,
-            canvasSize: CANVAS_SIZE,
-          });
-          commitDesign((prev) => ({
-            ...patchStudioArtwork(prev, targetArtwork.id, placed),
-            placementBySide: { ...prev.placementBySide, front: zone },
-          }));
-        })();
-        return;
-      }
+    const zone = frontChestZoneForAlign(alignX);
+    const artworkToSnap =
+      selectedArtwork ??
+      (selectedText
+        ? null
+        : artworks.length === 1
+          ? artworks[0]
+          : null);
+
+    if (activeSide === "front" && artworkToSnap) {
+      void (async () => {
+        let imageWidth = 80;
+        let imageHeight = 80;
+        try {
+          const size = await measureArtworkSize(artworkToSnap.src);
+          imageWidth = size.width;
+          imageHeight = size.height;
+        } catch {
+          // Assumed square still lands the mark inside the 5×5 box.
+        }
+        const placed = placeArtworkInZone({
+          side: "front",
+          zone,
+          imageWidth,
+          imageHeight,
+          canvasSize: CANVAS_SIZE,
+        });
+        commitDesign((prev) => ({
+          ...patchStudioArtwork(prev, artworkToSnap.id, placed),
+          placementBySide: { ...prev.placementBySide, front: zone },
+        }));
+      })();
+      return;
     }
+
     if (selectedId) {
       const display = selectedText
         ? estimateTextDisplaySize(
@@ -1622,12 +1630,13 @@ export function DesignStudio({
       );
       return;
     }
+
     if (activeSide === "front") {
       commitDesign((prev) => ({
         ...prev,
         placementBySide: {
           ...prev.placementBySide,
-          front: frontChestZoneForAlign(alignX),
+          front: zone,
         },
       }));
     }
@@ -1644,7 +1653,7 @@ export function DesignStudio({
     <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
       {/* Product and artwork controls. Every visible control is interactive. */}
-      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-h-[520px] min-w-0">
+      <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
@@ -1744,30 +1753,6 @@ export function DesignStudio({
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
-        {activeSide === "front" ? (
-          <>
-            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mt-2">
-              Alignment
-            </span>
-            <div className="flex gap-1">
-              {(["left", "center", "right"] as const).map((align) => (
-                <button
-                  key={align}
-                  type="button"
-                  onClick={() => applyAlign(align)}
-                  className={cn(
-                    "flex-1 h-8 rounded-sm border text-[12px] font-bold capitalize transition-colors",
-                    frontAlign === align
-                      ? "bg-accent text-white border-accent"
-                      : "border-border hover:border-text-tertiary",
-                  )}
-                >
-                  {align}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : null}
           </>
         )}
 
@@ -1919,12 +1904,20 @@ export function DesignStudio({
       {/* Canvas */}
       <div className="min-w-0 w-full bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
         <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <b className="font-display text-[15px]">2D Design Canvas</b>
             <span className="block text-[11px] text-white/55 mt-0.5">
               {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
           </div>
+          {activeSide === "front" ? (
+            <StudioChestAlign
+              tone="canvas"
+              compact
+              value={frontAlign}
+              onChange={applyAlign}
+            />
+          ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
@@ -1981,11 +1974,12 @@ export function DesignStudio({
           </div>
         )}
 
-        <div className="p-sp-3 min-h-[280px] sm:min-h-[340px] overflow-x-auto">
+        <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
+        <div className="p-sp-3 min-h-[240px] sm:min-h-[300px] overflow-x-auto flex-1 min-w-0">
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex items-center justify-center">
             <div
-              className="relative w-full max-w-[600px] aspect-square"
+              className="relative w-full max-w-[min(600px,calc(100dvh-16rem))] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
@@ -2172,76 +2166,77 @@ export function DesignStudio({
           </div>
         </div>
         {(selectedText || selectedArtwork) && (
-          <StudioElementEditor
-            kind={selectedText ? "text" : "artwork"}
-            activeSide={activeSide}
-            placementAlign={frontAlign}
-            onAlign={applyAlign}
-            text={
-              selectedText
-                ? {
-                    align: selectedText.align,
-                    printMethod: selectedText.printMethod,
-                    fill: selectedText.fill,
-                    fontFamily: selectedText.fontFamily,
-                    letterSpacing: selectedText.letterSpacing ?? 0,
-                    arc: selectedText.arc ?? 0,
-                    sample: selectedText.text,
-                  }
-                : undefined
-            }
-            onPatchText={(patch) => {
-              const sliding =
-                patch.arc !== undefined || patch.letterSpacing !== undefined;
-              if (sliding) patchSelectedWhileSliding(patch);
-              else applySelectedTextPatch(patch);
-            }}
-            outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
-            rotation={
-              selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
-            }
-            size={
-              selectedText
-                ? selectedText.fontSize
-                : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
-            }
-            onOutline={(next) => {
-              if (selectedText) applySelectedTextPatch({ outline: next });
-              else applySelectedArtworkPatch({ outline: next });
-            }}
-            onRotation={(next) => {
-              if (selectedText) patchSelectedWhileSliding({ rotation: next });
-              else patchSelectedWhileSliding(undefined, { rotation: next });
-            }}
-            onSize={(next) => {
-              if (selectedText) patchSelectedWhileSliding({ fontSize: next });
-              else {
-                const scale = next / 500;
-                patchSelectedWhileSliding(undefined, {
-                  scaleX: scale,
-                  scaleY: scale,
-                });
+          <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(280px,38%)] lg:shrink-0 lg:max-h-[min(40rem,calc(100dvh-8rem))] lg:overflow-y-auto">
+            <StudioElementEditor
+              kind={selectedText ? "text" : "artwork"}
+              activeSide={activeSide}
+              text={
+                selectedText
+                  ? {
+                      align: selectedText.align,
+                      printMethod: selectedText.printMethod,
+                      fill: selectedText.fill,
+                      fontFamily: selectedText.fontFamily,
+                      letterSpacing: selectedText.letterSpacing ?? 0,
+                      arc: selectedText.arc ?? 0,
+                      sample: selectedText.text,
+                    }
+                  : undefined
               }
-            }}
-            onCenter={() => applyAlign("center")}
-            onForward={() => {
-              if (!selectedId) return;
-              commitDesign((prev) =>
-                nudgeStudioLayerOrder(prev, selectedId, "forward"),
-              );
-            }}
-            onBack={() => {
-              if (!selectedId) return;
-              commitDesign((prev) =>
-                nudgeStudioLayerOrder(prev, selectedId, "back"),
-              );
-            }}
-            onDuplicate={duplicateSelected}
-            onDelete={removeSelected}
-            onMoveToSide={moveSelectedToSide}
-            onSliderCommit={endSliderHistory}
-          />
+              onPatchText={(patch) => {
+                const sliding =
+                  patch.arc !== undefined || patch.letterSpacing !== undefined;
+                if (sliding) patchSelectedWhileSliding(patch);
+                else applySelectedTextPatch(patch);
+              }}
+              outline={Boolean(selectedText?.outline ?? selectedArtwork?.outline)}
+              rotation={
+                selectedText?.rotation ?? selectedArtwork?.rotation ?? 0
+              }
+              size={
+                selectedText
+                  ? selectedText.fontSize
+                  : Math.round(Math.abs(selectedArtwork?.scaleX ?? 0.2) * 500)
+              }
+              onOutline={(next) => {
+                if (selectedText) applySelectedTextPatch({ outline: next });
+                else applySelectedArtworkPatch({ outline: next });
+              }}
+              onRotation={(next) => {
+                if (selectedText) patchSelectedWhileSliding({ rotation: next });
+                else patchSelectedWhileSliding(undefined, { rotation: next });
+              }}
+              onSize={(next) => {
+                if (selectedText) patchSelectedWhileSliding({ fontSize: next });
+                else {
+                  const scale = next / 500;
+                  patchSelectedWhileSliding(undefined, {
+                    scaleX: scale,
+                    scaleY: scale,
+                  });
+                }
+              }}
+              onCenter={() => applyAlign("center")}
+              onForward={() => {
+                if (!selectedId) return;
+                commitDesign((prev) =>
+                  nudgeStudioLayerOrder(prev, selectedId, "forward"),
+                );
+              }}
+              onBack={() => {
+                if (!selectedId) return;
+                commitDesign((prev) =>
+                  nudgeStudioLayerOrder(prev, selectedId, "back"),
+                );
+              }}
+              onDuplicate={duplicateSelected}
+              onDelete={removeSelected}
+              onMoveToSide={moveSelectedToSide}
+              onSliderCommit={endSliderHistory}
+            />
+          </div>
         )}
+        </div>
       </div>
 
       {studioTab === "team" && (

@@ -63,7 +63,7 @@ export function StudioTextPanel({
       </button>
 
       <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
-        Alignment
+        Text align
       </span>
       <div className="flex gap-1">
         {ALIGNS.map((option) => (
