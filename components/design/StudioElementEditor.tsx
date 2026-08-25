@@ -60,6 +60,8 @@ export function StudioElementEditor({
   onOutline,
   onRotation,
   onSize,
+  placementAlign,
+  onAlign,
   onCenter,
   onForward,
   onBack,
@@ -96,6 +98,8 @@ export function StudioElementEditor({
   onOutline: (next: boolean) => void;
   onRotation: (next: number) => void;
   onSize: (next: number) => void;
+  placementAlign?: "left" | "center" | "right" | null;
+  onAlign?: (align: "left" | "center" | "right") => void;
   onCenter: () => void;
   onForward: () => void;
   onBack: () => void;
@@ -205,8 +209,33 @@ export function StudioElementEditor({
         onCommit={onSliderCommit}
       />
 
+      {onAlign ? (
+        <div>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-white/45 mb-1.5">
+            Alignment
+          </span>
+          <div className="flex gap-1">
+            {(["left", "center", "right"] as const).map((align) => (
+              <button
+                key={align}
+                type="button"
+                onClick={() => onAlign(align)}
+                className={cn(
+                  "flex-1 h-7 rounded-sm border text-[11px] font-bold capitalize",
+                  placementAlign === align
+                    ? "bg-white text-text-primary border-white"
+                    : "border-white/20 text-white/70 hover:border-white/40",
+                )}
+              >
+                {align}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-1.5">
-        <EditorAction onClick={onCenter}>Center</EditorAction>
+        {onAlign ? null : <EditorAction onClick={onCenter}>Center</EditorAction>}
         <EditorAction onClick={onForward}>Forward</EditorAction>
         <EditorAction onClick={onBack}>Back</EditorAction>
         <EditorAction onClick={onDuplicate}>Duplicate</EditorAction>

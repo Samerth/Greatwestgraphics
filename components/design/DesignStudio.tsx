@@ -64,6 +64,7 @@ import {
   cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
+  frontChestZoneForAlign,
   placeArtworkInZone,
 } from "@/lib/commerce/studio-placement";
 import { STUDIO_DEFAULT_FONT_ID } from "@/lib/commerce/studio-fonts";
@@ -72,7 +73,7 @@ import {
   type StudioHistorySnapshot,
 } from "@/lib/commerce/studio-history";
 import {
-  centerStudioLayer,
+  alignStudioLayer,
   createStudioTextLayer,
   deleteStudioLayer,
   duplicateStudioLayer,
@@ -1529,9 +1530,83 @@ export function DesignStudio({
 
   const canUndo = historyTick >= 0 && historyRef.current.canUndo;
   const canRedo = historyTick >= 0 && historyRef.current.canRedo;
-  const guideZone = liveZone ?? placementBySide[activeSide];
   const chestGuides = frontChestGuideRects();
   const draggingOnFront = liveZone !== null && activeSide === "front";
+  const frontAlign =
+    activeSide === "front"
+      ? placementBySide.front === "Left Chest"
+        ? "left"
+        : placementBySide.front === "Right Chest"
+          ? "right"
+          : placementBySide.front === "Center Chest"
+            ? "center"
+            : null
+      : null;
+
+  function applyAlign(alignX: "left" | "center" | "right") {
+    if (activeSide === "front") {
+      const zone = frontChestZoneForAlign(alignX);
+      const targetArtwork =
+        selectedArtwork ?? (artworks.length === 1 ? artworks[0] : null);
+      if (targetArtwork) {
+        void (async () => {
+          let imageWidth = 80;
+          let imageHeight = 80;
+          try {
+            const size = await measureArtworkSize(targetArtwork.src);
+            imageWidth = size.width;
+            imageHeight = size.height;
+          } catch {
+            // Assumed square still lands the mark inside the 5×5 box.
+          }
+          const placed = placeArtworkInZone({
+            side: "front",
+            zone,
+            imageWidth,
+            imageHeight,
+            canvasSize: CANVAS_SIZE,
+          });
+          commitDesign((prev) => ({
+            ...patchStudioArtwork(prev, targetArtwork.id, placed),
+            placementBySide: { ...prev.placementBySide, front: zone },
+          }));
+        })();
+        return;
+      }
+    }
+    if (selectedId) {
+      const display = selectedText
+        ? estimateTextDisplaySize(
+            selectedText.text,
+            selectedText.fontSize,
+            selectedText.letterSpacing,
+          )
+        : {
+            width: 80 * Math.abs(selectedArtwork?.scaleX ?? 1),
+            height: 80 * Math.abs(selectedArtwork?.scaleY ?? 1),
+          };
+      commitDesign((prev) =>
+        alignStudioLayer(
+          prev,
+          selectedId,
+          alignX,
+          CANVAS_SIZE,
+          display.width,
+          display.height,
+        ),
+      );
+      return;
+    }
+    if (activeSide === "front") {
+      commitDesign((prev) => ({
+        ...prev,
+        placementBySide: {
+          ...prev.placementBySide,
+          front: frontChestZoneForAlign(alignX),
+        },
+      }));
+    }
+  }
   const selectedPrintLabel = selectedText
     ? selectedText.printMethod === "embroidery"
       ? "Embroidery"
@@ -1644,6 +1719,30 @@ export function DesignStudio({
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
+        {activeSide === "front" ? (
+          <>
+            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mt-2">
+              Alignment
+            </span>
+            <div className="flex gap-1">
+              {(["left", "center", "right"] as const).map((align) => (
+                <button
+                  key={align}
+                  type="button"
+                  onClick={() => applyAlign(align)}
+                  className={cn(
+                    "flex-1 h-8 rounded-sm border text-[12px] font-bold capitalize transition-colors",
+                    frontAlign === align
+                      ? "bg-accent text-white border-accent"
+                      : "border-border hover:border-text-tertiary",
+                  )}
+                >
+                  {align}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
           </>
         )}
 
@@ -1965,11 +2064,7 @@ export function DesignStudio({
                   width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
                   height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                 }}
-              >
-                <span className="absolute left-1 top-0.5 right-1 rounded-[2px] bg-black/45 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-white">
-                  {formatZoneInchLabel(guideZone)}
-                </span>
-              </div>
+              />
               )}
               {sleeveView && artworks.length === 0 && texts.length === 0 && (
                 <div
@@ -2055,6 +2150,8 @@ export function DesignStudio({
           <StudioElementEditor
             kind={selectedText ? "text" : "artwork"}
             activeSide={activeSide}
+            placementAlign={frontAlign}
+            onAlign={applyAlign}
             text={
               selectedText
                 ? {
@@ -2101,25 +2198,7 @@ export function DesignStudio({
                 });
               }
             }}
-            onCenter={() => {
-              if (!selectedId) return;
-              const display = selectedText
-                ? estimateTextDisplaySize(
-                    selectedText.text,
-                    selectedText.fontSize,
-                    selectedText.letterSpacing,
-                  )
-                : { width: 80, height: 80 };
-              commitDesign((prev) =>
-                centerStudioLayer(
-                  prev,
-                  selectedId,
-                  CANVAS_SIZE,
-                  display.width,
-                  display.height,
-                ),
-              );
-            }}
+            onCenter={() => applyAlign("center")}
             onForward={() => {
               if (!selectedId) return;
               commitDesign((prev) =>

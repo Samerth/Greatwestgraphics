@@ -1,41 +1,11 @@
 import { DESIGN_CANVAS_SIZE, type DesignSide } from "@gwg/contracts";
-import {
-  STUDIO_PRINT_AREAS,
-  STUDIO_UPPER_INSET_FRACTION,
-  printAreaPixels,
-  type NormalizedRect,
+import { printAreaPixels } from "./studio-placement";
+
+export {
+  FRONT_CHEST_ZONES,
+  frontChestGuideRects,
+  type FrontChestZone,
 } from "./studio-placement";
-
-/** Front chest stamps drawn while the shopper drags a logo. */
-export const FRONT_CHEST_ZONES = [
-  "Left Chest",
-  "Center Chest",
-  "Right Chest",
-] as const;
-
-export type FrontChestZone = (typeof FRONT_CHEST_ZONES)[number];
-
-/**
- * 5×5 chest marks inside the 13×16 front plate. Left / center / right are
- * real boxes on the shirt — not just a label on one shared rectangle.
- */
-export function frontChestGuideRects(): {
-  zone: FrontChestZone;
-  rect: NormalizedRect;
-}[] {
-  const plate = STUDIO_PRINT_AREAS.front;
-  const width = plate.width * (5 / 13);
-  const height = plate.height * (5 / 16);
-  const y = plate.y + plate.height * STUDIO_UPPER_INSET_FRACTION;
-  const left = plate.x;
-  const center = plate.x + (plate.width - width) / 2;
-  const right = plate.x + plate.width - width;
-  return [
-    { zone: "Left Chest", rect: { x: left, y, width, height } },
-    { zone: "Center Chest", rect: { x: center, y, width, height } },
-    { zone: "Right Chest", rect: { x: right, y, width, height } },
-  ];
-}
 
 /**
  * Typical adult unisex tee / fleece print plates, in inches.

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  STUDIO_FULL_WIDTH_FRACTION,
   STUDIO_MARK_WIDTH_FRACTION,
+  STUDIO_MAX_HEIGHT_FRACTION,
   STUDIO_PRINT_AREAS,
   artworkOriginInPrintArea,
   cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
+  frontChestGuideRects,
   placeArtworkInZone,
+  placementAreaPixels,
   placementIntent,
   printAreaPixels,
 } from "./studio-placement";
@@ -130,7 +134,7 @@ describe("placeArtworkInZone", () => {
   const canvas = DESIGN_CANVAS_SIZE;
   const area = printAreaPixels("front", canvas);
 
-  it("sizes a chest mark to ~32% of the print-area width, not the canvas", () => {
+  it("sizes a chest mark to the 5×5 guide box, not the full plate", () => {
     const huge = placeArtworkInZone({
       side: "front",
       zone: "Center Chest",
@@ -145,9 +149,15 @@ describe("placeArtworkInZone", () => {
       imageHeight: 200,
       canvasSize: canvas,
     });
-    const expected = area.width * STUDIO_MARK_WIDTH_FRACTION;
+    const box = placementAreaPixels("front", "Center Chest", canvas);
+    const expected = Math.min(
+      box.width * STUDIO_FULL_WIDTH_FRACTION,
+      box.height * STUDIO_MAX_HEIGHT_FRACTION,
+    );
     expect(4000 * huge.scaleX).toBeCloseTo(expected, 5);
     expect(200 * tiny.scaleX).toBeCloseTo(expected, 5);
+    expect(4000 * huge.scaleX).toBeLessThanOrEqual(box.width + 0.01);
+    expect(4000 * huge.scaleX).toBeLessThan(area.width * STUDIO_MARK_WIDTH_FRACTION + 0.01);
     expect(huge.scaleX).toBeLessThan(0.05);
     expect(tiny.scaleX).toBeGreaterThan(huge.scaleX);
   });
@@ -166,7 +176,7 @@ describe("placeArtworkInZone", () => {
     expect(placed.scaleX).not.toBe(0.4);
   });
 
-  it("aligns left / center / right inside the body print area", () => {
+  it("lands left / center / right inside the 5×5 chest boxes", () => {
     const left = placeArtworkInZone({
       side: "front",
       zone: "Left Chest",
@@ -188,14 +198,31 @@ describe("placeArtworkInZone", () => {
       imageHeight: 800,
       canvasSize: canvas,
     });
-    const displayW = 1000 * left.scaleX;
-    expect(left.x).toBeCloseTo(area.x, 5);
-    expect(center.x).toBeCloseTo(area.x + (area.width - displayW) / 2, 5);
-    expect(center.x).toBeLessThan(right.x);
+    const boxes = frontChestGuideRects();
+    for (const [placed, zone] of [
+      [left, "Left Chest"],
+      [center, "Center Chest"],
+      [right, "Right Chest"],
+    ] as const) {
+      const guide = boxes.find((box) => box.zone === zone)!;
+      const box = {
+        x: guide.rect.x * canvas,
+        y: guide.rect.y * canvas,
+        width: guide.rect.width * canvas,
+        height: guide.rect.height * canvas,
+      };
+      const displayW = 1000 * placed.scaleX;
+      const displayH = 800 * placed.scaleY;
+      expect(placed.x).toBeGreaterThanOrEqual(box.x - 0.01);
+      expect(placed.y).toBeGreaterThanOrEqual(box.y - 0.01);
+      expect(placed.x + displayW).toBeLessThanOrEqual(box.x + box.width + 0.01);
+      expect(placed.y + displayH).toBeLessThanOrEqual(box.y + box.height + 0.01);
+      expect(placed.x + displayW / 2).toBeCloseTo(box.x + box.width / 2, 5);
+      expect(placed.y + displayH / 2).toBeCloseTo(box.y + box.height / 2, 5);
+    }
     expect(left.x).toBeLessThan(center.x);
-    expect(right.x).toBeCloseTo(area.x + area.width - displayW, 5);
+    expect(center.x).toBeLessThan(right.x);
     expect(left.y).toBeCloseTo(center.y, 5);
-    expect(left.y).toBeGreaterThanOrEqual(area.y);
   });
 
   it("makes Full Front larger than a centered chest mark, still in the plate", () => {
@@ -217,7 +244,7 @@ describe("placeArtworkInZone", () => {
     expect(1000 * full.scaleX).toBeLessThanOrEqual(area.width + 0.01);
   });
 
-  it("centers the mark horizontally in the print area, not at canvas mid as top-left", () => {
+  it("centers a chest mark in the Center Chest box, not at canvas mid as top-left", () => {
     const placed = placeArtworkInZone({
       side: "front",
       zone: "Center Chest",
@@ -225,11 +252,14 @@ describe("placeArtworkInZone", () => {
       imageHeight: 1000,
       canvasSize: canvas,
     });
+    const box = placementAreaPixels("front", "Center Chest", canvas);
     const display = 1000 * placed.scaleX;
     const mid = placed.x + display / 2;
+    expect(mid).toBeCloseTo(box.x + box.width / 2, 5);
     expect(mid).toBeCloseTo(area.x + area.width / 2, 5);
     expect(placed.x).not.toBe(canvas / 2);
     expect(placed.y).not.toBe(canvas / 2);
+    expect(placed.y).toBeGreaterThan(area.y + area.height * 0.05);
   });
 });
 
