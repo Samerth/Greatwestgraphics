@@ -42,6 +42,6 @@ describe("hidden shopper chrome", () => {
     expect(studio.match(/<StudioColorSwitcher/g)).toHaveLength(1);
     expect(studio).toContain('tone="panel"');
     expect(studio).toContain('data-studio="print-location"');
-    expect(studio).toContain("max-w-[min(820px,calc(100dvh-9rem))]");
+    expect(studio).toContain("max-w-[min(820px,calc(100dvh-12rem))]");
   });
 });

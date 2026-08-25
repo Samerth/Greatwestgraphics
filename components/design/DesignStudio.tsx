@@ -1952,7 +1952,7 @@ export function DesignStudio({
           <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
-              className="relative w-full max-w-[min(820px,calc(100dvh-9rem))] aspect-square"
+              className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
@@ -2068,7 +2068,7 @@ export function DesignStudio({
             {/* Zone + inch size sits under the whole mockup — not a chip on the plate. */}
             <p
               data-studio="print-location"
-              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-9rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-white/80"
+              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-white/80"
             >
               {formatZoneInchLabel(liveZone ?? placementBySide[activeSide])}
             </p>
