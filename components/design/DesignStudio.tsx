@@ -1904,6 +1904,8 @@ export function DesignStudio({
               {/* CSS overlay so the guide never lands in the Konva proof. */}
               {draggingOnFront ? (
                 <>
+                  {/* Chest marks only — do not draw the leftover full-plate box
+                      that sat flush to the top of the printable area. */}
                   {chestGuides.map(({ zone, rect }) => {
                     const active = liveZone === zone;
                     return (
