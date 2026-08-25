@@ -1,4 +1,5 @@
 import type { RosterDecor } from "@gwg/contracts";
+import { moneyFromMinor } from "../utils/quote-pricing";
 import { rosterDecorSummary } from "./studio-roster-decor";
 
 /** Draft row from the Team order panel (empty placeholders are allowed). */
@@ -68,12 +69,46 @@ export function studioHasStartedTeamRoster(
   return cartRosterRowsFromDraft(rows).length > 0;
 }
 
+/** Finish-block mode. The default empty row stays bulk Size/Qty. */
+export type StudioFinishMode = "bulk" | "team-progress" | "team-ready";
+
+export function studioFinishMode(
+  rows: StudioRosterDraftRow[],
+): StudioFinishMode {
+  if (!studioHasStartedTeamRoster(rows)) return "bulk";
+  if (studioIsCompleteTeamRoster(rows)) return "team-ready";
+  return "team-progress";
+}
+
 export function studioTeamOrderQuantity(
   roster: StudioRosterDraftRow[],
   designQty: number,
 ): number {
   if (!studioIsCompleteTeamRoster(roster)) return designQty;
   return Math.max(1, roster.length);
+}
+
+/** Live quote qty: named rows while the list is in progress, else bulk qty. */
+export function studioTeamQuoteQuantity(
+  roster: StudioRosterDraftRow[],
+  designQty: number,
+): number {
+  if (studioIsCompleteTeamRoster(roster)) return Math.max(1, roster.length);
+  const named = cartRosterRowsFromDraft(roster).length;
+  if (named > 0) return named;
+  return designQty;
+}
+
+/** Team and bulk share one CTA shape: qty · placement · quoted dollars. */
+export function studioFinishCtaLabel(input: {
+  quoteQty: number;
+  placementSuffix: string;
+  totalMinor: number;
+}): string {
+  const pieces = `Add ${input.quoteQty.toLocaleString()} Piece${
+    input.quoteQty === 1 ? "" : "s"
+  } to Cart`;
+  return `${pieces} · ${input.placementSuffix} · ${moneyFromMinor(input.totalMinor)}`;
 }
 
 export type StudioCartRosterPayload =

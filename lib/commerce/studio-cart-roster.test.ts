@@ -8,9 +8,12 @@ import {
   studioCartRosterPayload,
   studioCheckoutConfiguration,
   studioDesignNotesBit,
+  studioFinishCtaLabel,
+  studioFinishMode,
   studioHasStartedTeamRoster,
   studioIsCompleteTeamRoster,
   studioTeamOrderQuantity,
+  studioTeamQuoteQuantity,
   studioTeamRosterError,
 } from "./studio-cart-roster";
 
@@ -49,11 +52,38 @@ describe("studio cart roster — team panel is the order switch", () => {
     expect(studioIsCompleteTeamRoster(emptyDraft)).toBe(false);
     expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
     expect(studioHasStartedTeamRoster(incompleteDraft)).toBe(true);
+    expect(studioFinishMode(emptyDraft)).toBe("bulk");
+    expect(studioFinishMode(incompleteDraft)).toBe("team-progress");
+    expect(studioFinishMode(teamDraft)).toBe("team-ready");
   });
 
   it("prices a complete team roster from roster.length", () => {
     expect(studioTeamOrderQuantity(emptyDraft, 48)).toBe(48);
     expect(studioTeamOrderQuantity(teamDraft, 48)).toBe(2);
+  });
+
+  it("quotes complete → row count, in-progress → named count, else bulk qty", () => {
+    expect(studioTeamQuoteQuantity(emptyDraft, 48)).toBe(48);
+    expect(studioTeamQuoteQuantity(incompleteDraft, 48)).toBe(2);
+    expect(studioTeamQuoteQuantity(teamDraft, 48)).toBe(2);
+    expect(studioHasStartedTeamRoster(emptyDraft)).toBe(false);
+  });
+
+  it("always puts the quoted dollar amount on the finish CTA", () => {
+    expect(
+      studioFinishCtaLabel({
+        quoteQty: 2,
+        placementSuffix: "Left Chest",
+        totalMinor: 4599,
+      }),
+    ).toBe('Add 2 Pieces to Cart · Left Chest · $45.99');
+    expect(
+      studioFinishCtaLabel({
+        quoteQty: 1,
+        placementSuffix: "Full Front",
+        totalMinor: 1200,
+      }),
+    ).toBe('Add 1 Piece to Cart · Full Front · $12.00');
   });
 
   it("empty Team panel stays a regular size + qty line", () => {

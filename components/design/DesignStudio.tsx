@@ -36,7 +36,6 @@ import {
   dataUrlToBlob,
   filenameForArtworkBlob,
 } from "@/lib/store/design-draft";
-import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { shopperUnitMinor } from "@/lib/utils/shopper-price";
 import {
   PRICING_MASTER_V2,
@@ -93,8 +92,9 @@ import {
   cartRosterRowsFromDraft,
   studioCartLineFields,
   studioCartRosterPayload,
-  studioIsCompleteTeamRoster,
-  studioTeamOrderQuantity,
+  studioFinishCtaLabel,
+  studioFinishMode,
+  studioTeamQuoteQuantity,
 } from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
@@ -680,7 +680,10 @@ export function DesignStudio({
     (v) => v.id === selectedVariantId,
   );
   const namedRosterCount = cartRosterRowsFromDraft(roster).length;
-  const teamOrderReady = studioIsCompleteTeamRoster(roster);
+  const finishMode = studioFinishMode(roster);
+  const teamOrderReady = finishMode === "team-ready";
+  const teamOrderStarted = finishMode !== "bulk";
+  const quoteQty = studioTeamQuoteQuantity(roster, designQty);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
@@ -695,7 +698,7 @@ export function DesignStudio({
     try {
       return priceShopperQuote(pricingConfig, {
         unitCostMinor,
-        quantity: studioTeamOrderQuantity(roster, designQty),
+        quantity: studioTeamQuoteQuantity(roster, designQty),
         mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
         colourName:
           (selectedColorwayReady
@@ -2329,20 +2332,39 @@ export function DesignStudio({
 
           {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              {teamOrderReady ? (
+              {teamOrderStarted ? (
                 <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
-                  <p className="m-0 text-xs text-text-secondary">
-                    Team order · {roster.length.toLocaleString()} piece
-                    {roster.length === 1 ? "" : "s"} from the team list
-                    (mixed sizes).
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setStudioTab("team")}
-                    className="mt-2 text-xs font-bold text-accent hover:underline"
-                  >
-                    Edit team list
-                  </button>
+                  {teamOrderReady ? (
+                    <>
+                      <p className="m-0 text-xs text-text-secondary">
+                        {roster.length.toLocaleString()} team shirt
+                        {roster.length === 1 ? "" : "s"} · size per player
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setStudioTab("team")}
+                        className="mt-2 text-xs font-bold text-accent hover:underline"
+                      >
+                        Edit team list
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="m-0 text-xs text-text-secondary">
+                        Team list in progress ·{" "}
+                        {namedRosterCount.toLocaleString()} named
+                        {namedRosterCount === 1 ? " player" : " players"}. Every
+                        row needs a name and size.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setStudioTab("team")}
+                        className="mt-2 text-xs font-bold text-accent hover:underline"
+                      >
+                        Finish team list
+                      </button>
+                    </>
+                  )}
                   {sizeChartHref && (
                     <p className="m-0 mt-2 text-xs">
                       <a
@@ -2429,12 +2451,6 @@ export function DesignStudio({
                       </button>
                     ))}
                   </div>
-                  {namedRosterCount > 0 && (
-                    <p className="m-0 mb-sp-3 text-xs text-text-secondary">
-                      Team list is incomplete — every row needs a name. A single
-                      name on one jersey belongs on the Text tab.
-                    </p>
-                  )}
                 </>
               )}
 
@@ -2518,7 +2534,7 @@ export function DesignStudio({
                 disabled={
                   addingToCart ||
                   !selectedColorwayReady ||
-                  (!teamOrderReady &&
+                  (!teamOrderStarted &&
                     (!selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0))
                 }
                 onClick={addDesignToCart}
@@ -2527,15 +2543,22 @@ export function DesignStudio({
                   ? "Attaching artwork…"
                   : !selectedColorwayReady
                     ? "Loading colour…"
-                  : teamOrderReady
-                    ? `Add ${roster.length.toLocaleString()} Piece${roster.length === 1 ? "" : "s"} to Cart · ${placementSuffix}`
-                    : !selectedVariant || selectedVariant.qty <= 0
+                    : !teamOrderStarted &&
+                        (!selectedVariant || selectedVariant.qty <= 0)
                       ? "Unavailable"
-                      : `Add ${designQty.toLocaleString()} Piece${designQty === 1 ? "" : "s"} to Cart · ${placementSuffix} · ${moneyFromMinor(
-                          quoted?.totalMinor ??
-                            unitPriceMinor(selectedVariant, designQty, productDetail) *
-                              designQty,
-                        )}`}
+                      : studioFinishCtaLabel({
+                          quoteQty,
+                          placementSuffix,
+                          totalMinor:
+                            quoted?.totalMinor ??
+                            (selectedVariant
+                              ? unitPriceMinor(
+                                  selectedVariant,
+                                  quoteQty,
+                                  productDetail,
+                                ) * quoteQty
+                              : 0),
+                        })}
               </Button>
             </div>
           )}
