@@ -8,6 +8,7 @@ import {
   distinctPhoto,
   framedBackdropStyles,
   garmentBackdropForSide,
+  isStudioSideRepresentation,
   namedVendorView,
   plateContainRect,
   studioCanvasImageUrl,
@@ -137,6 +138,22 @@ describe("garmentBackdropForSide", () => {
       mirror: false,
       plate: true,
     });
+  });
+});
+
+describe("isStudioSideRepresentation", () => {
+  it("is true only for photorealistic side plates", () => {
+    expect(
+      isStudioSideRepresentation(garmentBackdropForSide("left", PHOTOS)),
+    ).toBe(false);
+    expect(
+      isStudioSideRepresentation(
+        garmentBackdropForSide("left", { ...PHOTOS, colorSideImageUrl: null }),
+      ),
+    ).toBe(true);
+    expect(
+      isStudioSideRepresentation(garmentBackdropForSide("front", PHOTOS)),
+    ).toBe(false);
   });
 });
 

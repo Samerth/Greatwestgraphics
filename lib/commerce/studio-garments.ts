@@ -335,6 +335,19 @@ export type StudioSizeVariant = {
   active?: boolean;
 };
 
+/** Roster size list. If every size is out of stock, still offer the sizes. */
+export function studioRosterSizeOptions(
+  variants: readonly StudioSizeVariant[],
+): { id: string; label: string }[] {
+  const inStock = variants.filter(
+    (variant) => variant.qty > 0 && variant.active !== false,
+  );
+  return (inStock.length > 0 ? inStock : variants).map((variant) => ({
+    id: variant.id,
+    label: variant.sizeName,
+  }));
+}
+
 /** Keep the shopper's size when the next colourway still offers it. */
 export function studioVariantIdForColorway({
   variants,

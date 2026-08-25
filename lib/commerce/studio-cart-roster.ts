@@ -48,9 +48,9 @@ export function cartRosterRowsFromValidatedDraft(
 }
 
 /**
- * Fill blank size cells once the garment's size list is known. The first
- * studio row starts empty; a native <select> then looks chosen while React
- * still holds "".
+ * Fill blank size cells on started rows once the garment's size list is
+ * known. Empty "+ Add person" placeholders stay blank so a Size option
+ * does not look like a one-piece team order.
  */
 export function withDefaultRosterSizes(
   rows: StudioRosterDraftRow[],
@@ -61,6 +61,7 @@ export function withDefaultRosterSizes(
   let changed = false;
   const next = rows.map((row) => {
     if (row.size.trim()) return row;
+    if (!row.name.trim() && !row.number.trim()) return row;
     changed = true;
     return { ...row, size };
   });
@@ -95,10 +96,11 @@ export function studioIsCompleteTeamRoster(
   return studioTeamRosterError(rows) === null;
 }
 
+/** A name or number means the shopper started a team list. */
 export function studioHasStartedTeamRoster(
   rows: StudioRosterDraftRow[],
 ): boolean {
-  return cartRosterRowsFromDraft(rows).length > 0;
+  return studioActiveTeamRows(rows).length > 0;
 }
 
 /** Finish-block mode. The default empty row stays bulk Size/Qty. */
@@ -120,16 +122,14 @@ export function studioTeamOrderQuantity(
   return Math.max(1, studioActiveTeamRows(roster).length);
 }
 
-/** Live quote qty: named rows while the list is in progress, else bulk qty. */
+/** Live quote qty: a started list uses player rows, else bulk qty. */
 export function studioTeamQuoteQuantity(
   roster: StudioRosterDraftRow[],
   designQty: number,
 ): number {
-  if (studioIsCompleteTeamRoster(roster)) {
+  if (studioHasStartedTeamRoster(roster)) {
     return Math.max(1, studioActiveTeamRows(roster).length);
   }
-  const named = cartRosterRowsFromDraft(roster).length;
-  if (named > 0) return named;
   return designQty;
 }
 

@@ -265,10 +265,29 @@ export function StudioElementEditor({
       ) : null}
 
       <div className="flex flex-wrap gap-1.5">
-        <EditorAction onClick={onForward}>Forward</EditorAction>
-        <EditorAction onClick={onBack}>Back</EditorAction>
-        <EditorAction onClick={onDuplicate}>Duplicate</EditorAction>
-        <EditorAction onClick={onDelete} danger>
+        <EditorAction
+          onClick={onForward}
+          title="Bring this layer in front of the others"
+        >
+          Bring forward
+        </EditorAction>
+        <EditorAction
+          onClick={onBack}
+          title="Send this layer behind the others"
+        >
+          Send backward
+        </EditorAction>
+        <EditorAction
+          onClick={onDuplicate}
+          title="Copy the selected artwork or text"
+        >
+          Duplicate
+        </EditorAction>
+        <EditorAction
+          onClick={onDelete}
+          danger
+          title="Remove the selected artwork or text"
+        >
           Delete
         </EditorAction>
       </div>
@@ -280,15 +299,19 @@ function EditorAction({
   children,
   onClick,
   danger,
+  title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
+  title: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
+      aria-label={title}
       className={cn(
         "h-7 px-2 rounded-sm border text-[11px] font-bold transition-colors",
         danger
