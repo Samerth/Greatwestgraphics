@@ -59,6 +59,7 @@ export type SanmarProduct = {
   colors?: Array<{
     colorName: string;
     colorCode?: string;
+    hex?: string;
     images?: string[];
   }>;
   sizes?: Array<{
@@ -79,6 +80,8 @@ export type SanmarSKU = {
   price?: number;
   mapPrice?: number;
   imageUrl?: string;
+  /** Vendor hex when PromoStandards actually sent one — never guessed. */
+  colorHex?: string;
   gtin?: string;
   sizeOrder?: number;
   discontinued?: boolean;
@@ -115,6 +118,8 @@ export type SanmarBulkProduct = {
   quantity: number;
   price?: number;
   imageUrl?: string;
+  /** Present only when Bulk XML includes a hex/htmlColor field. */
+  colorHex?: string;
   productName?: string;
   brandName?: string;
 };
@@ -184,6 +189,28 @@ function extractTags(xml: string, localName: string): string[] {
 
 function firstTag(xml: string, localName: string): string | undefined {
   return extractTags(xml, localName)[0];
+}
+
+/** Accept a PromoStandards hex / htmlColor value. Do not invent from a name. */
+export function extractVendorHex(
+  value: string | null | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const six = trimmed.match(/^#?([0-9a-fA-F]{6})$/);
+  if (six) return `#${six[1]!.toLowerCase()}`;
+  const three = trimmed.match(/^#?([0-9a-fA-F]{3})$/);
+  if (!three) return undefined;
+  const [r, g, b] = three[1]!;
+  return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+}
+
+function firstVendorHex(block: string): string | undefined {
+  for (const tag of ["hex", "hexColor", "colorHex", "htmlColor"]) {
+    const hex = extractVendorHex(firstTag(block, tag));
+    if (hex) return hex;
+  }
+  return undefined;
 }
 
 function serviceCode(xml: string): string | undefined {
@@ -336,6 +363,7 @@ export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
     const quantity = Number.parseInt(firstTag(block, "quantity") || "0", 10) || 0;
     const priceText = firstTag(block, "price");
     const price = priceText ? Number.parseFloat(priceText) : undefined;
+    const colorHex = firstVendorHex(block);
     products.push({
       partId,
       styleId,
@@ -345,11 +373,81 @@ export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
       quantity,
       price: Number.isFinite(price) ? price : undefined,
       imageUrl: firstTag(block, "image"),
+      ...(colorHex ? { colorHex } : {}),
       productName: firstTag(block, "productName"),
       brandName: firstTag(block, "brand"),
     });
   }
   return products;
+}
+
+export function parseProductColorBlocks(
+  xml: string,
+): Array<{ colorName: string; hex?: string }> {
+  const byName = new Map<string, { colorName: string; hex?: string }>();
+  const colorBlocks =
+    xml.match(/<(?:[\w.-]+:)?Color\b[\s\S]*?<\/(?:[\w.-]+:)?Color>/gi) ?? [];
+  for (const block of colorBlocks) {
+    const colorName =
+      firstTag(block, "colorName") || firstTag(block, "standardColorName");
+    if (!colorName) continue;
+    const key = colorName.trim().toLowerCase();
+    const existing = byName.get(key) ?? { colorName: colorName.trim() };
+    const hex = firstVendorHex(block);
+    if (hex) existing.hex = hex;
+    byName.set(key, existing);
+  }
+  if (byName.size === 0) {
+    for (const colorName of extractTags(xml, "colorName")) {
+      const key = colorName.trim().toLowerCase();
+      if (!key || byName.has(key)) continue;
+      byName.set(key, { colorName: colorName.trim() });
+    }
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Part-level SKUs from getProduct XML. A missing ProductPart <url> stays
+ * empty — do not copy product.images[0] onto every colour.
+ */
+export function productPartsToSkus(
+  product: SanmarProduct,
+  rawXml: string,
+): SanmarSKU[] {
+  const partBlocks =
+    rawXml.match(
+      /<(?:[\w.-]+:)?ProductPart\b[\s\S]*?<\/(?:[\w.-]+:)?ProductPart>/gi,
+    ) ?? [];
+
+  if (partBlocks.length === 0) return [];
+
+  const hexByColor = new Map(
+    (product.colors ?? [])
+      .filter((color) => color.hex)
+      .map((color) => [color.colorName.trim().toLowerCase(), color.hex!]),
+  );
+
+  return partBlocks.map((block, index) => {
+    const partId =
+      firstTag(block, "partId") || `${product.productId}-${index + 1}`;
+    const colorName =
+      firstTag(block, "colorName") ||
+      firstTag(block, "standardColorName") ||
+      "Standard";
+    const partUrl = firstTag(block, "url");
+    return {
+      skuId: partId,
+      productId: product.productId,
+      sku: partId,
+      colorName,
+      sizeName: firstTag(block, "labelSize") || "OSFA",
+      quantity: 0,
+      imageUrl: partUrl && /^https?:\/\//i.test(partUrl) ? partUrl : undefined,
+      colorHex: firstVendorHex(block) || hexByColor.get(colorName.toLowerCase()),
+      gtin: firstTag(block, "gtin"),
+    };
+  });
 }
 
 /**
@@ -540,7 +638,7 @@ export class SanmarClient {
 
     const product = await this.getProduct(productId);
     const raw = await this.getProductRaw(productId);
-    return this.productPartsToSkus(product, raw);
+    return productPartsToSkus(product, raw);
   }
 
   async listAllSkus(): Promise<SanmarSKU[]> {
@@ -704,7 +802,7 @@ export class SanmarClient {
     if (!product) {
       throw new SanmarNotFoundError(`Product ${productId} not found`);
     }
-    return { product, skus: this.productPartsToSkus(product, xml) };
+    return { product, skus: productPartsToSkus(product, xml) };
   }
 
   async getProductRaw(productId: string): Promise<string> {
@@ -811,7 +909,7 @@ export class SanmarClient {
       firstTag(xml, "productName") || firstTag(xml, "ProductName");
     if (!productName) return null;
 
-    const colors = [...new Set(extractTags(xml, "colorName"))];
+    const colors = parseProductColorBlocks(xml);
     const sizes = [...new Set(extractTags(xml, "labelSize"))];
     const images = extractTags(xml, "url").filter((u) =>
       /^https?:\/\//i.test(u),
@@ -830,40 +928,10 @@ export class SanmarClient {
         firstTag(xml, "description") ||
         firstTag(xml, "productDescription"),
       partNumber: firstTag(xml, "productId") || productId,
-      images: [...new Set(images)].slice(0, 8),
-      colors: colors.map((colorName) => ({ colorName })),
+      images: [...new Set(images)],
+      colors,
       sizes: sizes.map((sizeName) => ({ sizeName })),
     };
-  }
-
-  private productPartsToSkus(
-    product: SanmarProduct,
-    rawXml: string,
-  ): SanmarSKU[] {
-    const partBlocks =
-      rawXml.match(
-        /<(?:[\w.-]+:)?ProductPart\b[\s\S]*?<\/(?:[\w.-]+:)?ProductPart>/gi,
-      ) ?? [];
-
-    if (partBlocks.length === 0) return [];
-
-    return partBlocks.map((block, index) => {
-      const partId =
-        firstTag(block, "partId") || `${product.productId}-${index + 1}`;
-      return {
-        skuId: partId,
-        productId: product.productId,
-        sku: partId,
-        colorName:
-          firstTag(block, "colorName") ||
-          firstTag(block, "standardColorName") ||
-          "Standard",
-        sizeName: firstTag(block, "labelSize") || "OSFA",
-        quantity: 0,
-        imageUrl: firstTag(block, "url") || product.images?.[0],
-        gtin: firstTag(block, "gtin"),
-      };
-    });
   }
 
   private assertAuth(xml: string) {

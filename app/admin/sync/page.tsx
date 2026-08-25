@@ -20,7 +20,7 @@ function vendorGuidance(key: string): {
       fullWhen:
         "Use once when first connecting SanMar, or after SanMar adds many new styles. Imports the sellable catalog, then refreshes stock and cost. Can take several minutes.",
       stockWhen:
-        "Use daily (or when prices/stock look wrong). Refreshes qty and CUSTOMER cost only — does not re-import the whole catalog. SanMar Bulk Data is limited to about 1 call per day.",
+        "Use daily (or when prices/stock look wrong). Refreshes qty, CUSTOMER cost, and each Bulk part photo onto that colourway. Does not re-import the whole catalog. SanMar Bulk Data is limited to about 1 call per day.",
     };
   }
   if (key === "ss_activewear") {

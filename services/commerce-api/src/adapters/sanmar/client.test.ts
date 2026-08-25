@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractVendorHex,
   parseConfigurationAndPricingXml,
   parseInventoryLevelsXml,
   parseMediaContentXml,
   parsePartInventoryQuantity,
   parseBulkProductsXml,
+  parseProductColorBlocks,
   parseSellableProductId,
+  productPartsToSkus,
 } from "./client.js";
 
 describe("parseSellableProductId", () => {
@@ -134,8 +137,8 @@ https://media.example.com/side.jpg</url>
   });
 
   it("keeps the first address usable on its own", () => {
-    // The sync stores urls[0] as the product's front image, so that one entry
-    // has to be a single loadable address rather than a run-on string.
+    // Style fallback may still use urls[0]; each colourway must match its
+    // own filename / Bulk part image instead of sharing this first address.
     const xml = `
       <GetMediaContentResponse>
         <MediaContent>
@@ -210,5 +213,86 @@ describe("parseBulkProductsXml", () => {
         brandName: "OGIO",
       },
     ]);
+  });
+
+  it("keeps a Bulk hex when the vendor actually sent one", () => {
+    const xml = `
+      <BulkDataResponse>
+        <Product>
+          <productId>19920-1</productId>
+          <style>108085</style>
+          <swatchColor>Black</swatchColor>
+          <hex>111111</hex>
+          <image>https://media.example.com/108085_black_2011.jpg</image>
+          <quantity>1</quantity>
+          <price>1</price>
+        </Product>
+      </BulkDataResponse>
+    `;
+    expect(parseBulkProductsXml(xml)[0]?.colorHex).toBe("#111111");
+  });
+});
+
+describe("extractVendorHex / parseProductColorBlocks", () => {
+  it("accepts a PromoStandards hex and ignores a colour name", () => {
+    expect(extractVendorHex("000000")).toBe("#000000");
+    expect(extractVendorHex("#AbC")).toBe("#aabbcc");
+    expect(extractVendorHex("Black")).toBeUndefined();
+  });
+
+  it("reads hex from a Color block when present", () => {
+    const xml = `
+      <Product>
+        <ColorArray>
+          <Color>
+            <colorName>Black</colorName>
+            <hex>111111</hex>
+          </Color>
+          <Color>
+            <colorName>Athletic Gold</colorName>
+          </Color>
+        </ColorArray>
+      </Product>
+    `;
+    expect(parseProductColorBlocks(xml)).toEqual([
+      { colorName: "Black", hex: "#111111" },
+      { colorName: "Athletic Gold" },
+    ]);
+  });
+});
+
+describe("productPartsToSkus", () => {
+  it("keeps each ProductPart url on that colour and does not copy images[0]", () => {
+    const gold =
+      "https://media.sanmarcanada.com/catalog/product/1/0/108085_athletic_gold_2011.jpg";
+    const black =
+      "https://media.sanmarcanada.com/catalog/product/1/0/108085_black_2011.jpg";
+    const xml = `
+      <Product>
+        <ProductPart>
+          <partId>19920-1</partId>
+          <colorName>Black</colorName>
+          <labelSize>OSFA</labelSize>
+          <url>${black}</url>
+        </ProductPart>
+        <ProductPart>
+          <partId>19920-2</partId>
+          <colorName>Athletic Gold</colorName>
+          <labelSize>OSFA</labelSize>
+        </ProductPart>
+      </Product>
+    `;
+    const skus = productPartsToSkus(
+      {
+        productId: "108085",
+        productName: "OGIO CRUNCH DUFFEL",
+        images: [gold],
+      },
+      xml,
+    );
+    expect(skus.find((sku) => sku.colorName === "Black")?.imageUrl).toBe(black);
+    expect(
+      skus.find((sku) => sku.colorName === "Athletic Gold")?.imageUrl,
+    ).toBeUndefined();
   });
 });

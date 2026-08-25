@@ -14,7 +14,6 @@ import type {
   VendorSyncContext,
 } from "../catalog/types.js";
 import { BUILTIN_VENDORS } from "../catalog/types.js";
-import { pickImageViews } from "../catalog/image-views.js";
 import { CatalogWriter } from "../catalog/writer.js";
 import {
   SanmarAuthError,
@@ -24,6 +23,14 @@ import {
   type SanmarSKU,
   type SanmarSellablePart,
 } from "./client.js";
+import {
+  applySanmarImagesToCatalogRows,
+  assignSanmarColorImages,
+  bulkProductsToColorwayPatches,
+  buildColorwayMediaPatches,
+  pickStyleFallbackImage,
+  type ColorImageHint,
+} from "./color-images.js";
 
 const VENDOR = BUILTIN_VENDORS.sanmar;
 
@@ -284,21 +291,29 @@ export class SanmarSyncService implements VendorCatalogAdapter {
           if (error instanceof SanmarAuthError) throw error;
         }
       }
-      const mediaViews = pickImageViews([
-        ...mediaUrls,
-        ...(product.images ?? []),
-      ]);
+      const bag = [...mediaUrls, ...(product.images ?? [])];
+      const assigned = assignSanmarColorImages({
+        colorNames: [
+          ...skus.map((sku) => sku.colorName),
+          ...(product.colors ?? []).map((color) => color.colorName),
+        ],
+        mediaUrls: bag,
+        hints: skuImageHints(skus, product),
+      });
+      const styleFront =
+        pickStyleFallbackImage(bag, assigned) || product.images?.[0];
 
       const qtyBySku = new Map(
         inventory.map((row) => [row.skuId, row.quantity]),
       );
-      const rows = this.toCatalogRows([product], skus).map((row) => ({
+      const rows = applySanmarImagesToCatalogRows(
+        this.toCatalogRows([product], skus),
+        bag,
+        skuImageHints(skus, product),
+      ).map((row) => ({
         ...row,
         qty: qtyBySku.get(row.skuKey) ?? row.qty ?? 0,
         priceDollars: prices.get(row.skuKey) ?? row.priceDollars,
-        imageFront: mediaViews.imageFront || row.imageFront,
-        imageSide: mediaViews.imageSide || row.imageSide,
-        imageBack: mediaViews.imageBack || row.imageBack,
       }));
       if (rows.length === 0) {
         await this.writer.patchStyleMetadata(ctx.tenantId, VENDOR, [
@@ -309,9 +324,19 @@ export class SanmarSyncService implements VendorCatalogAdapter {
             title: product.productName,
             description: product.description,
             category: product.category,
-            imageFront: mediaViews.imageFront || product.images?.[0],
+            imageFront: styleFront,
           },
         ]);
+        await this.writer.patchColorwayMedia(
+          ctx.tenantId,
+          VENDOR,
+          buildColorwayMediaPatches({
+            styleKey: product.productId,
+            colorNames: (product.colors ?? []).map((color) => color.colorName),
+            mediaUrls: bag,
+            hints: skuImageHints(skus, product),
+          }),
+        );
       }
       const { stylesProcessed, skusUpserted, errors } =
         rows.length > 0
@@ -379,6 +404,15 @@ export class SanmarSyncService implements VendorCatalogAdapter {
         items,
       );
       errors.push(...writeErrors);
+      const imagePatches = bulkProductsToColorwayPatches(bulk);
+      const imagesWritten = await this.writer.patchColorwayMedia(
+        tenantId,
+        VENDOR,
+        imagePatches,
+      );
+      console.log(
+        `[sanmar] bulk colour photos written=${imagesWritten}/${imagePatches.length}`,
+      );
       return updated;
     } catch (error) {
       if (error instanceof SanmarAuthError) throw error;
@@ -502,12 +536,15 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       `[sanmar] enriching ${toEnrich.length}/${styleIds.length} styles (concurrency=${concurrency}, media=${this.client.hasMediaPassword})`,
     );
 
-    const products = new Map<string, SanmarProduct>();
-    const mediaByStyle = new Map<string, string>();
+    const products = new Map<
+      string,
+      { product: SanmarProduct; skus: SanmarSKU[] }
+    >();
+    const mediaByStyle = new Map<string, string[]>();
 
     await mapPool(toEnrich, concurrency, async (styleId) => {
       try {
-        products.set(styleId, await this.client.getProduct(styleId));
+        products.set(styleId, await this.client.getProductWithSkus(styleId));
       } catch (error) {
         if (error instanceof SanmarAuthError) throw error;
         errors.push(
@@ -521,7 +558,7 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       if (!this.client.hasMediaPassword) return;
       try {
         const urls = await this.client.getMediaContent(styleId);
-        if (urls[0]) mediaByStyle.set(styleId, urls[0]);
+        if (urls.length) mediaByStyle.set(styleId, urls);
       } catch (error) {
         if (error instanceof SanmarAuthError) throw error;
         errors.push(
@@ -532,44 +569,112 @@ export class SanmarSyncService implements VendorCatalogAdapter {
       }
     });
 
-    const patches = [...products.values()].map((product) => ({
-      styleKey: product.productId,
-      brandName: product.brandName || "SanMar Canada",
-      styleName: product.productName,
-      title: product.productName,
-      description: product.description,
-      category: product.category,
-      imageFront:
-        mediaByStyle.get(product.productId) || product.images?.[0],
-    }));
+    const colorsByStyle = new Map<string, string[]>();
+    for (const part of activeParts) {
+      const list = colorsByStyle.get(part.styleId) ?? [];
+      list.push(part.colorName);
+      colorsByStyle.set(part.styleId, list);
+    }
 
-    return this.writer.patchStyleMetadata(tenantId, VENDOR, patches);
+    const stylePatches: Array<{
+      styleKey: string;
+      brandName?: string | null;
+      styleName?: string | null;
+      title?: string | null;
+      description?: string | null;
+      category?: string | null;
+      imageFront?: string | null;
+    }> = [];
+    const colorPatches: ReturnType<typeof buildColorwayMediaPatches> = [];
+
+    for (const [styleId, { product, skus }] of products) {
+      const mediaUrls = mediaByStyle.get(styleId) ?? [];
+      const bag = [...mediaUrls, ...(product.images ?? [])];
+      const colorNames = [
+        ...(colorsByStyle.get(styleId) ?? []),
+        ...skus.map((sku) => sku.colorName),
+        ...(product.colors ?? []).map((color) => color.colorName),
+      ];
+      const hints = skuImageHints(skus, product);
+      const assigned = assignSanmarColorImages({
+        colorNames,
+        mediaUrls: bag,
+        hints,
+      });
+      stylePatches.push({
+        styleKey: product.productId,
+        brandName: product.brandName || "SanMar Canada",
+        styleName: product.productName,
+        title: product.productName,
+        description: product.description,
+        category: product.category,
+        imageFront:
+          pickStyleFallbackImage(bag, assigned) || product.images?.[0],
+      });
+      colorPatches.push(
+        ...buildColorwayMediaPatches({
+          styleKey: product.productId,
+          colorNames,
+          mediaUrls: bag,
+          hints,
+        }),
+      );
+    }
+
+    const updated = await this.writer.patchStyleMetadata(
+      tenantId,
+      VENDOR,
+      stylePatches,
+    );
+    const colourPhotos = await this.writer.patchColorwayMedia(
+      tenantId,
+      VENDOR,
+      colorPatches,
+    );
+    console.log(
+      `[sanmar] enrich colour photos written=${colourPhotos}/${colorPatches.length}`,
+    );
+    return updated;
   }
 
   private sellableToCatalogRows(
     parts: SanmarSellablePart[],
     products: Map<string, SanmarProduct>,
   ): CatalogSkuRow[] {
-    return parts.map((part) => {
-      const product = products.get(part.styleId);
-      const views = pickImageViews(product?.images);
-      return {
-        styleKey: part.styleId,
-        brandName: product?.brandName || "SanMar Canada",
-        styleName: product?.productName || part.styleId,
-        title: product?.productName,
-        description: product?.description,
-        category: product?.category,
-        colorName: part.colorName,
-        sizeName: part.sizeName,
-        skuKey: part.partId,
-        sku: part.partId,
-        qty: 0,
-        imageFront: views.imageFront,
-        imageSide: views.imageSide,
-        imageBack: views.imageBack,
-      };
-    });
+    const byStyle = new Map<string, SanmarSellablePart[]>();
+    for (const part of parts) {
+      const list = byStyle.get(part.styleId) ?? [];
+      list.push(part);
+      byStyle.set(part.styleId, list);
+    }
+
+    const rows: CatalogSkuRow[] = [];
+    for (const [styleId, styleParts] of byStyle) {
+      const product = products.get(styleId);
+      rows.push(
+        ...applySanmarImagesToCatalogRows(
+          styleParts.map((part) => ({
+            styleKey: part.styleId,
+            brandName: product?.brandName || "SanMar Canada",
+            styleName: product?.productName || part.styleId,
+            title: product?.productName,
+            description: product?.description,
+            category: product?.category,
+            colorName: part.colorName,
+            sizeName: part.sizeName,
+            skuKey: part.partId,
+            sku: part.partId,
+            qty: 0,
+          })),
+          product?.images,
+          (product?.colors ?? []).map((color) => ({
+            colorName: color.colorName,
+            hex: color.hex,
+          })),
+        ),
+      );
+    }
+    return rows;
   }
 
   /** Kept for CSV/SOAP SKU list paths. */
@@ -578,34 +683,50 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     skus: SanmarSKU[],
   ): CatalogSkuRow[] {
     const byId = new Map(products.map((p) => [p.productId, p]));
-    return skus.map((sku) => {
-      const product = byId.get(sku.productId);
-      const views = pickImageViews([
-        sku.imageUrl,
-        ...(product?.images ?? []),
-      ]);
-      return {
-        styleKey: sku.productId,
-        brandName: product?.brandName || "SanMar Canada",
-        styleName: product?.productName || sku.productId,
-        title: product?.productName,
-        description: product?.description,
-        category: product?.category,
-        colorName: sku.colorName,
-        colorCode: sku.colorCode,
-        sizeName: sku.sizeName,
-        sizeCode: sku.sizeCode,
-        sizeOrder: sku.sizeOrder,
-        skuKey: sku.skuId,
-        sku: sku.sku,
-        gtin: sku.gtin,
-        qty: sku.quantity,
-        priceDollars: sku.price ?? product?.basePrice,
-        mapPriceDollars: sku.mapPrice,
-        imageFront: views.imageFront,
-        imageSide: views.imageSide,
-        imageBack: views.imageBack,
-      };
-    });
+    return applySanmarImagesToCatalogRows(
+      skus.map((sku) => {
+        const product = byId.get(sku.productId);
+        return {
+          styleKey: sku.productId,
+          brandName: product?.brandName || "SanMar Canada",
+          styleName: product?.productName || sku.productId,
+          title: product?.productName,
+          description: product?.description,
+          category: product?.category,
+          colorName: sku.colorName,
+          colorCode: sku.colorCode,
+          colorHex: sku.colorHex,
+          sizeName: sku.sizeName,
+          sizeCode: sku.sizeCode,
+          sizeOrder: sku.sizeOrder,
+          skuKey: sku.skuId,
+          sku: sku.sku,
+          gtin: sku.gtin,
+          qty: sku.quantity,
+          priceDollars: sku.price ?? product?.basePrice,
+          mapPriceDollars: sku.mapPrice,
+          imageFront: sku.imageUrl,
+        };
+      }),
+      products.flatMap((product) => product.images ?? []),
+      products.flatMap((product) => skuImageHints([], product)),
+    );
   }
+}
+
+function skuImageHints(
+  skus: SanmarSKU[],
+  product?: SanmarProduct,
+): ColorImageHint[] {
+  return [
+    ...skus.map((sku) => ({
+      colorName: sku.colorName,
+      url: sku.imageUrl,
+      hex: sku.colorHex,
+    })),
+    ...(product?.colors ?? []).map((color) => ({
+      colorName: color.colorName,
+      hex: color.hex,
+    })),
+  ];
 }
