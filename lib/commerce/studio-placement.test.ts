@@ -86,8 +86,8 @@ describe("studio print areas", () => {
       const area = STUDIO_PRINT_AREAS[side];
       expect(area.x).toBeGreaterThanOrEqual(0);
       expect(area.y).toBeGreaterThanOrEqual(0);
-      expect(area.width).toBeGreaterThan(0.2);
-      expect(area.height).toBeGreaterThan(0.2);
+      expect(area.width).toBeGreaterThan(0.1);
+      expect(area.height).toBeGreaterThan(0.1);
       expect(area.x + area.width).toBeLessThanOrEqual(1);
       expect(area.y + area.height).toBeLessThanOrEqual(1);
     }
@@ -95,6 +95,8 @@ describe("studio print areas", () => {
 
   it("keeps the front plate on the chest, not the full photo", () => {
     const front = STUDIO_PRINT_AREAS.front;
+    expect(front.width).toBeGreaterThan(0.2);
+    expect(front.height).toBeGreaterThan(0.2);
     expect(front.width).toBeLessThan(0.55);
     expect(front.height).toBeLessThan(0.5);
     expect(front.y).toBeGreaterThan(0.15);
@@ -103,9 +105,18 @@ describe("studio print areas", () => {
   it("puts sleeve plates on the near sleeve of the 3/4 side view", () => {
     const left = STUDIO_PRINT_AREAS.left;
     const right = STUDIO_PRINT_AREAS.right;
-    expect(left.x + left.width).toBeLessThan(0.55);
-    expect(right.x).toBeGreaterThan(0.45);
-    expect(right.x).toBeGreaterThan(left.x + left.width - 0.05);
+    // Unmirrored plate faces left — near sleeve is on the right of the photo.
+    expect(left.x).toBeGreaterThan(0.5);
+    expect(left.x + left.width).toBeLessThan(0.75);
+    expect(left.width).toBeLessThan(0.24);
+    expect(left.height).toBeLessThan(0.34);
+    expect(left.width).toBeLessThan(STUDIO_PRINT_AREAS.front.width);
+    // Right view is the same plate flipped, so the sleeve flips with it.
+    expect(right.x).toBeCloseTo(1 - left.x - left.width, 5);
+    expect(right.y).toBe(left.y);
+    expect(right.width).toBe(left.width);
+    expect(right.height).toBe(left.height);
+    expect(right.x + right.width).toBeLessThan(0.5);
   });
 });
 
