@@ -18,9 +18,9 @@ function vendorGuidance(key: string): {
       fullLabel: "Full sync",
       stockLabel: "Update stock & price",
       fullWhen:
-        "Use once when first connecting SanMar, or after SanMar adds many new styles. Imports the sellable catalog, then refreshes stock and cost. Can take several minutes.",
+        "Use once when first connecting SanMar, or after SanMar adds many new styles. Imports the sellable catalog, enriches names and per-colour photos via PromoStandards Media (SANMAR_MEDIA_PASSWORD) for up to 50 styles by default, then refreshes stock and cost. The media password does not unlock Bulk Data. Can take several minutes.",
       stockWhen:
-        "Use daily (or when prices/stock look wrong). Refreshes qty and CUSTOMER cost. When Bulk Data succeeds, each part photo is written onto that colourway. If Bulk fails, stock and price still update via per-style SOAP without photos. SanMar Bulk Data is limited to about 1 successful call per day.",
+        "Use daily (or when prices/stock look wrong). Refreshes qty and CUSTOMER cost. When Bulk Data succeeds, each part photo is written onto that colourway. If Bulk is unauthorized or fails, stock and price still update via per-style SOAP, and colour photos come from Media for up to 50 styles (not the whole catalog). The media password does not authorize Bulk. SanMar Bulk Data is limited to about 1 successful call per day.",
     };
   }
   if (key === "ss_activewear") {

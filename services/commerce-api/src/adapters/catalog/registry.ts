@@ -64,8 +64,8 @@ export class VendorSyncRegistry {
         },
         configured: sanmarConfigured,
         notes: sanmarConfigured
-          ? "Full sync = first import / big updates. Update stock & price = daily refresh."
-          : "Set SANMAR_ACCOUNT_ID + SANMAR_LOGIN_EMAIL (login e-mail, not website password)",
+          ? "Full sync = first import / colour photos via Media (capped). Stock & price = Bulk when entitled, else qty/price + Media fallback. SANMAR_MEDIA_PASSWORD does not unlock Bulk."
+          : "Set SANMAR_ACCOUNT_ID + SANMAR_LOGIN_EMAIL (login e-mail, not website password). Colour photos also need SANMAR_MEDIA_PASSWORD on the API task.",
       },
       {
         key: BUILTIN_VENDORS.csv,
