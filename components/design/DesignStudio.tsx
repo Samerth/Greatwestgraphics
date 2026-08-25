@@ -314,6 +314,10 @@ function canLoadImage(src: string): Promise<boolean> {
  * Natural pixel size, so default scale can be a fraction of the print area
  * instead of `0.4 × whatever the camera dumped`.
  */
+function nextPollinationsSeed() {
+  return Math.floor(Math.random() * 1_000_000_000);
+}
+
 function measureArtworkSize(
   src: string,
 ): Promise<{ width: number; height: number }> {
@@ -427,11 +431,13 @@ export function DesignStudio({
   const [textFontId, setTextFontId] = useState(STUDIO_DEFAULT_FONT_ID);
   const [zoom, setZoom] = useState(1);
   const [liveZone, setLiveZone] = useState<string | null>(null);
-  const [historyTick, setHistoryTick] = useState(0);
+  const [historyFlags, setHistoryFlags] = useState({
+    canUndo: false,
+    canRedo: false,
+  });
   const historyRef = useRef(createStudioHistory());
   const sliderHistoryArmedRef = useRef(false);
   const designRef = useRef(design);
-  designRef.current = design;
 
   const [savedDesignId, setSavedDesignId] = useState<string | null>(
     initialDesign?.id ?? null,
@@ -453,6 +459,10 @@ export function DesignStudio({
   const selectedArtwork = artworks.find((layer) => layer.id === selectedId) ?? null;
   const sideLayerCount = (side: DesignSide) =>
     artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
+
+  useEffect(() => {
+    designRef.current = design;
+  }, [design]);
 
   useEffect(() => {
     if (!selectedGarmentId) {
@@ -794,7 +804,10 @@ export function DesignStudio({
     const next = updater(prev);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setExportError(null);
   }
 
@@ -805,7 +818,10 @@ export function DesignStudio({
     const next = applyHistorySnapshot(prev, restored);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setLiveZone(null);
   }
 
@@ -816,7 +832,10 @@ export function DesignStudio({
     const next = applyHistorySnapshot(prev, restored);
     designRef.current = next;
     setDesign(next);
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
     setLiveZone(null);
   }
 
@@ -1129,12 +1148,18 @@ export function DesignStudio({
     if (sliderHistoryArmedRef.current) return;
     sliderHistoryArmedRef.current = true;
     historyRef.current.push(snapshotOf(designRef.current));
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
   }
 
   function endSliderHistory() {
     sliderHistoryArmedRef.current = false;
-    setHistoryTick((tick) => tick + 1);
+    setHistoryFlags({
+      canUndo: historyRef.current.canUndo,
+      canRedo: historyRef.current.canRedo,
+    });
   }
 
   function patchSelectedWhileSliding(textPatch?: Partial<PlacedText>, artPatch?: Partial<PlacedArtwork>) {
@@ -1189,7 +1214,7 @@ export function DesignStudio({
     if (!prompt) return;
     setGenerating(true);
     setAiError(null);
-    const seed = Math.floor(Math.random() * 1_000_000_000);
+    const seed = nextPollinationsSeed();
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
       `${prompt}, print-ready logo design, clean vector art style, isolated on white background`,
     )}?width=1024&height=1024&seed=${seed}&nologo=true`;
@@ -1528,8 +1553,8 @@ export function DesignStudio({
     activeSide,
   );
 
-  const canUndo = historyTick >= 0 && historyRef.current.canUndo;
-  const canRedo = historyTick >= 0 && historyRef.current.canRedo;
+  const canUndo = historyFlags.canUndo;
+  const canRedo = historyFlags.canRedo;
   const chestGuides = frontChestGuideRects();
   const draggingOnFront = liveZone !== null && activeSide === "front";
   const frontAlign =
