@@ -111,6 +111,7 @@ import {
 } from "@/components/design/StudioElementEditor";
 import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
+import { StudioSizeChartModal } from "@/components/design/StudioSizeChartModal";
 import {
   studioArticleLabel,
   studioColorwaysForArticle,
@@ -654,26 +655,16 @@ export function DesignStudio({
     : productDetail
       ? `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim()
       : "Garment";
-  const sizeChartHref = useMemo(() => {
+  const [showSizeChart, setShowSizeChart] = useState(false);
+  // Opens inline via StudioSizeChartModal instead of navigating to the PDP's
+  // #size-chart anchor -- that used to take the shopper off the studio
+  // entirely to view a table, abandoning whatever they had in progress.
+  const sizeChart = useMemo(() => {
     if (!selectedGarmentId || !productDetail || !selectedColorwayReady) {
       return null;
     }
-    if (!readProductSizeChart(productDetail)) return null;
-    const slug =
-      productDetail.product.slug ??
-      selectedColorway?.slug ??
-      selectedGarment?.slug ??
-      garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
-    if (!slug) return null;
-    return `/product/${encodeURIComponent(slug)}?id=${encodeURIComponent(selectedGarmentId)}#size-chart`;
-  }, [
-    productDetail,
-    selectedGarmentId,
-    selectedColorwayReady,
-    selectedColorway,
-    selectedGarment,
-    garmentOptions,
-  ]);
+    return readProductSizeChart(productDetail);
+  }, [productDetail, selectedGarmentId, selectedColorwayReady]);
 
   useEffect(() => {
     for (const option of garmentOptions.slice(0, 4)) {
@@ -2446,14 +2437,15 @@ export function DesignStudio({
                       </button>
                     </>
                   )}
-                  {sizeChartHref && (
+                  {sizeChart && (
                     <p className="m-0 mt-2 text-xs">
-                      <a
-                        href={sizeChartHref}
+                      <button
+                        type="button"
+                        onClick={() => setShowSizeChart(true)}
                         className="font-semibold text-accent hover:underline"
                       >
                         Size chart
-                      </a>
+                      </button>
                     </p>
                   )}
                   {rosterError && (
@@ -2473,13 +2465,14 @@ export function DesignStudio({
                             {selectedVariant?.sizeName ?? "Select a size"}
                           </span>
                         </span>
-                        {sizeChartHref && (
-                          <a
-                            href={sizeChartHref}
+                        {sizeChart && (
+                          <button
+                            type="button"
+                            onClick={() => setShowSizeChart(true)}
                             className="font-semibold text-accent hover:underline"
                           >
                             Size chart
-                          </a>
+                          </button>
                         )}
                       </span>
                       <div className="flex gap-1.5 flex-wrap mb-sp-3">
@@ -2641,10 +2634,17 @@ export function DesignStudio({
                               : 0),
                         })}
               </Button>
-            </div>
+             </div>
           )}
         </div>
       </div>
+      {showSizeChart && sizeChart && (
+        <StudioSizeChartModal
+          chart={sizeChart}
+          productName={selectedArticleLabel}
+          onClose={() => setShowSizeChart(false)}
+        />
+      )}
     </div>
   );
 }
