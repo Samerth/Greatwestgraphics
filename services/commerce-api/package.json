@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1098.0",
     "@gwg/contracts": "0.1.0",
     "@gwg/pricing": "0.1.0",
     "dotenv": "^17.4.2",
@@ -34,7 +35,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.19.0",
+    "tsx": "4.23.12",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
   }

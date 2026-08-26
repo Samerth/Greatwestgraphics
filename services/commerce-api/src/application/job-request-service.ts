@@ -161,7 +161,15 @@ function repriceLine(
   storePricingAdjustmentPercent: number | null,
 ): JobRequestLineInput {
   const snapshot = line.configuration?.pricing;
-  if (!snapshot) return line;
+  if (!snapshot) {
+    // No snapshot means this estimate came from the browser cart and was never
+    // recomputed here. Mark it so staff don't read it as an engine number.
+    return {
+      ...line,
+      configuration: { ...line.configuration, pricingUnverified: true },
+    };
+  }
+
 
   if ("schemaVersion" in snapshot && snapshot.schemaVersion === 2) {
     if (!published.v2) return line;

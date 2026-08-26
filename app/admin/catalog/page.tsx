@@ -55,12 +55,13 @@ export default async function AdminCatalogPage({
   let products: Record<string, unknown>[] = [];
   let total = 0;
   let categories: Record<string, unknown>[] = [];
+  let brandOptions: string[] = [];
   let error: string | undefined;
 
   try {
     const token = requireAdminToken();
     const client = await adminClient();
-    const [catalog, cats] = await Promise.all([
+    const [catalog, cats, allBrands] = await Promise.all([
       client.listCatalogProducts(
         {
           search: q || undefined,
@@ -76,22 +77,26 @@ export default async function AdminCatalogPage({
         token,
       ),
       client.listCategories(token),
+      client.listBrands().catch(() => [] as string[]),
     ]);
     products = catalog.products;
     total = catalog.total;
     categories = cats;
+    brandOptions = allBrands;
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Catalog unavailable";
   }
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const brands = [
-    ...new Set(
-      products
-        .map((row) => String(row.brandName || "").trim())
-        .filter(Boolean),
-    ),
-  ].sort();
+  // Brands must come from the whole catalog, not the 50 rows on this page —
+  // sorting by brand used to leave the filter showing only one brand.
+  const brands = (
+    brandOptions.length
+      ? brandOptions
+      : products.map((row) => String(row.brandName || "").trim()).filter(Boolean)
+  )
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .sort((a, b) => a.localeCompare(b));
 
   function hrefFor(next: Record<string, string | undefined>) {
     const params = new URLSearchParams();
@@ -194,18 +199,18 @@ export default async function AdminCatalogPage({
         </label>
         <label className="text-sm font-semibold">
           Brand
-          <input
+          <select
             name="brand"
             defaultValue={brand}
-            list="catalog-brands"
-            placeholder="Brand name"
             className="block mt-1 w-full border border-border rounded-sm px-3 py-2 text-sm font-normal"
-          />
-          <datalist id="catalog-brands">
+          >
+            <option value="">All brands</option>
             {brands.map((b) => (
-              <option key={b} value={b} />
+              <option key={b} value={b}>
+                {b}
+              </option>
             ))}
-          </datalist>
+          </select>
         </label>
         <label className="text-sm font-semibold">
           Sort

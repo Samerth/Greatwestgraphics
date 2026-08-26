@@ -11,7 +11,11 @@ const NAV = [
   { href: "/admin/catalog", label: "Catalog" },
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/pricing/v2", label: "Pricing" },
-  { href: "/admin/pricing", label: "Pricing (legacy)" },
+  // Legacy v1 pricing page removed from nav (not deleted) — it's kept alive
+  // only to re-price pre-migration job-request lines that still reference a
+  // v1 snapshot (see repriceLine in job-request-service.ts). Reachable at
+  // /admin/pricing directly if that ever comes up; restore this row to bring
+  // it back into the sidebar.
   { href: "/admin/quotes", label: "Quotes" },
   { href: "/admin/sync", label: "Sync" },
   { href: "/admin/settings", label: "Settings" },

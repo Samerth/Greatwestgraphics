@@ -66,7 +66,23 @@ export default async function AdminJobDetailPage({
     );
   }
 
+  // What the engine says this job is worth. Staff can still override, but the
+  // form now starts here instead of blank, and the action refuses a wild
+  // mismatch unless it's explicitly confirmed.
+  const computedTotalMinor = detail.lines.reduce((sum, line) => {
+    const pricing = (
+      line.snapshot.configuration as { pricing?: unknown } | undefined
+    )?.pricing;
+    const fromSnapshot = lineSnapshotTotalMinor(pricing);
+    const fromEstimate =
+      line.snapshot.unitPriceEstimateMinor != null
+        ? line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity
+        : 0;
+    return sum + (fromSnapshot ?? fromEstimate);
+  }, 0);
+
   const presentation = jobStatusPresentation[detail.status];
+
   const nextStatuses = suggestedNextStatuses(
     detail.status,
     detail.fulfillment?.method,
@@ -305,6 +321,7 @@ export default async function AdminJobDetailPage({
             size?: string;
             storefrontProductId?: string;
             productMetadata?: string;
+            pricingUnverified?: boolean;
           };
           const snapshotTotalMinor = lineSnapshotTotalMinor(
             configuration?.pricing,
@@ -342,6 +359,13 @@ export default async function AdminJobDetailPage({
                   ? ` · total ${moneyFromMinor(lineTotalMinor)}`
                   : ""}
               </p>
+              {configuration?.pricingUnverified && (
+                <p className="text-xs font-semibold text-amber-700 mt-1 mb-0">
+                  Customer-side estimate — not re-priced by the pricing engine.
+                  Confirm this line before quoting.
+                </p>
+              )}
+
               {configuration?.productMetadata && (
                 <p className="text-sm text-text-primary mt-2 mb-0">
                   <span className="font-bold">Print placement. </span>
@@ -421,6 +445,11 @@ export default async function AdminJobDetailPage({
           )}
           <form action={createFinalQuoteAction} className="space-y-2">
             <input type="hidden" name="jobId" value={detail.id} />
+            <input
+              type="hidden"
+              name="computedTotalMinor"
+              value={computedTotalMinor}
+            />
             <label className="block text-sm font-semibold">
               Amount (CAD)
               <input
@@ -429,9 +458,26 @@ export default async function AdminJobDetailPage({
                 min="0.01"
                 step="0.01"
                 required
+                defaultValue={
+                  computedTotalMinor > 0
+                    ? (computedTotalMinor / 100).toFixed(2)
+                    : undefined
+                }
                 className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
               />
             </label>
+            {computedTotalMinor > 0 && (
+              <p className="text-xs text-text-secondary m-0">
+                Line items total {moneyFromMinor(computedTotalMinor)}. Change the
+                amount if you&apos;re adjusting — anything more than 10% away needs
+                the override box below.
+              </p>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="confirmOverride" value="1" />
+              I&apos;m deliberately quoting a different amount than the line total
+            </label>
+
             <label className="block text-sm font-semibold">
               Note
               <input

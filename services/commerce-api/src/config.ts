@@ -24,18 +24,26 @@ const EnvironmentSchema = z
      */
     ADMIN_API_TOKEN: z.string().min(32).optional(),
     /**
-     * Notification delivery. Without RESEND_API_KEY the dispatcher leaves
-     * events queued rather than marking them sent, so wiring the key up later
-     * still delivers the backlog instead of silently dropping it.
+     * Notification delivery via Amazon SES. Without AWS_REGION the dispatcher
+     * leaves events queued rather than marking them sent, so wiring the region
+     * up later still delivers the backlog instead of silently dropping it.
+     * Credentials themselves are not read here — the AWS SDK's default
+     * provider chain picks those up from the environment, a shared config
+     * file, or an attached IAM role, whichever the deployment provides.
+     */
+    AWS_REGION: z.string().min(1).optional(),
+    /**
+     * Retained only so a rollback to Resend does not require a schema change.
+     * Unused unless AWS_REGION is absent and this is manually re-wired in
+     * server.ts.
      */
     RESEND_API_KEY: z.string().optional(),
     /**
-     * Must be on a domain verified in Resend. The previous default was Resend's
-     * shared `onboarding@resend.dev`, which only delivers to the Resend account
-     * owner — so proof notifications to customers were rejected outright while
-     * the dispatcher looked healthy. Defaulting to the real sending identity
-     * means a missing variable degrades to "verify the domain" rather than to
-     * "silently reach nobody".
+     * Must be on a domain verified in SES (equivalently, previously in Resend).
+     * An unverified sending domain, or an account still in SES sandbox mode,
+     * causes sends to be rejected while the dispatcher otherwise looks healthy.
+     * Defaulting to the real sending identity means a missing variable degrades
+     * to "verify the domain" rather than to "silently reach nobody".
      */
     NOTIFICATIONS_FROM_EMAIL: z
       .string()

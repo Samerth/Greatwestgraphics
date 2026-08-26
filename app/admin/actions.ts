@@ -75,11 +75,28 @@ export async function createFinalQuoteAction(formData: FormData) {
   if (!jobId || !Number.isFinite(dollars) || dollars <= 0) {
     throw new Error("Job and a positive quote amount are required");
   }
+  // This number becomes the Stripe charge verbatim. A dropped decimal or an
+  // extra zero used to sail straight through to the customer's card, so a
+  // large gap from the computed line total must be acknowledged on purpose.
+  const amountMinor = Math.round(dollars * 100);
+  const computedTotalMinor = Number(formData.get("computedTotalMinor") || "0");
+  const confirmedOverride = formData.has("confirmOverride");
+  if (
+    Number.isFinite(computedTotalMinor) &&
+    computedTotalMinor > 0 &&
+    !confirmedOverride &&
+    Math.abs(amountMinor - computedTotalMinor) / computedTotalMinor > 0.1
+  ) {
+    throw new Error(
+      `Quote of $${(amountMinor / 100).toFixed(2)} is more than 10% away from the line total of $${(computedTotalMinor / 100).toFixed(2)}. Fix the amount, or tick the override box if this is intentional.`,
+    );
+  }
+
   const client = await adminClient();
   await client.createFinalQuote(
     jobId,
     {
-      amountMinor: Math.round(dollars * 100),
+     amountMinor,
       note,
       markAwaitingPayment,
     },

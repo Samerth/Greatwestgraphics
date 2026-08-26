@@ -7,7 +7,7 @@ import { Button } from "@/components/shared/Button";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
-import { shopperUnitMinor } from "@/lib/utils/shopper-price";
+import { rosterWeightedCostMinor, shopperUnitMinor } from "@/lib/utils/shopper-price";
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
@@ -309,6 +309,38 @@ export function DbProductActions({
             const priceVariant =
               variants.find((v) => v.sizeName === roster[0]!.size) ?? firstInStock;
             if (!priceVariant) return;
+            // Blend the real roster sizes instead of charging everyone row 1's
+            // size. One line at full quantity keeps the volume break intact.
+            const rosterCost = rosterWeightedCostMinor(
+              roster.map((r) => ({ size: r.size })),
+              variants.map((v) => ({
+                sizeName: v.sizeName,
+                unitCostMinor: v.costMinor ?? null,
+                mapPriceMinor: v.mapPriceMinor ?? null,
+              })),
+              {
+                unitCostMinor: priceVariant.costMinor ?? 0,
+                mapPriceMinor: priceVariant.mapPriceMinor ?? null,
+              },
+            );
+            const rosterUnit =
+              pricingConfig && rosterCost.unitCostMinor > 0
+                ? shopperUnitMinor(
+                    {
+                      ...pricingConfig,
+                      storefront: {
+                        ...pricingConfig.storefront,
+                        unitPriceIncludes: "blank",
+                      },
+                    },
+                    {
+                      unitCostMinor: rosterCost.unitCostMinor,
+                      quantity: Math.max(1, roster.length),
+                      mapPriceMinor: rosterCost.mapPriceMinor,
+                      colourName: color,
+                    },
+                  ) / 100
+                : unitPriceMinor(priceVariant, roster.length, pricingConfig, color) / 100;
             setRosterError(null);
             addItem({
               id: productId,
@@ -320,7 +352,7 @@ export function DbProductActions({
               meta: `Team order · ${roster.length} pieces, mixed sizes`,
               color,
               qty: roster.length,
-              unit: unitPriceMinor(priceVariant, roster.length, pricingConfig, color) / 100,
+              unit: rosterUnit,
               image: image ?? "",
               roster: roster.map((r) => ({
                 size: r.size,
@@ -333,7 +365,7 @@ export function DbProductActions({
               productId,
               name,
               qty: roster.length,
-              unit: unitPriceMinor(priceVariant, roster.length, pricingConfig, color) / 100,
+              unit: rosterUnit,
             });
             setJustAdded(true);
             setTimeout(() => setJustAdded(false), 2000);
