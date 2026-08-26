@@ -144,7 +144,9 @@ export function Header({
         </Link>
 
         {/* Primary nav */}
-        <nav className="hidden lg:flex items-center gap-sp-4 xl:gap-sp-5">
+        <nav
+          className="hidden lg:flex items-center gap-sp-3 xl:gap-sp-4 flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
           {HAS_CATEGORIES &&
             SHOP_SECTIONS.map((section) => (
               <NavTrigger

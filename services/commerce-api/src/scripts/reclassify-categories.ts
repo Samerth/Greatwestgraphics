@@ -35,6 +35,19 @@ async function main() {
       .where(eq(categoryOverrides.tenantId, tenantId));
     const overriddenIds = overrides.map((r) => r.productUuid);
 
+    const mapRowsQuery = db
+      .select({ id: ssProductCategories.id })
+      .from(ssProductCategories)
+      .where(
+        and(
+          eq(ssProductCategories.tenantId, tenantId),
+          eq(ssProductCategories.assignmentSource, "map"),
+          overriddenIds.length
+            ? notInArray(ssProductCategories.productUuid, overriddenIds)
+            : undefined,
+        ),
+      );
+
     if (apply) {
       const deleted = await db
         .delete(ssProductCategories)
@@ -50,6 +63,10 @@ async function main() {
         .returning({ id: ssProductCategories.id });
       console.log(`Cleared ${deleted.length} old "map" category assignments.`);
     } else {
+      const wouldClear = await mapRowsQuery;
+      console.log(
+        `Would clear ${wouldClear.length} old "map" category assignments (${overriddenIds.length} products protected by staff overrides).`,
+      );
       console.log(
         "Dry run does not delete/reassign — re-run with --apply to actually reclassify.",
       );
