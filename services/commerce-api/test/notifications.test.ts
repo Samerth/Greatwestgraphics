@@ -218,7 +218,7 @@ describe("UnconfiguredEmailSender", () => {
         subject: "s",
         text: "t",
       }),
-    ).rejects.toThrow(/RESEND_API_KEY/);
+    ).rejects.toThrow(/AWS_REGION/);
   });
 });
 
