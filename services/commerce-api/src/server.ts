@@ -5,7 +5,7 @@ import { DevelopmentHeaderAuth, ServiceTokenAuth } from "./auth.js";
 import { loadEnvironment } from "./config.js";
 import { createDatabase } from "./db/client.js";
 import {
-  ResendEmailSender,
+  SesEmailSender,
   UnconfiguredEmailSender,
 } from "./notifications/email.js";
 import { startOutboxDispatcher } from "./notifications/outbox-dispatcher.js";
@@ -37,16 +37,16 @@ if (isProduction && !environment.COMMERCE_SERVICE_TOKEN) {
 // Proof decisions write outbox events inside the same transaction as the state
 // change; without something draining them, neither side ever learns their turn
 // has come.
-const emailSender = environment.RESEND_API_KEY
-  ? new ResendEmailSender(
-      environment.RESEND_API_KEY,
+const emailSender = environment.AWS_REGION
+  ? new SesEmailSender(
+      environment.AWS_REGION,
       environment.NOTIFICATIONS_FROM_EMAIL,
     )
   : new UnconfiguredEmailSender();
 
-if (environment.OUTBOX_DISPATCH_ENABLED && !environment.RESEND_API_KEY) {
+if (environment.OUTBOX_DISPATCH_ENABLED && !environment.AWS_REGION) {
   app.log.warn(
-    "RESEND_API_KEY is not set. Notifications stay queued in outbox_events and will send once it is configured.",
+    "AWS_REGION is not set. Notifications stay queued in outbox_events and will send once it is configured.",
   );
 }
 if (environment.OUTBOX_DISPATCH_ENABLED && !environment.STAFF_NOTIFICATION_EMAIL) {

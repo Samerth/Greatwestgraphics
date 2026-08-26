@@ -21,6 +21,7 @@ import {
   ssUnmappedCategories,
   ssVariants,
   storeCategoryVisibility,
+  stores,
   syncRuns,
 } from "../db/schema.js";
 import { isMissingColumn } from "../db/postgres-error.js";
@@ -29,6 +30,7 @@ import {
   ResourceNotFoundError,
 } from "./job-request-service.js";
 import { mapSizeSpecsToChart, parseSizeSpecRows } from "./size-specs.js";
+import { applyStorePricingAdjustmentV2 } from "./pricing-config-v2-service.js";
 import { pickRepresentativeByStyle } from "./style-grouping.js";
 
 /** S&S sells its own printed catalogue through the same styles feed.
@@ -67,7 +69,31 @@ export class CatalogService {
    * workbook defaults). The same helper prices tiles, the PDP, and admin
    * preview, so a shopper never sees a different number than staff just set.
    */
-  private async garmentPricer(tenantId: string): Promise<{
+  /**
+   * Browse prices must use the same config the quote builder and final
+   * job-request repricing use. Without the store adjustment a corporate
+   * shopper browsed at retail and only saw their negotiated rate at quote
+   * time.
+   */
+  private async storePricingAdjustment(
+    tenantId: string,
+    storeId?: string,
+  ): Promise<number> {
+    if (!storeId) return 0;
+
+    const [row] = await this.db
+      .select({ percent: stores.pricingAdjustmentPercent })
+      .from(stores)
+      .where(and(eq(stores.tenantId, tenantId), eq(stores.id, storeId)))
+      .limit(1);
+
+    return Number(row?.percent ?? 0) || 0;
+  }
+
+  private async garmentPricer(
+    tenantId: string,
+    storeId?: string,
+  ): Promise<{
     /** Price shown on a tile: the advertised catalog quantity. */
     price: (
       costMinor: number,
@@ -98,9 +124,17 @@ export class CatalogService {
     const parsed = row
       ? PricingConfigV2Schema.safeParse(row.config)
       : undefined;
-    const config = parsed?.success
+
+    const base: PricingConfigV2 = parsed?.success
       ? parsed.data
       : PricingConfigV2Schema.parse(PRICING_MASTER_V2);
+
+    const adjustment = await this.storePricingAdjustment(tenantId, storeId);
+
+    const config: PricingConfigV2 =
+      adjustment !== 0
+        ? applyStorePricingAdjustmentV2(base, adjustment)
+        : base;
     const displayQty = config.garment.catalogDisplayQty;
     return {
       displayQty,
@@ -573,7 +607,10 @@ export class CatalogService {
 
     let priceFilteredIds: string[] | null = null;
     if (query?.priceMinMinor != null || query?.priceMaxMinor != null) {
-      const { price: priceGarment } = await this.garmentPricer(tenantId);
+      const { price: priceGarment } = await this.garmentPricer(
+        tenantId,
+        query?.storeId,
+      );
       const min = query.priceMinMinor ?? 0;
       const max = query.priceMaxMinor ?? Number.MAX_SAFE_INTEGER;
       // Filter on the same "from" price shown on the tile (cheapest
@@ -822,7 +859,10 @@ export class CatalogService {
   ) {
     const limit = query?.limit ?? 50;
     const offset = query?.offset ?? 0;
-    const { price: priceGarment } = await this.garmentPricer(tenantId);
+    const { price: priceGarment } = await this.garmentPricer(
+      tenantId,
+      query?.storeId,
+    );
 
     const { whereClause, empty } = await this.resolveProductFilters(tenantId, query);
     if (empty) return [];
@@ -1040,7 +1080,10 @@ export class CatalogService {
 
     const settings = await this.getSettings(tenantId);
     const markup = Number(settings.retailMarkup) || 2;
-    const garmentPricing = await this.garmentPricer(tenantId);
+    const garmentPricing = await this.garmentPricer(
+      tenantId,
+      options?.storeId,
+    );
 
     // Other colorways of the same style, so the PDP can offer a real
     // colour switcher instead of showing one fixed photo with no way to

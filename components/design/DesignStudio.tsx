@@ -36,7 +36,7 @@ import {
   dataUrlToBlob,
   filenameForArtworkBlob,
 } from "@/lib/store/design-draft";
-import { shopperUnitMinor } from "@/lib/utils/shopper-price";
+import { rosterWeightedCostMinor, shopperUnitMinor } from "@/lib/utils/shopper-price";
 import {
   PRICING_MASTER_V2,
   priceGarmentFromCurve,
@@ -716,9 +716,25 @@ export function DesignStudio({
   const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
 
   const quoted = useMemo(() => {
-    const unitCostMinor =
-      selectedVariant?.customerPriceMinor ?? selectedGarment?.costMinor ?? 0;
+    // Team orders are costed off the sizes actually on the roster, blended by
+    // quantity. Pricing off the swatch picker's size (or roster row 1) is how
+    // a roster full of 2XL/3XL got quoted at medium cost.
+    const rosterCost = rosterWeightedCostMinor(
+      studioActiveTeamRows(roster).map((row) => ({ size: row.size })),
+      (productDetail?.variants ?? []).map((variant) => ({
+        sizeName: variant.sizeName,
+        unitCostMinor: variant.customerPriceMinor ?? null,
+        mapPriceMinor: variant.mapPriceMinor ?? null,
+      })),
+      {
+        unitCostMinor:
+          selectedVariant?.customerPriceMinor ?? selectedGarment?.costMinor ?? 0,
+        mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
+      },
+    );
+    const unitCostMinor = rosterCost.unitCostMinor;
     if (unitCostMinor <= 0) return null;
+
     const locations = (
       decoratedSides.length > 0 ? decoratedSides : [activeSide]
     ).map((side) => placementBySide[side] || side);
@@ -726,7 +742,8 @@ export function DesignStudio({
       return priceShopperQuote(pricingConfig, {
         unitCostMinor,
         quantity: studioTeamQuoteQuantity(roster, designQty),
-        mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
+        mapPriceMinor: rosterCost.mapPriceMinor,
+
         colourName:
           (selectedColorwayReady
             ? productDetail?.product.colorName
@@ -754,10 +771,15 @@ export function DesignStudio({
         description: selectedGarment?.label ?? "Custom design",
         decorated: true,
       });
-    } catch {
+    } catch (caught) {
+      // Never swallow this. A null quote means the studio falls back to a
+      // blank-garment price with no decoration, which is how orders reached
+      // checkout under-priced with nobody knowing.
+      console.error("[pricing] design studio quote failed", caught);
       return null;
     }
   }, [
+
     activeSide,
     colours,
     decoratedSides,
@@ -1416,6 +1438,8 @@ export function DesignStudio({
           revealTeamPanel();
           return;
         }
+        // variantId is only a catalogue reference here — the money comes from
+        // `quoted`, which is costed across every roster size.
         const priceVariant =
           productDetail.variants.find((v) => v.sizeName === cartRoster[0]?.size) ??
           selectedVariant;
@@ -1424,6 +1448,13 @@ export function DesignStudio({
           revealTeamPanel();
           return;
         }
+        if (!quoted) {
+          setCartError(
+            "We couldn't price this design just now. Refresh and try again — we won't add it at a guessed price.",
+          );
+          return;
+        }
+
         addItem({
           id: productDetail.product.id,
           productId: productDetail.product.id,
@@ -1434,9 +1465,7 @@ export function DesignStudio({
           meta: line.meta,
           color: productDetail.product.colorName,
           qty: line.qty,
-          unit:
-            quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
+          unit: quoted.cartUnit,
           image: artworkProofUrl || currentPhoto || "",
           artworkProofUrl,
           designProjectId,
@@ -1450,9 +1479,7 @@ export function DesignStudio({
           productId: productDetail.product.id,
           name: productName,
           qty: line.qty,
-          unit:
-            quoted?.cartUnit ??
-            unitPriceMinor(priceVariant, line.qty, productDetail) / 100,
+          unit: quoted.cartUnit,
         });
         router.push("/cart");
         return;
@@ -1462,6 +1489,13 @@ export function DesignStudio({
         setCartError("Select a size first.");
         return;
       }
+      if (!quoted) {
+        setCartError(
+          "We couldn't price this design just now. Refresh and try again — we won't add it at a guessed price.",
+        );
+        return;
+      }
+
       addItem({
         id: productDetail.product.id,
         productId: productDetail.product.id,
@@ -1472,9 +1506,7 @@ export function DesignStudio({
         meta: line.meta,
         color: productDetail.product.colorName,
         qty: line.qty,
-        unit:
-          quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
+        unit: quoted.cartUnit,
         image: artworkProofUrl || currentPhoto || "",
         artworkProofUrl,
         designProjectId,
@@ -1487,9 +1519,7 @@ export function DesignStudio({
         productId: productDetail.product.id,
         name: productName,
         qty: line.qty,
-        unit:
-          quoted?.cartUnit ??
-          unitPriceMinor(selectedVariant, line.qty, productDetail) / 100,
+        unit: quoted.cartUnit,
       });
       router.push("/cart");
     } catch (caught) {

@@ -1,3 +1,4 @@
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import type { EmailMessage } from "./messages.js";
 
 export interface EmailSender {
@@ -48,7 +49,45 @@ export class ResendEmailSender implements EmailSender {
 }
 
 /**
- * Used when no API key is configured.
+ * Sends through Amazon SES v2.
+ *
+ * Region and credentials are picked up by the SDK's default provider chain
+ * (env vars, shared config file, or an attached IAM role) — this class only
+ * needs the region explicitly, since the SDK client requires it up front.
+ */
+export class SesEmailSender implements EmailSender {
+  private readonly client: SESv2Client;
+
+  constructor(
+    region: string,
+    private readonly from: string,
+  ) {
+    this.client = new SESv2Client({ region });
+  }
+
+  async send(message: EmailMessage): Promise<void> {
+    try {
+      await this.client.send(
+        new SendEmailCommand({
+          FromEmailAddress: this.from,
+          Destination: { ToAddresses: [message.to] },
+          Content: {
+            Simple: {
+              Subject: { Data: message.subject, Charset: "UTF-8" },
+              Body: { Text: { Data: message.text, Charset: "UTF-8" } },
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`SES rejected the message: ${detail}`);
+    }
+  }
+}
+
+/**
+ * Used when no sender is configured.
  *
  * It throws rather than logging and reporting success. A dispatcher that
  * treated an unconfigured mailer as a successful send would mark events
@@ -57,7 +96,7 @@ export class ResendEmailSender implements EmailSender {
 export class UnconfiguredEmailSender implements EmailSender {
   async send(message: EmailMessage): Promise<void> {
     throw new EmailNotConfiguredError(
-      `RESEND_API_KEY is not set; cannot notify ${message.to}`,
+      `AWS_REGION is not set; cannot notify ${message.to}`,
     );
   }
 }

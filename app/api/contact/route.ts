@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     // message is gone either way. Telling them so beats a false confirmation:
     // they can still reach us by phone, and we learn about it from the logs.
     if (error instanceof EmailNotConfiguredError) {
-      console.error("[contact] RESEND_API_KEY is not set; submission not delivered.");
+      console.error("[contact] AWS_REGION is not set; submission not delivered.");
       return NextResponse.json(
         {
           error: {
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       );
     }
     if (error instanceof EmailSendError) {
-      console.error(`[contact] Resend refused the message: ${error.message}`);
+      console.error(`[contact] SES refused the message: ${error.message}`);
       return NextResponse.json(
         {
           error: {

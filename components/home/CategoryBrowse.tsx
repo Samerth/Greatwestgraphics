@@ -29,6 +29,7 @@ const TILE_IMAGES: Record<string, string> = {
   safety: "/images/wardrobe-3.jpg",
   accessories: "/images/category-accessories.jpg",
   "eco-friendly": "/images/accessories.jpg",
+  outdoor: "/images/category-outdoor.jpg",
   all: "/images/category-more.jpg",
 };
 

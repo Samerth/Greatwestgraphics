@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1098.0",
     "@gwg/contracts": "0.1.0",
     "@gwg/pricing": "0.1.0",
     "dotenv": "^17.4.2",

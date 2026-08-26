@@ -7,7 +7,7 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
-import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, type CartItem } from "@/lib/store/cart";
+import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, cartLineIsCustomized, type CartItem } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
@@ -209,9 +209,15 @@ export default function CartPage() {
                     </div>
 
                     <div className="flex items-center gap-3 flex-wrap">
-                      {item.roster ? (
+                      {cartLineIsCustomized(item) ? (
+                        // Decorated lines (roster or single-item design) are priced
+                        // for one specific quantity at add-to-cart time. Letting
+                        // qty change here would keep charging that frozen unit
+                        // price at a different volume tier — send them back to
+                        // Edit to re-quote instead.
                         <span className="text-[13.5px] font-bold text-text-secondary">
-                          {item.qty} pieces · team order
+                          {item.qty} {item.qty === 1 ? "piece" : "pieces"}
+                          {item.roster ? " · team order" : ""} · quantity locked
                         </span>
                       ) : (
                         <div className="flex items-center border border-border rounded-full overflow-hidden w-fit">

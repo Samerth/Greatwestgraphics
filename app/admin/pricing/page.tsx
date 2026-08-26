@@ -45,11 +45,21 @@ export default async function AdminPricingPage() {
         <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
           Pricing engine
         </p>
-        <h1 className="font-display font-bold text-3xl m-0">Pricing</h1>
-        <p className="text-text-secondary mt-2 mb-0 max-w-[64ch]">
-          Edit draft levers, preview a sample quote, then publish. Storefront
-          live pricing uses the published config only.
+        <h1 className="font-display font-bold text-3xl m-0">
+          Pricing (legacy v1 — archive only)
+        </h1>
+        <p className="border border-amber-300 bg-amber-50 text-amber-900 rounded-md p-sp-3 mt-2 mb-0 max-w-[64ch]">
+          <strong>This page does not affect live pricing.</strong> Every
+          storefront price — catalogue, quote builder and design studio — is
+          calculated by the v2 engine on{" "}
+          <a href="/admin/pricing/v2" className="underline">
+            Pricing
+          </a>
+          . The v1 config here is kept only so orders placed before the v2
+          migration can still be re-priced against the rules they were quoted
+          under. Publishing here changes nothing a customer sees.
         </p>
+
       </div>
 
       {error && (
