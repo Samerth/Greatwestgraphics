@@ -83,8 +83,14 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\byouth\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-youth" },
   { pattern: /\bwomen'?s\b.*\b(hoodie|sweatshirt|fleece)\b/i, categorySlug: "hoodies-sweatshirts-women-s" },
   // Plain "Fleece" as its own Hoodies & Sweatshirts product line — excludes
-  // Fleece Jackets and Fleece Vests, which already have their own rules.
-  { pattern: /\bfleece\b(?!.*\b(jacket|vest)\b)/i, categorySlug: "fleece" },
+  // Fleece Jackets and Fleece Vests, which already have their own rules, and
+  // excludes half-/quarter-zip fleeces, which fall through to the generic
+  // hoodies-sweatshirts catch-all below instead of the plain "fleece" line.
+  {
+    pattern:
+      /\bfleece\b(?!.*\b(jacket|vest|half[- ]?zip|quarter[- ]?zip|1\/4[- ]?zip|1\/2[- ]?zip)\b)/i,
+    categorySlug: "fleece",
+  },
 
   // Polos sub-attributes
   { pattern: /\bperformance\b.*\bpolo\b/i, categorySlug: "polos-performance" },
@@ -283,7 +289,10 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
     pattern: /\b(tumbler|mug|bottle|drinkware|flask|growler|(?<!\d[\s-])can cooler)\b/i,
     categorySlug: "drinkware",
   },
-  { pattern: /\b(notebook|notepad|planner)\b/i, categorySlug: "notebooks" },
+  // Journals are a kind of notebook, so a journal product also picks up
+  // "notebooks" as a secondary fallback candidate after the more specific
+  // "journals" slug above.
+  { pattern: /\b(notebook|notepad|planner|journal(s)?)\b/i, categorySlug: "notebooks" },
   { pattern: /\b(patch|patches)\b/i, categorySlug: "patches" },
 ];
 
