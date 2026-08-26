@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PricingAdmin } from "@/components/portal/pricing/PricingAdmin";
 import {
   CommerceApiError,
@@ -52,9 +53,9 @@ export default async function AdminPricingPage() {
           <strong>This page does not affect live pricing.</strong> Every
           storefront price — catalogue, quote builder and design studio — is
           calculated by the v2 engine on{" "}
-          <a href="/admin/pricing/v2" className="underline">
+          <Link href="/admin/pricing/v2" className="underline">
             Pricing
-          </a>
+          </Link>
           . The v1 config here is kept only so orders placed before the v2
           migration can still be re-priced against the rules they were quoted
           under. Publishing here changes nothing a customer sees.

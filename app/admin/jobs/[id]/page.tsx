@@ -469,13 +469,13 @@ export default async function AdminJobDetailPage({
             {computedTotalMinor > 0 && (
               <p className="text-xs text-text-secondary m-0">
                 Line items total {moneyFromMinor(computedTotalMinor)}. Change the
-                amount if you're adjusting — anything more than 10% away needs
+                amount if you&apos;re adjusting — anything more than 10% away needs
                 the override box below.
               </p>
             )}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" name="confirmOverride" value="1" />
-              I'm deliberately quoting a different amount than the line total
+              I&apos;m deliberately quoting a different amount than the line total
             </label>
 
             <label className="block text-sm font-semibold">
