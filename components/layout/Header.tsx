@@ -115,8 +115,38 @@ export function Header({
     accountTimer.current = setTimeout(() => setAccountOpen(false), 120);
   };
 
+  // Close any open desktop dropdown (department panel, Shop mega menu,
+  // account menu) on an outside click or Escape. Mobile nav is deliberately
+  // excluded — it has its own hamburger toggle and shouldn't snap shut from
+  // taps inside it.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    function closeAll() {
+      setOpenDeptId(null);
+      setShopOpen(false);
+      setAccountOpen(false);
+    }
+    function handleClickOutside(e: MouseEvent) {
+      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
+        closeAll();
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") closeAll();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
   return (
-    <header className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border">
+    <header
+      ref={headerRef}
+      className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border"
+    >
       <Container className="h-[88px] flex items-center justify-between gap-sp-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
@@ -183,12 +213,12 @@ export function Header({
 
         {/* Quick department panel — single department, no sidebar, no rail */}
         {activeDept && (
-          <div
-            onMouseEnter={() => openDept(activeDept.id)}
-            onMouseLeave={scheduleDeptClose}
-            className="fixed left-0 right-0 top-[88px] px-sp-4"
-          >
-            <div className="mx-auto w-full max-w-[1100px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden">
+          <div className="fixed left-0 right-0 top-[88px] px-sp-4 pointer-events-none">
+            <div
+              onMouseEnter={() => openDept(activeDept.id)}
+              onMouseLeave={scheduleDeptClose}
+              className="mx-auto w-full max-w-[1100px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden pointer-events-auto"
+            >
               <div className="p-sp-5 max-h-[72vh] overflow-y-auto">
                 <div className="mb-sp-4">
                   <h3 className="m-0 font-display font-bold text-lg text-text-primary">
@@ -227,12 +257,12 @@ export function Header({
         {/* Shop mega menu — every category, every department, in one flat
             view. The right rail is trimmed to just Corporate & Team Stores. */}
         {shopOpen && (
-          <div
-            onMouseEnter={openShop}
-            onMouseLeave={scheduleShopClose}
-            className="fixed left-0 right-0 top-[88px] px-sp-4"
-          >
-            <div className="mx-auto w-full max-w-[1180px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden">
+          <div className="fixed left-0 right-0 top-[88px] px-sp-4 pointer-events-none">
+            <div
+              onMouseEnter={openShop}
+              onMouseLeave={scheduleShopClose}
+              className="mx-auto w-full max-w-[1180px] rounded-xl border border-border bg-bg shadow-[0_24px_60px_rgba(0,0,0,0.16)] overflow-hidden pointer-events-auto"
+            >
               {HAS_CATEGORIES ? (
                 <div className="flex max-h-[72vh]">
                   <div className="flex-1 min-w-0 p-sp-5 overflow-y-auto">
