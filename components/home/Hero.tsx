@@ -11,7 +11,7 @@ export function Hero() {
   return (
     <section className="relative min-h-[min(100svh,820px)] sm:min-h-[78vh] flex items-end overflow-hidden text-white">
       <video
-        src="/images/login_hero.mp4"
+        src="/images/Hero.mp4"
         autoPlay={!reduceMotion}
         loop
         muted

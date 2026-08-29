@@ -170,13 +170,6 @@ export default async function ProductsPage({
               <h1 className="font-display font-bold text-display leading-display max-w-[16ch] m-0">
                 {heading}
               </h1>
-              {!catalogFailed && (
-                <p className="text-text-secondary max-w-[60ch] mt-sp-3 mb-0">
-                  Live blanks from the local S&amp;S catalog. Each style is one
-                  product — pick the colour on the product page. Out-of-stock
-                  styles stay visible as unavailable.
-                </p>
-              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {SHOP_ASSURANCES.map((line) => (
@@ -193,7 +186,7 @@ export default async function ProductsPage({
         </Container>
       </section>
 
-      {overlayTiles.length > 0 && (
+      {!category && overlayTiles.length > 0 && (
         <section className="pt-sp-5 pb-0">
           <Container className={SHOP_SHELL}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">

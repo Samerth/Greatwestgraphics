@@ -1,6 +1,5 @@
-import { runCsvImportAction } from "@/app/admin/actions";
-import { AdminPendingSubmit } from "@/components/admin/AdminPendingSubmit";
 import { CatalogSyncPanel } from "@/components/admin/CatalogSyncPanel";
+import { CsvImportForm } from "@/components/admin/CsvImportForm";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import Link from "next/link";
 
@@ -132,74 +131,7 @@ export default async function AdminSyncPage() {
             <code>skus.csv</code>. Use a custom vendor key (e.g.{" "}
             <code>acme_blanks</code>) so a future partner stays namespaced.
           </p>
-          <form action={runCsvImportAction} className="space-y-3 border border-border rounded-md p-sp-3 bg-bg-raised">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="text-sm block">
-                <span className="font-semibold">Vendor</span>
-                <select
-                  name="vendor"
-                  defaultValue="csv"
-                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
-                >
-                  <option value="csv">Generic CSV</option>
-                  <option value="sanmar">Sanmar (file paste)</option>
-                </select>
-              </label>
-              <label className="text-sm block">
-                <span className="font-semibold">Custom vendor key</span>
-                <input
-                  name="vendorKey"
-                  placeholder="optional, e.g. acme_blanks"
-                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5"
-                />
-              </label>
-              <label className="text-sm block">
-                <span className="font-semibold">Mode</span>
-                <select
-                  name="mode"
-                  defaultValue="full"
-                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 bg-white"
-                >
-                  <option value="full">Full catalog from CSV</option>
-                  <option value="inventory">Stock &amp; price from CSV only</option>
-                </select>
-              </label>
-            </div>
-            <label className="text-sm block">
-              <span className="font-semibold">Canonical CSV (or inventory CSV)</span>
-              <textarea
-                name="csvContent"
-                rows={6}
-                placeholder="style_key,brand_name,style_name,color_name,size_name,sku_key,sku,qty,price"
-                className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-              />
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-sm block">
-                <span className="font-semibold">Sanmar products.csv (optional)</span>
-                <textarea
-                  name="csvProducts"
-                  rows={4}
-                  placeholder="productId,productName,brandName,category,price,imageUrl"
-                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-                />
-              </label>
-              <label className="text-sm block">
-                <span className="font-semibold">Sanmar skus.csv (optional)</span>
-                <textarea
-                  name="csvSkus"
-                  rows={4}
-                  placeholder="skuId,productId,sku,colorName,sizeName,quantity,price,imageUrl"
-                  className="mt-1 w-full border border-border rounded-sm px-2 py-1.5 font-mono text-xs"
-                />
-              </label>
-            </div>
-            <AdminPendingSubmit
-              idleLabel="Import CSV"
-              pendingLabel="Importing…"
-              className="bg-accent text-white font-bold px-4 py-2 rounded-sm disabled:opacity-60"
-            />
-          </form>
+        <CsvImportForm />
         </section>
       </CatalogSyncPanel>
     </div>

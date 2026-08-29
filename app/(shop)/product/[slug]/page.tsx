@@ -5,12 +5,12 @@ import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
-import { ProductSizeSpecs } from "@/components/pdp/ProductSizeSpecs";
+import { PdpSizeChartTrigger } from "@/components/pdp/PdpSizeChartTrigger";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
 import {
   PdpEnrichmentSections,
-  PdpFeatureBullets,
   PdpOutOfStockBanner,
+  PdpSpecsPanel,
   PdpTrustChecks,
 } from "@/components/pdp/PdpEnrichment";
 import { PdpImageGallery } from "@/components/pdp/PdpImageGallery";
@@ -197,6 +197,18 @@ export default async function ProductPage({
     const variants = (detail.variants as Record<string, unknown>[]) || [];
     const colorways = (detail.colorways as Record<string, unknown>[]) || [];
     const sizeChart = readProductSizeChart(detail);
+    const validSizeChart =
+      sizeChart && sizeChart.sizes.length > 0 && sizeChart.specNames.length > 0
+        ? sizeChart
+        : null;
+    const sizeRangeText =
+      variants.length > 1
+        ? `${String(variants[0]?.sizeName || "")} – ${String(
+            variants[variants.length - 1]?.sizeName || "",
+          )}`
+        : variants.length === 1
+          ? String(variants[0]?.sizeName || "")
+          : undefined;
     const imageUrl =
       (product.colorFrontImageUrl as string | null) ||
       (style.styleImageUrl as string | null);
@@ -249,7 +261,20 @@ export default async function ProductPage({
               </b>
             </div>
             <div className="grid lg:grid-cols-2 gap-sp-5">
-              <PdpImageGallery images={gallery} alt={title} />
+              <div>
+                <PdpImageGallery images={gallery} alt={title} />
+                <PdpSpecsPanel
+                  brandName={String(style.brandName || "")}
+                  styleName={String(style.styleName || title)}
+                  styleTitle={(style.title as string | null) || null}
+                  partNumber={(style.partNumber as string | null) || null}
+                  sizeRange={sizeRangeText}
+                colourCount={colorways.length}
+                  description={(style.description as string | null) || null}
+                  sizeChart={validSizeChart}
+                  productName={title}
+                />
+              </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
                   {String(style.brandName || "")}
@@ -277,7 +302,7 @@ export default async function ProductPage({
                             key={cId}
                             href={`/product/${encodeURIComponent(String(c.slug))}?id=${cId}`}
                             title={String(c.colorName || "")}
-                            className={`relative w-11 h-11 rounded-md overflow-hidden border-2 transition-colors ${
+                            className={`relative w-11 h-11 rounded-full overflow-hidden border-2 transition-colors ${
                               isActive
                                 ? "border-accent"
                                 : "border-border hover:border-text-tertiary"
@@ -312,18 +337,25 @@ export default async function ProductPage({
                   </div>
                 )}
 
-                <p className="text-lg font-bold mt-sp-3 mb-0">
-                  {available
-                    ? `from ${moneyFromMinor(
-                        Number(variants[0]?.retailMinor || 0),
-                      )}`
-                    : "Unavailable"}
-                </p>
+                {sizeRangeText && (
+                  <div className="text-sm text-text-secondary mt-sp-3">
+                    Sizes Available: {sizeRangeText}
+                    {validSizeChart && (
+                      <>
+                        {"  "}
+                        <PdpSizeChartTrigger
+                          chart={validSizeChart}
+                          productName={title}
+                          className="inline-flex items-center gap-1 font-bold text-accent hover:underline"
+                        >
+                          <span aria-hidden>📏</span> Size Chart
+                        </PdpSizeChartTrigger>
+                      </>
+                    )}
+                  </div>
+                )}
 
-                <PdpTrustChecks />
-                <PdpFeatureBullets
-                  description={(style.description as string | null) || null}
-                />
+                <p className="text-lg font-bold mt-sp-3 mb-0"></p>
 
                 {!available && (
                   <PdpOutOfStockBanner
@@ -349,6 +381,7 @@ export default async function ProductPage({
                     name={title}
                     color={String(product.colorName || "")}
                     image={imageUrl}
+                    available={available}
                     pricingConfig={
                       (detail as { pricingConfig?: PricingConfigV2 })
                         .pricingConfig ?? null
@@ -393,25 +426,7 @@ export default async function ProductPage({
           </Container>
         </section>
 
-        <ProductSizeSpecs chart={sizeChart} />
-
-        <PdpEnrichmentSections
-          brandName={String(style.brandName || "")}
-          styleName={String(style.styleName || title)}
-          styleTitle={(style.title as string | null) || null}
-          partNumber={(style.partNumber as string | null) || null}
-          sizeRange={
-            variants.length > 1
-              ? `${String(variants[0]?.sizeName || "")} – ${String(
-                  variants[variants.length - 1]?.sizeName || "",
-                )}`
-              : variants.length === 1
-                ? String(variants[0]?.sizeName || "")
-                : undefined
-          }
-          colourCount={colorways.length}
-          description={(style.description as string | null) || null}
-        />
+        <PdpEnrichmentSections />
 
         <section className="py-sp-8">
           <Container>

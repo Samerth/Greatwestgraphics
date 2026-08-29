@@ -928,6 +928,54 @@ export class CatalogService {
       cheapestVariants.map((v) => [v.productUuid, v]),
     );
 
+    // Size range per card. sizeOrder is a real numeric rank set at sync
+    // time (not alphabetical), so min/max sizeOrder gives an accurate
+    // "S - 4XL" even though sizes don't sort alphabetically. One batched
+    // query, same shape as the cheapestVariants query above.
+    const variantSizes = await this.db
+      .select({
+        productUuid: ssVariants.productUuid,
+        sizeName: ssVariants.sizeName,
+        sizeOrder: ssVariants.sizeOrder,
+      })
+      .from(ssVariants)
+      .where(inArray(ssVariants.productUuid, productIds));
+    const sizeRangeByProduct = new Map<string, string>();
+    {
+      const boundsByProduct = new Map<
+        string,
+        { minName: string; minOrder: number; maxName: string; maxOrder: number }
+      >();
+      for (const v of variantSizes) {
+        const existing = boundsByProduct.get(v.productUuid);
+        if (!existing) {
+          boundsByProduct.set(v.productUuid, {
+            minName: v.sizeName,
+            minOrder: v.sizeOrder,
+            maxName: v.sizeName,
+            maxOrder: v.sizeOrder,
+          });
+          continue;
+        }
+        if (v.sizeOrder < existing.minOrder) {
+          existing.minName = v.sizeName;
+          existing.minOrder = v.sizeOrder;
+        }
+        if (v.sizeOrder > existing.maxOrder) {
+          existing.maxName = v.sizeName;
+          existing.maxOrder = v.sizeOrder;
+        }
+      }
+      for (const [productUuid, bounds] of boundsByProduct) {
+        sizeRangeByProduct.set(
+          productUuid,
+          bounds.minName === bounds.maxName
+            ? bounds.minName
+            : `${bounds.minName} - ${bounds.maxName}`,
+        );
+      }
+    }
+
     return rows.map((row) => {
       const variant = variantByProduct.get(row.product.id);
       const cost = variant?.customerPriceMinor ?? 0;
@@ -955,6 +1003,9 @@ export class CatalogService {
           row.product.active &&
           row.product.storefrontVisible,
         colorwayCount: grouped?.countByStyle.get(row.product.styleUuid) ?? 1,
+        colorSwatches:
+          grouped?.swatchesByStyle.get(row.product.styleUuid) ?? [],
+        sizeRange: sizeRangeByProduct.get(row.product.id) ?? null,
       };
     });
   }
@@ -966,7 +1017,14 @@ export class CatalogService {
   ) {
     const styleUuids = await this.listGroupedStyleIds(tenantId, query, whereClause);
     if (styleUuids.length === 0) {
-      return { rows: [], countByStyle: new Map<string, number>() };
+      return {
+        rows: [],
+        countByStyle: new Map<string, number>(),
+        swatchesByStyle: new Map<
+          string,
+          { colorName: string; imageUrl: string | null }[]
+        >(),
+      };
     }
 
     const styleColumns = ssStyleColumnsWithoutSizeSpecs();
@@ -1020,7 +1078,29 @@ export class CatalogService {
         entry.colorwayCount,
       ]),
     );
-    return { rows, countByStyle };
+    // Every sibling colourway was already fetched above to compute the
+    // count — reusing it here for real swatch thumbnails costs nothing
+    // extra. Capped at 12 per style so a style with 50 colours doesn't
+    // bloat the listing payload; the true count is still in countByStyle
+    // for a "+N more" indicator.
+    const swatchesByStyle = new Map<
+      string,
+      { colorName: string; imageUrl: string | null }[]
+    >();
+    for (const row of siblings) {
+      const list = swatchesByStyle.get(row.product.styleUuid) ?? [];
+      if (list.length < 12) {
+        list.push({
+          colorName: row.product.colorName,
+          imageUrl:
+            row.product.colorFrontImageUrl ||
+            row.product.colorSwatchImageUrl ||
+            null,
+        });
+      }
+      swatchesByStyle.set(row.product.styleUuid, list);
+    }
+    return { rows, countByStyle, swatchesByStyle };
   }
 
   async getProductDetail(

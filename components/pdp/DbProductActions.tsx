@@ -73,6 +73,7 @@ export function DbProductActions({
   variants,
   productSlug,
   pricingConfig,
+  available = true,
 }: {
   productId: string;
   styleId: string;
@@ -82,6 +83,11 @@ export function DbProductActions({
   variants: DbVariantOption[];
   productSlug?: string;
   pricingConfig?: PricingConfigV2 | null;
+  /** Drives the "from $X" headline below. Kept in this client component
+   * (rather than the static server-rendered line it replaced) so the price
+   * tracks the quantity the shopper has actually selected, instead of
+   * freezing at the first variant's catalog price. */
+  available?: boolean;
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
@@ -149,6 +155,14 @@ export function DbProductActions({
 
   return (
     <div className="mt-sp-4">
+      <p className="text-lg font-bold mb-sp-3">
+        {available && selectedVariant
+          ? `from ${moneyFromMinor(
+              unitPriceMinor(selectedVariant, qty, pricingConfig, color),
+            )}`
+          : "Unavailable"}
+      </p>
+
       <label className="flex items-center gap-2 text-sm font-semibold mb-sp-3 cursor-pointer">
         <input
           type="checkbox"
@@ -257,11 +271,25 @@ export function DbProductActions({
           </div>
 
           {selectedVariant?.priceCurve && (
-            <p className="text-[12.5px] text-text-secondary mb-sp-2.5 mt-0">
-              {moneyFromMinor(unitPriceMinor(selectedVariant, qty, pricingConfig, color))} per piece
-              at {qty.toLocaleString()} — the per-piece price drops as the
-              quantity goes up.
-            </p>
+            <div className="mb-sp-3 rounded-md bg-fill-subtle-15 px-3 py-2.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary m-0">
+                Price per piece
+              </p>
+              <p className="text-2xl font-display font-bold text-accent m-0 mt-0.5">
+                {moneyFromMinor(
+                  unitPriceMinor(selectedVariant, qty, pricingConfig, color),
+                )}
+              </p>
+              <p className="text-xs text-text-secondary m-0 mt-1">
+                Total:{" "}
+                {moneyFromMinor(
+                  unitPriceMinor(selectedVariant, qty, pricingConfig, color) *
+                    qty,
+                )}{" "}
+                for {qty.toLocaleString()} piece{qty === 1 ? "" : "s"} · the
+                per-piece price drops as the quantity goes up
+              </p>
+            </div>
           )}
 
           <form onSubmit={handleCustomQtySubmit} className="flex gap-2 mb-sp-4">
