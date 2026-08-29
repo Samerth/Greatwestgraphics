@@ -111,7 +111,7 @@ import {
 } from "@/components/design/StudioElementEditor";
 import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
-import { StudioSizeChartModal } from "@/components/design/StudioSizeChartModal";
+import { GarmentSizeChartModal } from "@/components/shared/GarmentSizeChartModal";
 import {
   studioArticleLabel,
   studioColorwaysForArticle,
@@ -2669,7 +2669,7 @@ export function DesignStudio({
         </div>
       </div>
       {showSizeChart && sizeChart && (
-        <StudioSizeChartModal
+        <GarmentSizeChartModal
           chart={sizeChart}
           productName={selectedArticleLabel}
           onClose={() => setShowSizeChart(false)}

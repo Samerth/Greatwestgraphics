@@ -34,6 +34,17 @@ export type StorefrontCatalogProduct = {
   colorName: string;
   /** Colourways of this style that matched the listing filters. */
   colorwayCount: number;
+  /** Up to 12 real colourway swatches (photo thumbnail per colour), capped
+   * server-side. Use colorwayCount for the true total / "+N more". */
+  colorSwatches: {
+    colorName: string;
+    imageUrl: string | null;
+    productId: string;
+    slug: string;
+  }[];
+  /** e.g. "S - 4XL", derived from the vendor's real size-order ranking
+   * (not alphabetical). Null when this product has no size variants. */
+  sizeRange: string | null;
   categorySlugs: string[];
   retailMinor: number;
   costMinor: number;
@@ -175,6 +186,15 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
         title: (row.title as string | null) || null,
         colorName: String(row.colorName || ""),
         colorwayCount: Math.max(1, Number(row.colorwayCount || 1)),
+        colorSwatches: Array.isArray(row.colorSwatches)
+          ? (row.colorSwatches as {
+              colorName: string;
+              imageUrl: string | null;
+              productId: string;
+              slug: string;
+            }[])
+          : [],
+        sizeRange: (row.sizeRange as string | null) || null,
         categorySlugs: [],
         retailMinor,
         costMinor: Number(row.costMinor || 0),

@@ -229,7 +229,15 @@ export async function runSyncAction(
   }
 }
 
-export async function runCsvImportAction(formData: FormData) {
+export interface CsvImportState {
+  error?: string;
+  savedAt?: number;
+}
+
+export async function runCsvImportAction(
+  _previous: CsvImportState,
+  formData: FormData,
+): Promise<CsvImportState> {
   const vendor = String(formData.get("vendor") || "csv");
   const vendorKey = String(formData.get("vendorKey") || "").trim() || undefined;
   const csvContent = String(formData.get("csvContent") || "");
@@ -237,29 +245,39 @@ export async function runCsvImportAction(formData: FormData) {
   const csvSkus = String(formData.get("csvSkus") || "") || undefined;
   const mode = String(formData.get("mode") || "full");
   if (!csvContent.trim() && !(csvProducts && csvSkus)) {
-    throw new Error("Paste CSV content (or Sanmar products+skus pair)");
+    return { error: "Paste CSV content (or Sanmar products+skus pair)." };
   }
-  const client = await adminClient();
-  const type =
-    mode === "inventory"
-      ? ("inventory" as const)
-      : vendor === "csv" || csvContent
-        ? ("csv_import" as const)
-        : ("full" as const);
-  await client.runCatalogSync(
-    {
-      type: vendor === "sanmar" && mode !== "inventory" ? "full" : type,
-      vendor,
-      vendorKey,
-      csvContent: csvContent || undefined,
-      csvProducts,
-      csvSkus,
-      csvInventory: mode === "inventory" ? csvContent : undefined,
-    },
-    requireAdminToken(),
-  );
+  try {
+    const client = await adminClient();
+    const type =
+      mode === "inventory"
+        ? ("inventory" as const)
+        : vendor === "csv" || csvContent
+          ? ("csv_import" as const)
+          : ("full" as const);
+    await client.runCatalogSync(
+      {
+        type: vendor === "sanmar" && mode !== "inventory" ? "full" : type,
+        vendor,
+        vendorKey,
+        csvContent: csvContent || undefined,
+        csvProducts,
+        csvSkus,
+        csvInventory: mode === "inventory" ? csvContent : undefined,
+      },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "CSV import failed. Check the file format and try again.",
+    };
+  }
   revalidatePath("/admin/sync");
   revalidatePath("/admin");
+  return { savedAt: Date.now() };
 }
 
 export async function saveSettingsAction(formData: FormData) {

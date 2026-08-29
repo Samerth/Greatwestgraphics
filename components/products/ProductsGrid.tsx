@@ -25,6 +25,22 @@ type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 // qualified. Reinstate this only alongside real per-product attribute data.
 
 
+type ProductTile = {
+  key: string;
+  href: string;
+  name: string;
+  brandName: string;
+  styleName: string;
+  colorName: string;
+  colorwayCount: number;
+  colorSwatches: StorefrontCatalogProduct["colorSwatches"];
+  sizeRange: string | null;
+  priceFrom: string;
+  imageUrl: string | null;
+  available: boolean;
+  bestSeller: boolean;
+};
+
 type CategoryNode = StorefrontCategory & { children: StorefrontCategory[] };
 
 function buildCategoryTree(categories: StorefrontCategory[]): CategoryNode[] {
@@ -81,6 +97,20 @@ export function ProductsGrid({
   const [brandsOpen, setBrandsOpen] = useState(true);
   const [showAllBrands, setShowAllBrands] = useState(false);
   const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
+  // Showing every department (Bags, Accessories, Hoodies...) while already
+  // browsing a specific one (e.g. Short Sleeve) buries the sibling
+  // categories a shopper actually wants under unrelated ones. Once a
+  // category is active, narrow the sidebar down to just its department.
+  const activeGroup = useMemo(() => {
+    if (activeCategory === "All") return null;
+    const matchesSlug = (slug: string) => slug.toLowerCase() === activeCategory.toLowerCase();
+    return (
+      categoryTree.find((group) => matchesSlug(group.slug)) ??
+      categoryTree.find((group) => group.children.some((child) => matchesSlug(child.slug))) ??
+      null
+    );
+  }, [activeCategory, categoryTree]);
+  const visibleGroups = activeGroup ? [activeGroup] : categoryTree;
   const BRAND_PREVIEW_COUNT = 8;
   const visibleBrands = showAllBrands
     ? dbBrands
@@ -130,6 +160,8 @@ export function ProductsGrid({
       styleName: p.styleName,
       colorName: p.colorName,
       colorwayCount: p.colorwayCount,
+      colorSwatches: p.colorSwatches,
+      sizeRange: p.sizeRange,
       priceFrom: p.priceFrom,
       imageUrl: p.imageUrl,
       available: p.available,
@@ -170,7 +202,7 @@ export function ProductsGrid({
               navigate({ category: "All" });
             }}
           />
-          {categoryTree.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.id}>
               <FacetCheck
                 label={group.name}
@@ -380,80 +412,7 @@ export function ProductsGrid({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-sp-3">
             {tiles.map((tile) => (
-              <article
-                key={tile.key}
-                className={cn(
-                  "group border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover",
-                  !tile.available && "opacity-90",
-                )}
-              >
-                <Link href={tile.href} className="relative block aspect-[300/220] bg-bg">
-                  {tile.imageUrl ? (
-                    <Image
-                      src={tile.imageUrl}
-                      alt={tile.name}
-                      fill
-                      className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
-                      sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, (max-width: 1536px) 33vw, 25vw"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-fill-subtle-15" />
-                  )}
-                  {tile.bestSeller && tile.available && (
-                    <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-accent text-white">
-                      Best Seller
-                    </span>
-                  )}
-                  {!tile.available && (
-                    <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-amber-100 border border-amber-300 text-amber-900">
-                      Out of Stock
-                    </span>
-                  )}
-                </Link>
-
-                {/* Colourway count is real (from the grouped listing). Size
-                    range and minimums still stay off the card — they vary by
-                    garment and the listing payload does not carry them. */}
-                <div className="p-sp-3 flex flex-col flex-1">
-                  <p className="text-xs text-text-tertiary mb-1">
-                    {catalogCardSubtitle(tile)}
-                  </p>
-                  <h3 className="font-display font-bold text-[17px] m-0 leading-snug">
-                    <Link href={tile.href} className="hover:text-accent transition-colors">
-                      {tile.name}
-                    </Link>
-                  </h3>
-                  {/* Said "Notify when back", which we cannot do — there is no
-                      back-in-stock subscription anywhere in the system. */}
-                  <p className="text-xs text-text-secondary mt-2 mb-1">
-                    {tile.available ? "3 Day Quick Order" : "Ask us for lead time"}
-                  </p>
-                  <p className="font-bold text-sm m-0">{tile.priceFrom}</p>
-
-                  <div className="mt-auto pt-sp-3 flex gap-2">
-                    <Link
-                      href={tile.href}
-                      className="flex-1 text-center rounded-sm border border-border py-2 text-sm font-bold hover:border-accent hover:text-accent transition-colors"
-                    >
-                      View Product
-                    </Link>
-                    {tile.available && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          router.push(
-                            `/design?garmentId=${encodeURIComponent(tile.key)}`,
-                          )
-                        }
-                        className="rounded-sm bg-accent text-white px-3 py-2 text-sm font-bold hover:bg-accent-hover transition-colors"
-                        title={hasDesign ? "Preview my design" : "Design this"}
-                      >
-                        Design
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
+              <ProductCard key={tile.key} tile={tile} hasDesign={hasDesign} />
             ))}
           </div>
         )}
@@ -461,6 +420,142 @@ export function ProductsGrid({
     </div>
   );
 }
+function ProductCard({
+  tile,
+  hasDesign,
+}: {
+  tile: ProductTile;
+  hasDesign: boolean;
+}) {
+  const router = useRouter();
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const activeIdx = hoveredIdx ?? selectedIdx;
+  const activeSwatch =
+    activeIdx != null ? tile.colorSwatches[activeIdx] : undefined;
+
+  const displayImageUrl = activeSwatch?.imageUrl || tile.imageUrl;
+  const displayHref =
+    activeSwatch?.productId && activeSwatch?.slug
+      ? `/product/${encodeURIComponent(activeSwatch.slug)}?id=${activeSwatch.productId}`
+      : tile.href;
+  const designProductId = activeSwatch?.productId || tile.key;
+
+  return (
+    <article
+      className={cn(
+        "group border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover",
+        !tile.available && "opacity-90",
+      )}
+    >
+      <Link href={displayHref} className="relative block aspect-[300/220] bg-bg-raised">
+        {displayImageUrl ? (
+          <Image
+            src={displayImageUrl}
+            alt={activeSwatch ? `${tile.name} · ${activeSwatch.colorName}` : tile.name}
+            fill
+            className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, (max-width: 1536px) 33vw, 25vw"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-fill-subtle-15" />
+        )}
+        {tile.bestSeller && tile.available && (
+          <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-accent text-white">
+            Best Seller
+          </span>
+        )}
+        {!tile.available && (
+          <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-amber-100 border border-amber-300 text-amber-900">
+            Out of Stock
+          </span>
+        )}
+      </Link>
+
+      <div className="p-sp-3 flex flex-col flex-1">
+        <p className="text-xs text-text-tertiary mb-1">
+          {catalogCardSubtitle(tile)}
+        </p>
+
+        {tile.colorSwatches.length > 0 && (
+          <div className="flex items-center gap-1 mb-1.5" onMouseLeave={() => setHoveredIdx(null)}>
+            {tile.colorSwatches.slice(0, 7).map((swatch, i) => (
+              <button
+                key={`${swatch.colorName}-${i}`}
+                type="button"
+                title={swatch.colorName}
+                aria-label={`View in ${swatch.colorName}`}
+                aria-pressed={selectedIdx === i}
+                onMouseEnter={() => setHoveredIdx(i)}
+                onFocus={() => setHoveredIdx(i)}
+                onBlur={() => setHoveredIdx(null)}
+                onClick={() =>
+                  setSelectedIdx((current) => (current === i ? null : i))
+                }
+                className={cn(
+                  "relative w-4 h-4 rounded-full border overflow-hidden bg-bg shrink-0 transition-shadow",
+                  activeIdx === i
+                    ? "border-accent ring-2 ring-accent ring-offset-1"
+                    : "border-border hover:border-accent",
+                )}
+              >
+                {swatch.imageUrl && (
+                  <Image
+                    src={swatch.imageUrl}
+                    alt={swatch.colorName}
+                    fill
+                    className="object-cover"
+                    sizes="16px"
+                  />
+                )}
+              </button>
+            ))}
+            {tile.colorwayCount > 7 && (
+              <span className="text-[11px] text-text-tertiary ml-0.5">
+                +{tile.colorwayCount - 7}
+              </span>
+            )}
+          </div>
+        )}
+
+        <h3 className="font-display font-bold text-[17px] m-0 leading-snug">
+          <Link href={displayHref} className="hover:text-accent transition-colors">
+            {tile.name}
+          </Link>
+        </h3>
+        <p className="text-xs text-text-secondary mt-2 mb-1">
+          {tile.sizeRange ? `${tile.sizeRange} · ` : ""}
+          {tile.available ? "3 Day Quick Order" : "Ask us for lead time"}
+        </p>
+        <p className="font-bold text-sm m-0">{tile.priceFrom}</p>
+
+        <div className="mt-auto pt-sp-3 flex gap-2">
+          <Link
+            href={displayHref}
+            className="flex-1 text-center rounded-sm border border-border py-2 text-sm font-bold hover:border-accent hover:text-accent transition-colors"
+          >
+            View Product
+          </Link>
+          {tile.available && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/design?garmentId=${encodeURIComponent(designProductId)}`,
+                )
+              }
+              className="rounded-sm bg-accent text-white px-3 py-2 text-sm font-bold hover:bg-accent-hover transition-colors"
+              title={hasDesign ? "Preview my design" : "Design this"}
+            >
+              Design
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 
 function FacetGroup({
   title,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import {
@@ -9,12 +9,14 @@ import {
   type DescriptionBlock,
 } from "@/lib/catalog/vendor-description";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { PdpSizeChartTrigger } from "@/components/pdp/PdpSizeChartTrigger";
+import type { SizeSpecChart } from "@/lib/utils/size-specs";
 
 /** Vendor copy is a mix of spec bullets and prose. Rendering bullets as an
  * actual list is the whole point of parsing it, so both call sites share this. */
 function DescriptionBlocks({ blocks }: { blocks: DescriptionBlock[] }) {
   if (blocks.length === 0) return null;
-  const out: React.ReactNode[] = [];
+  const out: ReactNode[] = [];
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
     if (block.kind === "paragraph") {
@@ -180,7 +182,7 @@ export function PdpOutOfStockBanner({
   );
 }
 
-export type PdpSpec = { label: string; value: string };
+export type PdpSpec = { label: string; value: ReactNode };
 
 /**
  * Everything shown here is either a vendor fact for this exact style or a
@@ -190,7 +192,13 @@ export type PdpSpec = { label: string; value: string };
  * content is gone rather than rewritten, because we have no per-product
  * review data to replace it with.
  */
-export function PdpEnrichmentSections({
+/**
+ * The "Product Details" card — fabric description, brand, style, decoration
+ * and turnaround facts. Lives directly under the image gallery on the PDP
+ * (matches the competitor benchmark CodSphere flagged), rather than the old
+ * placement as a full-width section below the entire buy box and size chart.
+ */
+export function PdpSpecsPanel({
   brandName,
   styleName,
   styleTitle,
@@ -198,6 +206,8 @@ export function PdpEnrichmentSections({
   sizeRange,
   colourCount,
   description,
+  sizeChart,
+  productName,
 }: {
   brandName?: string;
   styleName?: string;
@@ -206,7 +216,16 @@ export function PdpEnrichmentSections({
   sizeRange?: string;
   colourCount?: number;
   description?: string | null;
+  /** Full measurement table. When present and non-empty, the Sizing row
+   * becomes a button that opens the shared size-chart modal in place. */
+  sizeChart?: SizeSpecChart | null;
+  /** Shown as the modal's heading; falls back to styleName/brandName. */
+  productName?: string;
 }) {
+  const validSizeChart =
+    sizeChart && sizeChart.sizes.length > 0 && sizeChart.specNames.length > 0
+      ? sizeChart
+      : null;
   const specs: PdpSpec[] = [];
   if (brandName) specs.push({ label: "Brand", value: brandName });
   if (styleName) specs.push({ label: "Style", value: styleName });
@@ -214,7 +233,23 @@ export function PdpEnrichmentSections({
   if (styleTitle && styleTitle !== styleName) {
     specs.push({ label: "Manufacturer name", value: styleTitle });
   }
-  if (sizeRange) specs.push({ label: "Sizing", value: sizeRange });
+  if (sizeRange) {
+    specs.push({
+      label: "Sizing",
+      value: validSizeChart ? (
+        <PdpSizeChartTrigger
+          chart={validSizeChart}
+          productName={productName || styleName || brandName || "Product"}
+          className="inline-flex items-center gap-1 font-bold text-accent hover:underline"
+        >
+          {sizeRange} — View size chart
+          <span aria-hidden>→</span>
+        </PdpSizeChartTrigger>
+      ) : (
+        sizeRange
+      ),
+    });
+  }
   if (colourCount && colourCount > 1) {
     specs.push({ label: "Colourways", value: `${colourCount} available` });
   }
@@ -228,36 +263,36 @@ export function PdpEnrichmentSections({
   });
 
   return (
-    <>
-      <section className="py-sp-8 border-t border-border">
-        <Container>
-          <h2 className="font-display font-bold text-header m-0">
-            Product Specifications
-          </h2>
-          <div className="mt-sp-3 max-w-[80ch]">
-            <DescriptionBlocks blocks={parseVendorDescription(description)} />
+    <div className="mt-sp-4 rounded-md border border-border bg-bg-raised p-sp-4">
+      <h2 className="font-display font-bold text-lg m-0">Product Details</h2>
+      <div className="mt-sp-2">
+        <DescriptionBlocks blocks={parseVendorDescription(description)} />
+      </div>
+      <div className="mt-sp-3 border border-border rounded-md overflow-hidden bg-bg">
+        {specs.map((row, index) => (
+          <div
+            key={row.label}
+            className={`grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-1 sm:gap-3 px-3 py-2 text-sm ${
+              index > 0 ? "border-t border-border" : ""
+            }`}
+          >
+            <span className="font-bold text-text-primary">{row.label}</span>
+            <div className="text-text-secondary">{row.value}</div>
           </div>
-          <div className="mt-sp-4 border border-border rounded-md overflow-hidden">
-            {specs.map((row, index) => (
-              <div
-                key={row.label}
-                className={`grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 text-sm ${
-                  index % 2 === 0 ? "bg-bg-raised" : "bg-bg"
-                } ${index > 0 ? "border-t border-border" : ""}`}
-              >
-                <span className="font-bold text-text-primary">{row.label}</span>
-                <span className="text-text-secondary">{row.value}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
-            Fabric weight, fit and care details come straight from the
-            manufacturer&apos;s spec sheet — ask us if you need a detail that
-            isn&apos;t listed here.
-          </p>
-        </Container>
-      </section>
+        ))}
+      </div>
+      <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
+        Fabric weight, fit and care details come straight from the
+        manufacturer&apos;s spec sheet — ask us if you need a detail that
+        isn&apos;t listed here.
+      </p>
+    </div>
+  );
+}
 
+export function PdpEnrichmentSections() {
+  return (
+    <>
       <section className="py-sp-5 border-b border-border">
         <Container>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sp-4">
