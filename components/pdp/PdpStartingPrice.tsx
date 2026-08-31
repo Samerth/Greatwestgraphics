@@ -85,7 +85,6 @@ export function PdpStartingPrice({
     } catch {
       return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricingConfig, firstInStock, name, color]);
 
   if (!starting) return null;

@@ -349,10 +349,10 @@ export function PdpDetailedQuote({
                   Size Guide
                 </p>
                 <ul className="space-y-1 text-sm">
-                  <li>Small: up to 4"</li>
-                  <li>Medium: over 4" to 8"</li>
-                  <li>Large: over 8" to 12"</li>
-                  <li>Oversized: over 12"</li>
+                  <li>Small: up to 4&quot;</li>
+                  <li>Medium: over 4&quot; to 8&quot;</li>
+                  <li>Large: over 8&quot; to 12&quot;</li>
+                  <li>Oversized: over 12&quot;</li>
                 </ul>
                 <p className="mt-2 text-xs text-text-secondary">
                   Final suitability is confirmed after artwork review.

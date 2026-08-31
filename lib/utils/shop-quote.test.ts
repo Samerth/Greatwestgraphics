@@ -38,6 +38,6 @@ describe("shop quote method helpers", () => {
     });
     expect(colourOptions(screen)[0]).toBe(1);
     expect(defaultOptionKey(dtf)).toBeTruthy();
-    expect(stitchCountForPreset("medium")).toBe(8000);
+    expect(stitchCountForPreset("medium")).toBe(10000);
   });
 });
