@@ -45,7 +45,6 @@ import {
 } from "@gwg/pricing";
 import {
   STITCH_PRESETS,
-  colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
@@ -2576,33 +2575,6 @@ export function DesignStudio({
                     ))}
                   </div>
                 </>
-              )}
-
-              {methodVariableInputs(selectedMethod).colours && (
-                <div className="mb-sp-3">
-                  <span className="text-xs font-bold block mb-1.5">
-                    Number of colours
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {(selectedMethod ? colourOptions(selectedMethod) : []).map(
-                      (count) => (
-                        <button
-                          key={count}
-                          type="button"
-                          onClick={() => setColours(count)}
-                          className={cn(
-                            "min-w-9 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px]",
-                            colours === count
-                              ? "bg-accent text-white border-accent"
-                              : "border-border bg-bg-raised hover:border-text-tertiary",
-                          )}
-                        >
-                          {count}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                </div>
               )}
 
               <div className="mb-sp-3">
