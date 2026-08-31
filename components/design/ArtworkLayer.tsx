@@ -14,6 +14,7 @@ export function ArtworkLayer({
   onSelect,
   onChange,
   onDragMove,
+  maxSize = Infinity,
 }: {
   artwork: PlacedArtwork;
   isSelected: boolean;
@@ -26,6 +27,9 @@ export function ArtworkLayer({
     width: number;
     height: number;
   }) => void;
+  /** Upper bound (display pixels) a resize handle can grow the artwork to —
+   * keeps it from being dragged past the visible canvas. */
+  maxSize?: number;
 }) {
   const [img] = useImage(artwork.src, "anonymous");
   const shapeRef = useRef<Konva.Group>(null);
@@ -100,7 +104,12 @@ export function ArtworkLayer({
             "bottom-right",
           ]}
           boundBoxFunc={(oldBox, newBox) =>
-            newBox.width < 20 || newBox.height < 20 ? oldBox : newBox
+            newBox.width < 20 ||
+            newBox.height < 20 ||
+            newBox.width > maxSize ||
+            newBox.height > maxSize
+              ? oldBox
+              : newBox
           }
         />
       )}

@@ -9,7 +9,7 @@ export function Hero() {
   const reduceMotion = useReducedMotion();
 
   return (
-    <section className="relative min-h-[min(100svh,820px)] sm:min-h-[78vh] flex items-end overflow-hidden text-white">
+    <section className="relative min-h-[min(78svh,640px)] sm:min-h-[56vh] flex items-end overflow-hidden text-white">
       <video
         src="/images/Hero.mp4"
         autoPlay={!reduceMotion}
@@ -36,21 +36,21 @@ export function Hero() {
             Bring your brand <span className="text-white">to life.</span>
           </h1>
           <p className="mt-sp-3 mb-0 max-w-[46ch] text-white/90 text-base sm:text-[17px] leading-relaxed">
-            Not a print website. A print studio. Ink, thread and four decades of
-            getting it right, proofed before a single sheet runs.
+            Custom apparel, embroidery, screen printing and more — produced in
+            Vancouver since 1980.
           </p>
           <div className="flex gap-3 mt-sp-4 flex-wrap">
             {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
               <ButtonLink href="/quote" variant="primary">
-                Get a Quote
+                Request a Quote
               </ButtonLink>
             ) : null}
             <ButtonLink
-              href="/design"
+              href="/products?category=best-sellers"
               variant={SHOW_PUBLIC_QUOTE_CALCULATOR ? "secondary" : "primary"}
               className="border-white/50 text-white hover:border-white hover:bg-white/10"
             >
-              Start Designing
+              Get an Instant Quote
             </ButtonLink>
           </div>
           {/* This used to be a five-star glyph and "4.8/5 · Rated by Vancouver
@@ -60,8 +60,8 @@ export function Hero() {
               stand behind. */}
           <div className="mt-sp-4 text-sm text-white/80 flex flex-wrap items-center gap-2">
             <span>
-              Vancouver&rsquo;s print studio since 1980 &middot; proofed before
-              every run
+              Fast proofs &middot; Rush service available &middot; Canada-wide
+              shipping
             </span>
           </div>
         </motion.div>

@@ -27,6 +27,8 @@ export type ShopperPriceInput = {
   shareSetup?: boolean;
   rush?: boolean;
   includePacking?: boolean;
+  /** Customer checked "Individual names/numbers" on the PDP or quote builder. */
+  includeNamesNumbers?: boolean;
   shippingCostMinor?: number;
   description?: string;
   /**
@@ -172,6 +174,7 @@ export function buildShopperQuoteInput(
     options: {
       rush: input.rush ?? false,
       includePacking: input.includePacking ?? false,
+      namesNumbers: input.includeNamesNumbers ?? false,
       shippingCostMinor: input.shippingCostMinor ?? 0,
       designHours: 0,
     },

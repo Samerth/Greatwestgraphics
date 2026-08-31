@@ -45,6 +45,7 @@ import {
 } from "@gwg/pricing";
 import {
   STITCH_PRESETS,
+  colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
@@ -421,7 +422,7 @@ export function DesignStudio({
   );
   // Quotes still need a colour count. Do not render ink-count chips in the
   // finish panel — shoppers read those as garment colour, not screen count.
-  const [colours] = useState(
+  const [colours, setColours] = useState(
     pricingConfig.storefront?.defaultColours ?? 1,
   );
   const [stitchPreset, setStitchPreset] = useState<StitchPresetId>("medium");
@@ -555,6 +556,25 @@ export function DesignStudio({
       if (!handoff || handoff.productId !== garmentIdOverride) return;
       if (handoff.sizeName) preferredSizeNameRef.current = handoff.sizeName;
       if (handoff.qty && handoff.qty > 0) setDesignQty(handoff.qty);
+      if (handoff.methodKey) setMethodKey(handoff.methodKey);
+      if (handoff.colours) setColours(handoff.colours);
+      if (handoff.stitchPreset) {
+        setStitchPreset(handoff.stitchPreset as StitchPresetId);
+      }
+      if (handoff.optionKey) setOptionKey(handoff.optionKey);
+      if (handoff.location) {
+        // The PDP's location vocabulary (front/back/leftChest/sleeve) is
+        // finer-grained than the studio's four canvas sides — map down to
+        // the closest side as a starting point; the customer can still
+        // switch sides freely once inside the studio.
+        const side: DesignSide =
+          handoff.location === "back"
+            ? "back"
+            : handoff.location === "leftChest" || handoff.location === "sleeve"
+              ? "left"
+              : "front";
+        setActiveSide(side);
+      }
       if (rosterLooksStarted(handoff.roster)) {
         setRoster(handoff.roster ?? [{ size: "", name: "", number: "" }]);
         setDesign((prev) => ({
@@ -568,7 +588,7 @@ export function DesignStudio({
             })),
         }));
         setStudioTab("team");
-      }
+      } 
     };
     const persistApi = usePdpStudioHandoff.persist;
     if (persistApi.hasHydrated()) {
@@ -2556,6 +2576,33 @@ export function DesignStudio({
                     ))}
                   </div>
                 </>
+              )}
+
+              {methodVariableInputs(selectedMethod).colours && (
+                <div className="mb-sp-3">
+                  <span className="text-xs font-bold block mb-1.5">
+                    Number of colours
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(selectedMethod ? colourOptions(selectedMethod) : []).map(
+                      (count) => (
+                        <button
+                          key={count}
+                          type="button"
+                          onClick={() => setColours(count)}
+                          className={cn(
+                            "min-w-9 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px]",
+                            colours === count
+                              ? "bg-accent text-white border-accent"
+                              : "border-border bg-bg-raised hover:border-text-tertiary",
+                          )}
+                        >
+                          {count}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
               )}
 
               <div className="mb-sp-3">

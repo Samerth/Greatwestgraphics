@@ -89,6 +89,12 @@ export function GlobalSettingsTab({ config, onChange }: Props) {
             valueMinor={config.settings.packingFeePerGarmentMinor}
             onChange={(minor) => setSetting("packingFeePerGarmentMinor", minor)}
           />
+          <MoneyField
+            label="Names/numbers fee per garment"
+            hint="Charged only when the customer requests individual names/numbers."
+            valueMinor={config.settings.namesNumbersFeePerGarmentMinor}
+            onChange={(minor) => setSetting("namesNumbersFeePerGarmentMinor", minor)}
+          />
           <PercentField
             label="Shipping markup"
             hint="Applied to the carrier cost to cover handling."

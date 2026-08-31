@@ -218,6 +218,7 @@ export default function DesignCanvas({
                   onSelect={() => onSelect(item.id)}
                   onChange={onChangeArtwork}
                   onDragMove={onDragMove}
+                  maxSize={displaySize}
                 />
               ) : (
                 <TextLayer

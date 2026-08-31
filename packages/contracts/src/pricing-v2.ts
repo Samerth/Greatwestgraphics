@@ -188,6 +188,8 @@ export const PricingSettingsV2Schema = z.object({
     .enum(["productionExcludingShipping", "everything"])
     .default("productionExcludingShipping"),
   packingFeePerGarmentMinor: MinorAmount,
+  /** Per-garment fee for individual names/numbers, e.g. jersey personalization. */
+  namesNumbersFeePerGarmentMinor: MinorAmount.default(0),
   shippingMarkupPercent: Percent,
   quoteValidityDays: z.number().int().positive().default(30),
   artworkMinimumFeeMinor: MinorAmount.default(0),
@@ -409,6 +411,8 @@ export type QuoteDecorationLine = z.infer<typeof QuoteDecorationLineSchema>;
 export const QuoteOptionsV2Schema = z.object({
   rush: z.boolean().default(false),
   includePacking: z.boolean().default(false),
+  /** Customer opted into individual names/numbers on this order. */
+  namesNumbers: z.boolean().default(false),
   shippingCostMinor: MinorAmount.default(0),
   designHours: z.number().nonnegative().default(0),
   overrideShippingMinor: MinorAmount.optional(),
@@ -424,6 +428,7 @@ export const QuoteInputV2Schema = z.object({
   options: QuoteOptionsV2Schema.default({
     rush: false,
     includePacking: false,
+    namesNumbers: false,
     shippingCostMinor: 0,
     designHours: 0,
   }),
@@ -469,6 +474,7 @@ export const QuoteLineKindSchema = z.enum([
   "design",
   "artworkMinimum",
   "packing",
+  "namesNumbers",
   "shipping",
   "rush",
 ]);
@@ -496,6 +502,7 @@ export const QuoteTotalsV2Schema = z.object({
   setupMinor: z.number().int(),
   threadMinor: z.number().int().default(0),
   packingMinor: z.number().int(),
+  namesNumbersMinor: z.number().int().default(0),
   shippingMinor: z.number().int(),
   rushMinor: z.number().int(),
   /** Rush base: everything except shipping, under the default setting. */

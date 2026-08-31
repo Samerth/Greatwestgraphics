@@ -67,6 +67,7 @@ function starterQuote(config: PricingConfigV2): QuoteInputV2 {
     options: {
       rush: false,
       includePacking: false,
+      namesNumbers: false,
       shippingCostMinor: 0,
       designHours: 0,
     },

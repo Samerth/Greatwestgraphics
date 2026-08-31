@@ -9,6 +9,24 @@ export type PdpStudioHandoff = {
   qty?: number;
   roster?: RosterRow[];
   groupOrder?: boolean;
+  /** Decoration choices made in the PDP's Detailed Quote block, so
+   * "Start Designing" opens on the same method/side instead of defaults.
+   * methodKey/location/etc. mirror the first (primary) decoration row for
+   * DesignStudio's existing single-side handoff logic; `decorations` carries
+   * the full multi-row selection for future use once Design Studio supports
+   * importing more than one decoration from the handoff. */
+  methodKey?: string;
+  location?: string;
+  colours?: number;
+  stitchPreset?: string;
+  optionKey?: string;
+  decorations?: Array<{
+    methodKey: string;
+    location: string;
+    colours?: number;
+    stitchPreset?: string;
+    optionKey?: string;
+  }>;
 };
 
 interface PdpStudioHandoffState {

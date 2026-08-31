@@ -4,6 +4,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { DbProductActions } from "@/components/pdp/DbProductActions";
+import { PdpDetailedQuote } from "@/components/pdp/PdpDetailedQuote";
+import { PdpStartingPrice } from "@/components/pdp/PdpStartingPrice";
 import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
 import { PdpSizeChartTrigger } from "@/components/pdp/PdpSizeChartTrigger";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
@@ -213,6 +215,17 @@ export default async function ProductPage({
       (product.colorFrontImageUrl as string | null) ||
       (style.styleImageUrl as string | null);
     const sideImageUrl = (product.colorSideImageUrl as string | null) || null;
+    const pdpVariants = variants.map((v) => ({
+      id: String(v.id),
+      sizeName: String(v.sizeName || ""),
+      retailMinor: Number(v.retailMinor || 0),
+      costMinor: Number(v.customerPriceMinor || 0),
+      mapPriceMinor: v.mapPriceMinor == null ? null : Number(v.mapPriceMinor),
+      priceCurve: (v.priceCurve as GarmentPriceCurve | null) ?? null,
+      inStock: Number(v.qty || 0) > 0 && v.active !== false,
+    }));
+    const pdpPricingConfig =
+      (detail as { pricingConfig?: PricingConfigV2 }).pricingConfig ?? null;
     const backImageUrl = (product.colorBackImageUrl as string | null) || null;
     const available =
       Boolean(product.active) && Number(product.qty || 0) > 0;
@@ -355,7 +368,12 @@ export default async function ProductPage({
                   </div>
                 )}
 
-                <p className="text-lg font-bold mt-sp-3 mb-0"></p>
+               <PdpStartingPrice
+                  name={title}
+                  color={String(product.colorName || "")}
+                  variants={pdpVariants}
+                  pricingConfig={pdpPricingConfig}
+                />
 
                 {!available && (
                   <PdpOutOfStockBanner
@@ -370,9 +388,19 @@ export default async function ProductPage({
                   />
                 )}
 
+                {available && (
+                  <PdpDetailedQuote
+                    productId={String(product.id)}
+                    name={title}
+                    color={String(product.colorName || "")}
+                    variants={pdpVariants}
+                    pricingConfig={pdpPricingConfig}
+                  />
+                )}
+
                 <div className="mt-sp-4 pt-sp-4 border-t border-border">
                   <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary mb-sp-2">
-                    Or order it blank
+                    Order Samples
                   </p>
                   <DbProductActions
                     productId={String(product.id)}
@@ -382,23 +410,8 @@ export default async function ProductPage({
                     color={String(product.colorName || "")}
                     image={imageUrl}
                     available={available}
-                    pricingConfig={
-                      (detail as { pricingConfig?: PricingConfigV2 })
-                        .pricingConfig ?? null
-                    }
-                    variants={variants.map((v) => ({
-                      id: String(v.id),
-                      sizeName: String(v.sizeName || ""),
-                      retailMinor: Number(v.retailMinor || 0),
-                      costMinor: Number(v.customerPriceMinor || 0),
-                      mapPriceMinor:
-                        v.mapPriceMinor == null
-                          ? null
-                          : Number(v.mapPriceMinor),
-                      priceCurve:
-                        (v.priceCurve as GarmentPriceCurve | null) ?? null,
-                      inStock: Number(v.qty || 0) > 0 && v.active !== false,
-                    }))}
+                    pricingConfig={pdpPricingConfig}
+                    variants={pdpVariants}
                   />
                 </div>
 
