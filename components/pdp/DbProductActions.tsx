@@ -14,8 +14,6 @@ import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 
-const QTY_OPTIONS = [24, 48, 96, 250, 500];
-
 export type DbVariantOption = {
   id: string;
   sizeName: string;
@@ -93,7 +91,6 @@ export function DbProductActions({
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
   const [variantId, setVariantId] = useState(firstInStock?.id);
   const [qty, setQty] = useState<number>(48);
-  const [isCustomQty, setIsCustomQty] = useState(false);
   const [customInput, setCustomInput] = useState("");
   const [customError, setCustomError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
@@ -126,23 +123,15 @@ export function DbProductActions({
     variantId,
   ]);
 
-  function selectPresetQty(q: number) {
-    setQty(q);
-    setIsCustomQty(false);
-    setCustomInput("");
-    setCustomError(null);
-  }
-
   function handleCustomQtySubmit(e: React.FormEvent) {
     e.preventDefault();
     const n = parseInt(customInput, 10);
-    if (!Number.isFinite(n) || n < 12) {
-      setCustomError("Minimum order is 12 pieces.");
+    if (!Number.isFinite(n) || n < 1) {
+      setCustomError("Enter a quantity of at least 1 piece.");
       return;
     }
     setCustomError(null);
     setQty(n);
-    setIsCustomQty(true);
   }
 
   if (variants.length === 0) {
@@ -244,31 +233,10 @@ export function DbProductActions({
 
       {!groupOrder && (
         <>
-          <span className="text-sm font-bold block mb-2">
+         <span className="text-sm font-bold block mb-2">
             Quantity:{" "}
-            <span className="font-normal">
-              {qty.toLocaleString()}
-              {qty === 500 && !isCustomQty ? "+" : ""} pieces
-            </span>
+            <span className="font-normal">{qty.toLocaleString()} pieces</span>
           </span>
-          <div className="flex gap-2 flex-wrap mb-sp-2.5">
-            {QTY_OPTIONS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => selectPresetQty(q)}
-                className={cn(
-                  "min-w-[54px] h-10 px-3 grid place-items-center border rounded-sm font-bold text-[13px] transition-colors",
-                  !isCustomQty && q === qty
-                    ? "bg-accent text-white border-accent"
-                    : "border-border bg-bg-raised hover:border-text-tertiary"
-                )}
-              >
-                {q}
-                {q === 500 ? "+" : ""}
-              </button>
-            ))}
-          </div>
 
           {selectedVariant?.priceCurve && (
             <div className="mb-sp-3 rounded-md bg-fill-subtle-15 px-3 py-2.5">
@@ -295,14 +263,14 @@ export function DbProductActions({
           <form onSubmit={handleCustomQtySubmit} className="flex gap-2 mb-sp-4">
             <input
               type="number"
-              min={12}
+              min={1}
               inputMode="numeric"
               value={customInput}
               onChange={(e) => {
                 setCustomInput(e.target.value);
                 if (customError) setCustomError(null);
               }}
-              placeholder="Or enter exact quantity"
+              placeholder="Enter quantity"
               className="flex-1 min-w-0 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
             />
             <button

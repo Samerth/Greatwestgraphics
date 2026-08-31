@@ -1022,7 +1022,7 @@ export class CatalogService {
         countByStyle: new Map<string, number>(),
         swatchesByStyle: new Map<
           string,
-          { colorName: string; imageUrl: string | null }[]
+          { colorName: string; imageUrl: string | null; productId: string; slug: string }[]
         >(),
       };
     }
@@ -1083,9 +1083,9 @@ export class CatalogService {
     // extra. Capped at 12 per style so a style with 50 colours doesn't
     // bloat the listing payload; the true count is still in countByStyle
     // for a "+N more" indicator.
-    const swatchesByStyle = new Map<
+        const swatchesByStyle = new Map<
       string,
-      { colorName: string; imageUrl: string | null }[]
+      { colorName: string; imageUrl: string | null; productId: string; slug: string }[]
     >();
     for (const row of siblings) {
       const list = swatchesByStyle.get(row.product.styleUuid) ?? [];
@@ -1096,6 +1096,10 @@ export class CatalogService {
             row.product.colorFrontImageUrl ||
             row.product.colorSwatchImageUrl ||
             null,
+          // Lets the storefront card link straight to this exact colorway
+          // on click, instead of only swapping the preview thumbnail.
+          productId: row.product.id,
+          slug: row.product.slug,
         });
       }
       swatchesByStyle.set(row.product.styleUuid, list);

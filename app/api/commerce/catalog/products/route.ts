@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(requested)
     ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(requested)))
     : 12;
-  const catalog = await loadStorefrontCatalog({ limit });
+  const search = request.nextUrl.searchParams.get("search")?.trim() || undefined;
+  const catalog = await loadStorefrontCatalog({ limit, search });
   return NextResponse.json({ products: catalog.products });
 }

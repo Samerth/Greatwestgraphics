@@ -3,11 +3,48 @@ import type { DecorationMethodConfig, PricingConfigV2 } from "@gwg/contracts";
 /** Colour counts the picker offers, capped so the row stays readable. */
 const MAX_COLOUR_PILLS = 6;
 
-export const STITCH_PRESETS = [
-  { id: "small", stitches: 5000, label: "Small logo" },
-  { id: "medium", stitches: 8000, label: "Medium logo" },
-  { id: "large", stitches: 12000, label: "Large logo" },
+/**
+ * Shared print/embroidery locations. Single source of truth so the PDP
+ * quote block and the quote builder can't drift into different label sets.
+ */
+export const LOCATIONS = [
+  { id: "front", label: "Front" },
+  { id: "back", label: "Back" },
+  { id: "leftChest", label: "Left chest" },
+  { id: "sleeve", label: "Sleeve" },
 ] as const;
+
+export type LocationId = (typeof LOCATIONS)[number]["id"];
+
+export const STITCH_PRESETS = [
+  {
+    id: "small",
+    stitches: 5000,
+    label: "Small logo",
+    dimensionGuide: "Up to about 3\" wide — left chest, cap front",
+  },
+  {
+    id: "medium",
+    stitches: 10000,
+    label: "Medium logo",
+    dimensionGuide: "About 3\"–5\" wide — chest or sleeve",
+  },
+  {
+    id: "large",
+    stitches: 15000,
+    label: "Large logo",
+    dimensionGuide: "About 5\"–7\" wide — back or full front",
+  },
+  {
+    id: "oversized",
+    stitches: 15000,
+    label: "Oversized",
+    dimensionGuide: "7\"+ wide — large back designs",
+  },
+] as const;
+
+export const STITCH_PRESET_DISCLAIMER =
+  "Stitch count is an estimate. Dense, highly detailed, or lettered artwork can push a design into a higher tier — we'll confirm the exact count after digitizing and before production.";
 
 export type StitchPresetId = (typeof STITCH_PRESETS)[number]["id"];
 

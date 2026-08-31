@@ -999,6 +999,39 @@ export function calculateQuoteV2(
     });
   }
 
+    /* Individual names/numbers. */
+  let namesNumbersMinor = 0;
+  if (input.options.namesNumbers && settings.namesNumbersFeePerGarmentMinor > 0) {
+    namesNumbersMinor = settings.namesNumbersFeePerGarmentMinor * totalQuantity;
+    lines.push({
+      id: "namesNumbers",
+      kind: "namesNumbers",
+      label: "Individual names/numbers",
+      quantity: totalQuantity,
+      unitAmountMinor: settings.namesNumbersFeePerGarmentMinor,
+      extendedAmountMinor: namesNumbersMinor,
+      costMinor: 0,
+      isOverride: false,
+      explain: {
+        plainEnglish: `${money(settings.namesNumbersFeePerGarmentMinor)} per garment to add an individual name and/or number, across ${totalQuantity} pieces.`,
+        steps: [
+          {
+            label: "Names/numbers",
+            detail: `${money(settings.namesNumbersFeePerGarmentMinor)} × ${totalQuantity} pieces`,
+            result: money(namesNumbersMinor),
+          },
+        ],
+        sources: [
+          {
+            label: "Names/numbers fee per garment",
+            path: "settings.namesNumbersFeePerGarmentMinor",
+            value: money(settings.namesNumbersFeePerGarmentMinor),
+          },
+        ],
+      },
+    });
+  }
+
   /* Shipping — quoted at cost plus markup, and never part of the rush base. */
   let shippingMinor = 0;
   if (input.options.overrideShippingMinor != null) {
@@ -1053,7 +1086,8 @@ export function calculateQuoteV2(
     setupMinor +
     threadMinor +
     oneTimeExtrasMinor +
-    packingMinor;
+    packingMinor +
+    namesNumbersMinor;
   const rushBaseMinor =
     settings.rushAppliesTo === "everything"
       ? productionSubtotalMinor + shippingMinor
@@ -1167,6 +1201,7 @@ export function calculateQuoteV2(
       setupMinor,
       threadMinor,
       packingMinor,
+      namesNumbersMinor,
       shippingMinor,
       rushMinor,
       productionSubtotalMinor,

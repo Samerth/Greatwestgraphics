@@ -20,20 +20,16 @@ import {
   type QbProduct,
 } from "@/lib/utils/quote-pricing";
 import {
+  LOCATIONS,
   STITCH_PRESETS,
   colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
   stitchCountForPreset,
+  type StitchPresetId,
 } from "@/lib/utils/shop-quote";
-
-const LOCATIONS = [
-  { id: "front", label: "Front" },
-  { id: "back", label: "Back" },
-  { id: "leftChest", label: "Left chest" },
-  { id: "sleeve", label: "Sleeve" },
-] as const;
+import { Pill, QbRow } from "@/components/quote-builder/QuoteFormControls";
 
 const METHOD_BLURBS: Record<string, string> = {
   screenPrint: "Best value for bulk",
@@ -124,12 +120,13 @@ export function QuoteBuilder({
       "",
   );
   const [colours, setColours] = useState<number | "unsure">(1);
-  const [stitchPreset, setStitchPreset] = useState<"small" | "medium" | "large">(
+  const [stitchPreset, setStitchPreset] = useState<StitchPresetId>(
     "medium",
   );
   const [optionKey, setOptionKey] = useState<string>("");
   const [showMore, setShowMore] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [surchargesOpen, setSurchargesOpen] = useState(false);
   const [rush, setRush] = useState(false);
   const [includePacking, setIncludePacking] = useState(true);
   const [customInput, setCustomInput] = useState("");
@@ -217,6 +214,16 @@ export function QuoteBuilder({
     ["setup", "thread", "design", "artworkMinimum"].includes(line.kind),
   );
   const oneTimeFeesMinor = oneTimeLines.reduce(
+    (sum, line) => sum + line.extendedAmountMinor,
+    0,
+  );
+  // Surcharges (2XL+ upcharges, dark-garment underbase, etc.) are already
+  // folded into the per-piece price above — this just makes them visible
+  // instead of leaving the customer to wonder why the total is higher than
+  // the base rate implied. No new pricing logic, just surfacing what the
+  // engine already computed.
+  const surchargeLines = breakdown.lines.filter((line) => line.kind === "surcharge");
+  const surchargesMinor = surchargeLines.reduce(
     (sum, line) => sum + line.extendedAmountMinor,
     0,
   );
@@ -603,6 +610,33 @@ export function QuoteBuilder({
             </div>
           )}
 
+          {surchargeLines.length > 0 && (
+            <div className="border border-amber-300 bg-amber-50 rounded-sm overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex justify-between items-center px-4 py-3 text-sm font-semibold text-amber-950 hover:bg-amber-100 transition-colors"
+                onClick={() => setSurchargesOpen((v) => !v)}
+              >
+                <span>
+                  Includes {moneyFromMinor(surchargesMinor)} in surcharges
+                </span>
+                <span className="text-[12px]">{surchargesOpen ? "▲" : "▼"}</span>
+              </button>
+              {surchargesOpen && (
+                <ul className="px-4 pb-3 pt-2 text-[12px] text-amber-900 space-y-1.5 border-t border-amber-300">
+                  {surchargeLines.map((line) => (
+                    <li key={line.label} className="flex justify-between gap-3">
+                      <span>{line.label}</span>
+                      <span className="font-semibold text-amber-950">
+                        {moneyFromMinor(line.extendedAmountMinor)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="text-[12px] text-text-secondary space-y-1">
             <div>
               ⏱️{" "}
@@ -624,46 +658,5 @@ export function QuoteBuilder({
         </div>
       </div>
     </div>
-  );
-}
-
-function QbRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-sp-4">
-      <label className="block text-xs font-bold tracking-[0.1em] uppercase text-text-tertiary mb-sp-2">
-        {label}
-      </label>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
-  );
-}
-
-function Pill({
-  children,
-  active,
-  round,
-  onClick,
-}: {
-  children: React.ReactNode;
-  active: boolean;
-  round?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "border font-semibold text-sm transition-all duration-200 text-left cursor-pointer",
-        round
-          ? "w-[38px] h-[38px] rounded-full grid place-items-center p-0 text-xs"
-          : "px-4 py-2.5 rounded-md",
-        active
-          ? "bg-accent border-accent text-white shadow-md scale-[1.02]"
-          : "bg-bg-raised border-border text-text-primary hover:border-text-secondary hover:shadow-sm hover:scale-[1.01]",
-      )}
-    >
-      {children}
-    </button>
   );
 }

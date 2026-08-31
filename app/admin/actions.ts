@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { requireStaff } from "@/lib/admin/auth";
@@ -277,6 +277,9 @@ export async function runCsvImportAction(
   }
   revalidatePath("/admin/sync");
   revalidatePath("/admin");
+  revalidatePath("/admin/catalog");
+  updateTag("catalog-brands");
+  updateTag("catalog-categories");
   return { savedAt: Date.now() };
 }
 
@@ -312,18 +315,21 @@ export async function createCategoryAction(formData: FormData) {
   const client = await adminClient();
   await client.createCategory({ name, slug, parentId }, requireAdminToken());
   revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
 }
 
 export async function deleteCategoryAction(categoryId: string) {
   const client = await adminClient();
   await client.deleteCategory(categoryId, requireAdminToken());
   revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
 }
 
 export async function reorderCategoryAction(orderedIds: string[]) {
   const client = await adminClient();
   await client.reorderCategories(orderedIds, requireAdminToken());
   revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
 }
 
 export async function moveCategoryAction(
@@ -344,6 +350,7 @@ export async function moveCategoryAction(
   next[index] = tmp;
   await client.reorderCategories(next, token);
   revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
 }
 
 export async function saveMappingAction(formData: FormData) {
@@ -407,6 +414,7 @@ export async function patchProductAction(
   }
   revalidatePath("/admin/catalog");
   revalidatePath(`/admin/catalog/${productId}`);
+  updateTag("catalog-categories");
   return { savedAt: Date.now() };
 }
 
@@ -433,6 +441,7 @@ export async function refreshCatalogProductAction(productId: string) {
   revalidatePath("/admin/catalog");
   revalidatePath(`/admin/catalog/${productId}`);
   revalidatePath("/admin/sync");
+  updateTag("catalog-brands");
 }
 
 export async function updateCategoryAction(
@@ -451,6 +460,7 @@ export async function updateCategoryAction(
     requireAdminToken(),
   );
   revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
 }
 
 export async function setStoreStatusAction(
@@ -519,6 +529,7 @@ export async function setStoreCategoryVisibilityAction(
     requireAdminToken(),
   );
   revalidatePath(`/admin/accounts/${storeId}`);
+  updateTag("catalog-categories");
 }
 
 export interface PricingAdjustmentState {

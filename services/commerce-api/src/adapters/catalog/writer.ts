@@ -57,9 +57,9 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
     categorySlug: "safety",
   },
 
-  // T-Shirts sub-attributes
-  { pattern: /\bshort[- ]sleeve\b/i, categorySlug: "short-sleeve" },
-  { pattern: /\blong[- ]sleeve\b/i, categorySlug: "long-sleeve" },
+   // T-Shirts sub-attributes. Short-sleeve is handled separately, after the
+  // base "t-shirts" rule below — see the comment there for why.
+  { pattern: /\b(long[- ]sleeve|l\/s)\b.*\b(tee|t-shirt|tshirt)\b/i, categorySlug: "long-sleeve" },
   { pattern: /\btri[- ]blend\b/i, categorySlug: "tri-blend" },
   { pattern: /\bpocket\s?tee(s)?\b/i, categorySlug: "pocket-tees" },
   { pattern: /\borganic\b.*\b(tee|t-shirt|cotton)\b/i, categorySlug: "organic" },
@@ -94,7 +94,7 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
 
   // Polos sub-attributes
   { pattern: /\bperformance\b.*\bpolo\b/i, categorySlug: "polos-performance" },
-  { pattern: /\blong[- ]sleeve\b.*\bpolo\b/i, categorySlug: "polos-long-sleeve" },
+  { pattern: /\b(long[- ]sleeve|l\/s)\b.*\bpolo\b/i, categorySlug: "polos-long-sleeve" },
   { pattern: /\byouth\b.*\bpolo\b/i, categorySlug: "polos-youth" },
   { pattern: /\bwomen'?s\b.*\bpolo\b/i, categorySlug: "polos-women-s" },
   { pattern: /\bcotton\b.*\bpolo\b/i, categorySlug: "cotton" },
@@ -133,7 +133,12 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bathletic\s?pant(s)?\b/i, categorySlug: "athletic-pants" },
   { pattern: /\bwork\s?pant(s)?\b/i, categorySlug: "pants-shorts-work-pants" },
   { pattern: /\bcargo\s?short(s)?\b/i, categorySlug: "cargo-shorts" },
-  { pattern: /\bshort(s)?\b/i, categorySlug: "shorts" },
+  // Bare "short(s)" would also match "Short Sleeve" on a tee/polo (found via
+  // audit after the sleeve-length bug -- same defect class: a bare word
+  // catch-all with no context guard). Excluded via lookahead rather than
+  // requiring the plural, so a hypothetical singular "Board Short" style
+  // name still matches.
+  { pattern: /\bshort(s)?\b(?!\s+sleeve)/i, categorySlug: "shorts" },
 
   // Athletic Wear
   { pattern: /\bteamwear\b/i, categorySlug: "teamwear" },
@@ -268,10 +273,38 @@ export const KEYWORD_FALLBACKS: Array<{ pattern: RegExp; categorySlug: string }>
   { pattern: /\bgreeting\s?card(s)?\b/i, categorySlug: "greeting-cards" },
   {
     pattern:
-      /\b(hoodie|hooded|crewneck|sweatshirt|sweater|fleece|pullover|quarter[- ]?zip|1\/4[- ]?zip|half[- ]?zip|1\/2[- ]?zip)\b/i,
+      /\b(hoodie|hooded|crewneck|sweatshirt|sweater|pullover|quarter[- ]?zip|1\/4[- ]?zip|half[- ]?zip|1\/2[- ]?zip)\b/i,
+    categorySlug: "hoodies-sweatshirts",
+  },
+  // "fleece" split out from the alternation above: a bare "fleece" match
+  // was also tagging non-apparel fleece products (blankets, throws) into
+  // the Hoodies & Sweatshirts department. Fleece jackets/vests intentionally
+  // still get this secondary tag alongside their Jackets/Vests category --
+  // that dual-listing looked deliberate (same pattern as the documented
+  // Work Pants / Blankets dual-tags above), only the blanket/throw leak
+  // looked like an actual bug.
+  {
+    pattern: /\bfleece\b(?!.*\b(blanket|throw)\b)/i,
     categorySlug: "hoodies-sweatshirts",
   },
   { pattern: /\b(tee|tees|t-shirt|tshirt|t shirt)\b/i, categorySlug: "t-shirts" },
+  // Short-sleeve is the unstated default for a plain tee -- SanMar/S&S titles
+  // almost never say "short sleeve" explicitly, they only call out long
+  // sleeve (spelled out, or abbreviated "L/S" -- confirmed against a real
+  // catalog title: "ATC EuroSpun Ring Spun L/S Tee") to distinguish a
+  // variant. Requiring the literal "short sleeve" phrase (the first version
+  // of this fix) left the Short Sleeve leaf category nearly empty against
+  // real catalog data. So: any tee that ISN'T explicitly long-sleeve is
+  // short-sleeve. Placed after the "t-shirts" rule above (not with the other
+  // T-Shirts sub-attributes near the top of this list) so it doesn't outrank
+  // "t-shirts" as the *preferred* category via best() -- it still gets added
+  // to the full slug set either way. Baseball/raglan-sleeve tees are
+  // intentionally left in this default too (per Kartik) rather than treated
+  // as a separate sleeve style.
+  {
+    pattern: /^(?!.*\b(long[- ]sleeve|l\/s)\b).*\b(tee|tees|t-shirt|tshirt|t shirt)\b/i,
+    categorySlug: "short-sleeve",
+  },
   {
     pattern: /\b(hat|hats|cap|caps|beanie|toque|visor|snapback|trucker)\b/i,
     categorySlug: "hats",

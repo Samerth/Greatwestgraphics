@@ -12,7 +12,16 @@
   --color-border: #ACABA9;
   --color-fill-subtle: #CECDCB;
   --color-fill-subtle-15: rgba(206, 205, 203, 0.4);
-  --header-offset: 88px;
+  --header-offset: 96px;
+}
+
+/* The desktop search bar (Header.tsx) adds a fixed 56px row below the 96px
+   main nav on screens >=1024px (Tailwind's default `lg`), which every sticky/
+   top-offset consumer of --header-offset needs to account for. Mobile and
+   tablet keep the original 96px since that strip is hidden there. */
+@media (min-width: 1024px) {
+  :root {
+    --header-offset: 152px;
 
   --radius-lg: 12px;
   --radius-md: 8px;
@@ -27,6 +36,16 @@
   --lh-header: 32px;
   --fs-body: 16px;
   --lh-body: 24px;
+}
+
+/* The desktop search bar (Header.tsx) adds a fixed 64px row below the 96px
+   main nav on screens >=1024px (Tailwind's default `lg`), which every
+   sticky/top-offset consumer of --header-offset needs to account for.
+   Mobile and tablet keep the original 96px since that row is hidden there. */
+@media (min-width: 1024px) {
+  :root {
+    --header-offset: 160px;
+  }
 }
 
 @media (max-width: 1439px) {
@@ -203,4 +222,5 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+ }
 }

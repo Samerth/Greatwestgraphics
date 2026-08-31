@@ -8,6 +8,7 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { useCartStore } from "@/lib/store/cart";
 import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
+import { HeaderSearchBar, HeaderSearchMobile } from "@/components/layout/HeaderSearch";
 import { SignOutButton } from "@/components/account/SignOutButton";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
 import {
@@ -147,7 +148,7 @@ export function Header({
       ref={headerRef}
       className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border"
     >
-      <Container className="h-[88px] flex items-center justify-between gap-sp-4">
+        <Container className="h-[96px] flex items-center justify-between gap-sp-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
           {storeName ? (
@@ -168,7 +169,7 @@ export function Header({
               width={366}
               height={209}
               priority
-              className="h-14 sm:h-16 w-auto"
+              className="h-16 sm:h-20 w-auto"
             />
           )}
         </Link>
@@ -177,6 +178,14 @@ export function Header({
         <nav
           className="hidden lg:flex items-center gap-sp-3 xl:gap-sp-4 flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
+          <Link
+            href="/products?category=best-sellers"
+            className="relative whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
+          >
+            Best Sellers
+            <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
+          </Link>
+
           {HAS_CATEGORIES &&
             SHOP_SECTIONS.map((section) => (
               <NavTrigger
@@ -213,7 +222,7 @@ export function Header({
 
         {/* Quick department panel — single department, no sidebar, no rail */}
         {activeDept && (
-          <div className="fixed left-0 right-0 top-[88px] px-sp-4 pointer-events-none">
+          <div className="fixed left-0 right-0 top-[var(--header-offset)] px-sp-4 pointer-events-none">
             <div
               onMouseEnter={() => openDept(activeDept.id)}
               onMouseLeave={scheduleDeptClose}
@@ -257,7 +266,7 @@ export function Header({
         {/* Shop mega menu — every category, every department, in one flat
             view. The right rail is trimmed to just Corporate & Team Stores. */}
         {shopOpen && (
-          <div className="fixed left-0 right-0 top-[88px] px-sp-4 pointer-events-none">
+          <div className="fixed left-0 right-0 top-[var(--header-offset)] px-sp-4 pointer-events-none">
             <div
               onMouseEnter={openShop}
               onMouseLeave={scheduleShopClose}
@@ -519,6 +528,7 @@ export function Header({
               Get a Quote
             </ButtonLink>
           ) : null}
+          <HeaderSearchMobile />
           <button
             type="button"
             onClick={() => setMobileOpen((open) => !open)}
@@ -536,12 +546,31 @@ export function Header({
         </div>
       </Container>
 
+      {/* Desktop search — a persistent, prominent bar directly below the
+          main nav row (not just an icon), per the UAT ask. A soft tonal
+          band and centered, generously-sized field read as a considered
+          part of the header rather than a bolted-on utility bar. Fixed
+          height (h-16 = 64px) so --header-offset below can account for it
+          exactly instead of guessing at intrinsic content height. */}
+      <div className="hidden lg:flex items-center h-16 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent)] border-t border-border/40">
+        <Container className="w-full flex justify-center">
+          <HeaderSearchBar />
+        </Container>
+      </div>
+
       {mobileOpen && (
         <nav
           className="lg:hidden border-t border-border bg-bg px-sp-4 py-sp-4 max-h-[calc(100svh-var(--header-offset))] overflow-y-auto overscroll-contain"
           aria-label="Mobile"
         >
           <div className="flex flex-col gap-1.5 mb-sp-3">
+            <Link
+              href="/products?category=best-sellers"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-md border border-border bg-bg-raised px-3 py-2.5 text-sm font-bold"
+            >
+              Best Sellers
+            </Link>
             {HAS_CATEGORIES
               ? SHOP_SECTIONS.map((section) => {
                   const open = openMobileSection === section.id;
