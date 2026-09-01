@@ -9,6 +9,7 @@ import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 //import { cn } from "@/lib/utils/cn";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
+import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 
 
 export const dynamic = "force-dynamic";
@@ -76,15 +77,21 @@ export default async function ProductsPage({
   const brands = brand ? (Array.isArray(brand) ? brand : [brand]) : undefined;
   const priceMinMinor = priceMin ? Number(priceMin) : undefined;
   const priceMaxMinor = priceMax ? Number(priceMax) : undefined;
-  const catalog = await loadStorefrontCatalog({
-    search,
-    categorySlug: category,
-    limit: PAGE_SIZE,
-    page,
-    brands,
-    priceMinMinor,
-    priceMaxMinor,
-  });
+  const [catalog, pricingConfig] = await Promise.all([
+    loadStorefrontCatalog({
+      search,
+      categorySlug: category,
+      limit: PAGE_SIZE,
+      page,
+      brands,
+      priceMinMinor,
+      priceMaxMinor,
+    }),
+    // Lets card prices reflect a real decorated estimate (1-colour screen
+    // print, embroidery for hats) at the customer's browsing quantity,
+    // computed client-side without a round trip per card.
+    loadPublishedPricingV2(),
+  ]);
   // "db" and "empty" are both successful responses — a category with no
   // synced inventory is a real answer and gets a real empty state. Only
   // "error" means we could not reach the catalogue at all.
@@ -177,6 +184,7 @@ export default async function ProductsPage({
                 activePriceMinMinor={priceMinMinor}
                 activePriceMaxMinor={priceMaxMinor}
                 activeSearch={search ?? null}
+                pricingConfig={pricingConfig}
               />
 
               <Pagination

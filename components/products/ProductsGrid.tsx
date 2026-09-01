@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
+import type { PricingConfigV2, QuoteInputV2 } from "@gwg/contracts";
+import { calculateQuoteV2 } from "@gwg/pricing";
 import { cn } from "@/lib/utils/cn";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import type {
@@ -13,6 +15,108 @@ import type {
 } from "@/lib/commerce/catalog";
 import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
 import { publicQuoteOrFallback } from "@/lib/features";
+import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { stitchCountForPreset } from "@/lib/utils/shop-quote";
+import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
+import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
+
+type CardQuantityBreak = { qty: number; unitMinor: number };
+
+type CardPricing = {
+  text: string;
+  isEstimate: boolean;
+  /** Same method's real quantity tiers, for the hover/click pricing-details
+   * popup — empty whenever isEstimate is false (nothing to break down). */
+  quantityBreaks: CardQuantityBreak[];
+  methodLabel: string | null;
+};
+
+/**
+ * Catalog card price at the customer's current browsing quantity, priced as
+ * a real decorated estimate — 1-colour screen print for most products,
+ * embroidery (small logo) for hats, since headwear is conventionally
+ * embroidered rather than screen printed. Falls back to the server's blank
+ * garment price whenever a decorated estimate can't be computed (no
+ * published config, method disabled, no cost on file), rather than showing
+ * nothing.
+ */
+function catalogCardPricing(
+  product: StorefrontCatalogProduct,
+  pricingConfig: PricingConfigV2 | null,
+  qty: number,
+): CardPricing {
+  const empty: CardPricing = {
+    text: product.priceFrom,
+    isEstimate: false,
+    quantityBreaks: [],
+    methodLabel: null,
+  };
+  if (!product.available || !pricingConfig || !product.costMinor) return empty;
+  const methodKey = product.isHat ? "embroidery" : "screenPrint";
+  const method = pricingConfig.methods.find(
+    (m) => m.key === methodKey && m.enabled,
+  );
+  if (!method) return empty;
+
+  function inputAt(quantity: number): QuoteInputV2 {
+    return {
+      garments: [
+        {
+          id: "g1",
+          description: product.name,
+          unitCostMinor: product.costMinor,
+          quantity,
+          colourName: product.colorName,
+          mapPriceMinor: product.mapPriceMinor ?? undefined,
+        },
+      ],
+      decorations: [
+        {
+          id: "card-estimate",
+          garmentId: "g1",
+          methodKey,
+          location: "front",
+          logoGroup: "",
+          colours: methodKey === "screenPrint" ? 1 : undefined,
+          variableValue:
+            methodKey === "embroidery" ? stitchCountForPreset("small") : undefined,
+          isOversized: false,
+          artwork: { isRepeat: false, verifiedByStaff: false },
+        },
+      ],
+      options: {
+        rush: false,
+        includePacking: true,
+        namesNumbers: false,
+        shippingCostMinor: 0,
+        designHours: 0,
+      },
+    };
+  }
+
+  try {
+    const breakdown = calculateQuoteV2(inputAt(qty), pricingConfig);
+    const unitMinor = Math.round(breakdown.totals.totalMinor / qty);
+    const quantityBreaks = method.rateModel.qtyAnchors
+      .map((anchorQty) => {
+        try {
+          const b = calculateQuoteV2(inputAt(anchorQty), pricingConfig);
+          return { qty: anchorQty, unitMinor: Math.round(b.totals.totalMinor / anchorQty) };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is CardQuantityBreak => entry !== null);
+    return {
+      text: `from ${moneyFromMinor(unitMinor)}`,
+      isEstimate: true,
+      quantityBreaks,
+      methodLabel: methodKey === "screenPrint" ? "1-colour screen print" : "small embroidery",
+    };
+  } catch {
+    return empty;
+  }
+}
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -36,6 +140,13 @@ type ProductTile = {
   colorSwatches: StorefrontCatalogProduct["colorSwatches"];
   sizeRange: string | null;
   priceFrom: string;
+  /** Set only when priceFrom is a live decorated estimate (not the blank
+   * fallback), so the card can show which quantity it's priced at. */
+  priceQty: number | null;
+  /** Real quantity-break pricing for the hover/click "i" popup — empty
+   * when priceFrom is the blank fallback (nothing to break down). */
+  quantityBreaks: CardQuantityBreak[];
+  methodLabel: string | null;
   imageUrl: string | null;
   available: boolean;
   bestSeller: boolean;
@@ -63,6 +174,9 @@ type Props = {
   activePriceMinMinor?: number | null;
   activePriceMaxMinor?: number | null;
   activeSearch?: string | null;
+  /** Published v2 pricing config, used to price cards as a real decorated
+   * estimate at the customer's browsing quantity rather than a blank cost. */
+  pricingConfig?: PricingConfigV2 | null;
 };
 
 export function ProductsGrid({
@@ -75,8 +189,15 @@ export function ProductsGrid({
   activePriceMinMinor = null,
   activePriceMaxMinor = null,
   activeSearch = null,
+  pricingConfig = null,
 }: Props) {
   const router = useRouter();
+  // The quantity the customer was last using on any product's Live
+  // Estimate Calculator (or set directly below) — shared and persisted so
+  // catalog prices reflect how many units they actually need, not a fixed
+  // assumption (CodSphere UAT V2).
+  const qty = useBrowsingQuantity((s) => s.qty);
+  const setQty = useBrowsingQuantity((s) => s.setQty);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const activeDesign = useActiveDesignStore((s) => s.design);
@@ -152,22 +273,30 @@ export function ProductsGrid({
     } else if (sort === "new") {
       list.reverse();
     }
-    return list.map((p, index) => ({
-      key: p.id,
-      href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
-      name: p.name,
-      brandName: p.brandName,
-      styleName: p.styleName,
-      colorName: p.colorName,
-      colorwayCount: p.colorwayCount,
-      colorSwatches: p.colorSwatches,
-      sizeRange: p.sizeRange,
-      priceFrom: p.priceFrom,
-      imageUrl: p.imageUrl,
-      available: p.available,
-      bestSeller: index < 3 && p.available,
-    }));
-  }, [sort, dbProducts]);
+    return list.map((p) => {
+      const priced = catalogCardPricing(p, pricingConfig, qty);
+      return {
+        key: p.id,
+        href: `/product/${encodeURIComponent(p.slug)}?id=${p.id}`,
+        name: p.name,
+        brandName: p.brandName,
+        styleName: p.styleName,
+        colorName: p.colorName,
+        colorwayCount: p.colorwayCount,
+        colorSwatches: p.colorSwatches,
+        sizeRange: p.sizeRange,
+        priceFrom: priced.text,
+        priceQty: priced.isEstimate ? qty : null,
+        quantityBreaks: priced.quantityBreaks,
+        methodLabel: priced.methodLabel,
+        imageUrl: p.imageUrl,
+        available: p.available,
+        // Real category membership (admin-assigned), not list position — see
+        // catalog-service.ts listProducts for the batched best-seller lookup.
+        bestSeller: p.isBestSeller && p.available,
+      };
+    });
+  }, [sort, dbProducts, pricingConfig, qty]);
 
   const sidebar = (
     <aside className="space-y-sp-5">
@@ -377,6 +506,46 @@ export function ProductsGrid({
               </>
             ) : null}
           </p>
+          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-bg-raised py-1 pl-3 pr-1.5">
+            <label
+              htmlFor="browse-qty"
+              className="text-[13px] font-semibold text-text-secondary whitespace-nowrap"
+            >
+              Show prices at
+            </label>
+            <div className="flex items-center">
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                onClick={() => setQty(qty - 1)}
+                disabled={qty <= 1}
+                className="h-8 w-8 grid place-items-center rounded-md font-bold text-text-secondary transition-colors hover:bg-fill-subtle-15 hover:text-accent disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
+              >
+                −
+              </button>
+              <input
+                id="browse-qty"
+                type="number"
+                min={1}
+                value={qty}
+                onChange={(e) => setQty(Number(e.target.value) || 1)}
+                className="w-12 h-8 bg-transparent text-center text-sm font-bold text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                aria-label="Quantity to price at"
+              />
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                onClick={() => setQty(qty + 1)}
+                className="h-8 w-8 grid place-items-center rounded-md font-bold text-text-secondary transition-colors hover:bg-fill-subtle-15 hover:text-accent"
+              >
+                +
+              </button>
+            </div>
+            <span className="text-[13px] font-semibold text-text-secondary whitespace-nowrap pr-1">
+              pieces
+            </span>
+          </div>
+
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
@@ -527,7 +696,23 @@ function ProductCard({
           {tile.sizeRange ? `${tile.sizeRange} · ` : ""}
           {tile.available ? "3 Day Quick Order" : "Ask us for lead time"}
         </p>
-        <p className="font-bold text-sm m-0">{tile.priceFrom}</p>
+        <p className="font-bold text-sm m-0 flex items-center gap-1.5">
+          <span>
+            {tile.priceFrom}
+            {tile.priceQty != null && (
+              <span className="font-normal text-text-tertiary">
+                {" "}
+                at {tile.priceQty.toLocaleString()} pcs
+              </span>
+            )}
+          </span>
+          {tile.quantityBreaks.length > 0 && (
+            <PricingDetailsPopover
+              quantityBreaks={tile.quantityBreaks}
+              note={tile.methodLabel ? `For a standard ${tile.methodLabel}, one location.` : undefined}
+            />
+          )}
+        </p>
 
         <div className="mt-auto pt-sp-3 flex gap-2">
           <Link

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   PricingConfigV2,
@@ -10,6 +10,8 @@ import type {
 import { calculateQuoteV2 } from "@gwg/pricing";
 import { Pill, QbRow } from "@/components/quote-builder/QuoteFormControls";
 import { Button } from "@/components/shared/Button";
+import { InfoNote } from "@/components/shared/InfoNote";
+import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import {
   LOCATIONS,
@@ -23,6 +25,8 @@ import {
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
+import { usePdpLiveEstimate } from "@/lib/store/pdp-live-estimate";
+import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
 import type { DbVariantOption } from "@/components/pdp/DbProductActions";
 
 /**
@@ -97,9 +101,12 @@ export function PdpDetailedQuote({
     blankRow(pricingConfig?.storefront?.defaultLocation ?? "front"),
   ]);
 
-  const [qty, setQty] = useState(48);
+  // Seeded from the shared browsing quantity (the last quantity used on
+  // *any* product's calculator), not a fixed default, so this genuinely
+  // picks up where the customer left off rather than resetting per product.
+  const setBrowsingQty = useBrowsingQuantity((s) => s.setQty);
+  const [qty, setQty] = useState(() => useBrowsingQuantity.getState().qty);
   const [handedOff, setHandedOff] = useState(false);
-  const [pricingDetailsOpen, setPricingDetailsOpen] = useState(false);
   const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   const namesNumbersFeeMinor =
@@ -123,7 +130,9 @@ export function PdpDetailedQuote({
   }
 
   function setQuantity(next: number) {
-    setQty(Math.max(1, Math.round(next)));
+    const clamped = Math.max(1, Math.round(next));
+    setQty(clamped);
+    setBrowsingQty(clamped);
   }
 
   function decorationLinesFor(quantity: number): QuoteDecorationLine[] {
@@ -231,6 +240,14 @@ export function PdpDetailedQuote({
 
   const startingFromMinor = quantityBreaks[0]?.unitMinor ?? null;
 
+  // Publish this selection's live pricing so the "Estimated from" headline
+  // near the product title (PdpStartingPrice) tracks it too, instead of
+  // showing its own separately-guessed default.
+  const publishLiveEstimate = usePdpLiveEstimate((s) => s.publish);
+  useEffect(() => {
+    publishLiveEstimate(productId, quantityBreaks);
+  }, [productId, quantityBreaks, publishLiveEstimate]);
+
   function handleStartDesigning() {
     const primary = rows[0];
     saveHandoff({
@@ -268,42 +285,17 @@ export function PdpDetailedQuote({
       </div>
 
       {startingFromMinor != null && (
-        <div
-          className="relative flex items-center gap-2 mb-sp-1"
-          onMouseEnter={() => setPricingDetailsOpen(true)}
-          onMouseLeave={() => setPricingDetailsOpen(false)}
-        >
+        <div className="flex items-center gap-2 mb-sp-1">
           <p className="text-sm font-semibold m-0">
             Estimated from {moneyFromMinor(startingFromMinor)} CAD each at{" "}
             {quantityBreaks[0]?.qty} pieces
           </p>
-          <button
-            type="button"
-            className="text-xs font-bold text-accent underline underline-offset-2"
-            onClick={() => setPricingDetailsOpen((v) => !v)}
-          >
-            Pricing Details
-          </button>
-
-          {pricingDetailsOpen && quantityBreaks.length > 0 && (
-            <div
-              role="dialog"
-              aria-label="Pricing details"
-              className="absolute left-0 top-full z-20 mt-2 w-72 border border-border rounded-md bg-bg p-sp-3 shadow-lg"
-            >
-              <p className="text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-sp-2">
-                Quantity breaks (this selection)
-              </p>
-              <ul className="space-y-1 text-sm">
-                {quantityBreaks.map((b) => (
-                  <li key={b.qty} className="flex justify-between">
-                    <span>{b.qty}+ pieces</span>
-                    <span className="font-semibold">{moneyFromMinor(b.unitMinor)}/ea</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <PricingDetailsPopover
+            quantityBreaks={quantityBreaks}
+            heading="Quantity breaks (this selection)"
+            triggerContent="Pricing Details"
+            triggerClassName="text-xs font-bold text-accent underline underline-offset-2"
+          />
         </div>
       )}
 
@@ -313,53 +305,14 @@ export function PdpDetailedQuote({
       </p>
 
       {/* Size — available so the estimate reflects the right garment cost,
-          not a required breakdown (that happens at Input Quantity). */}
+          not a required breakdown (that happens at Input Quantity). This is
+          the garment size (S/M/L/XL) — the decoration size guide lives with
+          the "Logo size" picker below, where it actually applies. */}
       {variants.length > 1 && (
         <div className="mb-sp-4">
-          <div
-            className="relative flex items-center gap-2 mb-sp-2"
-            onMouseEnter={() => setOpenInfo("size-guide")}
-            onMouseLeave={() =>
-              setOpenInfo((current) => (current === "size-guide" ? null : current))
-            }
-          >
-            <span className="text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary">
-              Size
-            </span>
-            <button
-              type="button"
-              aria-label="Size Guide"
-              aria-expanded={openInfo === "size-guide"}
-              onClick={() =>
-                setOpenInfo((current) =>
-                  current === "size-guide" ? null : "size-guide",
-                )
-              }
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs font-bold"
-            >
-              i
-            </button>
-            {openInfo === "size-guide" && (
-              <div
-                role="dialog"
-                aria-label="Decoration size guide"
-                className="absolute left-0 top-full z-20 mt-2 w-80 rounded-md border border-border bg-bg p-sp-3 shadow-lg"
-              >
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide">
-                  Size Guide
-                </p>
-                <ul className="space-y-1 text-sm">
-                  <li>Small: up to 4&quot;</li>
-                  <li>Medium: over 4&quot; to 8&quot;</li>
-                  <li>Large: over 8&quot; to 12&quot;</li>
-                  <li>Oversized: over 12&quot;</li>
-                </ul>
-                <p className="mt-2 text-xs text-text-secondary">
-                  Final suitability is confirmed after artwork review.
-                </p>
-              </div>
-            )}
-          </div>
+          <span className="block mb-sp-2 text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary">
+            Size
+          </span>
           <QbRow label="">
             {variants.map((v) => (
               <Pill
@@ -449,8 +402,53 @@ export function PdpDetailedQuote({
               )}
 
               {fields.stitches && (
-                <>
-                  <QbRow label="Logo size">
+                <div className="mb-sp-4">
+                  <div className="relative flex items-center gap-2 mb-sp-2">
+                    <span className="text-xs font-bold tracking-[0.1em] uppercase text-text-tertiary">
+                      Logo size
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Size Guide"
+                      aria-expanded={openInfo === `size-guide-${row.id}`}
+                      // Click-only toggle — a combined hover-open + click-toggle
+                      // fought itself here (see PdpStartingPrice for the same
+                      // fix): moving the pointer onto the button opened the
+                      // popup via hover, so the click immediately closed it
+                      // again for a real mouse user.
+                      onClick={() =>
+                        setOpenInfo((current) =>
+                          current === `size-guide-${row.id}`
+                            ? null
+                            : `size-guide-${row.id}`,
+                        )
+                      }
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] font-bold"
+                    >
+                      i
+                    </button>
+                    {openInfo === `size-guide-${row.id}` && (
+                      <div
+                        role="dialog"
+                        aria-label="Decoration size guide"
+                        className="absolute left-0 top-full z-20 mt-2 w-80 rounded-md border border-border bg-bg p-sp-3 shadow-lg"
+                      >
+                        <p className="mb-2 text-xs font-bold uppercase tracking-wide">
+                          Size Guide
+                        </p>
+                        <ul className="space-y-1 text-sm">
+                          <li>Small: up to 4&quot;</li>
+                          <li>Medium: over 4&quot; to 8&quot;</li>
+                          <li>Large: over 8&quot; to 12&quot;</li>
+                          <li>Oversized: over 12&quot;</li>
+                        </ul>
+                        <p className="mt-2 text-xs text-text-secondary">
+                          Final suitability is confirmed after artwork review.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     {STITCH_PRESETS.map((preset) => (
                       <Pill
                         key={preset.id}
@@ -460,11 +458,11 @@ export function PdpDetailedQuote({
                         <span>{preset.label}</span>
                       </Pill>
                     ))}
-                  </QbRow>
-                  <p className="text-[11px] text-text-secondary italic">
+                  </div>
+                  <p className="mt-sp-2 text-[11px] text-text-secondary italic">
                     {STITCH_PRESET_DISCLAIMER}
                   </p>
-                </>
+                </div>
               )}
 
               {fields.option && method?.rateModel.kind === "matrixByOption" && (
@@ -615,42 +613,6 @@ export function PdpDetailedQuote({
       <p className="text-[11px] text-text-secondary italic mt-sp-2 text-center">
         Finalize artwork and quote in the next steps.
       </p>
-    </div>
-  );
-}
-
-function InfoNote({
-  id,
-  label,
-  detail,
-  open,
-  onToggle,
-}: {
-  id: string;
-  label: string;
-  detail: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1.5 text-left hover:text-text-primary"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={`info-${id}`}
-      >
-        <span className="inline-flex w-3.5 h-3.5 rounded-full border border-text-tertiary items-center justify-center text-[10px] font-bold shrink-0">
-          i
-        </span>
-        {label}
-      </button>
-      {open && (
-        <p id={`info-${id}`} className="pl-5 mt-0.5 text-text-secondary">
-          {detail}
-        </p>
-      )}
     </div>
   );
 }

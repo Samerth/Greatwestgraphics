@@ -128,11 +128,24 @@ export async function createProofAction(
     }
     const owner = PERSON_ID_PATTERN.test(personId) ? personId : "staff";
     const key = `designs/${owner}/staff-${randomUUID()}.${extension}`;
-    storageKey = await getImageStore().put(
-      key,
-      Buffer.from(await file.arrayBuffer()),
-      file.type,
-    );
+    // The original UAT bug ("error page when uploading a design file") was
+    // most likely this write — an S3/disk failure here used to throw
+    // uncaught, crashing the page instead of showing the same inline error
+    // banner as every other failure in this form.
+    try {
+      storageKey = await getImageStore().put(
+        key,
+        Buffer.from(await file.arrayBuffer()),
+        file.type,
+      );
+    } catch (caught) {
+      return {
+        error:
+          caught instanceof Error
+            ? caught.message
+            : "Could not upload the proof file. Please try again.",
+      };
+    }
   }
 
   if (!jobId || !storageKey) {

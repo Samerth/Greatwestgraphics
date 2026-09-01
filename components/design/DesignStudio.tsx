@@ -395,6 +395,10 @@ export function DesignStudio({
   const [pendingUploads, setPendingUploads] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  /** "Rendering Back (2/3)…" while downloadMockup cycles through every
+   * decorated side to build one combined sheet — a multi-second operation
+   * since each side needs its own render pass on the live canvas. */
+  const [exportingMockup, setExportingMockup] = useState<string | null>(null);
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -469,6 +473,8 @@ export function DesignStudio({
   const selectedId = selectedBySide[activeSide];
   const selectedText = texts.find((layer) => layer.id === selectedId) ?? null;
   const selectedArtwork = artworks.find((layer) => layer.id === selectedId) ?? null;
+  const hasAnyDecoration =
+    decoratedDesignSides(artworksBySide, textsBySide).length > 0;
   const sideLayerCount = (side: DesignSide) =>
     artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
 
@@ -1072,6 +1078,23 @@ export function DesignStudio({
       imageHeight,
       canvasSize: CANVAS_SIZE,
     });
+    if (!Number.isFinite(placed.scaleX) || !Number.isFinite(placed.scaleY)) {
+      // A NaN/Infinite scale here renders as artwork at its raw natural
+      // pixel size (Konva ignores an invalid transform), which is exactly
+      // "expands to fill the canvas" from the customer's side — logging the
+      // real inputs is the only way to catch what actually produced it,
+      // since every deliberately-malformed test file reproduced so far has
+      // placed correctly.
+      console.error("[design-studio] non-finite artwork placement", {
+        side,
+        zone,
+        imageWidth,
+        imageHeight,
+        canvasSize: CANVAS_SIZE,
+        placed,
+        filename,
+      });
+    }
 
     const newArtwork: PlacedArtwork = {
       id,
@@ -1351,7 +1374,12 @@ export function DesignStudio({
       transformers.forEach((node: { hide: () => void }) => node.hide());
       stage.batchDraw();
       return stage.toDataURL({ pixelRatio: 2 });
-    } catch {
+    } catch (caught) {
+      // Genuinely rare (a tainted canvas from a garment host missing CORS
+      // headers, most likely), but silent failure here is exactly what
+      // made the original bug hard to diagnose — this costs nothing and
+      // gives support something to go on from a customer's own console.
+      console.warn("[design-studio] canvas export failed", caught);
       return null;
     } finally {
       transformers.forEach((node: { show: () => void }) => node.show());
@@ -1359,19 +1387,190 @@ export function DesignStudio({
     }
   }
 
-  function downloadProof() {
-    const dataUrl = exportStageDataUrl();
-    if (!dataUrl) {
-      setExportError(
-        "The proof could not be rendered. Wait for the garment and artwork to finish loading, then try again.",
-      );
+  /** Two animation frames reliably land after react-konva's own commit +
+   * paint for a freshly-mounted Stage (the Stage remounts on every side
+   * change via `key={activeSide}`), and the extra fixed delay covers the
+   * async image fetch inside GarmentBackdropImage/ArtworkLayer's useImage
+   * — normally near-instant since the browser already cached these exact
+   * URLs from the always-visible side thumbnails, but not guaranteed to be
+   * synchronous. */
+  function nextFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  }
+  function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Warms the browser cache for every decorated side's garment photo, in
+   * parallel, before the capture loop below switches to any of them. The
+   * per-side switch-then-retry loop was discovering "this image isn't
+   * decoded yet" one side at a time, serially — the slowest side to load
+   * (often whichever hadn't been visited recently) could still lose the
+   * race against a fixed per-attempt timeout. Loading everything up front,
+   * all at once, means the switch loop is usually hitting an already-warm
+   * cache instead of racing a fresh fetch. Best-effort: a slow or failed
+   * preload here doesn't block the export — the existing retry loop is
+   * still the fallback if a particular side genuinely isn't ready. */
+  function preloadSideImages(sides: DesignSide[]): Promise<void> {
+    return Promise.all(
+      sides.map(
+        (side) =>
+          new Promise<void>((resolve) => {
+            const url = studioCanvasImageUrl(sideBackdrops[side]);
+            if (!url) {
+              resolve();
+              return;
+            }
+            const img = new Image();
+            const done = () => resolve();
+            img.onload = done;
+            img.onerror = done;
+            const sameOrigin =
+              (url.startsWith("/") && !url.startsWith("//")) ||
+              url.startsWith("data:") ||
+              url.startsWith("blob:");
+            if (!sameOrigin) img.crossOrigin = "anonymous";
+            img.src = url;
+            // Don't let one unreachable host hold up the whole export.
+            setTimeout(done, 4000);
+          }),
+      ),
+    ).then(() => undefined);
+  }
+
+  /** One combined sheet with every decorated side, not just whichever side
+   * happened to be on screen (CodSphere UAT: "Download Front Mockup" only
+   * downloaded the current view; the client wants "a complete
+   * representation of the customer's design"). Temporarily switches
+   * activeSide to capture each one off the same live canvas the single-side
+   * export already used, then restores the side the customer was on. */
+  async function downloadMockup() {
+    const sides = decoratedDesignSides(artworksBySide, textsBySide);
+    if (sides.length === 0) {
+      setExportError("Add artwork or text to the design first.");
       return;
     }
     setExportError(null);
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `great-west-graphics-${activeSide}-mockup.png`;
-    link.click();
+    setExportingMockup("Preparing garment views…");
+    await preloadSideImages(sides);
+    const startingSide = activeSide;
+    // Tracks the side actually on screen as the loop drives it — not the
+    // `activeSide` state variable, which stays frozen at whatever it was
+    // when this closure was created for the rest of the loop (a `setState`
+    // call doesn't change the value already captured here). Comparing
+    // against the stale state variable meant every switch after the first
+    // was silently skipped, capturing the previous side's canvas again
+    // under the next side's label.
+    let currentSide = activeSide;
+    const captured: { side: DesignSide; dataUrl: string }[] = [];
+    const failed: DesignSide[] = [];
+
+    try {
+      for (let i = 0; i < sides.length; i += 1) {
+        const side = sides[i]!;
+        setExportingMockup(`Rendering ${DESIGN_SIDE_LABELS[side]} (${i + 1}/${sides.length})…`);
+        if (side !== currentSide) {
+          setActiveSide(side);
+          currentSide = side;
+          await nextFrame();
+          await wait(300);
+        }
+        // A freshly-mounted Stage's garment photo (the Stage remounts on
+        // every side change) can still be finishing its fetch/decode even
+        // after a render tick and a fixed delay — retry with backoff
+        // rather than failing the whole sheet over one slow image.
+        let dataUrl: string | null = null;
+        for (let attempt = 0; attempt < 4 && !dataUrl; attempt += 1) {
+          if (attempt > 0) await wait(400 * attempt);
+          dataUrl = exportStageDataUrl();
+        }
+        // One stubborn side (still not decoded, or a garment photo whose
+        // host doesn't answer with the CORS header canvas export needs)
+        // shouldn't cost the customer every other view they already
+        // finished — skip it and keep going, rather than aborting the
+        // whole sheet the way a single thrown error used to.
+        if (dataUrl) captured.push({ side, dataUrl });
+        else failed.push(side);
+      }
+
+      if (captured.length === 0) {
+        throw new Error(
+          "The mockup could not be rendered. Wait for the garment and artwork to finish loading, then try again.",
+        );
+      }
+
+      // Single-side mockups keep the old plain download; multi-side ones
+      // get composited into one sheet so proofing is one file, not several.
+      const finalDataUrl =
+        captured.length === 1
+          ? captured[0]!.dataUrl
+          : await composeMockupSheet(captured);
+
+      const link = document.createElement("a");
+      link.href = finalDataUrl;
+      link.download = "great-west-graphics-mockup.png";
+      link.click();
+
+      if (failed.length > 0) {
+        setExportError(
+          `Downloaded ${captured.map((c) => DESIGN_SIDE_LABELS[c.side]).join(", ")}. ` +
+            `${failed.map((s) => DESIGN_SIDE_LABELS[s]).join(", ")} could not be rendered this time — try downloading again in a moment.`,
+        );
+      }
+    } catch (caught) {
+      setExportError(
+        caught instanceof Error
+          ? caught.message
+          : "The mockup could not be rendered. Wait for the garment and artwork to finish loading, then try again.",
+      );
+    } finally {
+      if (currentSide !== startingSide) setActiveSide(startingSide);
+      setExportingMockup(null);
+    }
+  }
+
+  /** Lays captured side renders left-to-right in a single row (each already
+   * a square canvas at 2x pixel ratio), with a caption under each so it's
+   * unambiguous which view is which on a printed proof sheet. */
+  async function composeMockupSheet(
+    captured: { side: DesignSide; dataUrl: string }[],
+  ): Promise<string> {
+    const images = await Promise.all(
+      captured.map(
+        ({ dataUrl }) =>
+          new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error("Could not compose the mockup sheet."));
+            img.src = dataUrl;
+          }),
+      ),
+    );
+    const tileSize = Math.max(...images.map((img) => img.width));
+    const captionHeight = Math.round(tileSize * 0.06);
+    const gap = Math.round(tileSize * 0.03);
+    const canvas = document.createElement("canvas");
+    canvas.width = images.length * tileSize + (images.length - 1) * gap;
+    canvas.height = tileSize + captionHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not compose the mockup sheet.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#111111";
+    ctx.font = `${Math.round(captionHeight * 0.55)}px sans-serif`;
+    images.forEach((img, i) => {
+      const x = i * (tileSize + gap);
+      ctx.drawImage(img, x, 0, tileSize, tileSize);
+      ctx.fillText(
+        DESIGN_SIDE_LABELS[captured[i]!.side],
+        x + tileSize / 2,
+        tileSize + captionHeight * 0.7,
+      );
+    });
+    return canvas.toDataURL("image/png");
   }
 
   async function addDesignToCart() {
@@ -2001,18 +2200,21 @@ export function DesignStudio({
         </div>
       </aside>
 
-      {/* Canvas */}
-      <div className="min-w-0 w-full bg-text-primary text-white rounded-lg overflow-hidden flex flex-col">
-        <div className="px-sp-4 py-sp-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+      {/* Canvas — white/light, matching the Coastal Reign benchmark. Used to
+          be a dark near-black panel (bg-text-primary + bg-[#141414]); every
+          white/opacity utility below is inverted to match, not just the
+          background, so contrast stays correct throughout. */}
+      <div className="min-w-0 w-full bg-bg border border-border rounded-lg overflow-hidden flex flex-col">
+        <div className="px-sp-4 py-sp-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <b className="font-display text-[15px]">2D Design Canvas</b>
-            <span className="block text-[11px] text-white/55 mt-0.5">
+            <b className="font-display text-[15px] text-text-primary">2D Design Canvas</b>
+            <span className="block text-[11px] text-text-tertiary mt-0.5">
               {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
           </div>
           {activeSide === "front" ? (
             <StudioChestAlign
-              tone="canvas"
+              tone="panel"
               compact
               value={frontAlign}
               onChange={applyAlign}
@@ -2025,11 +2227,11 @@ export function DesignStudio({
                 aria-label="Zoom out"
                 disabled={zoomAt <= 0}
                 onClick={() => setZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)]!)}
-                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+                className="h-8 w-8 rounded-sm border border-border text-text-secondary font-bold transition-colors hover:border-text-tertiary disabled:opacity-35"
               >
                 −
               </button>
-              <span className="min-w-12 text-center text-[11px] font-bold text-white/80">
+              <span className="min-w-12 text-center text-[11px] font-bold text-text-secondary">
                 {Math.round(zoom * 100)}%
               </span>
               <button
@@ -2039,7 +2241,7 @@ export function DesignStudio({
                 onClick={() =>
                   setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomAt + 1)]!)
                 }
-                className="h-8 w-8 rounded-sm border border-white/15 text-white/80 font-bold disabled:opacity-35"
+                className="h-8 w-8 rounded-sm border border-border text-text-secondary font-bold transition-colors hover:border-text-tertiary disabled:opacity-35"
               >
                 +
               </button>
@@ -2049,7 +2251,7 @@ export function DesignStudio({
 
         <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
         <div className="p-sp-3 min-h-[280px] sm:min-h-[360px] lg:min-h-[520px] overflow-x-auto flex-1 min-w-0">
-          <div className="min-w-0 w-full max-w-full bg-[#141414] rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
+          <div className="min-w-0 w-full max-w-full bg-fill-subtle-15 rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
               className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square"
@@ -2074,7 +2276,7 @@ export function DesignStudio({
               ) : null}
               {isLoadingGarment && !currentPhoto && (
                 <div className="absolute inset-0 grid place-items-center">
-                  <div className="w-2/3 h-2/3 rounded-md bg-white/5 animate-pulse" />
+                  <div className="w-2/3 h-2/3 rounded-md bg-fill-subtle-15 animate-pulse" />
                 </div>
               )}
 
@@ -2172,14 +2374,14 @@ export function DesignStudio({
             {/* Zone + inch size sits under the whole mockup — not a chip on the plate. */}
             <p
               data-studio="print-location"
-              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-white/80"
+              className="m-0 mt-2 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[12px] font-semibold tracking-[0.02em] text-text-secondary"
             >
               {formatZoneInchLabel(liveZone ?? placementBySide[activeSide])}
             </p>
             {sleeveView && isStudioSideRepresentation(backdrop) ? (
               <p
                 data-studio="sleeve-representation"
-                className="m-0 mt-1 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[11px] font-medium tracking-[0.01em] text-white/55"
+                className="m-0 mt-1 w-full max-w-[min(820px,calc(100dvh-12rem))] text-center text-[11px] font-medium tracking-[0.01em] text-text-tertiary"
               >
                 This side view is for representation only.
               </p>
@@ -2191,7 +2393,7 @@ export function DesignStudio({
                   type="button"
                   onClick={undoStudio}
                   disabled={!canUndo}
-                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-border text-[11px] font-bold text-text-secondary transition-colors disabled:opacity-35 hover:border-text-tertiary"
                 >
                   Undo
                 </button>
@@ -2199,46 +2401,50 @@ export function DesignStudio({
                   type="button"
                   onClick={redoStudio}
                   disabled={!canRedo}
-                  className="h-8 flex-1 sm:w-full rounded-sm border border-white/15 text-[11px] font-bold text-white/80 disabled:opacity-35 hover:border-white/40"
+                  className="h-8 flex-1 sm:w-full rounded-sm border border-border text-[11px] font-bold text-text-secondary transition-colors disabled:opacity-35 hover:border-text-tertiary"
                 >
                   Redo
                 </button>
               </div>
               {availableViews.map((side) => {
                 const selected = activeSide === side;
+                const hasArtwork = sideLayerCount(side) > 0;
                 const thumbBackdrop = sideBackdrops[side];
                 const thumbFrame = framedBackdropStyles(thumbBackdrop);
                 return (
                   <button
                     key={side}
                     type="button"
+                    // Always just switches the view. This used to move
+                    // whatever artwork was selected to the clicked side
+                    // instead — so uploading art on Front (which leaves it
+                    // selected), then clicking through Back/L.Sleeve/
+                    // R.Sleeve to add more, silently relocated that same
+                    // one piece of artwork each time instead of adding new
+                    // artwork per side, collapsing everything onto
+                    // whichever thumbnail was clicked last. Moving artwork
+                    // between sides is now its own explicit control in the
+                    // "Edit artwork" panel, not a side-effect of navigating.
                     onClick={() => {
-                      if (selectedId && side !== activeSide) {
-                        moveSelectedToSide(side);
-                      } else {
-                        setActiveSide(side);
-                      }
+                      setActiveSide(side);
                       setExportError(null);
                     }}
                     aria-pressed={selected}
                     aria-label={
-                      selectedId && side !== activeSide
-                        ? `Move selected artwork to ${DESIGN_SIDE_LABELS[side]}`
-                        : `View ${DESIGN_SIDE_LABELS[side]}`
+                      `View ${DESIGN_SIDE_LABELS[side]}` +
+                      (hasArtwork ? " — artwork added" : " — no artwork yet")
                     }
-                    title={
-                      selectedId && side !== activeSide
-                        ? `Move selected artwork to ${DESIGN_SIDE_LABELS[side]}`
-                        : `View ${DESIGN_SIDE_LABELS[side]}`
-                    }
+                    title={`View ${DESIGN_SIDE_LABELS[side]}`}
                     className={cn(
-                      "flex-1 sm:flex-none rounded-md border overflow-hidden bg-black/30 text-left transition-colors",
+                      "flex-1 sm:flex-none rounded-md border overflow-hidden bg-bg-raised text-left transition-colors",
                       selected
                         ? "border-accent ring-1 ring-accent"
-                        : "border-white/15 hover:border-white/40",
+                        : hasArtwork
+                          ? "border-emerald-300"
+                          : "border-border hover:border-text-tertiary",
                     )}
                   >
-                    <span className="block aspect-square relative bg-[#1a1a1a]">
+                    <span className="block aspect-square relative bg-fill-subtle-15">
                       {thumbBackdrop.url ? (
                         <span className="absolute inset-0 overflow-hidden">
                           <GarmentBackdropImage
@@ -2257,18 +2463,27 @@ export function DesignStudio({
                           />
                         </span>
                       ) : (
-                        <span className="absolute inset-0 bg-white/5" />
+                        <span className="absolute inset-0 bg-fill-subtle-15" />
                       )}
-                      {sideLayerCount(side) > 0 && (
-                        <span className="absolute top-1 right-1 rounded-full bg-accent px-1.5 text-[9px] font-bold text-white">
-                          {sideLayerCount(side)}
+                      {/* A clear, unmistakable "artwork lives here" signal —
+                          not just a number, which a shopper skimming
+                          thumbnails could easily read as a price or size
+                          instead of a count (CodSphere UAT: "no clear
+                          indication that artwork has been successfully
+                          assigned/saved to that location"). */}
+                      {hasArtwork && (
+                        <span
+                          aria-hidden
+                          className="absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white text-[10px] font-bold leading-none shadow-sm"
+                        >
+                          ✓
                         </span>
                       )}
                     </span>
                     <span
                       className={cn(
                         "block px-1.5 py-1 text-[10px] font-bold tracking-[0.04em] text-center",
-                        selected ? "bg-accent text-white" : "text-white/70",
+                        selected ? "bg-accent text-white" : "text-text-secondary",
                       )}
                     >
                       {DESIGN_SIDE_THUMB_LABELS[side]}
@@ -2280,7 +2495,7 @@ export function DesignStudio({
           </div>
         </div>
         {(selectedText || selectedArtwork) && (
-          <div className="border-t border-white/10 lg:border-t-0 lg:border-l lg:w-[min(260px,36%)] lg:shrink-0 lg:max-h-[min(36rem,calc(100dvh-8rem))] lg:overflow-y-auto">
+          <div className="border-t border-border lg:border-t-0 lg:border-l lg:w-[min(260px,36%)] lg:shrink-0 lg:max-h-[min(36rem,calc(100dvh-8rem))] lg:overflow-y-auto">
             <StudioElementEditor
               kind={selectedText ? "text" : "artwork"}
               text={
@@ -2344,6 +2559,12 @@ export function DesignStudio({
               onDuplicate={duplicateSelected}
               onDelete={removeSelected}
               onSliderCommit={endSliderHistory}
+              moveTo={{
+                options: availableViews
+                  .filter((side) => side !== activeSide)
+                  .map((side) => ({ id: side, label: DESIGN_SIDE_LABELS[side] })),
+                onMove: (side) => moveSelectedToSide(side as DesignSide),
+              }}
             />
           </div>
         )}
@@ -2434,14 +2655,14 @@ export function DesignStudio({
 
           <Button
             className="w-full"
-            onClick={downloadProof}
-            disabled={
-              (artworks.length === 0 && texts.length === 0) || isLoadingGarment
-            }
+            onClick={downloadMockup}
+            disabled={!hasAnyDecoration || isLoadingGarment || Boolean(exportingMockup)}
           >
-            {artworks.length === 0 && texts.length === 0
-              ? `Add artwork to the ${DESIGN_SIDE_LABELS[activeSide].toLowerCase()} first`
-              : `Download ${DESIGN_SIDE_LABELS[activeSide]} Mockup`}
+            {exportingMockup
+              ? exportingMockup
+              : !hasAnyDecoration
+                ? "Add artwork to the design first"
+                : "Download Mockup"}
           </Button>
           {exportError && (
             <p className="m-0 text-sm text-danger" role="alert">
@@ -2449,7 +2670,7 @@ export function DesignStudio({
             </p>
           )}
           <p className="text-[12px] text-text-tertiary text-center -mt-1">
-            Downloads the selected garment view with all placed artwork.
+            Downloads every decorated view — front, back and sleeves — as one mockup.
           </p>
 
           {productDetail && selectedColorwayReady && !isStaff && (

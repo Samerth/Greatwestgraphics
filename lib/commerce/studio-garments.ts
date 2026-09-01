@@ -111,9 +111,15 @@ export function studioColorwayFill(colorway: StudioColorwayOption): {
   hex: string | null;
   imageUrl: string | null;
 } {
+  const hex = colorway.hex ?? hexForColorName(colorway.colorName);
   return {
-    hex: colorway.hex ?? hexForColorName(colorway.colorName),
-    imageUrl: colorway.swatchImageUrl || colorway.frontImageUrl || null,
+    hex,
+    // Flat colour circles, matching the Coastal Reign benchmark and the
+    // client's explicit instruction ("colour options should fill as the
+    // corresponding colour") — a vendor swatch photo is used only as a
+    // last resort, when neither a real vendor hex nor a name-based guess
+    // is available at all.
+    imageUrl: hex ? null : colorway.swatchImageUrl || colorway.frontImageUrl || null,
   };
 }
 

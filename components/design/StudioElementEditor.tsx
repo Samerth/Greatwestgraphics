@@ -25,9 +25,9 @@ function SliderRow({
 }) {
   return (
     <label className="block min-w-0">
-      <span className="flex justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-white/45 mb-1">
+      <span className="flex justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-1">
         <span>{label}</span>
-        <span className="normal-case tracking-normal text-white/70">
+        <span className="normal-case tracking-normal text-text-secondary">
           {Number.isInteger(value) ? value : value.toFixed(1)}
           {suffix}
         </span>
@@ -41,7 +41,7 @@ function SliderRow({
         onChange={(event) => onChange(Number(event.target.value))}
         onPointerUp={onCommit}
         onKeyUp={onCommit}
-        className="w-full accent-white"
+        className="w-full accent-[color:var(--color-accent)]"
       />
     </label>
   );
@@ -123,6 +123,7 @@ export function StudioElementEditor({
   onDuplicate,
   onDelete,
   onSliderCommit,
+  moveTo,
   className,
 }: {
   kind: "text" | "artwork";
@@ -156,15 +157,22 @@ export function StudioElementEditor({
   onDuplicate: () => void;
   onDelete: () => void;
   onSliderCommit: () => void;
+  /** The other sides this layer could move to, and the handler to do it.
+   * Explicit and separate from clicking a side thumbnail to look at it —
+   * see DesignStudio.tsx for why those used to be the same click. */
+  moveTo?: {
+    options: { id: string; label: string }[];
+    onMove: (side: string) => void;
+  };
   className?: string;
 }) {
   return (
     <div className={cn("px-sp-4 py-sp-3 flex flex-col gap-3", className)}>
       <div className="flex items-center justify-between gap-2">
-        <b className="font-display text-[13px] text-white">
+        <b className="font-display text-[13px] text-text-primary">
           Edit {kind === "text" ? "text" : "artwork"}
         </b>
-        <label className="flex items-center gap-2 text-[11px] font-bold text-white/70 cursor-pointer">
+        <label className="flex items-center gap-2 text-[11px] font-bold text-text-secondary cursor-pointer">
           <input
             type="checkbox"
             checked={outline}
@@ -195,7 +203,7 @@ export function StudioElementEditor({
       {text && onPatchText ? (
         <>
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-white/45 mb-1.5">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-1.5">
               Text align
             </span>
             <div className="flex gap-1">
@@ -207,8 +215,8 @@ export function StudioElementEditor({
                   className={cn(
                     "flex-1 h-7 rounded-sm border text-[11px] font-bold capitalize",
                     text.align === align
-                      ? "bg-white text-text-primary border-white"
-                      : "border-white/20 text-white/70 hover:border-white/40",
+                      ? "bg-accent text-white border-accent"
+                      : "border-border text-text-secondary hover:border-text-tertiary",
                   )}
                 >
                   {align}
@@ -225,8 +233,8 @@ export function StudioElementEditor({
                 className={cn(
                   "flex-1 h-7 rounded-sm border text-[11px] font-bold capitalize",
                   text.printMethod === method
-                    ? "bg-white text-text-primary border-white"
-                    : "border-white/20 text-white/70 hover:border-white/40",
+                    ? "bg-accent text-white border-accent"
+                    : "border-border text-text-secondary hover:border-text-tertiary",
                 )}
               >
                 {method}
@@ -238,7 +246,7 @@ export function StudioElementEditor({
             onChange={(fill) => onPatchText({ fill })}
           />
           <StudioFontPicker
-            tone="canvas"
+            tone="panel"
             value={text.fontFamily}
             onChange={(fontFamily) => onPatchText({ fontFamily })}
             sample={text.sample || "Great West"}
@@ -263,6 +271,21 @@ export function StudioElementEditor({
           />
         </>
       ) : null}
+
+      {moveTo && moveTo.options.length > 0 && (
+        <div>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-1.5">
+            Move to
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {moveTo.options.map((option) => (
+              <EditorAction key={option.id} onClick={() => moveTo.onMove(option.id)} title={`Move to ${option.label}`}>
+                {option.label}
+              </EditorAction>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         <EditorAction
@@ -315,8 +338,8 @@ function EditorAction({
       className={cn(
         "h-7 px-2 rounded-sm border text-[11px] font-bold transition-colors",
         danger
-          ? "border-red-400/40 text-red-200 hover:bg-red-500/20"
-          : "border-white/20 text-white/80 hover:border-white/50 hover:bg-white/5",
+          ? "border-red-300 text-red-700 hover:bg-red-50"
+          : "border-border text-text-secondary hover:border-text-tertiary hover:bg-fill-subtle-15",
       )}
     >
       {children}

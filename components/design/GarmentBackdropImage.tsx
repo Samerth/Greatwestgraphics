@@ -29,6 +29,21 @@ export function GarmentBackdropImage({
     setSrc(url);
   }, [url]);
 
+  // The Konva layer that actually gets exported loads this same URL with
+  // crossOrigin="anonymous" (needed for stage.toDataURL() to work at all on
+  // a cross-origin garment photo). This plain preview — the CSS backdrop and
+  // every always-visible side thumbnail — used to load it with no CORS mode.
+  // Two different credentials modes racing for the same URL let the browser
+  // cache serve its opaque (non-CORS) response back to the canvas's request,
+  // silently tainting it: toDataURL() throws, seemingly at random, worst
+  // right after a side had been sitting on screen as a thumbnail for a
+  // while. Requesting it the same way here removes the mismatch instead of
+  // just retrying past it.
+  const sameOrigin =
+    (src.startsWith("/") && !src.startsWith("//")) ||
+    src.startsWith("data:") ||
+    src.startsWith("blob:");
+
   return (
     <div
       style={{
@@ -41,6 +56,7 @@ export function GarmentBackdropImage({
         src={src}
         alt=""
         style={image}
+        crossOrigin={sameOrigin ? undefined : "anonymous"}
         onError={() => {
           setSrc((current) => {
             if (current === url && fallbackUrl && fallbackUrl !== url) {

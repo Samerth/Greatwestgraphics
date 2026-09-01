@@ -26,13 +26,19 @@ describe("studio team-order chrome", () => {
   });
 });
 
-describe("studio side thumbs carry the selected layer", () => {
-  it("drops the Move design location block and moves from the garment thumbs", () => {
-    expect(editor).not.toContain("Move design location");
-    expect(editor).not.toContain("onMoveToSide");
-    expect(studio).not.toContain("onMoveToSide");
+describe("studio side thumbs only ever switch the view", () => {
+  // Reverses the prior "redundant Move design location block" removal
+  // (948fd57): consolidating move-on-click into the side thumbnails meant
+  // uploading art on Front, then clicking through Back/L.Sleeve/R.Sleeve to
+  // add more, silently relocated that one piece of art each time instead of
+  // adding new art per side — confirmed against a live UAT test, not just
+  // a hypothetical. Moving is deliberately its own explicit control again,
+  // and a thumbnail click never has a side effect beyond changing the view.
+  it("keeps moving as an explicit 'Move to' control, not a thumbnail click side effect", () => {
+    expect(editor).toContain("moveTo");
+    expect(editor).toContain("Move to");
     expect(studio).toContain("moveSelectedToSide");
-    expect(studio).toContain("if (selectedId && side !== activeSide)");
+    expect(studio).not.toContain("if (selectedId && side !== activeSide)");
   });
 });
 

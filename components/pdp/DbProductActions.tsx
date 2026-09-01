@@ -13,6 +13,7 @@ import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
+import { InfoNote } from "@/components/shared/InfoNote";
 
 export type DbVariantOption = {
   id: string;
@@ -99,10 +100,16 @@ export function DbProductActions({
     { size: firstInStock?.sizeName ?? "", name: "", number: "" },
   ]);
   const [rosterError, setRosterError] = useState<string | null>(null);
+  const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   const selectedVariant = variants.find((v) => v.id === variantId);
   const inStockSizes = variants.filter((v) => v.inStock);
   const saveHandoff = usePdpStudioHandoff((state) => state.save);
+  // Existing surcharges — no new pricing logic, just surfacing what the
+  // engine already charges so customers see it before adding to cart
+  // rather than only in the final total.
+  const namesNumbersFeeMinor =
+    pricingConfig?.settings?.namesNumbersFeePerGarmentMinor ?? 0;
 
   useEffect(() => {
     saveHandoff({
@@ -164,11 +171,38 @@ export function DbProductActions({
         This is a team/group order — different sizes, names &amp; numbers per piece
       </label>
 
+      {namesNumbersFeeMinor > 0 && (
+        <div className="text-xs text-text-secondary mb-sp-3">
+          <InfoNote
+            id="buy-box-names-numbers"
+            open={openInfo === "names-numbers"}
+            onToggle={() =>
+              setOpenInfo((v) => (v === "names-numbers" ? null : "names-numbers"))
+            }
+            label={`Individual names/numbers available (+${moneyFromMinor(namesNumbersFeeMinor)}/piece)`}
+            detail="Add names and numbers per person in the roster below. An additional per-piece charge applies and will be confirmed on your order."
+          />
+        </div>
+      )}
+
       {groupOrder ? (
         <div className="mb-sp-4 border border-border rounded-md p-sp-3 bg-bg">
-          <span className="text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-            Roster
-          </span>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary">
+              Roster
+            </span>
+          </div>
+          <div className="text-xs text-text-secondary mb-sp-3">
+            <InfoNote
+              id="buy-box-2xl-roster"
+              open={openInfo === "2xl-roster"}
+              onToggle={() =>
+                setOpenInfo((v) => (v === "2xl-roster" ? null : "2xl-roster"))
+              }
+              label="2XL+ sizes carry an additional surcharge"
+              detail="The exact amount varies by garment/style and is included automatically in each roster row's price."
+            />
+          </div>
           <RosterEditor
             sizes={inStockSizes.map((v) => ({ id: v.id, label: v.sizeName }))}
             rows={roster}
@@ -186,7 +220,7 @@ export function DbProductActions({
               {selectedVariant?.sizeName ?? "Select a size"}
             </span>
           </span>
-          <div className="flex gap-2 flex-wrap mb-sp-4">
+          <div className="flex gap-2 flex-wrap mb-sp-2">
             {variants.map((v) => (
               <button
                 key={v.id}
@@ -206,6 +240,15 @@ export function DbProductActions({
                 {v.sizeName}
               </button>
             ))}
+          </div>
+          <div className="text-xs text-text-secondary mb-sp-4">
+            <InfoNote
+              id="buy-box-2xl"
+              open={openInfo === "2xl"}
+              onToggle={() => setOpenInfo((v) => (v === "2xl" ? null : "2xl"))}
+              label="2XL+ sizes carry an additional surcharge"
+              detail="The exact amount varies by garment/style and is already included in the price shown above for the selected size."
+            />
           </div>
         </>
       )}

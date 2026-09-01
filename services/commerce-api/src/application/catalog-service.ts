@@ -976,6 +976,52 @@ export class CatalogService {
       }
     }
 
+    // Best Seller flag — same batched-lookup pattern as the cheapest-variant
+    // and size-range queries above, so the storefront card can show a real
+    // "Best Seller" badge backed by the same category assignment admins
+    // already manage on the product edit page, instead of guessing from
+    // list position (CodSphere UAT V2: Best Sellers nav item).
+    const bestSellerRows = await this.db
+      .select({ productUuid: ssProductCategories.productUuid })
+      .from(ssProductCategories)
+      .innerJoin(categories, eq(ssProductCategories.categoryId, categories.id))
+      .where(
+        and(
+          eq(categories.tenantId, tenantId),
+          eq(categories.slug, "best-sellers"),
+          inArray(ssProductCategories.productUuid, productIds),
+        ),
+      );
+    const bestSellerProductIds = new Set(
+      bestSellerRows.map((r) => r.productUuid),
+    );
+
+    // Hat flag — catalog card pricing defaults to a 1-colour screen print
+    // logo, except headwear, which is conventionally embroidered rather than
+    // screen printed. Same expand-then-membership-check pattern the
+    // category filter itself uses, scoped to this page's rows.
+    const [hatsCategory] = await this.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.tenantId, tenantId), eq(categories.slug, "hats")))
+      .limit(1);
+    const hatCategoryIds = hatsCategory
+      ? await this.expandCategoryIds(tenantId, hatsCategory.id)
+      : [];
+    const hatRows = hatCategoryIds.length
+      ? await this.db
+          .select({ productUuid: ssProductCategories.productUuid })
+          .from(ssProductCategories)
+          .where(
+            and(
+              eq(ssProductCategories.tenantId, tenantId),
+              inArray(ssProductCategories.categoryId, hatCategoryIds),
+              inArray(ssProductCategories.productUuid, productIds),
+            ),
+          )
+      : [];
+    const hatProductIds = new Set(hatRows.map((r) => r.productUuid));
+
     return rows.map((row) => {
       const variant = variantByProduct.get(row.product.id);
       const cost = variant?.customerPriceMinor ?? 0;
@@ -1006,6 +1052,8 @@ export class CatalogService {
         colorSwatches:
           grouped?.swatchesByStyle.get(row.product.styleUuid) ?? [],
         sizeRange: sizeRangeByProduct.get(row.product.id) ?? null,
+        isBestSeller: bestSellerProductIds.has(row.product.id),
+        isHat: hatProductIds.has(row.product.id),
       };
     });
   }

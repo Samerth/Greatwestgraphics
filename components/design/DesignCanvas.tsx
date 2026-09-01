@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 // loading the whole canvas as one unit (this file) avoids that entirely.
 import { Group, Image as KonvaImage, Stage, Layer } from "react-konva";
 import useImage from "use-image";
-import type { PlacedArtwork, PlacedText } from "@gwg/contracts";
+import type { DesignSide, PlacedArtwork, PlacedText } from "@gwg/contracts";
 import { ArtworkLayer } from "@/components/design/ArtworkLayer";
 import { TextLayer } from "@/components/design/TextLayer";
 import {
@@ -20,6 +20,21 @@ import {
   plateContainRect,
   type PhotoCrop,
 } from "@/lib/commerce/garment-backdrop";
+import { STUDIO_PRINT_AREAS } from "@/lib/commerce/studio-placement";
+
+/** A resize handle could previously grow artwork up to the full canvas —
+ * technically bounded, but "bounded by the whole stage" let a corner drag
+ * balloon a logo past the garment entirely (CodSphere UAT: "artwork becomes
+ * excessively enlarged during editing"). Cap it to a generous multiple of
+ * the side's actual print area instead, so "oversized" still means
+ * oversized-for-the-shirt, not "bigger than the canvas itself". */
+const MAX_ARTWORK_PRINT_AREA_MULTIPLE = 1.6;
+
+function maxArtworkDisplaySize(side: string, displaySize: number): number {
+  const area = STUDIO_PRINT_AREAS[side as DesignSide];
+  const fraction = area ? Math.max(area.width, area.height) : 0.4;
+  return displaySize * fraction * MAX_ARTWORK_PRINT_AREA_MULTIPLE;
+}
 
 function GarmentLayer({
   src,
@@ -218,7 +233,7 @@ export default function DesignCanvas({
                   onSelect={() => onSelect(item.id)}
                   onChange={onChangeArtwork}
                   onDragMove={onDragMove}
-                  maxSize={displaySize}
+                  maxSize={maxArtworkDisplaySize(activeSide, displaySize)}
                 />
               ) : (
                 <TextLayer
