@@ -4,14 +4,46 @@ import { useState } from "react";
 import { trackContactSubmit } from "@/lib/analytics/gtag";
 import { Container } from "@/components/shared/Container";
 import { Button } from "@/components/shared/Button";
+import { Pill } from "@/components/quote-builder/QuoteFormControls";
 
 const inputClass =
   "w-full min-h-11 rounded-md border border-border bg-bg-raised px-3.5 py-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20";
+
+const DECORATION_METHODS = [
+  "Screen Print",
+  "Embroidery",
+  "DTF",
+  "Not sure yet",
+];
+
+const MAX_ARTWORK_FILES = 5;
+const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
+const ARTWORK_ACCEPT = "image/png,image/jpeg,image/svg+xml,application/pdf";
 
 export function ContactForm() {
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+  const [decorationMethod, setDecorationMethod] = useState<string | null>(null);
+  const [artworkFiles, setArtworkFiles] = useState<File[]>([]);
+  const [artworkError, setArtworkError] = useState<string>();
+
+  function addArtworkFiles(fileList: FileList | null) {
+    if (!fileList) return;
+    setArtworkError(undefined);
+    const incoming = Array.from(fileList);
+    const combined = [...artworkFiles, ...incoming];
+    if (combined.length > MAX_ARTWORK_FILES) {
+      setArtworkError(`You can attach up to ${MAX_ARTWORK_FILES} files.`);
+      return;
+    }
+    const tooBig = incoming.find((f) => f.size > MAX_ARTWORK_BYTES);
+    if (tooBig) {
+      setArtworkError(`${tooBig.name} is too large — max 10MB per file.`);
+      return;
+    }
+    setArtworkFiles(combined);
+  }
 
   return (
     <section className="py-sp-8">
@@ -25,8 +57,9 @@ export function ContactForm() {
               Tell us what you&apos;re making.
             </h1>
             <p className="text-text-secondary mt-sp-3 max-w-[48ch]">
-              Share the product, quantity and deadline. A Vancouver-based specialist
-              will help choose the right print method and next step.
+              Share the product, quantity, decoration method and artwork — a
+              Vancouver-based specialist will follow up with next steps and
+              pricing.
             </p>
 
             <div className="mt-sp-5 space-y-sp-3 text-sm">
@@ -64,26 +97,20 @@ export function ContactForm() {
               </div>
             ) : (
               <form
-                className="grid grid-cols-1 sm:grid-cols-2 gap-sp-3"
+                className="space-y-sp-5"
                 onSubmit={async (event) => {
                   event.preventDefault();
                   setError(undefined);
                   const form = event.currentTarget;
                   const data = new FormData(form);
-                  const payload = {
-                    name: String(data.get("name") || ""),
-                    email: String(data.get("email") || ""),
-                    phone: String(data.get("phone") || "") || undefined,
-                    company: String(data.get("company") || "") || undefined,
-                    topic: String(data.get("topic") || "") || undefined,
-                    details: String(data.get("details") || ""),
-                  };
+                  if (decorationMethod) data.set("decorationMethod", decorationMethod);
+                  for (const file of artworkFiles) data.append("artwork", file);
+
                   setSubmitting(true);
                   try {
                     const response = await fetch("/api/contact", {
                       method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify(payload),
+                      body: data,
                     });
                     if (!response.ok) {
                       const body = await response.json().catch(() => null);
@@ -95,9 +122,11 @@ export function ContactForm() {
                     setSent(true);
                     trackContactSubmit({
                       method: "contact_form",
-                      topic: payload.topic,
+                      topic: String(data.get("topic") || "") || undefined,
                     });
                     form.reset();
+                    setDecorationMethod(null);
+                    setArtworkFiles([]);
                   } catch (caught) {
                     setError(
                       caught instanceof Error
@@ -109,50 +138,148 @@ export function ContactForm() {
                   }
                 }}
               >
-                <label className="text-sm font-bold text-text-primary">
-                  Name
-                  <input className={`${inputClass} mt-1.5`} name="name" required autoComplete="name" />
-                </label>
-                <label className="text-sm font-bold text-text-primary">
-                  Email
-                  <input className={`${inputClass} mt-1.5`} name="email" type="email" required autoComplete="email" />
-                </label>
-                <label className="text-sm font-bold text-text-primary">
-                  Phone
-                  <input className={`${inputClass} mt-1.5`} name="phone" type="tel" autoComplete="tel" />
-                </label>
-                <label className="text-sm font-bold text-text-primary">
-                  Company
-                  <input className={`${inputClass} mt-1.5`} name="company" autoComplete="organization" />
-                </label>
-                <label className="text-sm font-bold text-text-primary sm:col-span-2">
-                  What can we help with?
-                  <select className={`${inputClass} mt-1.5`} name="topic">
-                    <option>Screen printing</option>
-                    <option>Embroidery</option>
-                    <option>Promotional products</option>
-                    <option>Signs and displays</option>
-                    <option>Design support</option>
-                    <option>An existing order or invoice</option>
-                  </select>
-                </label>
-                <label className="text-sm font-bold text-text-primary sm:col-span-2">
-                  Project details
+                {/* Contact info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-sp-3">
+                  <label className="text-sm font-bold text-text-primary">
+                    Name
+                    <input className={`${inputClass} mt-1.5`} name="name" required autoComplete="name" />
+                  </label>
+                  <label className="text-sm font-bold text-text-primary">
+                    Email
+                    <input className={`${inputClass} mt-1.5`} name="email" type="email" required autoComplete="email" />
+                  </label>
+                  <label className="text-sm font-bold text-text-primary">
+                    Phone
+                    <input className={`${inputClass} mt-1.5`} name="phone" type="tel" autoComplete="tel" />
+                  </label>
+                  <label className="text-sm font-bold text-text-primary">
+                    Company
+                    <input className={`${inputClass} mt-1.5`} name="company" autoComplete="organization" />
+                  </label>
+                </div>
+
+                <div className="border-t border-border pt-sp-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-text-tertiary mb-sp-3">
+                    About the job
+                  </p>
+
+                  <label className="text-sm font-bold text-text-primary block mb-sp-3">
+                    What can we help with?
+                    <select className={`${inputClass} mt-1.5`} name="topic">
+                      <option>Screen printing</option>
+                      <option>Embroidery</option>
+                      <option>Promotional products</option>
+                      <option>Signs and displays</option>
+                      <option>Design support</option>
+                      <option>An existing order or invoice</option>
+                    </select>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-sp-3 mb-sp-3">
+                    <label className="text-sm font-bold text-text-primary">
+                      Product / style
+                      <input
+                        className={`${inputClass} mt-1.5`}
+                        name="product"
+                        placeholder="e.g. Gildan 5000 tee, or a link"
+                      />
+                    </label>
+                    <label className="text-sm font-bold text-text-primary">
+                      Quantity needed
+                      <input
+                        className={`${inputClass} mt-1.5`}
+                        name="quantity"
+                        inputMode="numeric"
+                        placeholder="e.g. 48"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mb-sp-3">
+                    <span className="text-sm font-bold text-text-primary block mb-1.5">
+                      Decoration method
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {DECORATION_METHODS.map((method) => (
+                        <Pill
+                          key={method}
+                          active={decorationMethod === method}
+                          onClick={() => setDecorationMethod(method)}
+                        >
+                          {method}
+                        </Pill>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="text-sm font-bold text-text-primary block">
+                    Needed by <span className="font-normal text-text-tertiary">(optional)</span>
+                    <input className={`${inputClass} mt-1.5`} name="neededBy" type="date" />
+                  </label>
+                </div>
+
+                <div className="border-t border-border pt-sp-4">
+                  <span className="text-sm font-bold text-text-primary block mb-1.5">
+                    Upload artwork <span className="font-normal text-text-tertiary">(optional — PNG, JPG, SVG, or PDF)</span>
+                  </span>
+                  <label className="flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-border bg-bg px-4 py-6 text-center cursor-pointer hover:border-accent transition-colors">
+                    <span className="text-sm font-bold text-accent">Choose files</span>
+                    <span className="text-xs text-text-tertiary">or drag and drop — up to {MAX_ARTWORK_FILES} files, 10MB each</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept={ARTWORK_ACCEPT}
+                      className="sr-only"
+                      onChange={(e) => {
+                        addArtworkFiles(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {artworkFiles.length > 0 && (
+                    <ul className="mt-sp-2 space-y-1.5">
+                      {artworkFiles.map((file, i) => (
+                        <li
+                          key={`${file.name}-${i}`}
+                          className="flex items-center justify-between gap-2 rounded-sm bg-bg px-3 py-2 text-sm"
+                        >
+                          <span className="truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${file.name}`}
+                            onClick={() =>
+                              setArtworkFiles((prev) => prev.filter((_, idx) => idx !== i))
+                            }
+                            className="text-text-tertiary hover:text-red-600 font-bold shrink-0"
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {artworkError && (
+                    <p className="text-[12.5px] text-red-600 font-semibold mt-2">{artworkError}</p>
+                  )}
+                </div>
+
+                <label className="text-sm font-bold text-text-primary block">
+                  Anything else we should know? <span className="font-normal text-text-tertiary">(optional)</span>
                   <textarea
-                    className={`${inputClass} mt-1.5 min-h-32 resize-y`}
+                    className={`${inputClass} mt-1.5 min-h-24 resize-y`}
                     name="details"
-                    required
-                    placeholder="Product, quantity, deadline and anything else we should know."
+                    placeholder="Deadline, budget, colours — anything that helps us quote accurately."
                   />
                 </label>
+
                 {error && (
-                  <p className="sm:col-span-2 text-sm text-red-700 font-semibold" role="alert">
+                  <p className="text-sm text-red-700 font-semibold" role="alert">
                     {error}
                   </p>
                 )}
-                <div className="sm:col-span-2 pt-sp-2">
+                <div className="pt-sp-1">
                   <Button type="submit" disabled={submitting}>
-                    {submitting ? "Sending…" : "Send project details"}
+                    {submitting ? "Sending…" : "Request my quote"}
                   </Button>
                 </div>
               </form>

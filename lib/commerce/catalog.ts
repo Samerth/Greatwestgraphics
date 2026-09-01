@@ -46,8 +46,19 @@ export type StorefrontCatalogProduct = {
    * (not alphabetical). Null when this product has no size variants. */
   sizeRange: string | null;
   categorySlugs: string[];
+  /** True when this product is assigned to the "Best Sellers" category in
+   * admin. Not a sales-ranking signal — just real category membership. */
+  isBestSeller: boolean;
+  /** True when this product is filed under Hats (or a descendant category).
+   * Drives the decoration-method default for catalog price estimates —
+   * embroidery instead of screen print. */
+  isHat: boolean;
   retailMinor: number;
   costMinor: number;
+  /** Cost floor set by the vendor's minimum advertised price, when one
+   * applies. Needed client-side to recompute a decorated estimate at a
+   * different quantity without a round trip. */
+  mapPriceMinor: number | null;
   isDark: boolean;
   available: boolean;
   imageUrl: string | null;
@@ -196,6 +207,10 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
           : [],
         sizeRange: (row.sizeRange as string | null) || null,
         categorySlugs: [],
+        isBestSeller: Boolean(row.isBestSeller),
+        isHat: Boolean(row.isHat),
+        mapPriceMinor:
+          typeof row.mapPriceMinor === "number" ? row.mapPriceMinor : null,
         retailMinor,
         costMinor: Number(row.costMinor || 0),
         isDark: Boolean(row.isDark),

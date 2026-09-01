@@ -369,6 +369,7 @@ export default async function ProductPage({
                 )}
 
                <PdpStartingPrice
+                  productId={String(product.id)}
                   name={title}
                   color={String(product.colorName || "")}
                   variants={pdpVariants}

@@ -36,11 +36,11 @@ export function ArtworkLayer({
   const trRef = useRef<Konva.Transformer>(null);
 
   useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
+    if (isSelected && img && trRef.current && shapeRef.current) {
       trRef.current.nodes([shapeRef.current]);
       trRef.current.getLayer()?.batchDraw();
     }
-  }, [isSelected]);
+  }, [isSelected, img]);
 
   const naturalW = img?.width ?? 80;
   const naturalH = img?.height ?? 80;
@@ -72,14 +72,24 @@ export function ArtworkLayer({
         onTransformEnd={() => {
           const node = shapeRef.current;
           if (!node) return;
-          onChange({
-            ...artwork,
+          const next = {
             x: node.x(),
             y: node.y(),
             scaleX: node.scaleX(),
             scaleY: node.scaleY(),
             rotation: node.rotation(),
-          });
+          };
+          // Belt and suspenders on top of gating the Transformer on `img`
+          // above: refuse to ever commit a non-finite transform, so one
+          // more path into this bug (now or in a future change) can't
+          // permanently corrupt the design the way it used to — the
+          // customer keeps whatever was last valid instead of a shirt-
+          // sized logo with no way back but delete-and-redo.
+          if (!Object.values(next).every(Number.isFinite)) {
+            console.error("[design-studio] ignored a non-finite transform", { artwork, next });
+            return;
+          }
+          onChange({ ...artwork, ...next });
         }}
       >
         <KonvaImage image={img} />
@@ -93,7 +103,19 @@ export function ArtworkLayer({
           />
         ) : null}
       </Group>
-      {isSelected && (
+      {/* Gated on `img`, not just `isSelected`: a freshly-uploaded artwork
+          is selected immediately, before its image (loaded async via
+          useImage) has arrived. Attaching the Transformer to a Group whose
+          only child is an <Image> with no source yet gives Konva a
+          zero-width/zero-height node to measure — dragging a resize handle
+          against that computes a scale as new-size ÷ 0, i.e. NaN/Infinity,
+          which then gets written into the design permanently via
+          onTransformEnd (no amount of clamping in boundBoxFunc below saves
+          this: every comparison against a NaN is false, so the guard rails
+          silently do nothing once the corruption has already happened).
+          The fix is to simply not offer resize handles on a shape that
+          isn't really there yet. */}
+      {isSelected && img && (
         <Transformer
           ref={trRef}
           rotateEnabled

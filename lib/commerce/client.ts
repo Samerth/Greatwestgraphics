@@ -88,10 +88,10 @@ export class CommerceClient {
   private async request<TSchema extends z.ZodTypeAny>(
     path: string,
     schema: TSchema,
-    init: RequestInit & { revalidate?: number } = {},
+    init: RequestInit & { revalidate?: number; tags?: string[] } = {},
   ): Promise<z.output<TSchema>> {
     let response: Response;
-    const { revalidate, ...restInit } = init;
+    const { revalidate, tags, ...restInit } = init;
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         ...restInit,
@@ -100,9 +100,10 @@ export class CommerceClient {
         // are identical across every visitor for a given store, so
         // short-lived revalidation avoids paying a fresh cross-region DB
         // round-trip on every navigation. Mutating/session-specific calls
-        // keep the no-store default.
+        // keep the no-store default. `tags` lets an admin mutation bust
+        // this early via revalidateTag() instead of waiting out the window.
         ...(revalidate !== undefined
-          ? { next: { revalidate } }
+          ? { next: { revalidate, ...(tags ? { tags } : {}) } }
           : { cache: "no-store" as const }),
         signal: init.signal ?? AbortSignal.timeout(60_000),
       });
@@ -1152,9 +1153,10 @@ export class CommerceClient {
       headers: adminToken
         ? this.headers(undefined, adminToken)
         : this.headers(),
-      // Admin needs live data when editing; storefront reads can lag a
+       // Admin needs live data when editing; storefront reads can lag a
       // catalog sync by a few minutes with no visible effect.
       revalidate: adminToken ? undefined : 300,
+      tags: adminToken ? undefined : ["catalog-categories"],
     });
   }
 
@@ -1162,6 +1164,7 @@ export class CommerceClient {
     return this.request("/v1/catalog/brands", z.array(z.string()), {
       headers: this.headers(),
       revalidate: 300,
+      tags: ["catalog-brands"],
     });
   }
 

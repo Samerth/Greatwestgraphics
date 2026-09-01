@@ -11,13 +11,17 @@ import {
   stitchCountForPreset,
 } from "@/lib/utils/shop-quote";
 import type { DbVariantOption } from "@/components/pdp/DbProductActions";
+import { usePdpLiveEstimate } from "@/lib/store/pdp-live-estimate";
+import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 
 export function PdpStartingPrice({
+  productId,
   name,
   color,
   variants,
   pricingConfig,
 }: {
+  productId: string;
   name: string;
   color: string;
   variants: DbVariantOption[];
@@ -25,7 +29,18 @@ export function PdpStartingPrice({
 }) {
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
 
-  const starting = useMemo(() => {
+  // The Live Estimate Calculator below (PdpDetailedQuote) publishes its own
+  // quantity-break pricing on every recompute. Prefer that here whenever it's
+  // for this product, so this headline tracks the customer's actual current
+  // decoration/quantity selection instead of a second, independently
+  // guessed default. Falls back to a same-shaped default-decoration
+  // calculation only for the brief moment before the calculator has
+  // published (or if it's absent from the page entirely).
+  const liveBreaks = usePdpLiveEstimate((s) =>
+    s.productId === productId ? s.quantityBreaks : null,
+  );
+
+  const fallback = useMemo(() => {
     if (!pricingConfig || !firstInStock?.costMinor) return null;
     const methods = enabledDecorationMethods(pricingConfig);
     const defaultMethodKey =
@@ -78,14 +93,15 @@ export function PdpStartingPrice({
 
     try {
       const breakdown = calculateQuoteV2(input, pricingConfig);
-      return {
-        unitMinor: Math.round(breakdown.totals.totalMinor / anchorQty),
-        qty: anchorQty,
-      };
+      return [{ qty: anchorQty, unitMinor: Math.round(breakdown.totals.totalMinor / anchorQty) }];
     } catch {
       return null;
     }
   }, [pricingConfig, firstInStock, name, color]);
+
+  const quantityBreaks =
+    liveBreaks && liveBreaks.length > 0 ? liveBreaks : fallback;
+  const starting = quantityBreaks?.[0] ?? null;
 
   if (!starting) return null;
 
@@ -95,17 +111,14 @@ export function PdpStartingPrice({
         Estimated from {moneyFromMinor(starting.unitMinor)} CAD each at{" "}
         {starting.qty} pieces
       </p>
-      <button
-        type="button"
-        onClick={() =>
-          document
-            .getElementById("live-estimate-calculator")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
-        className="mt-1 text-sm font-bold text-accent underline underline-offset-2"
-      >
-        Pricing Details
-      </button>
+      <div className="mt-1">
+        <PricingDetailsPopover
+          quantityBreaks={quantityBreaks ?? []}
+          heading="Quantity breaks (this selection)"
+          triggerContent="Pricing Details"
+          triggerClassName="text-sm font-bold text-accent underline underline-offset-2"
+        />
+      </div>
     </div>
   );
 }

@@ -40,6 +40,13 @@ export function Hero() {
             Vancouver since 1980.
           </p>
           <div className="flex gap-3 mt-sp-4 flex-wrap">
+            {/* SHOW_PUBLIC_QUOTE_CALCULATOR gates a separate, deliberately
+                hidden live-pricing tool at /quote (see lib/features.ts) — not
+                the button below. Keep both labelled "Request a Quote" only
+                because they can never both render at once today; if that
+                flag is ever flipped back on, rename one of them so a visitor
+                doesn't see two identically-labelled buttons going to
+                different places. */}
             {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
               <ButtonLink href="/quote" variant="primary">
                 Request a Quote
@@ -51,6 +58,17 @@ export function Hero() {
               className="border-white/50 text-white hover:border-white hover:bg-white/10"
             >
               Get an Instant Quote
+            </ButtonLink>
+            {/* The client's "Request a Quote" ask — the existing, already-built
+                SOW quote workflow, per the doc's own screenshot, is the
+                /contact "Tell us what you're making" form, not the hidden
+                calculator above. */}
+            <ButtonLink
+              href="/contact"
+              variant="secondary"
+              className="border-white/50 text-white hover:border-white hover:bg-white/10"
+            >
+              Request a Quote
             </ButtonLink>
           </div>
           {/* This used to be a five-star glyph and "4.8/5 · Rated by Vancouver
