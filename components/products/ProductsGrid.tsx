@@ -15,6 +15,7 @@ import type {
 } from "@/lib/commerce/catalog";
 import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
 import { visibleChildCategories } from "@/lib/commerce/category-slug";
+import { studioColorwayFill } from "@/lib/commerce/studio-garments";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { stitchCountForPreset } from "@/lib/utils/shop-quote";
@@ -656,37 +657,59 @@ function ProductCard({
 
         {tile.colorSwatches.length > 0 && (
           <div className="flex items-center gap-1 mb-1.5" onMouseLeave={() => setHoveredIdx(null)}>
-            {tile.colorSwatches.slice(0, 7).map((swatch, i) => (
-              <button
-                key={`${swatch.colorName}-${i}`}
-                type="button"
-                title={swatch.colorName}
-                aria-label={`View in ${swatch.colorName}`}
-                aria-pressed={selectedIdx === i}
-                onMouseEnter={() => setHoveredIdx(i)}
-                onFocus={() => setHoveredIdx(i)}
-                onBlur={() => setHoveredIdx(null)}
-                onClick={() =>
-                  setSelectedIdx((current) => (current === i ? null : i))
-                }
-                className={cn(
-                  "relative w-4 h-4 rounded-full border overflow-hidden bg-bg shrink-0 transition-shadow",
-                  activeIdx === i
-                    ? "border-accent ring-2 ring-accent ring-offset-1"
-                    : "border-border hover:border-accent",
-                )}
-              >
-                {swatch.imageUrl && (
-                  <Image
-                    src={swatch.imageUrl}
-                    alt={swatch.colorName}
-                    fill
-                    className="object-cover"
-                    sizes="16px"
-                  />
-                )}
-              </button>
-            ))}
+            {tile.colorSwatches.slice(0, 7).map((swatch, i) => {
+              // Flat colour circle, matching Design Studio's swatches and
+              // the client's explicit ask ("product swatches in catalog
+              // need to show as filled circular swatches, currently
+              // showing a cropped photo of the garment") — a vendor photo
+              // is used only when neither a real hex nor a name-based
+              // guess is available at all.
+              const fill = studioColorwayFill({
+                id: swatch.productId,
+                colorName: swatch.colorName,
+                hex: swatch.colorHex ?? undefined,
+                swatchImageUrl: swatch.imageUrl ?? undefined,
+              });
+              return (
+                <button
+                  key={`${swatch.colorName}-${i}`}
+                  type="button"
+                  title={swatch.colorName}
+                  aria-label={`View in ${swatch.colorName}`}
+                  aria-pressed={selectedIdx === i}
+                  onMouseEnter={() => setHoveredIdx(i)}
+                  onFocus={() => setHoveredIdx(i)}
+                  onBlur={() => setHoveredIdx(null)}
+                  onClick={() =>
+                    setSelectedIdx((current) => (current === i ? null : i))
+                  }
+                  className={cn(
+                    "relative w-4 h-4 rounded-full border overflow-hidden bg-bg shrink-0 transition-shadow",
+                    activeIdx === i
+                      ? "border-accent ring-2 ring-accent ring-offset-1"
+                      : "border-border hover:border-accent",
+                  )}
+                >
+                  {fill.hex ? (
+                    <span
+                      aria-hidden
+                      className="absolute inset-0"
+                      style={{ backgroundColor: fill.hex }}
+                    />
+                  ) : (
+                    fill.imageUrl && (
+                      <Image
+                        src={fill.imageUrl}
+                        alt={swatch.colorName}
+                        fill
+                        className="object-cover"
+                        sizes="16px"
+                      />
+                    )
+                  )}
+                </button>
+              );
+            })}
             {tile.colorwayCount > 7 && (
               <span className="text-[11px] text-text-tertiary ml-0.5">
                 +{tile.colorwayCount - 7}

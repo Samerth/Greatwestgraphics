@@ -1137,7 +1137,13 @@ export class CatalogService {
         countByStyle: new Map<string, number>(),
         swatchesByStyle: new Map<
           string,
-          { colorName: string; imageUrl: string | null; productId: string; slug: string }[]
+          {
+            colorName: string;
+            imageUrl: string | null;
+            colorHex: string | null;
+            productId: string;
+            slug: string;
+          }[]
         >(),
       };
     }
@@ -1200,7 +1206,13 @@ export class CatalogService {
     // for a "+N more" indicator.
         const swatchesByStyle = new Map<
       string,
-      { colorName: string; imageUrl: string | null; productId: string; slug: string }[]
+      {
+        colorName: string;
+        imageUrl: string | null;
+        colorHex: string | null;
+        productId: string;
+        slug: string;
+      }[]
     >();
     for (const row of siblings) {
       const list = swatchesByStyle.get(row.product.styleUuid) ?? [];
@@ -1211,6 +1223,12 @@ export class CatalogService {
             row.product.colorFrontImageUrl ||
             row.product.colorSwatchImageUrl ||
             null,
+          // The real vendor hex, so the card can paint a flat colour circle
+          // instead of a cropped garment photo — same rule Design Studio's
+          // swatches already follow (CodSphere UAT — "product swatches in
+          // catalog need to show as filled circular swatches, currently
+          // showing a cropped photo of the garment").
+          colorHex: row.product.color1 || null,
           // Lets the storefront card link straight to this exact colorway
           // on click, instead of only swapping the preview thumbnail.
           productId: row.product.id,

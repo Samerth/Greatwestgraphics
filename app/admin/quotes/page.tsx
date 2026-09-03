@@ -29,40 +29,51 @@ export default async function AdminQuotesPage() {
   }> = [];
 
   if (!error) {
-    for (const job of jobs.slice(0, 40)) {
-      try {
-        const detail = await (await adminClient()).getJobRequestAsStaff(
-          job.id,
-          requireAdminToken(),
-        );
-        for (const line of detail.lines) {
-          const pricing = (
-            line.snapshot.configuration as {
-              pricing?: {
-                breakdown?: {
-                  totalMinor?: number;
-                  totals?: { totalMinor?: number };
-                };
-                input?: {
-                  garment?: { unitCostMinor?: number };
-                  needsArtworkReview?: boolean;
-                };
-              };
-            }
-          )?.pricing;
-          rows.push({
-            jobId: job.id,
-            displayId: job.displayId,
-            lineId: line.id,
-            description: line.snapshot.description,
-            quantity: line.snapshot.quantity,
-            totalMinor: lineSnapshotTotalMinor(pricing),
-            needsArtworkReview: pricing?.input?.needsArtworkReview,
-            unitCostMinor: pricing?.input?.garment?.unitCostMinor,
-          });
+    // One request per job, run together rather than one-at-a-time — this
+    // page hung for 15s+ / never finished loading with even 22 jobs before
+    // (found during a live audit), since each detail fetch is a full
+    // staff-authed round trip and they were previously awaited in sequence.
+    // Same per-job try/catch as before: one bad detail fetch is skipped,
+    // not fatal to the rest of the page.
+    const client = await adminClient();
+    const token = requireAdminToken();
+    const details = await Promise.all(
+      jobs.slice(0, 40).map(async (job) => {
+        try {
+          return { job, detail: await client.getJobRequestAsStaff(job.id, token) };
+        } catch {
+          return null;
         }
-      } catch {
-        // skip detail failures
+      }),
+    );
+    for (const entry of details) {
+      if (!entry) continue;
+      const { job, detail } = entry;
+      for (const line of detail.lines) {
+        const pricing = (
+          line.snapshot.configuration as {
+            pricing?: {
+              breakdown?: {
+                totalMinor?: number;
+                totals?: { totalMinor?: number };
+              };
+              input?: {
+                garment?: { unitCostMinor?: number };
+                needsArtworkReview?: boolean;
+              };
+            };
+          }
+        )?.pricing;
+        rows.push({
+          jobId: job.id,
+          displayId: job.displayId,
+          lineId: line.id,
+          description: line.snapshot.description,
+          quantity: line.snapshot.quantity,
+          totalMinor: lineSnapshotTotalMinor(pricing),
+          needsArtworkReview: pricing?.input?.needsArtworkReview,
+          unitCostMinor: pricing?.input?.garment?.unitCostMinor,
+        });
       }
     }
   }

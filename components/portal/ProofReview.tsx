@@ -32,7 +32,8 @@ function safeProofUrl(storageKey: string): string | null {
 
 function ProofAsset({ proof }: { proof: ProofForReview }) {
   const url = safeProofUrl(proof.storageKey);
-  if (!url) {
+  const [fileMissing, setFileMissing] = useState(false);
+  if (!url || fileMissing) {
     return (
       <p role="alert" className="text-sm text-error">
         This proof file is unavailable. Ask our team to upload it again.
@@ -52,6 +53,11 @@ function ProofAsset({ proof }: { proof: ProofForReview }) {
             src={url}
             alt={`Proof version ${proof.version}`}
             className="max-h-80 max-w-full object-contain border border-border rounded-sm bg-white"
+            // Same message as a malformed URL — a 404'd file reads no
+            // differently to the person reviewing it, and a broken-image
+            // icon on a customer-facing proof review page is exactly the
+            // kind of thing worth never showing (found during a live audit).
+            onError={() => setFileMissing(true)}
           />
         )}
         <span className="block text-sm font-bold text-accent mt-1">
