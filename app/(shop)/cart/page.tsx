@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Shirt } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
@@ -12,6 +13,21 @@ import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+
+/**
+ * True for our own private, cookie-gated upload route (customer artwork,
+ * design proofs). Next's image optimizer fetches a same-app image via an
+ * internal mocked request that carries no headers at all — not even
+ * cookies (see node_modules/next/dist/server/image-optimizer.js,
+ * fetchInternalImage → createRequestResponseMocks) — so /api/uploads/...
+ * always looks unauthenticated to it, the route correctly 404s, and the
+ * optimizer reports back "not a valid image" (400) even though the file is
+ * really there. These URLs must render unoptimized so the *browser* fetches
+ * them directly, carrying the customer's real cookies the normal way.
+ */
+function isPrivateUploadUrl(src: string): boolean {
+  return src.startsWith("/api/uploads/");
+}
 
 const SAVED_KEY = "gwg-cart-saved";
 
@@ -185,13 +201,21 @@ export default function CartPage() {
                 className="flex flex-col sm:flex-row gap-sp-4 border border-border rounded-md p-sp-4 bg-bg-raised"
               >
                 <div className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle">
-                  {item.image && (
+                  {item.image ? (
                     <Image
                       src={item.image}
                       alt={item.name}
                       fill
+                      unoptimized={isPrivateUploadUrl(item.image)}
                       className="object-cover object-top"
                     />
+                  ) : (
+                    // Neither this colourway's own photo nor the style's
+                    // general one was available — an empty grey box reads as
+                    // broken, so this always shows something instead.
+                    <div className="absolute inset-0 grid place-items-center text-text-tertiary/50">
+                      <Shirt aria-hidden size={32} strokeWidth={1.5} />
+                    </div>
                   )}
                 </div>
 
