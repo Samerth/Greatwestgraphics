@@ -21,6 +21,7 @@ import {
 } from "@/lib/utils/quote-pricing";
 import {
   LOCATIONS,
+  STITCH_PRESET_DISCLAIMER,
   STITCH_PRESETS,
   colourOptions,
   defaultOptionKey,
@@ -488,17 +489,22 @@ export function QuoteBuilder({
             )}
 
             {methodVariableInputs(selectedMethod).stitches && (
-              <QbRow label="Logo size">
-                {STITCH_PRESETS.map((p) => (
-                  <Pill
-                    key={p.id}
-                    active={stitchPreset === p.id}
-                    onClick={() => setStitchPreset(p.id)}
-                  >
-                    {p.label}
-                  </Pill>
-                ))}
-              </QbRow>
+              <>
+                <QbRow label="Logo size">
+                  {STITCH_PRESETS.map((p) => (
+                    <Pill
+                      key={p.id}
+                      active={stitchPreset === p.id}
+                      onClick={() => setStitchPreset(p.id)}
+                    >
+                      {p.label}
+                    </Pill>
+                  ))}
+                </QbRow>
+                <p className="-mt-sp-3 mb-sp-4 text-xs leading-snug text-text-tertiary">
+                  {STITCH_PRESET_DISCLAIMER}
+                </p>
+              </>
             )}
 
             {selectedMethod?.rateModel.kind === "matrixByOption" && (

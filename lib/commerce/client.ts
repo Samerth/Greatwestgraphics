@@ -1191,6 +1191,9 @@ export class CommerceClient {
       slug: string;
       parentId: string | null;
       sortOrder: number;
+      /** `null` clears the rule back to unrestricted. */
+      allowedDecorationMethods: string[] | null;
+      allowedDecorationLocations: string[] | null;
     }>,
     adminToken: string,
   ) {

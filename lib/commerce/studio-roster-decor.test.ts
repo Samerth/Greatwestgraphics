@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultRosterDecor } from "@gwg/contracts";
+import { defaultRosterDecor, RosterDecorSchema } from "@gwg/contracts";
 import {
   ROSTER_DECOR_LOCATIONS,
   emptyRosterDecor,
@@ -8,10 +8,17 @@ import {
 } from "./studio-roster-decor";
 
 describe("roster names vs numbers independence", () => {
-  it("starts names and numbers on different locations and heights", () => {
+  // Both default to the same location now — matching Coastal Reign's own
+  // default ("Back" / "Back") and closing real, repeated confusion in UAT
+  // testing where independently-configurable defaults produced Names and
+  // Numbers split across two different sides with no explanation on
+  // screen. Independent placement is still fully supported (see the patch
+  // test below) — only the starting point changed.
+  it("starts names and numbers on the same location, at different heights", () => {
     const decor = emptyRosterDecor();
-    expect(decor.names.location).toBe("Upper Back");
+    expect(decor.names.location).toBe("Full Back");
     expect(decor.numbers.location).toBe("Full Back");
+    expect(decor.names.location).toBe(decor.numbers.location);
     expect(decor.names.heightIn).not.toBe(decor.numbers.heightIn);
     expect(decor.names).not.toEqual(decor.numbers);
   });
@@ -53,7 +60,47 @@ describe("roster names vs numbers independence", () => {
       printMethod: "embroidery",
     });
     const summary = rosterDecorSummary(decor);
-    expect(summary).toContain("Names 2.5\" print @ Upper Back");
+    expect(summary).toContain("Names 2.5\" print @ Full Back");
     expect(summary).toContain("Numbers 8\" embroidery @ Full Back");
+  });
+});
+
+describe("the enabled toggle (Coastal Reign's '+ Names' / '+ Numbers' checkboxes)", () => {
+  it("defaults both to enabled, so a fresh design shows both once named", () => {
+    const decor = defaultRosterDecor();
+    expect(decor.names.enabled).toBe(true);
+    expect(decor.numbers.enabled).toBe(true);
+  });
+
+  it("patching enabled on one target leaves the other untouched", () => {
+    const off = patchRosterDecor(defaultRosterDecor(), "numbers", {
+      enabled: false,
+    });
+    expect(off.numbers.enabled).toBe(false);
+    expect(off.names.enabled).toBe(true);
+  });
+
+  it("parses a design saved before this field existed as enabled — no design that used to show both marks silently loses one", () => {
+    const legacy = {
+      names: {
+        printMethod: "print",
+        heightIn: 2.5,
+        color: "#111111",
+        location: "Upper Back",
+        // no `enabled`, no `offsetXNorm`/`offsetYNorm` — the exact shape a
+        // design saved before either field existed would have.
+      },
+      numbers: {
+        printMethod: "print",
+        heightIn: 8,
+        color: "#111111",
+        location: "Full Back",
+      },
+    };
+    const parsed = RosterDecorSchema.parse(legacy);
+    expect(parsed.names.enabled).toBe(true);
+    expect(parsed.numbers.enabled).toBe(true);
+    expect(parsed.names.offsetXNorm).toBe(0);
+    expect(parsed.names.offsetYNorm).toBe(0);
   });
 });

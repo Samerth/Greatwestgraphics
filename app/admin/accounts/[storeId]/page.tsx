@@ -8,17 +8,25 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminStoreDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ storeId: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const { storeId } = await params;
+  const sp = await searchParams;
+  // Set by setStoreCategoryVisibilityAction on a caught failure or a
+  // completed save — it always redirects, so this is the only way that
+  // outcome reaches the page it lands back on.
+  const mutationError = sp.error;
+  const mutationNotice = sp.notice;
   const client = await adminClient();
   const token = requireAdminToken();
 
   let store: Record<string, unknown> | null = null;
   let categories: Record<string, unknown>[] = [];
   let visibleCategoryIds: string[] | null = null;
-  let error: string | undefined;
+  let loadError: string | undefined;
   try {
     [store, categories] = await Promise.all([
       client.getStore(storeId, token),
@@ -27,10 +35,10 @@ export default async function AdminStoreDetailPage({
     const visibility = await client.getStoreCategoryVisibility(storeId, token);
     visibleCategoryIds = visibility.categoryIds;
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Store unavailable";
+    loadError = caught instanceof Error ? caught.message : "Store unavailable";
   }
 
-  if (!store && !error) notFound();
+  if (!store && !loadError) notFound();
 
   const currentAdjustment =
     store && typeof store.pricingAdjustmentPercent === "number"
@@ -66,9 +74,19 @@ export default async function AdminStoreDetailPage({
         )}
       </div>
 
-      {error && (
+      {loadError && (
         <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
-          {error}
+          {loadError}
+        </p>
+      )}
+      {mutationError && (
+        <p role="alert" className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
+          {mutationError}
+        </p>
+      )}
+      {mutationNotice === "categories-saved" && (
+        <p className="border border-green-200 bg-green-50 text-green-800 rounded-md p-sp-3 m-0">
+          Storefront categories saved.
         </p>
       )}
 

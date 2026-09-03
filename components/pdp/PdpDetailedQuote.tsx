@@ -8,22 +8,22 @@ import type {
   QuoteInputV2,
 } from "@gwg/contracts";
 import { calculateQuoteV2 } from "@gwg/pricing";
-import { Pill, QbRow } from "@/components/quote-builder/QuoteFormControls";
 import { Button } from "@/components/shared/Button";
 import { InfoNote } from "@/components/shared/InfoNote";
-import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import {
   LOCATIONS,
-  STITCH_PRESETS,
   STITCH_PRESET_DISCLAIMER,
+  STITCH_PRESETS,
   colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
+  filterAllowedLocations,
   methodVariableInputs,
   stitchCountForPreset,
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
+import { filterAllowedMethods } from "@/lib/commerce/studio-decoration";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 import { usePdpLiveEstimate } from "@/lib/store/pdp-live-estimate";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
@@ -38,6 +38,14 @@ import type { DbVariantOption } from "@/components/pdp/DbProductActions";
  * priceShopperQuote wrapper, because the doc requires multiple independent
  * decoration rows, and priceShopperQuote can only price one decoration at
  * a time. No new pricing logic — same engine, called with a richer input.
+ *
+ * Layout reworked per CodSphere UAT V2 "Product Page / Live Quote UI Needs
+ * to Be Updated" row and its attached "Build Your Estimate" mockup: each
+ * decoration is one dropdown-driven row (Method / Location / Detail-Size /
+ * Price per unit / Total / remove), quantity sits in a compact control next
+ * to the pricing summary, surcharges are informational chips underneath,
+ * and the "Estimated from $X" headline is left to PdpStartingPrice above
+ * this component so it isn't shown twice on the page.
  */
 
 let rowCounter = 0;
@@ -45,6 +53,22 @@ function nextRowId() {
   rowCounter += 1;
   return `pdp-dec-${rowCounter}`;
 }
+
+const STITCH_LABELS: Record<StitchPresetId, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+  oversized: "Oversized",
+};
+
+const selectClassName =
+  "w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors";
+
+// Every row now labels its own fields directly (each decoration is its own
+// two-row card, not a strip under one shared header), so this shows at
+// every width — there is no separate header row left for it to defer to.
+const columnLabelClassName =
+  "block text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1";
 
 type DecorationRow = {
   id: string;
@@ -61,23 +85,39 @@ export function PdpDetailedQuote({
   color,
   variants,
   pricingConfig,
+  decorationRules,
 }: {
   productId: string;
   name: string;
   color: string;
   variants: DbVariantOption[];
   pricingConfig?: PricingConfigV2 | null;
+  /** Admin-configured allow-list from this product's categories (CodSphere
+   * UAT — "Product-Specific Decoration Methods & Print Locations"). `null`
+   * for either means unrestricted. */
+  decorationRules?: { methods: string[] | null; locations: string[] | null };
 }) {
   const router = useRouter();
   const saveHandoff = usePdpStudioHandoff((s) => s.save);
 
+  // No size selector on this page (CodSphere UAT V2) — the estimate always
+  // prices against the first in-stock variant. The full per-size breakdown
+  // is chosen later, at the Input Quantity step.
   const firstInStock = variants.find((v) => v.inStock) ?? variants[0];
-  const [variantId, setVariantId] = useState(firstInStock?.id);
-  const selectedVariant = variants.find((v) => v.id === variantId);
+  const variantId = firstInStock?.id;
+  const selectedVariant = firstInStock;
 
   const methods = useMemo(
-    () => (pricingConfig ? enabledDecorationMethods(pricingConfig) : []),
-    [pricingConfig],
+    () =>
+      filterAllowedMethods(
+        pricingConfig ? enabledDecorationMethods(pricingConfig) : [],
+        decorationRules?.methods,
+      ),
+    [pricingConfig, decorationRules],
+  );
+  const locations = useMemo(
+    () => filterAllowedLocations(LOCATIONS, decorationRules?.locations),
+    [decorationRules],
   );
   const defaultMethodKey =
     methods.find((m) => m.key === pricingConfig?.storefront?.defaultMethodKey)
@@ -98,7 +138,12 @@ export function PdpDetailedQuote({
   }
 
   const [rows, setRows] = useState<DecorationRow[]>(() => [
-    blankRow(pricingConfig?.storefront?.defaultLocation ?? "front"),
+    blankRow(
+      locations.find((l) => l.id === pricingConfig?.storefront?.defaultLocation)
+        ?.id ??
+        locations[0]?.id ??
+        "front",
+    ),
   ]);
 
   // Seeded from the shared browsing quantity (the last quantity used on
@@ -119,8 +164,8 @@ export function PdpDetailedQuote({
   function addRow() {
     const usedLocations = new Set(rows.map((r) => r.location));
     const nextLocation =
-      LOCATIONS.find((loc) => !usedLocations.has(loc.id))?.id ??
-      LOCATIONS[0]?.id ??
+      locations.find((loc) => !usedLocations.has(loc.id))?.id ??
+      locations[0]?.id ??
       "back";
     setRows((prev) => [...prev, blankRow(nextLocation)]);
   }
@@ -212,9 +257,10 @@ export function PdpDetailedQuote({
     return { totalMinor, unitMinor: totalMinor / Math.max(1, qty) };
   }
 
-  /** Quantity-break table for the Pricing Details popup, driven by the
-   * enabled methods' own qtyAnchors — same anchors the engine already uses,
-   * just re-run at each one with the current decoration selections. */
+  /** Quantity-break table (also drives the tick labels under the slider),
+   * driven by the enabled methods' own qtyAnchors — same anchors the
+   * engine already uses, just re-run at each one with the current
+   * decoration selections. */
   const quantityBreaks = useMemo(() => {
     if (!pricingConfig) return [];
     const anchors = new Set<number>();
@@ -238,15 +284,22 @@ export function PdpDetailedQuote({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricingConfig, selectedVariant, rows]);
 
-  const startingFromMinor = quantityBreaks[0]?.unitMinor ?? null;
-
   // Publish this selection's live pricing so the "Estimated from" headline
   // near the product title (PdpStartingPrice) tracks it too, instead of
-  // showing its own separately-guessed default.
+  // showing its own separately-guessed default. That headline is the only
+  // place "Estimated from $X" appears now — it used to be duplicated here
+  // as well, which read as two different prices on the same page.
   const publishLiveEstimate = usePdpLiveEstimate((s) => s.publish);
+  const liveUnitMinor = breakdown
+    ? Math.round(breakdown.totals.totalMinor / Math.max(1, qty))
+    : null;
   useEffect(() => {
-    publishLiveEstimate(productId, quantityBreaks);
-  }, [productId, quantityBreaks, publishLiveEstimate]);
+    publishLiveEstimate(
+      productId,
+      quantityBreaks,
+      liveUnitMinor == null ? null : { qty, unitMinor: liveUnitMinor },
+    );
+  }, [productId, quantityBreaks, qty, liveUnitMinor, publishLiveEstimate]);
 
   function handleStartDesigning() {
     const primary = rows[0];
@@ -274,168 +327,115 @@ export function PdpDetailedQuote({
 
   if (methods.length === 0 || variants.length === 0) return null;
 
+  // Tick labels under the quantity slider — the engine's real quantity
+  // anchors for the current decoration selections, not fixed round numbers,
+  // capped so the row stays readable.
+  const tickBreaks = quantityBreaks.filter((b) => b.qty <= 500).slice(0, 6);
+  const hasHigherAnchor = quantityBreaks.some((b) => b.qty > 500);
+
   return (
     <div
       id="live-estimate-calculator"
       className="mt-sp-6 border border-border rounded-lg bg-bg-raised p-sp-5"
     >
-      <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-2">
+      <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-1">
         <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-        Live Estimate
-      </div>
-
-      {startingFromMinor != null && (
-        <div className="flex items-center gap-2 mb-sp-1">
-          <p className="text-sm font-semibold m-0">
-            Estimated from {moneyFromMinor(startingFromMinor)} CAD each at{" "}
-            {quantityBreaks[0]?.qty} pieces
-          </p>
-          <PricingDetailsPopover
-            quantityBreaks={quantityBreaks}
-            heading="Quantity breaks (this selection)"
-            triggerContent="Pricing Details"
-            triggerClassName="text-xs font-bold text-accent underline underline-offset-2"
-          />
-        </div>
-      )}
-
-      <p className="text-sm text-text-secondary mb-sp-4">
-        Build your estimate for {name}. Final pricing is confirmed after artwork,
-        colours, sizes and quantities are selected.
-      </p>
-
-      {/* Size — available so the estimate reflects the right garment cost,
-          not a required breakdown (that happens at Input Quantity). This is
-          the garment size (S/M/L/XL) — the decoration size guide lives with
-          the "Logo size" picker below, where it actually applies. */}
-      {variants.length > 1 && (
-        <div className="mb-sp-4">
-          <span className="block mb-sp-2 text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary">
-            Size
-          </span>
-          <QbRow label="">
-            {variants.map((v) => (
-              <Pill
-                key={v.id}
-                active={v.id === variantId}
-                onClick={() => setVariantId(v.id)}
-              >
-                {v.sizeName}
-                {!v.inStock ? " (out of stock)" : ""}
-              </Pill>
-            ))}
-          </QbRow>
-        </div>
-      )}
-
-      {/* Build Your Estimate */}
-      <p className="text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary mb-sp-2">
         Build Your Estimate
+      </div>
+      <p className="text-sm text-text-secondary mb-sp-4">
+        Adjust decoration methods, locations and details to see live estimated pricing.
       </p>
-      <div className="space-y-sp-4 mb-sp-2">
-        {rows.map((row, index) => {
+
+      {/* No size selector here (CodSphere UAT V2 — "Size selection in
+          product page ... not required on this page, please remove"). The
+          estimate still needs a garment cost to price against, so it's
+          pinned to the first in-stock variant behind the scenes — sizes and
+          the full per-size breakdown are chosen at the Input Quantity step
+          after the Design Studio, same as before. Existing pricing logic is
+          unchanged; this is presentation only. */}
+
+      {/* Decoration rows — one horizontal, dropdown-driven row each,
+          matching the "Build Your Estimate" mockup instead of the previous
+          stack of pill-button sections. */}
+      {/* Two rows per decoration, not one crammed six-across strip: Method
+          and Location carry the longest real labels ("Screen Print", "Left
+          chest") and were previously squeezed into ~1fr of a six-column
+          grid — plenty of room in isolation, not enough once the sidebar
+          itself is narrow, and native <select> text clips hard with no
+          ellipsis when it runs out of width. Giving them a row to
+          themselves removes the clipping regardless of viewport width,
+          rather than chasing a wider-but-still-eventually-too-narrow
+          column. */}
+      <div className="space-y-sp-3 mb-sp-2">
+        {rows.map((row) => {
           const method = methods.find((m) => m.key === row.methodKey);
           const fields = methodVariableInputs(method);
           const pricing = rowPricing(row.id);
           return (
             <div
               key={row.id}
-              className="border border-border rounded-md p-sp-3 space-y-sp-3"
+              className="border border-border rounded-md p-sp-3 space-y-sp-2"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">
-                  Decoration {index + 1}
-                </span>
-                {rows.length > 1 && (
-                  <button
-                    type="button"
-                    className="text-xs text-text-secondary hover:text-accent"
-                    onClick={() => removeRow(row.id)}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-sp-2">
+                <div>
+                  <span className={columnLabelClassName}>Decoration Method</span>
+                  <select
+                    value={row.methodKey}
+                    onChange={(e) => {
+                      const nextMethod = methods.find((m) => m.key === e.target.value);
+                      updateRow(row.id, {
+                        methodKey: e.target.value,
+                        optionKey: defaultOptionKey(nextMethod),
+                      });
+                    }}
+                    className={selectClassName}
                   >
-                    Remove
-                  </button>
-                )}
+                    {methods.map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className={columnLabelClassName}>Print Location</span>
+                  <select
+                    value={row.location}
+                    onChange={(e) => updateRow(row.id, { location: e.target.value })}
+                    className={selectClassName}
+                  >
+                    {locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <QbRow label="Method">
-                {methods.map((m) => (
-                  <Pill
-                    key={m.key}
-                    active={m.key === row.methodKey}
-                    onClick={() =>
-                      updateRow(row.id, {
-                        methodKey: m.key,
-                        optionKey: defaultOptionKey(m),
-                      })
-                    }
-                  >
-                    {m.label}
-                  </Pill>
-                ))}
-              </QbRow>
-
-              <QbRow label="Location">
-                {LOCATIONS.map((loc) => (
-                  <Pill
-                    key={loc.id}
-                    active={loc.id === row.location}
-                    onClick={() => updateRow(row.id, { location: loc.id })}
-                  >
-                    {loc.label}
-                  </Pill>
-                ))}
-              </QbRow>
-
-              {fields.colours && (
-                <QbRow label="Number of colours">
-                  {colourOptions(method).map((c) => (
-                    <Pill
-                      key={c}
-                      round
-                      active={c === row.colours}
-                      onClick={() => updateRow(row.id, { colours: c })}
-                    >
-                      {c}
-                    </Pill>
-                  ))}
-                </QbRow>
-              )}
-
-              {fields.stitches && (
-                <div className="mb-sp-4">
-                  <div className="relative flex items-center gap-2 mb-sp-2">
-                    <span className="text-xs font-bold tracking-[0.1em] uppercase text-text-tertiary">
-                      Logo size
-                    </span>
+              <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_24px] gap-sp-2 items-end">
+                <div>
+                  <span className="relative flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
+                    Detail / Size
                     <button
                       type="button"
                       aria-label="Size Guide"
-                      aria-expanded={openInfo === `size-guide-${row.id}`}
-                      // Click-only toggle — a combined hover-open + click-toggle
-                      // fought itself here (see PdpStartingPrice for the same
-                      // fix): moving the pointer onto the button opened the
-                      // popup via hover, so the click immediately closed it
-                      // again for a real mouse user.
+                      aria-expanded={openInfo === "size-guide"}
                       onClick={() =>
-                        setOpenInfo((current) =>
-                          current === `size-guide-${row.id}`
-                            ? null
-                            : `size-guide-${row.id}`,
-                        )
+                        setOpenInfo((current) => (current === "size-guide" ? null : "size-guide"))
                       }
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] font-bold"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] font-bold normal-case"
                     >
                       i
                     </button>
-                    {openInfo === `size-guide-${row.id}` && (
+                    {openInfo === "size-guide" && (
                       <div
                         role="dialog"
                         aria-label="Decoration size guide"
-                        className="absolute left-0 top-full z-20 mt-2 w-80 rounded-md border border-border bg-bg p-sp-3 shadow-lg"
+                        className="absolute left-0 top-full z-20 mt-2 w-72 rounded-md border border-border bg-bg p-sp-3 shadow-lg normal-case"
                       >
-                        <p className="mb-2 text-xs font-bold uppercase tracking-wide">
-                          Size Guide
-                        </p>
+                        <p className="mb-2 text-xs font-bold uppercase tracking-wide">Size Guide</p>
                         <ul className="space-y-1 text-sm">
                           <li>Small: up to 4&quot;</li>
                           <li>Medium: over 4&quot; to 8&quot;</li>
@@ -443,175 +443,249 @@ export function PdpDetailedQuote({
                           <li>Oversized: over 12&quot;</li>
                         </ul>
                         <p className="mt-2 text-xs text-text-secondary">
-                          Final suitability is confirmed after artwork review.
+                          Use the size that best matches your artwork/logo. Final suitability is
+                          confirmed after artwork review.
                         </p>
                       </div>
                     )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {STITCH_PRESETS.map((preset) => (
-                      <Pill
-                        key={preset.id}
-                        active={preset.id === row.stitchPreset}
-                        onClick={() => updateRow(row.id, { stitchPreset: preset.id })}
+                  </span>
+                  {fields.colours && (
+                    <select
+                      value={row.colours ?? colourOptions(method)[0] ?? 1}
+                      onChange={(e) => updateRow(row.id, { colours: Number(e.target.value) })}
+                      className={selectClassName}
+                    >
+                      {colourOptions(method).map((c) => (
+                        <option key={c} value={c}>
+                          {c} {c === 1 ? "Colour" : "Colours"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {fields.stitches && (
+                    <>
+                      <select
+                        value={row.stitchPreset ?? "medium"}
+                        onChange={(e) =>
+                          updateRow(row.id, { stitchPreset: e.target.value as StitchPresetId })
+                        }
+                        className={selectClassName}
                       >
-                        <span>{preset.label}</span>
-                      </Pill>
-                    ))}
-                  </div>
-                  <p className="mt-sp-2 text-[11px] text-text-secondary italic">
-                    {STITCH_PRESET_DISCLAIMER}
+                        {STITCH_PRESETS.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {STITCH_LABELS[preset.id]}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1.5 text-[11px] leading-snug text-text-tertiary">
+                        {STITCH_PRESET_DISCLAIMER}
+                      </p>
+                    </>
+                  )}
+                  {fields.option && method?.rateModel.kind === "matrixByOption" && (
+                    <select
+                      value={row.optionKey || defaultOptionKey(method)}
+                      onChange={(e) => updateRow(row.id, { optionKey: e.target.value })}
+                      className={selectClassName}
+                    >
+                      {method.rateModel.options.map((opt) => (
+                        <option key={opt.key} value={opt.key}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {!fields.colours && !fields.stitches && !fields.option && (
+                    <p className="m-0 py-2 text-sm text-text-tertiary">—</p>
+                  )}
+                </div>
+
+                <div>
+                  <span className="block text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
+                    Price/unit
+                  </span>
+                  <p className="m-0 py-2 text-sm font-semibold truncate">
+                    {pricing ? moneyFromMinor(pricing.unitMinor) : "—"}
                   </p>
                 </div>
-              )}
 
-              {fields.option && method?.rateModel.kind === "matrixByOption" && (
-                <QbRow label="Size">
-                  {method.rateModel.options.map((opt) => (
-                    <Pill
-                      key={opt.key}
-                      active={opt.key === row.optionKey}
-                      onClick={() => updateRow(row.id, { optionKey: opt.key })}
-                    >
-                      {opt.label}
-                    </Pill>
-                  ))}
-                </QbRow>
-              )}
-
-              {pricing && (
-                <div className="flex justify-between items-baseline pt-sp-2 border-t border-border text-sm">
-                  <span className="text-text-secondary">
-                    Price per unit: {moneyFromMinor(pricing.unitMinor)}
+                <div>
+                  <span className="block text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
+                    Total
                   </span>
-                  <span className="font-bold">
-                    Total: {moneyFromMinor(pricing.totalMinor)}
-                  </span>
+                  <p className="m-0 py-2 text-sm font-bold truncate">
+                    {pricing ? moneyFromMinor(pricing.totalMinor) : "—"}
+                  </p>
                 </div>
-              )}
+
+                <div className="flex justify-center pb-2">
+                  {rows.length > 1 ? (
+                    <button
+                      type="button"
+                      aria-label="Remove decoration"
+                      onClick={() => removeRow(row.id)}
+                      className="text-text-tertiary hover:text-red-600 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  ) : (
+                    <span className="text-text-tertiary/30 text-lg leading-none">×</span>
+                  )}
+                </div>
+              </div>
             </div>
           );
         })}
       </div>
+
       <button
         type="button"
-        className="text-sm font-bold text-accent mb-sp-5"
+        className="text-sm font-bold text-accent mb-sp-4"
         onClick={addRow}
       >
         + Add another decoration
       </button>
 
-      {/* Quantity */}
-      <p className="text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary mb-sp-2">
-        Quantity
-      </p>
-      <div className="mb-sp-3">
-        <input
-          type="range"
-          min={1}
-          max={500}
-          value={Math.min(qty, 500)}
-          onChange={(e) => setQuantity(Number(e.target.value))}
-          className="w-full accent-accent"
-        />
-        <div className="flex items-center gap-sp-3 mt-sp-2">
+      {/* Quantity (left) and live pricing summary (right) side by side on
+          desktop, matching the mockup — stacked on mobile. */}
+      <div className="grid gap-sp-4 md:grid-cols-[1.4fr_1fr] mb-sp-4 pt-sp-4 border-t border-border">
+        <div>
+          <p className="text-xs font-bold tracking-[0.14em] uppercase text-text-tertiary mb-sp-2">
+            Quantity
+          </p>
+          <input
+            type="range"
+            min={1}
+            max={500}
+            value={Math.min(qty, 500)}
+            onChange={(e) => setQuantity(Number(e.target.value))}
+            className="w-full accent-accent"
+          />
+          {tickBreaks.length > 0 && (
+            <div className="flex justify-between mt-1 text-[10px] text-text-tertiary">
+              {tickBreaks.map((b) => (
+                <span key={b.qty}>{b.qty}</span>
+              ))}
+              {hasHigherAnchor && <span>500+</span>}
+            </div>
+          )}
+          <div className="flex items-center gap-sp-3 mt-sp-2">
             <div className="inline-flex items-center border border-border rounded-md overflow-hidden">
-                <button
+              <button
                 type="button"
                 aria-label="Decrease quantity"
                 onClick={() => setQuantity(qty - 1)}
                 disabled={qty <= 1}
                 className="h-10 w-10 text-lg font-bold disabled:opacity-40"
-                >
+              >
                 −
-                </button>
+              </button>
 
-                <input
+              <input
                 type="number"
                 min={1}
                 value={qty}
                 onChange={(e) => setQuantity(Number(e.target.value) || 1)}
                 className="w-20 h-10 border-x border-border px-2 text-center text-sm font-bold"
                 aria-label="Quantity"
-                />
+              />
 
-                <button
+              <button
                 type="button"
                 aria-label="Increase quantity"
                 onClick={() => setQuantity(qty + 1)}
                 className="h-10 w-10 text-lg font-bold"
-                >
+              >
                 +
-                </button>
+              </button>
             </div>
 
             <span className="text-sm text-text-secondary">pieces</span>
-            </div>
+          </div>
+        </div>
 
+        <div className="rounded-md bg-fill-subtle-15 p-sp-3">
+          {result?.error && (
+            <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 text-sm">
+              {result.error}
+            </p>
+          )}
+          {breakdown ? (
+            <>
+              <div className="flex justify-between items-baseline">
+                <span className="text-sm font-bold">Total per unit</span>
+                <span className="text-lg font-bold text-accent">
+                  {moneyFromMinor(
+                    Math.round(breakdown.totals.totalMinor / Math.max(1, qty)),
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between items-baseline mt-1.5">
+                <span className="text-sm font-bold">Estimated Total</span>
+                <span className="text-xl font-display font-bold text-accent">
+                  {moneyFromMinor(breakdown.totals.totalMinor)}
+                </span>
+              </div>
+              <p className="text-[11px] text-text-secondary mt-1">
+                for {qty.toLocaleString()} {qty === 1 ? "piece" : "pieces"} · before tax &amp; shipping
+              </p>
+            </>
+          ) : (
+            !result?.error && (
+              <p className="text-sm text-text-secondary italic">
+                Pick a size above to see decorated pricing.
+              </p>
+            )
+          )}
+        </div>
       </div>
 
-      {/* Names/numbers & 2XL+ — informational only, not selectable here */}
-      <div className="text-xs text-text-secondary space-y-1 mb-sp-4">
+      {/* Surcharges — informational only, not selectable on this page (see
+          the Design Studio / Input Quantity step for that). Split into
+          Names and Numbers to match the mockup; both currently read from
+          the same published namesNumbersFeePerGarmentMinor since there is
+          one combined fee in the pricing config, not two. */}
+      <div className="flex flex-wrap gap-x-sp-5 gap-y-2 text-xs text-text-secondary border-t border-border pt-sp-3 mb-sp-4">
+        <span className="w-full text-[11px] font-bold uppercase tracking-wide text-text-tertiary">
+          Surcharges may apply for additional options
+        </span>
         {namesNumbersFeeMinor > 0 && (
           <InfoNote
-            id="names-numbers"
-            open={openInfo === "names-numbers"}
-            onToggle={() =>
-              setOpenInfo((v) => (v === "names-numbers" ? null : "names-numbers"))
-            }
-            label={`Individual names/numbers available (+${moneyFromMinor(namesNumbersFeeMinor)}/piece)`}
-            detail="Select this in the next step. Price shown here does not include it."
+            id="names"
+            open={openInfo === "names"}
+            onToggle={() => setOpenInfo((v) => (v === "names" ? null : "names"))}
+            label={`Individual Names — +${moneyFromMinor(namesNumbersFeeMinor)} each`}
+            detail="Add names per person in the next step. Not included in the estimate above."
+          />
+        )}
+        {namesNumbersFeeMinor > 0 && (
+          <InfoNote
+            id="numbers"
+            open={openInfo === "numbers"}
+            onToggle={() => setOpenInfo((v) => (v === "numbers" ? null : "numbers"))}
+            label={`Individual Numbers — +${moneyFromMinor(namesNumbersFeeMinor)} each`}
+            detail="Add numbers per person in the next step. Not included in the estimate above."
           />
         )}
         <InfoNote
           id="2xl"
           open={openInfo === "2xl"}
           onToggle={() => setOpenInfo((v) => (v === "2xl" ? null : "2xl"))}
-          label="2XL+ sizes carry an additional surcharge"
-          detail="The exact amount varies by garment/style and is confirmed with your size breakdown."
+          label="2XL+ — additional surcharge"
+          detail="Varies by garment/style and is confirmed with your size breakdown after the Design Studio."
         />
       </div>
 
-      {/* Live pricing */}
-      {result?.error && (
-        <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 text-sm mb-sp-3">
-          {result.error}
-        </p>
-      )}
-      {breakdown ? (
-        <div className="border-t border-border pt-sp-4 space-y-2">
-          <div className="flex justify-between items-baseline">
-            <span className="text-sm font-bold">Total per unit</span>
-            <span className="text-lg font-bold text-accent">
-              {moneyFromMinor(
-                Math.round(breakdown.totals.totalMinor / Math.max(1, qty)),
-              )}
-            </span>
-          </div>
-          <div className="flex justify-between items-baseline">
-            <span className="text-sm font-bold">Estimated order total</span>
-            <span className="text-2xl font-display font-bold text-accent">
-              {moneyFromMinor(breakdown.totals.totalMinor)}
-            </span>
-          </div>
-          <p className="text-[11px] text-text-secondary">Before tax &amp; shipping.</p>
-        </div>
-      ) : (
-        <p className="text-sm text-text-secondary italic">
-          Pick a size above to see decorated pricing.
-        </p>
-      )}
-
-      <p className="text-[11px] text-text-secondary italic mt-sp-3">
-        Live estimate only. Final pricing is confirmed after artwork, colours,
-        sizes and quantities are selected.
+      <p className="text-[11px] text-text-secondary italic border border-border rounded-md bg-fill-subtle-15 px-sp-3 py-sp-2 mb-sp-3">
+        This is a live estimate only. Final colours, quantities, sizes and artwork
+        details are selected in the Design Studio.
       </p>
 
-      <Button className="w-full mt-sp-3" onClick={handleStartDesigning}>
-        {handedOff ? "Opening Design Studio…" : "Continue to Design Studio →"}
+      <Button className="w-full" onClick={handleStartDesigning}>
+        {handedOff ? "Opening Design Studio…" : "Continue to Design & Finalize Quote →"}
       </Button>
       <p className="text-[11px] text-text-secondary italic mt-sp-2 text-center">
-        Finalize artwork and quote in the next steps.
+        Secure &amp; easy process · No payment required
       </p>
     </div>
   );

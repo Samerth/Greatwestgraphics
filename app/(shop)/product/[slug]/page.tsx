@@ -3,10 +3,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
-import { DbProductActions } from "@/components/pdp/DbProductActions";
 import { PdpDetailedQuote } from "@/components/pdp/PdpDetailedQuote";
 import { PdpStartingPrice } from "@/components/pdp/PdpStartingPrice";
-import { PreviewDesignButton } from "@/components/pdp/PreviewDesignButton";
+import { OrderSamplesCard } from "@/components/pdp/OrderSamplesCard";
 import { PdpSizeChartTrigger } from "@/components/pdp/PdpSizeChartTrigger";
 import { SizeChartPDFViewer } from "@/components/pdp/SizeChartPDFViewer";
 import {
@@ -226,6 +225,14 @@ export default async function ProductPage({
     }));
     const pdpPricingConfig =
       (detail as { pricingConfig?: PricingConfigV2 }).pricingConfig ?? null;
+    // Admin-configured decoration allow-list from this product's categories
+    // (CodSphere UAT — "Product-Specific Decoration Methods & Print
+    // Locations"). `null` for either means unrestricted.
+    const pdpDecorationRules = (
+      detail as {
+        decorationRules?: { methods: string[] | null; locations: string[] | null };
+      }
+    ).decorationRules ?? { methods: null, locations: null };
     const backImageUrl = (product.colorBackImageUrl as string | null) || null;
     const available =
       Boolean(product.active) && Number(product.qty || 0) > 0;
@@ -287,7 +294,7 @@ export default async function ProductPage({
                   sizeChart={validSizeChart}
                   productName={title}
                 />
-              </div>
+                </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-accent m-0">
                   {String(style.brandName || "")}
@@ -350,7 +357,7 @@ export default async function ProductPage({
                   </div>
                 )}
 
-                {sizeRangeText && (
+                 {sizeRangeText && (
                   <div className="text-sm text-text-secondary mt-sp-3">
                     Sizes Available: {sizeRangeText}
                     {validSizeChart && (
@@ -363,6 +370,22 @@ export default async function ProductPage({
                         >
                           <span aria-hidden>📏</span> Size Chart
                         </PdpSizeChartTrigger>
+                      </>
+                    )}
+                    {available && (
+                      <>
+                        {"  |  "}
+                        <OrderSamplesCard
+                          productId={String(product.id)}
+                          productSlug={String(product.slug || slug)}
+                          styleId={String(style.id)}
+                          name={title}
+                          color={String(product.colorName || "")}
+                          image={imageUrl}
+                          available={available}
+                          pricingConfig={pdpPricingConfig}
+                          variants={pdpVariants}
+                        />
                       </>
                     )}
                   </div>
@@ -383,38 +406,15 @@ export default async function ProductPage({
                 )}
 
                 {available && (
-                  <PreviewDesignButton
-                    productId={String(product.id)}
-                    className="mt-sp-4 flex items-center justify-center gap-2 w-full rounded-md bg-accent text-white font-bold text-sm py-3 px-4 hover:bg-accent-hover transition-colors"
-                  />
-                )}
-
-                {available && (
                   <PdpDetailedQuote
                     productId={String(product.id)}
                     name={title}
                     color={String(product.colorName || "")}
                     variants={pdpVariants}
                     pricingConfig={pdpPricingConfig}
+                    decorationRules={pdpDecorationRules}
                   />
                 )}
-
-                <div className="mt-sp-4 pt-sp-4 border-t border-border">
-                  <p className="text-xs font-bold uppercase tracking-wider text-text-tertiary mb-sp-2">
-                    Order Samples
-                  </p>
-                  <DbProductActions
-                    productId={String(product.id)}
-                    productSlug={String(product.slug || slug)}
-                    styleId={String(style.id)}
-                    name={title}
-                    color={String(product.colorName || "")}
-                    image={imageUrl}
-                    available={available}
-                    pricingConfig={pdpPricingConfig}
-                    variants={pdpVariants}
-                  />
-                </div>
 
                 {typeof style.sizeChartPdfUrl === "string" &&
                   style.sizeChartPdfUrl.length > 0 && (

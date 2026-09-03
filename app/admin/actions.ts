@@ -319,18 +319,103 @@ function categorySlugFrom(rawSlug: string, fallbackName = "") {
     .replace(/^-|-$/g, "");
 }
 
-export async function createCategoryAction(formData: FormData) {
+export interface CategoryFormState {
+  error?: string;
+  savedAt?: number;
+  /** Name last saved, so the success banner can name what happened
+   *  ("Added \"T-Shirts\"") instead of a generic "Saved." — the specificity
+   *  is what makes the confirmation register as real feedback rather than
+   *  boilerplate the admin has learned to ignore. */
+  name?: string;
+}
+
+export async function createCategoryAction(
+  _previous: CategoryFormState,
+  formData: FormData,
+): Promise<CategoryFormState> {
   const name = String(formData.get("name") || "").trim();
   const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
   const parentId = String(formData.get("parentId") || "").trim() || null;
-  if (!name) throw new Error("Category name is required");
-  if (!slug) throw new Error("Could not create a URL name from that category name");
-  const client = await adminClient();
-  await client.createCategory({ name, slug, parentId }, requireAdminToken());
+  if (!name) return { error: "Category name is required" };
+  if (!slug) {
+    return { error: "Could not create a URL name from that category name" };
+  }
+  try {
+    const client = await adminClient();
+    await client.createCategory({ name, slug, parentId }, requireAdminToken());
+  } catch (caught) {
+    // This is the fix for the exact failure the client's team hit: the old
+    // version threw here uncaught, and a plain <form action={...}> gives no
+    // success feedback either — so a first, successful submit *looked* like
+    // nothing happened, the admin clicked "Add a category" again with the
+    // same name, and that second, genuinely duplicate submission crashed
+    // the whole page instead of showing "already exists." Both halves are
+    // fixed together: a real error now surfaces here instead of crashing,
+    // and a real success now surfaces below instead of looking like nothing
+    // happened in the first place.
+    return {
+      error:
+        caught instanceof Error ? caught.message : "Could not add this category.",
+    };
+  }
   revalidatePath("/admin/categories");
   updateTag("catalog-categories");
+  return { savedAt: Date.now(), name };
 }
 
+export async function updateCategoryAction(
+  categoryId: string,
+  _previous: CategoryFormState,
+  formData: FormData,
+): Promise<CategoryFormState> {
+  const name = String(formData.get("name") || "").trim();
+  const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
+  const parentId = String(formData.get("parentId") || "").trim() || null;
+  if (!name) return { error: "Category name is required" };
+  if (!slug) {
+    return { error: "Could not create a URL name from that category name" };
+  }
+  // Nothing checked reads as "unrestricted," not "allow nothing" — a fresh
+  // category (or one nobody has ever restricted) must not silently lock
+  // every decoration method/location out the first time this form saves.
+  const allowedDecorationMethods = formData.getAll("allowedDecorationMethods");
+  const allowedDecorationLocations = formData.getAll("allowedDecorationLocations");
+  try {
+    const client = await adminClient();
+    await client.updateCategory(
+      categoryId,
+      {
+        name,
+        slug,
+        parentId,
+        allowedDecorationMethods:
+          allowedDecorationMethods.length > 0
+            ? allowedDecorationMethods.map(String)
+            : null,
+        allowedDecorationLocations:
+          allowedDecorationLocations.length > 0
+            ? allowedDecorationLocations.map(String)
+            : null,
+      },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error
+          ? caught.message
+          : "Could not save this category.",
+    };
+  }
+  revalidatePath("/admin/categories");
+  updateTag("catalog-categories");
+  return { savedAt: Date.now(), name };
+}
+
+/** Not a form: called from an inline server-action closure that already has
+ *  the page's search/pagination state in scope, so a caught failure can
+ *  redirect back to exactly where the admin was, with the reason attached,
+ *  instead of dropping them on the generic error page mid-list. */
 export async function deleteCategoryAction(categoryId: string) {
   const client = await adminClient();
   await client.deleteCategory(categoryId, requireAdminToken());
@@ -370,24 +455,33 @@ export async function saveMappingAction(formData: FormData) {
   const ssCategoryKey = String(formData.get("ssCategoryKey") || "");
   const ssCategoryLabel = String(formData.get("ssCategoryLabel") || "");
   const categoryIds = formData.getAll("categoryIds").map(String);
-  const client = await adminClient();
-  await client.putCategoryMapping(
-    {
-      ssCategoryKey,
-      ssCategoryLabel: ssCategoryLabel || undefined,
-      categoryIds,
-    },
-    requireAdminToken(),
-  );
+  const returnTo = {
+    tab: parseMappingTab(String(formData.get("returnTab") || "")),
+    q: String(formData.get("returnQ") || ""),
+    page: parsePage(String(formData.get("returnPage") || "")),
+  };
+  try {
+    const client = await adminClient();
+    await client.putCategoryMapping(
+      {
+        ssCategoryKey,
+        ssCategoryLabel: ssCategoryLabel || undefined,
+        categoryIds,
+      },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    // This form has no local error slot — it always navigates away on
+    // submit — so a caught failure has to travel as a query param on the
+    // same redirect it would have taken on success, or it is silently lost
+    // and the admin just sees the list unchanged with no explanation.
+    const message =
+      caught instanceof Error ? caught.message : "Could not save this mapping.";
+    redirect(mappingListHref({ ...returnTo, error: message }));
+  }
   revalidatePath("/admin/categories/mappings");
   revalidatePath("/admin/catalog");
-  redirect(
-    mappingListHref({
-      tab: parseMappingTab(String(formData.get("returnTab") || "")),
-      q: String(formData.get("returnQ") || ""),
-      page: parsePage(String(formData.get("returnPage") || "")),
-    }),
-  );
+  redirect(mappingListHref(returnTo));
 }
 
 export interface PatchProductState {
@@ -448,32 +542,28 @@ export async function bulkCatalogVisibilityAction(formData: FormData) {
   revalidatePath("/admin/catalog");
 }
 
+/**
+ * Not a real form (single "Refresh from vendor" button, no fields to keep
+ * on error) — a caught failure redirects back to the product page with the
+ * reason attached, matching `setStoreStatusAction` below, instead of
+ * crashing to the generic error page as it did before this fix.
+ */
 export async function refreshCatalogProductAction(productId: string) {
-  const client = await adminClient();
-  await client.refreshCatalogProduct(productId, requireAdminToken());
+  try {
+    const client = await adminClient();
+    await client.refreshCatalogProduct(productId, requireAdminToken());
+  } catch (caught) {
+    const message =
+      caught instanceof Error
+        ? caught.message
+        : "Could not refresh this product from the vendor.";
+    redirect(`/admin/catalog/${productId}?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath("/admin/catalog");
   revalidatePath(`/admin/catalog/${productId}`);
   revalidatePath("/admin/sync");
   updateTag("catalog-brands");
-}
-
-export async function updateCategoryAction(
-  categoryId: string,
-  formData: FormData,
-) {
-  const name = String(formData.get("name") || "").trim();
-  const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
-  const parentId = String(formData.get("parentId") || "").trim() || null;
-  if (!name) throw new Error("Category name is required");
-  if (!slug) throw new Error("Could not create a URL name from that category name");
-  const client = await adminClient();
-  await client.updateCategory(
-    categoryId,
-    { name, slug, parentId },
-    requireAdminToken(),
-  );
-  revalidatePath("/admin/categories");
-  updateTag("catalog-categories");
+  redirect(`/admin/catalog/${productId}?notice=refreshed`);
 }
 
 export async function setStoreStatusAction(
@@ -535,14 +625,23 @@ export async function setStoreCategoryVisibilityAction(
   formData: FormData,
 ) {
   const categoryIds = formData.getAll("categoryIds").map(String);
-  const client = await adminClient();
-  await client.setStoreCategoryVisibility(
-    storeId,
-    categoryIds,
-    requireAdminToken(),
-  );
+  try {
+    const client = await adminClient();
+    await client.setStoreCategoryVisibility(
+      storeId,
+      categoryIds,
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    const message =
+      caught instanceof Error
+        ? caught.message
+        : "Could not save this store's category visibility.";
+    redirect(`/admin/accounts/${storeId}?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath(`/admin/accounts/${storeId}`);
   updateTag("catalog-categories");
+  redirect(`/admin/accounts/${storeId}?notice=categories-saved`);
 }
 
 export interface PricingAdjustmentState {

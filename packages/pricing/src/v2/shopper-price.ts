@@ -272,3 +272,122 @@ export function priceShopperQuote(
     },
   };
 }
+
+/** One decoration location's own method + pricing input, for a quote that
+ * decorates more than one location with different methods. */
+export type ShopperDecorationInput = {
+  location: string;
+  methodKey: string;
+  colours?: number;
+  stitchCount?: number;
+  optionKey?: string;
+};
+
+export type ShopperMultiPriceInput = Omit<
+  ShopperPriceInput,
+  "methodKey" | "colours" | "stitchCount" | "optionKey" | "locations"
+> & {
+  /** One entry per decorated location, each priced through its own method —
+   * unlike `ShopperPriceInput.locations`, which applies a single method
+   * everywhere (CodSphere UAT: "a customer could select Screen Print → Front
+   * → 3 Colours for one logo and Embroidery → Left Chest → Small for
+   * another"). Each entry names the method it wants explicitly, so — unlike
+   * `buildShopperQuoteInput`, which is allowed to fall back to the
+   * storefront default — a location whose `methodKey` does not match a real
+   * enabled method is dropped rather than silently priced under some other
+   * method the customer never chose. */
+  decorations: ShopperDecorationInput[];
+};
+
+export function buildShopperQuoteInputMulti(
+  config: PricingConfigV2,
+  input: ShopperMultiPriceInput,
+): QuoteInputV2 {
+  const quantity = Math.max(1, Math.round(input.quantity));
+  const storefront = storefrontOf(config);
+
+  const decorations: QuoteInputV2["decorations"] = [];
+  for (const line of input.decorations) {
+    // No fallback-to-default here (unlike `methodFor`): this is an explicit
+    // per-location choice, so an unrecognized key means "skip it", not
+    // "price it as something else instead."
+    const method = config.methods.find(
+      (candidate) => candidate.key === line.methodKey && candidate.enabled,
+    );
+    if (!method) continue;
+    const fields = decorationFields(
+      method,
+      {
+        unitCostMinor: input.unitCostMinor,
+        quantity: input.quantity,
+        colours: line.colours,
+        stitchCount: line.stitchCount,
+        optionKey: line.optionKey,
+      },
+      storefront,
+    );
+    decorations.push({
+      id: `decoration-${line.location}`,
+      garmentId: "shopper",
+      methodKey: method.key,
+      location: line.location,
+      logoGroup: input.shareSetup ? "primary" : "",
+      ...fields,
+      isOversized: false,
+      artwork: {
+        isRepeat: !storefront.assumeNewArtwork,
+        verifiedByStaff: !storefront.assumeNewArtwork,
+      },
+    });
+  }
+
+  return {
+    garments: [
+      {
+        id: "shopper",
+        description: input.description ?? "Shopper price",
+        unitCostMinor: input.unitCostMinor,
+        quantity,
+        colourName: input.colourName ?? "",
+        isDark: input.isDark ?? (storefront.assumeDarkGarment ? true : undefined),
+        mapPriceMinor: input.mapPriceMinor ?? undefined,
+      },
+    ],
+    decorations,
+    options: {
+      rush: input.rush ?? false,
+      includePacking: input.includePacking ?? false,
+      namesNumbers: input.includeNamesNumbers ?? false,
+      shippingCostMinor: input.shippingCostMinor ?? 0,
+      designHours: 0,
+    },
+  };
+}
+
+/**
+ * Same contract as `priceShopperQuote`, but each decorated location is
+ * priced through its own method instead of one method applied everywhere —
+ * what the Design Studio needs once a customer runs, say, Screen Print on
+ * the front and Embroidery on a sleeve in the same design.
+ */
+export function priceShopperQuoteMulti(
+  config: PricingConfigV2,
+  input: ShopperMultiPriceInput,
+): ShopperQuoteResult {
+  const quoteInput = buildShopperQuoteInputMulti(config, { ...input, decorated: true });
+  const breakdown = calculateQuoteV2(quoteInput, config);
+  const quantity = Math.max(1, breakdown.totalQuantity);
+  return {
+    input: quoteInput,
+    breakdown,
+    totalMinor: breakdown.totals.totalMinor,
+    perPieceMinor: breakdown.garments[0]?.unitPriceMinor ?? 0,
+    cartUnit: breakdown.totals.totalMinor / 100 / quantity,
+    snapshot: {
+      schemaVersion: 2,
+      input: quoteInput,
+      breakdown,
+      pricingConfigVersion: config.version,
+    },
+  };
+}

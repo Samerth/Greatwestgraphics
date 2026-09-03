@@ -1563,6 +1563,8 @@ export function buildApp(input: {
           slug: z.string().min(1).optional(),
           parentId: z.string().uuid().nullable().optional(),
           sortOrder: z.number().int().optional(),
+          allowedDecorationMethods: z.array(z.string()).nullable().optional(),
+          allowedDecorationLocations: z.array(z.string()).nullable().optional(),
         })
         .parse(request.body);
       return catalogService.updateCategory(auth.tenantId, categoryId, body);

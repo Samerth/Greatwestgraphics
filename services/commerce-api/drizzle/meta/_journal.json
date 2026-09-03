@@ -162,6 +162,13 @@
       "when": 1787486400000,
       "tag": "0022_ss_style_size_specs",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0023_category_decoration_rules",
+      "breakpoints": true
     }
   ]
 }

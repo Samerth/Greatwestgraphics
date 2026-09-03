@@ -16,8 +16,14 @@ const rosterEditor = readFileSync(
 );
 
 describe("studio team-order chrome", () => {
-  it("uses a Team tab and a wide panel, not a Names rail plus finish checkbox", () => {
-    expect(studio).toContain('label: "Team"');
+  // Labelled "Names" now, matching the Coastal Reign benchmark the client
+  // set and the split the flow rework introduced: names and numbers are a
+  // design decision made here, while the size each person takes is an
+  // ordering decision made on the Input Quantity step. Only the label
+  // moved — the wide StudioTeamOrderPanel this test was written to protect
+  // is still exactly how the roster gets edited.
+  it("uses a Names tab and a wide panel, not a rail plus finish checkbox", () => {
+    expect(studio).toContain('label: "Names"');
     expect(studio).toContain("StudioTeamOrderPanel");
     expect(studio).toContain("studio-team-order");
     expect(studio).not.toContain("Team/group order — use the Names roster");

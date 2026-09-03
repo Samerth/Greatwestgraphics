@@ -5,6 +5,12 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Image as ImageIcon,
+  Type as TypeIcon,
+  Users as UsersIcon,
+  StickyNote as StickyNoteIcon,
+} from "lucide-react";
+import {
   DESIGN_CANVAS_SIZE,
   DESIGN_SIDE_LABELS,
   DesignSides,
@@ -19,6 +25,7 @@ import {
   type PlacedArtwork,
   type PlacedText,
   type PricingConfigV2,
+  type SideDecoration,
   type TextAlign,
   type TextPrintMethod,
 } from "@gwg/contracts";
@@ -27,6 +34,18 @@ import { Button } from "@/components/shared/Button";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore } from "@/lib/store/cart";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
+import { useDesignOrderStore } from "@/lib/store/design-order";
+import { DesignStepBar } from "@/components/design/DesignStepBar";
+import {
+  placeholderHaloFor,
+  ROSTER_NAME_PLACEHOLDER,
+  ROSTER_NUMBER_PLACEHOLDER,
+  pixelsPerInch,
+  rosterActiveSides,
+  rosterPreviewOffsetFromPosition,
+  rosterPreviewPlacement,
+  rosterPreviewSideFor,
+} from "@/lib/commerce/studio-roster-preview";
 import {
   rosterLooksStarted,
   usePdpStudioHandoff,
@@ -36,21 +55,26 @@ import {
   dataUrlToBlob,
   filenameForArtworkBlob,
 } from "@/lib/store/design-draft";
-import { rosterWeightedCostMinor, shopperUnitMinor } from "@/lib/utils/shopper-price";
 import {
   PRICING_MASTER_V2,
-  priceGarmentFromCurve,
-  priceShopperQuote,
   type GarmentPriceCurve,
 } from "@gwg/pricing";
 import {
+  STITCH_PRESET_DISCLAIMER,
   STITCH_PRESETS,
+  colourOptions,
   defaultOptionKey,
   enabledDecorationMethods,
   methodVariableInputs,
   stitchCountForPreset,
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
+import {
+  allowedDesignSides,
+  filterAllowedMethods,
+  resolveSideDecoration,
+  withSideDecoration,
+} from "@/lib/commerce/studio-decoration";
 import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
@@ -62,7 +86,6 @@ import {
 } from "@/lib/commerce/garment-backdrop";
 import {
   STUDIO_PRINT_AREAS,
-  cartPlacementSuffix,
   cartPrintMetaLabel,
   decoratedDesignSides,
   frontChestZoneForAlign,
@@ -89,14 +112,15 @@ import {
   formatZoneInchLabel,
   frontChestGuideRects,
 } from "@/lib/commerce/studio-zones";
-import { patchRosterDecor } from "@/lib/commerce/studio-roster-decor";
+import {
+  patchRosterDecor,
+  type RosterDecorTarget,
+} from "@/lib/commerce/studio-roster-decor";
 import {
   studioActiveTeamRows,
   studioCartLineFields,
   studioCartRosterPayload,
-  studioFinishCtaLabel,
   studioFinishMode,
-  studioTeamQuoteQuantity,
   withDefaultRosterSizes,
 } from "@/lib/commerce/studio-cart-roster";
 import { StudioSelect } from "@/components/design/StudioSelect";
@@ -160,30 +184,9 @@ type ProductDetailVariant = {
  * Blanks get cheaper per piece as the order grows, matching what the quote
  * builder would say. Without a curve the catalog price stands.
  */
-function unitPriceMinor(
-  variant: ProductDetailVariant | undefined,
-  quantity: number,
-  detail?: ProductDetail | null,
-): number {
-  if (!variant) return 0;
-  if (detail?.pricingConfig && variant.customerPriceMinor) {
-    return shopperUnitMinor(detail.pricingConfig, {
-      unitCostMinor: variant.customerPriceMinor,
-      quantity: Math.max(1, quantity),
-      mapPriceMinor: variant.mapPriceMinor ?? null,
-      colourName: detail.product.colorName,
-      isDark: detail.product.isDark,
-    });
-  }
-  if (!variant.priceCurve || !variant.customerPriceMinor) {
-    return variant.retailMinor;
-  }
-  return priceGarmentFromCurve(variant.priceCurve, {
-    unitCostMinor: variant.customerPriceMinor,
-    quantity: Math.max(1, quantity),
-    mapPriceMinor: variant.mapPriceMinor ?? null,
-  }).sellPerPieceMinor;
-}
+// unitPriceMinor was removed with the studio's live price: the studio no
+// longer has a quantity to price against. The Input Quantity step prices
+// the order through the shared pricing engine.
 
 type ProductDetailColorway = {
   id: string;
@@ -220,17 +223,29 @@ type ProductDetail = {
   colorways?: ProductDetailColorway[];
   sizeSpecs?: unknown;
   pricingConfig?: PricingConfigV2;
+  /** Admin-configured allow-list from this product's categories (CodSphere
+   * UAT — "Product-Specific Decoration Methods & Print Locations"). `null`
+   * for either means unrestricted. */
+  decorationRules?: { methods: string[] | null; locations: string[] | null };
 };
 
-const DESIGN_QTY_OPTIONS = [24, 48, 96, 250, 500];
 const STUDIO_TABS = [
-  { id: "images", label: "Images" },
-  { id: "text", label: "Text" },
-  { id: "team", label: "Team" },
-  { id: "notes", label: "Notes" },
+  { id: "images", label: "Images", Icon: ImageIcon },
+  { id: "text", label: "Text", Icon: TypeIcon },
+  { id: "team", label: "Names", Icon: UsersIcon },
+  { id: "notes", label: "Notes", Icon: StickyNoteIcon },
 ] as const;
 type StudioTab = (typeof STUDIO_TABS)[number]["id"];
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+// Tier name only in the dropdown — stitch counts are an explanatory mapping,
+// not something a customer should have to read off a label (CodSphere UAT:
+// "Customer facing dropdown should display only the tier name").
+const STITCH_LABELS: Record<StitchPresetId, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+  oversized: "Oversized",
+};
 
 function snapshotOf(document: DesignDocument): StudioHistorySnapshot {
   return {
@@ -259,6 +274,16 @@ function rosterRowsFromDesign(document: DesignDocument): RosterRow[] {
     name: row.name,
     number: row.number ?? "",
   }));
+}
+
+/** The PDP's location vocabulary (front/back/leftChest/sleeve) is
+ * finer-grained than the studio's four canvas sides — map down to the
+ * closest one as a starting point; the customer can still switch sides
+ * freely once inside the studio. */
+function pdpLocationToDesignSide(location: string): DesignSide {
+  if (location === "back") return "back";
+  if (location === "leftChest" || location === "sleeve") return "left";
+  return "front";
 }
 
 function firstDurableArtworkUrl(document: DesignDocument): string | undefined {
@@ -400,6 +425,7 @@ export function DesignStudio({
    * since each side needs its own render pass on the live canvas. */
   const [exportingMockup, setExportingMockup] = useState<string | null>(null);
   const [showAiPrompt, setShowAiPrompt] = useState(false);
+  const [showDecorationSizeGuide, setShowDecorationSizeGuide] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -410,10 +436,16 @@ export function DesignStudio({
   const [changingGarment, setChangingGarment] = useState(false);
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
-  const [designQty, setDesignQty] = useState(48);
+  // Which methods this product's category actually allows (CodSphere UAT —
+  // "Product-Specific Decoration Methods & Print Locations", e.g. Hats
+  // should not offer Screen Print). `null` from the API means unrestricted.
   const quoteMethods = useMemo(
-    () => enabledDecorationMethods(pricingConfig),
-    [pricingConfig],
+    () =>
+      filterAllowedMethods(
+        enabledDecorationMethods(pricingConfig),
+        productDetail?.decorationRules?.methods,
+      ),
+    [pricingConfig, productDetail],
   );
   const [methodKey, setMethodKey] = useState(
     () =>
@@ -431,6 +463,7 @@ export function DesignStudio({
   const [stitchPreset, setStitchPreset] = useState<StitchPresetId>("medium");
   const [optionKey, setOptionKey] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>(() =>
     initialDesign
@@ -438,6 +471,16 @@ export function DesignStudio({
       : [{ size: "", name: "", number: "" }],
   );
   const [rosterError, setRosterError] = useState<string | null>(null);
+  const [selectedRosterTarget, setSelectedRosterTarget] =
+    useState<RosterDecorTarget | null>(null);
+  // `activeSide` changes from many places (thumbnail clicks, the location
+  // auto-follow below, undo/redo). A selected mark on a side that is no
+  // longer showing would leave stale, invisible resize handles armed, so
+  // this clears on every side change rather than trying to thread the
+  // clear through each caller individually.
+  useEffect(() => {
+    setSelectedRosterTarget(null);
+  }, [activeSide]);
   const [studioTab, setStudioTab] = useState<StudioTab>("images");
   const [teamPanelReveal, setTeamPanelReveal] = useState(0);
   const [textDraft, setTextDraft] = useState("");
@@ -477,6 +520,68 @@ export function DesignStudio({
     decoratedDesignSides(artworksBySide, textsBySide).length > 0;
   const sideLayerCount = (side: DesignSide) =>
     artworksBySide[side].length + (textsBySide[side]?.length ?? 0);
+
+  /**
+   * Every distinct image the customer has uploaded anywhere in this design,
+   * so it can be reused on another side without re-uploading from disk.
+   * Deliberately derived from `artworksBySide` rather than tracked as its
+   * own list: an upload that has been placed is already sitting in that map,
+   * and one that's since been deleted from every side should stop being
+   * offered — there is nothing extra to keep in sync or garbage-collect.
+   * Still-uploading (blob:/data:) sources are excluded because that URL is
+   * either about to be swapped for a hosted one or dies with the tab; a
+   * second placement pointing at it would not survive a reload.
+   */
+  const reusableUploads = useMemo(() => {
+    const seen = new Map<string, PlacedArtwork>();
+    for (const side of DesignSides) {
+      for (const artwork of artworksBySide[side]) {
+        if (isDurableArtworkSrc(artwork.src) && !seen.has(artwork.src)) {
+          seen.set(artwork.src, artwork);
+        }
+      }
+    }
+    return [...seen.values()];
+  }, [artworksBySide]);
+
+  /**
+   * Places an already-uploaded image onto the active side as a new, fully
+   * independent layer — same code path as a fresh upload from here down,
+   * just skipping the file picker and the network round-trip since the file
+   * is already hosted. Re-measures natural size rather than trusting the
+   * source layer's, since a different side's print zone can call for a
+   * different starting scale.
+   */
+  async function reuseArtwork(source: PlacedArtwork) {
+    const side = activeSide;
+    const zone = placementBySide[side];
+    let imageWidth = 1024;
+    let imageHeight = 1024;
+    try {
+      const size = await measureArtworkSize(source.src);
+      imageWidth = size.width;
+      imageHeight = size.height;
+    } catch {
+      // Assumed square keeps the mark small instead of covering the garment.
+    }
+    const placed = placeArtworkInZone({
+      side,
+      zone,
+      imageWidth,
+      imageHeight,
+      canvasSize: CANVAS_SIZE,
+    });
+    const newArtwork: PlacedArtwork = {
+      id: crypto.randomUUID(),
+      src: source.src,
+      ...placed,
+      rotation: 0,
+      ...(source.outline ? { outline: source.outline } : {}),
+      ...(source.outlineColor ? { outlineColor: source.outlineColor } : {}),
+    };
+    setActiveArtworks((prev) => [...prev, newArtwork]);
+    setSelectedId(newArtwork.id);
+  }
 
   useEffect(() => {
     designRef.current = design;
@@ -553,14 +658,19 @@ export function DesignStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Size, qty, and a roster started on the product page follow "Design this".
+  // Size preference, decoration choices and a roster started on the product
+  // page follow "Design this". Quantity does not — see below.
   useEffect(() => {
     if (isStaff || !garmentIdOverride || initialDesign) return;
     const applyHandoff = () => {
       const handoff = usePdpStudioHandoff.getState().handoff;
       if (!handoff || handoff.productId !== garmentIdOverride) return;
       if (handoff.sizeName) preferredSizeNameRef.current = handoff.sizeName;
-      if (handoff.qty && handoff.qty > 0) setDesignQty(handoff.qty);
+      // handoff.qty is intentionally not applied here any more. The product
+      // page's estimate quantity is a single total; the Input Quantity step
+      // asks for a breakdown by size and colour, so there is nowhere in the
+      // studio for it to live. It stays on the handoff for whichever step
+      // wants to seed from it later.
       if (handoff.methodKey) setMethodKey(handoff.methodKey);
       if (handoff.colours) setColours(handoff.colours);
       if (handoff.stitchPreset) {
@@ -568,17 +678,35 @@ export function DesignStudio({
       }
       if (handoff.optionKey) setOptionKey(handoff.optionKey);
       if (handoff.location) {
-        // The PDP's location vocabulary (front/back/leftChest/sleeve) is
-        // finer-grained than the studio's four canvas sides — map down to
-        // the closest side as a starting point; the customer can still
-        // switch sides freely once inside the studio.
-        const side: DesignSide =
-          handoff.location === "back"
-            ? "back"
-            : handoff.location === "leftChest" || handoff.location === "sleeve"
-              ? "left"
-              : "front";
-        setActiveSide(side);
+        setActiveSide(pdpLocationToDesignSide(handoff.location));
+      }
+      // The full multi-row selection, not just the primary one: a customer
+      // who built Screen Print/Front + Embroidery/Sleeve on the PDP's Live
+      // Estimate Calculator opens the studio with both already set, not
+      // just the first row (CodSphere UAT — carries the complete decoration
+      // configuration into Design Studio). Two PDP rows that map onto the
+      // same studio side (e.g. Left Chest and Sleeve both collapse onto
+      // "left") means the later row wins — the same limitation the single-
+      // row handoff already had, just no longer silently dropping the rest.
+      if (handoff.decorations && handoff.decorations.length > 0) {
+        setDesign((prev) => {
+          let next = prev;
+          for (const row of handoff.decorations!) {
+            const side = pdpLocationToDesignSide(row.location);
+            next = withSideDecoration(
+              next,
+              side,
+              {
+                methodKey: row.methodKey,
+                colours: row.colours,
+                stitchPreset: row.stitchPreset,
+                optionKey: row.optionKey,
+              },
+              { methodKey: row.methodKey },
+            );
+          }
+          return next;
+        });
       }
       if (rosterLooksStarted(handoff.roster)) {
         setRoster(handoff.roster ?? [{ size: "", name: "", number: "" }]);
@@ -735,92 +863,230 @@ export function DesignStudio({
   const finishMode = studioFinishMode(roster);
   const teamOrderReady = finishMode === "team-ready";
   const teamOrderStarted = finishMode !== "bulk";
-  const quoteQty = studioTeamQuoteQuantity(roster, designQty);
   const selectedMethod =
     quoteMethods.find((method) => method.key === methodKey) ?? quoteMethods[0];
-  const decoratedSides = decoratedDesignSides(artworksBySide, textsBySide);
+  const decoratedSides = decoratedDesignSides(
+    artworksBySide,
+    textsBySide,
+    rosterActiveSides(rosterDecor, studioActiveTeamRows(roster).length > 0),
+  );
 
-  const quoted = useMemo(() => {
-    // Team orders are costed off the sizes actually on the roster, blended by
-    // quantity. Pricing off the swatch picker's size (or roster row 1) is how
-    // a roster full of 2XL/3XL got quoted at medium cost.
-    const rosterCost = rosterWeightedCostMinor(
-      studioActiveTeamRows(roster).map((row) => ({ size: row.size })),
-      (productDetail?.variants ?? []).map((variant) => ({
-        sizeName: variant.sizeName,
-        unitCostMinor: variant.customerPriceMinor ?? null,
-        mapPriceMinor: variant.mapPriceMinor ?? null,
-      })),
-      {
-        unitCostMinor:
-          selectedVariant?.customerPriceMinor ?? selectedGarment?.costMinor ?? 0,
-        mapPriceMinor: selectedVariant?.mapPriceMinor ?? null,
-      },
-    );
-    const unitCostMinor = rosterCost.unitCostMinor;
-    if (unitCostMinor <= 0) return null;
-
-    const locations = (
-      decoratedSides.length > 0 ? decoratedSides : [activeSide]
-    ).map((side) => placementBySide[side] || side);
-    try {
-      return priceShopperQuote(pricingConfig, {
-        unitCostMinor,
-        quantity: studioTeamQuoteQuantity(roster, designQty),
-        mapPriceMinor: rosterCost.mapPriceMinor,
-
-        colourName:
-          (selectedColorwayReady
-            ? productDetail?.product.colorName
-            : null) ||
-          selectedGarment?.colorName ||
-          selectedColorway?.colorName ||
-          "",
-        isDark:
-          selectedGarment?.isDark ??
-          (selectedColorwayReady
-            ? productDetail?.product.isDark
-            : selectedColorway?.isDark),
-        methodKey: selectedMethod?.key,
-        colours: methodVariableInputs(selectedMethod).colours
-          ? colours
-          : undefined,
-        stitchCount: methodVariableInputs(selectedMethod).stitches
-          ? stitchCountForPreset(stitchPreset)
-          : undefined,
-        optionKey: methodVariableInputs(selectedMethod).option
-          ? optionKey || defaultOptionKey(selectedMethod)
-          : undefined,
-        locations,
-        shareSetup: false,
-        description: selectedGarment?.label ?? "Custom design",
-        decorated: true,
-      });
-    } catch (caught) {
-      // Never swallow this. A null quote means the studio falls back to a
-      // blank-garment price with no decoration, which is how orders reached
-      // checkout under-priced with nobody knowing.
-      console.error("[pricing] design studio quote failed", caught);
-      return null;
-    }
-  }, [
-
-    activeSide,
+  // Decoration method + pricing input, independent per side (CodSphere UAT
+  // V2, "Decoration Method, Location & Pricing Inputs"). `methodKey` /
+  // `colours` / `stitchPreset` / `optionKey` above are the studio-wide
+  // default — seeded from the PDP handoff — that a side falls back to until
+  // the customer explicitly picks something for it.
+  const decorationFallback: SideDecoration = {
+    methodKey,
     colours,
-    decoratedSides,
-    designQty,
-    optionKey,
-    placementBySide,
-    pricingConfig,
-    productDetail,
-    roster,
-    selectedColorway,
-    selectedColorwayReady,
-    selectedGarment,
-    selectedMethod,
-    selectedVariant,
     stitchPreset,
+    optionKey: optionKey || undefined,
+  };
+  const activeDecoration = resolveSideDecoration(design, activeSide, decorationFallback);
+  const activeDecorationMethod =
+    quoteMethods.find((method) => method.key === activeDecoration.methodKey) ??
+    quoteMethods[0];
+  const activeDecorationFields = methodVariableInputs(activeDecorationMethod);
+
+  function updateActiveSideDecoration(patch: Partial<SideDecoration>) {
+    setDesign((prev) =>
+      withSideDecoration(prev, activeSide, patch, decorationFallback),
+    );
+  }
+
+  /**
+   * "EXAMPLE" / "00" marks for the side currently on screen, so the customer
+   * can see where each person's name and number will print — and watch it
+   * move as they change the height or location — instead of only reading it
+   * in the panel. Only shown once at least one person is on the roster: an
+   * empty roster is not a personalised order, and a placeholder on a plain
+   * garment would just be confusing.
+   */
+  const rosterPreviewMarks = useMemo(() => {
+    if (studioActiveTeamRows(roster).length === 0) return [];
+    const marks: {
+      target: RosterDecorTarget;
+      text: string;
+      centerX: number;
+      centerY: number;
+      fontSize: number;
+      color: string;
+      halo: string;
+      renderOffsetY: number;
+    }[] = [];
+    const parts: [RosterDecorTarget, typeof rosterDecor.names, string][] = [
+      ["names", rosterDecor.names, ROSTER_NAME_PLACEHOLDER],
+      ["numbers", rosterDecor.numbers, ROSTER_NUMBER_PLACEHOLDER],
+    ];
+    for (const [target, part, text] of parts) {
+      if (!part.enabled) continue;
+      const placed = rosterPreviewPlacement(
+        part.location,
+        part.heightIn,
+        CANVAS_SIZE,
+        { xNorm: part.offsetXNorm, yNorm: part.offsetYNorm },
+      );
+      if (!placed || placed.side !== activeSide) continue;
+      marks.push({
+        target,
+        text,
+        centerX: placed.centerX,
+        centerY: placed.centerY,
+        fontSize: placed.fontSize,
+        color: part.color,
+        halo: placeholderHaloFor(part.color),
+        renderOffsetY: 0,
+      });
+    }
+    // Names above numbers when both land on the same spot, matching how a
+    // jersey actually reads. Applied as a render-only nudge (not baked into
+    // centerY) so dragging either mark reports its true, un-stacked
+    // position — otherwise the first drag after a collision would silently
+    // adopt the stacking nudge as a permanent offset.
+    if (marks.length === 2 && Math.abs(marks[0]!.centerY - marks[1]!.centerY) < 1) {
+      marks[0]!.renderOffsetY = -marks[0]!.fontSize * 0.8;
+      marks[1]!.renderOffsetY = marks[1]!.fontSize * 0.4;
+    }
+    return marks;
+  }, [roster, rosterDecor, activeSide]);
+
+  /**
+   * Names and numbers each have their own Location, independently of one
+   * another — matching the Coastal Reign benchmark and the client's own
+   * spec ("independently for each artwork/decoration location"). That is
+   * exactly what produced real, repeated confusion in testing: the two
+   * marks split across Front and Back with nothing on screen explaining
+   * why the one you expected was not where you were looking. This makes
+   * that visible instead of silent — a small, dismissable line naming
+   * where the other one actually is, with a one-click jump.
+   */
+  const rosterMarksElsewhere = useMemo(() => {
+    if (studioActiveTeamRows(roster).length === 0) return [];
+    const parts: [RosterDecorTarget, typeof rosterDecor.names, string][] = [
+      ["names", rosterDecor.names, "Names"],
+      ["numbers", rosterDecor.numbers, "Numbers"],
+    ];
+    const elsewhere: { target: RosterDecorTarget; label: string; side: DesignSide }[] = [];
+    for (const [target, part, label] of parts) {
+      if (!part.enabled) continue;
+      const side = rosterPreviewSideFor(part.location);
+      if (side && side !== activeSide) elsewhere.push({ target, label, side });
+    }
+    return elsewhere;
+  }, [roster, rosterDecor, activeSide]);
+
+  /**
+   * Converts a drop position back into a saved offset and commits it.
+   *
+   * Uses `setDesign` directly rather than `commitDesign` (no undo-history
+   * push), matching `onDecorChange` just below — the whole roster-decor
+   * panel treats these settings as live-adjustable state, not an
+   * undo/redo-tracked edit, and a drag is the same kind of change as
+   * dragging the Height slider or picking a new Location.
+   */
+  function handleRosterPreviewDragEnd(
+    target: RosterDecorTarget,
+    droppedX: number,
+    droppedY: number,
+  ) {
+    const part = rosterDecor[target];
+    const offset = rosterPreviewOffsetFromPosition(
+      part.location,
+      CANVAS_SIZE,
+      droppedX,
+      droppedY,
+    );
+    if (!offset) return;
+    setDesign((prev) => ({
+      ...prev,
+      rosterDecor: patchRosterDecor(prev.rosterDecor ?? defaultRosterDecor(), target, {
+        offsetXNorm: offset.xNorm,
+        offsetYNorm: offset.yNorm,
+      }),
+    }));
+  }
+
+  /**
+   * Converts a resize-handle result (raw rendered pixels) into a saved
+   * height in inches plus a repositioned offset, and commits both together.
+   *
+   * Repositioning matters here in a way it does not for a plain drag: a
+   * corner-anchored resize moves the *opposite* corner's world position
+   * even though the customer only touched one handle, so the mark's centre
+   * genuinely shifts as a side effect of resizing. Saving only the new
+   * height and letting the next render recompute position from the old
+   * offset would snap the mark to a different spot than the one the
+   * customer just saw and released it at.
+   */
+  function handleRosterPreviewResizeEnd(
+    target: RosterDecorTarget,
+    renderedHeightPx: number,
+    centerX: number,
+    centerY: number,
+  ) {
+    const part = rosterDecor[target];
+    const offset = rosterPreviewOffsetFromPosition(
+      part.location,
+      CANVAS_SIZE,
+      centerX,
+      centerY,
+    );
+    if (!offset) return;
+    const heightIn = renderedHeightPx / pixelsPerInch(CANVAS_SIZE);
+    // Same bounds the schema enforces (RosterDecorPartSchema: 0.25"–12") —
+    // clamped here too so a resize can never produce a value the document
+    // would then fail to save.
+    const clampedHeightIn = Math.min(12, Math.max(0.25, heightIn));
+    setDesign((prev) => ({
+      ...prev,
+      rosterDecor: patchRosterDecor(prev.rosterDecor ?? defaultRosterDecor(), target, {
+        heightIn: clampedHeightIn,
+        offsetXNorm: offset.xNorm,
+        offsetYNorm: offset.yNorm,
+      }),
+    }));
+  }
+
+  // The design document carries what the artwork looks like; it does not
+  // carry how it is to be decorated. Mirror that alongside it so the Input
+  // Quantity step can price the order without making the customer choose a
+  // method a second time. Sits below `selectedMethod` rather than beside the
+  // design-store effect above because it reads it.
+  useEffect(() => {
+    if (isStaff) return;
+    if (!hasActiveArtwork(design)) return;
+    const order = useDesignOrderStore.getState();
+    order.setGarment(selectedGarmentId);
+    order.setDecoration({
+      methodKey,
+      optionKey: optionKey || defaultOptionKey(selectedMethod),
+      stitchPreset,
+      colours: methodVariableInputs(selectedMethod).colours ? colours : null,
+    });
+    // Names and numbers travel too — they are printed on the garment, so
+    // they belong to the design. Sizes deliberately do not: the Input
+    // Quantity step asks for those alongside every other quantity.
+    order.setNames(
+      roster
+        .filter((row) => row.name.trim() !== "" || (row.number ?? "").trim() !== "")
+        .map((row) => ({ name: row.name, number: row.number ?? "" })),
+    );
+  }, [
+    design,
+    selectedGarmentId,
+    methodKey,
+    optionKey,
+    stitchPreset,
+    colours,
+    selectedMethod,
+    roster,
+    isStaff,
   ]);
+
+  // The live price memo lived here. Pricing belongs to the Input Quantity
+  // step now — the studio has no quantity or size to price against, so any
+  // number it produced would be a guess. Removed rather than left computing
+  // a value nothing reads.
 
   // Front/back stay the vendor photos. Sleeves use a vendor side shot
   // when the catalog has one, otherwise a photorealistic 3/4 side plate
@@ -854,13 +1120,36 @@ export function DesignStudio({
   const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
   const framedBackdrop = framedBackdropStyles(backdrop);
 
-  // All four views are always offered. A sleeve print is a real thing a
-  // customer orders whether or not the vendor photographed that angle, and
-  // the artwork is stored per view either way.
-  const availableViews = DesignSides;
+  // All four views are offered by default — a sleeve print is a real thing
+  // a customer orders whether or not the vendor photographed that angle,
+  // and the artwork is stored per view either way — narrowed only when this
+  // product's category actually restricts which locations apply (CodSphere
+  // UAT — e.g. Bags should not offer sleeve prints at all).
+  const decorationLocationsRule = productDetail?.decorationRules?.locations;
+  const decorationLocationsRuleKey = decorationLocationsRule?.join(",") ?? "";
+  const availableViews = useMemo(
+    () => allowedDesignSides(decorationLocationsRule) ?? DesignSides,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [decorationLocationsRuleKey],
+  );
+
+  // The side on screen must always be one the thumbnail rail actually
+  // offers — a customer viewing a sleeve who then switches to a Bag (no
+  // sleeve locations allowed) would otherwise be left on a side with no
+  // way back to it.
+  useEffect(() => {
+    if (!availableViews.includes(activeSide) && availableViews[0]) {
+      setActiveSide(availableViews[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableViews]);
 
   function setSelectedId(id: string | null) {
     setSelectedBySide((prev) => ({ ...prev, [activeSide]: id }));
+    // One thing selected at a time: picking a real artwork/text layer
+    // clears any selected roster mark, the same way selecting a roster mark
+    // clears this (see the DesignCanvas onSelect wiring below).
+    if (id !== null) setSelectedRosterTarget(null);
   }
 
   function selectColorway(id: string) {
@@ -1573,183 +1862,53 @@ export function DesignStudio({
     return canvas.toDataURL("image/png");
   }
 
-  async function addDesignToCart() {
-    if (!productDetail || productDetail.product.id !== selectedGarmentId) {
-      setCartError(
-        selectedGarmentId
-          ? "The selected colour is still loading. Try add to cart again in a moment."
-          : "Pick a garment first.",
-      );
-      return;
-    }
-
-    const decorated = decoratedDesignSides(artworksBySide, textsBySide);
-    if (decorated.length === 0) {
-      setCartError("Place artwork or text on the garment first.");
-      return;
-    }
-
-    // Validate before uploading: an upload spent on a roster that is about to
-    // be rejected is a round trip nobody asked for. A finished Team panel is
-    // the order. An empty panel stays a regular size + qty line.
-    const rosterPayload = studioCartRosterPayload({
-      roster,
-      rosterDecor,
-    });
-    if (!rosterPayload.ok) {
-      setRosterError(rosterPayload.error);
-      revealTeamPanel();
-      return;
-    }
-    if (!rosterPayload.teamOrder && !selectedVariant) {
-      setCartError("Select a size first.");
-      return;
-    }
-    setRosterError(null);
-
-    // The proof has to end up somewhere staff can open. Carrying the canvas as
-    // a data: URL looked like it worked and then died on the way to checkout,
-    // which is how orders reached production with no artwork attached.
-    // Canvas export also fails when the garment photo is cross-origin; in
-    // that case the uploaded layer URLs are still enough to add the line.
-    setCartError(null);
-    setAddingToCart(true);
+  /**
+   * Step 1's exit. Renders and uploads the proof here, while the canvas
+   * still exists, because the Input Quantity step has no stage of its own —
+   * and a design that arrives at checkout with no proof is exactly how
+   * orders used to reach production blank.
+   *
+   * A failed upload does not block the customer: the design document itself
+   * still travels, and the durable artwork URL is enough for staff to work
+   * from, so this degrades rather than dead-ends.
+   */
+  async function continueToQuantity() {
+    setContinuing(true);
     try {
-      const artworkProofUrl: string | undefined =
-        (await uploadProofImage()) ?? firstDurableArtworkUrl(design);
-      let designProjectId = savedDesignId ?? undefined;
+      let proofUrl: string | null = null;
+      try {
+        proofUrl = (await uploadProofImage()) ?? firstDurableArtworkUrl(design) ?? null;
+      } catch {
+        proofUrl = firstDurableArtworkUrl(design) ?? null;
+      }
+
+      let projectId = savedDesignId ?? null;
       if (signedIn && (createUrl || (updateUrl && savedDesignId))) {
         try {
           const name = designName.trim() || defaultDesignName();
           if (!designName.trim()) setDesignName(name);
-          designProjectId = await persistDesign(name, artworkProofUrl ?? null);
-        } catch (caught) {
-          if (!artworkProofUrl) throw caught;
+          projectId = (await persistDesign(name, proofUrl)) ?? projectId;
+        } catch {
+          // Saving is a convenience here, not a gate — the design is already
+          // mirrored into the browser store that step 2 reads.
         }
       }
-      if (!artworkProofUrl && !designProjectId) {
-        setCartError(
-          signedIn
-            ? "Your artwork could not be attached, so the order would reach us blank. Try again."
-            : "Sign in first — otherwise your artwork does not travel with the order.",
-        );
-        return;
-      }
 
-      const printLabel = cartPrintMetaLabel(decorated, placementBySide);
-      const productName =
-        `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim();
-      const productSlug =
-        productDetail.product.slug ??
-        garmentOptions.find((option) => option.id === selectedGarmentId)?.slug;
-      const line = studioCartLineFields(rosterPayload, {
-        printLabel,
-        notes: design.notes,
-        sizeName: selectedVariant?.sizeName ?? "",
-        designQty,
+      useDesignOrderStore.getState().setProof({
+        proofUrl,
+        designProjectId: projectId,
       });
-
-      if (rosterPayload.teamOrder) {
-        const cartRoster = line.roster;
-        if (!cartRoster || line.qty !== cartRoster.length) {
-          setRosterError("Add at least one person.");
-          revealTeamPanel();
-          return;
-        }
-        // variantId is only a catalogue reference here — the money comes from
-        // `quoted`, which is costed across every roster size.
-        const priceVariant =
-          productDetail.variants.find((v) => v.sizeName === cartRoster[0]?.size) ??
-          selectedVariant;
-        if (!priceVariant) {
-          setCartError("Select a size for the first roster row.");
-          revealTeamPanel();
-          return;
-        }
-        if (!quoted) {
-          setCartError(
-            "We couldn't price this design just now. Refresh and try again — we won't add it at a guessed price.",
-          );
-          return;
-        }
-
-        addItem({
-          id: productDetail.product.id,
-          productId: productDetail.product.id,
-          productSlug,
-          styleId: productDetail.style.id,
-          variantId: priceVariant.id,
-          name: productName,
-          meta: line.meta,
-          color: productDetail.product.colorName,
-          qty: line.qty,
-          unit: quoted.cartUnit,
-          image: artworkProofUrl || currentPhoto || "",
-          artworkProofUrl,
-          designProjectId,
-          pricingSnapshot: quoted?.snapshot,
-          roster: cartRoster,
-          designNotes: (design.notes ?? "").trim() || undefined,
-          rosterDecor: line.rosterDecor,
-        });
-        trackCartItemAdded({
-          id: productDetail.product.id,
-          productId: productDetail.product.id,
-          name: productName,
-          qty: line.qty,
-          unit: quoted.cartUnit,
-        });
-        router.push("/cart");
-        return;
-      }
-
-      if (!selectedVariant) {
-        setCartError("Select a size first.");
-        return;
-      }
-      if (!quoted) {
-        setCartError(
-          "We couldn't price this design just now. Refresh and try again — we won't add it at a guessed price.",
-        );
-        return;
-      }
-
-      addItem({
-        id: productDetail.product.id,
-        productId: productDetail.product.id,
-        productSlug,
-        styleId: productDetail.style.id,
-        variantId: selectedVariant.id,
-        name: productName,
-        meta: line.meta,
-        color: productDetail.product.colorName,
-        qty: line.qty,
-        unit: quoted.cartUnit,
-        image: artworkProofUrl || currentPhoto || "",
-        artworkProofUrl,
-        designProjectId,
-        pricingSnapshot: quoted?.snapshot,
-        designNotes: (design.notes ?? "").trim() || undefined,
-        rosterDecor: line.rosterDecor,
-      });
-      trackCartItemAdded({
-        id: productDetail.product.id,
-        productId: productDetail.product.id,
-        name: productName,
-        qty: line.qty,
-        unit: quoted.cartUnit,
-      });
-      router.push("/cart");
-    } catch (caught) {
-      setCartError(
-        caught instanceof Error
-          ? caught.message
-          : "The design could not be saved, so staff would not be able to reopen it. Try Save, then add to cart again.",
-      );
+      router.push("/design/quantity");
     } finally {
-      setAddingToCart(false);
+      setContinuing(false);
     }
   }
+
+  // addDesignToCart lived here. The Input Quantity step owns the cart now,
+  // for plain and named orders alike, so the studio no longer builds cart
+  // lines at all. Removed rather than left unreachable: a 177-line function
+  // nothing calls is a trap for the next reader. See git history if the old
+  // single-line-per-order behaviour is ever needed again.
 
   /**
    * Renders the active view and puts it somewhere staff can open. Failing to
@@ -1846,11 +2005,6 @@ export function DesignStudio({
     }
   }
 
-  const placementSuffix = cartPlacementSuffix(
-    decoratedSides,
-    placementBySide,
-    activeSide,
-  );
 
   const canUndo = historyFlags.canUndo;
   const canRedo = historyFlags.canRedo;
@@ -1946,8 +2100,59 @@ export function DesignStudio({
   const zoomAt = zoomIndex < 0 ? ZOOM_STEPS.indexOf(1) : zoomIndex;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(0,1fr)] gap-sp-3 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-[4.75rem_minmax(200px,240px)_minmax(0,1fr)] gap-sp-3 items-start">
       <StudioFontLoader />
+      {/* Where the customer is in Design → Input Quantity → Review. Spans
+          both grid columns rather than wrapping the layout, and is hidden
+          for staff, who open the studio to edit a design rather than to
+          walk a shopper's checkout. */}
+      {!isStaff && (
+        <DesignStepBar
+          current="design"
+          reached={hasActiveArtwork(design) ? "quantity" : "design"}
+          className="md:col-span-3 mb-sp-1"
+        />
+      )}
+      {/* Tool rail. A column of its own rather than a strip of tabs inside
+          the panel: the panel's whole contents change per tool, so the
+          selector reads better beside it than stacked on top of it. On
+          mobile it lies flat above the panel, where a vertical rail would
+          eat the fold. */}
+      <nav
+        aria-label="Design tools"
+        className="md:sticky md:top-[calc(var(--header-offset)+1rem)] bg-bg-raised border border-border rounded-lg p-1.5 flex md:flex-col gap-1 min-w-0 overflow-x-auto md:overflow-visible"
+      >
+        {STUDIO_TABS.map((tab) => {
+          const active = studioTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                if (tab.id === "team") revealTeamPanel();
+                else setStudioTab(tab.id);
+              }}
+              className={cn(
+                "flex-1 md:flex-none flex flex-col items-center justify-center gap-1 rounded-md px-2 py-2.5 transition-colors min-w-[3.75rem]",
+                active
+                  ? "bg-accent/10 text-accent"
+                  : "text-text-tertiary hover:bg-fill-subtle-15 hover:text-text-secondary",
+              )}
+            >
+              <tab.Icon
+                aria-hidden="true"
+                className="h-[18px] w-[18px] shrink-0"
+                strokeWidth={active ? 2.4 : 2}
+              />
+              <span className="text-[10px] font-bold leading-none">
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
       {/* Product and artwork controls. Every visible control is interactive. */}
       <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-[calc(var(--header-offset)+1rem)] md:max-h-[calc(100dvh-var(--header-offset)-2rem)] md:overflow-y-auto">
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
@@ -2009,27 +2214,6 @@ export function DesignStudio({
           <li>Classic fit, true to size</li>
         </ul>
 
-        <div className="grid grid-cols-4 gap-1 mb-2">
-          {STUDIO_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                if (tab.id === "team") revealTeamPanel();
-                else setStudioTab(tab.id);
-              }}
-              className={cn(
-                "h-8 rounded-sm border text-[10px] font-bold uppercase tracking-[0.06em] transition-colors",
-                studioTab === tab.id
-                  ? "bg-accent text-white border-accent"
-                  : "border-border text-text-tertiary hover:border-text-tertiary",
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         <input
           ref={artworkInputRef}
           type="file"
@@ -2052,6 +2236,56 @@ export function DesignStudio({
         <p className="m-0 text-[11px] leading-4 text-text-tertiary">
           PNG, JPG or SVG. You can add more than one layer.
         </p>
+        {reusableUploads.length > 0 && (
+          <div className="mt-sp-3">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary mb-1.5">
+              Your uploads
+            </span>
+            <p className="m-0 mb-1.5 text-[11px] leading-4 text-text-tertiary">
+              Reuse artwork you&apos;ve already uploaded on any other location —
+              no need to upload the same file twice.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {reusableUploads.map((upload) => {
+                const usedHere = artworks.some((a) => a.src === upload.src);
+                return (
+                  <button
+                    key={upload.id}
+                    type="button"
+                    onClick={() => void reuseArtwork(upload)}
+                    title={
+                      usedHere
+                        ? "Already on this side — click to add another copy"
+                        : `Add to ${DESIGN_SIDE_LABELS[activeSide]}`
+                    }
+                    className="relative h-14 w-14 rounded-md border border-border bg-bg-raised overflow-hidden hover:border-accent transition-colors"
+                  >
+                    {/* Requests the artwork the same way ArtworkLayer does.
+                        This *is* a URL the Konva canvas draws, so loading it
+                        here without a CORS mode would let the browser cache
+                        an opaque copy and taint the export — the same bug
+                        already fixed for garment photos in
+                        GarmentBackdropImage. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- needs an explicit crossOrigin to match the canvas; next/image cannot set one */}
+                    <img
+                      src={upload.src}
+                      alt=""
+                      crossOrigin={
+                        /^(https?:)?\/\//.test(upload.src) ? "anonymous" : undefined
+                      }
+                      className="h-full w-full object-contain p-1"
+                    />
+                    {usedHere && (
+                      <span className="absolute top-0.5 right-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-emerald-500 text-white text-[9px] leading-none">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
           </>
         )}
 
@@ -2151,6 +2385,116 @@ export function DesignStudio({
           </div>
         )}
 
+        {/* Decoration method + pricing input for this side (CodSphere UAT
+            V2, "Decoration Method, Location & Pricing Inputs"). Appears
+            once artwork exists on the side — location is already the side
+            the customer is looking at, so this is "method, then the
+            pricing input that method needs," picked independently per
+            side rather than once for the whole design. */}
+        {artworks.length > 0 && (
+          <div className="mt-sp-3 pt-sp-3 border-t border-border">
+            <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
+              Decoration — {DESIGN_SIDE_LABELS[activeSide]}
+            </span>
+            <select
+              value={activeDecoration.methodKey}
+              onChange={(e) => {
+                const nextMethod = quoteMethods.find((m) => m.key === e.target.value);
+                updateActiveSideDecoration({
+                  methodKey: e.target.value,
+                  optionKey: defaultOptionKey(nextMethod),
+                });
+              }}
+              className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors mb-2"
+            >
+              {quoteMethods.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+
+            {activeDecorationFields.colours && (
+              <select
+                value={activeDecoration.colours ?? colourOptions(activeDecorationMethod)[0] ?? 1}
+                onChange={(e) =>
+                  updateActiveSideDecoration({ colours: Number(e.target.value) })
+                }
+                className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              >
+                {colourOptions(activeDecorationMethod).map((c) => (
+                  <option key={c} value={c}>
+                    {c} {c === 1 ? "Colour" : "Colours"}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {activeDecorationFields.stitches && (
+              <>
+                <span className="relative flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
+                  Size
+                  <button
+                    type="button"
+                    aria-label="Size Guide"
+                    aria-expanded={showDecorationSizeGuide}
+                    onClick={() => setShowDecorationSizeGuide((v) => !v)}
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] font-bold normal-case"
+                  >
+                    i
+                  </button>
+                  {showDecorationSizeGuide && (
+                    <div
+                      role="dialog"
+                      aria-label="Decoration size guide"
+                      className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-bg p-sp-3 shadow-lg normal-case"
+                    >
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wide">Size Guide</p>
+                      <ul className="space-y-1 text-sm">
+                        <li>Small: up to 4&quot;</li>
+                        <li>Medium: over 4&quot; to 8&quot;</li>
+                        <li>Large: over 8&quot; to 12&quot;</li>
+                        <li>Oversized: over 12&quot;</li>
+                      </ul>
+                    </div>
+                  )}
+                </span>
+                <select
+                  value={activeDecoration.stitchPreset ?? "medium"}
+                  onChange={(e) =>
+                    updateActiveSideDecoration({ stitchPreset: e.target.value })
+                  }
+                  className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                >
+                  {STITCH_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {STITCH_LABELS[preset.id]}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] leading-snug text-text-tertiary">
+                  {STITCH_PRESET_DISCLAIMER}
+                </p>
+              </>
+            )}
+
+            {activeDecorationFields.option &&
+              activeDecorationMethod?.rateModel.kind === "matrixByOption" && (
+              <select
+                value={activeDecoration.optionKey || defaultOptionKey(activeDecorationMethod)}
+                onChange={(e) => updateActiveSideDecoration({ optionKey: e.target.value })}
+                className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              >
+                {activeDecorationMethod.rateModel.options.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         {(studioTab === "images" || studioTab === "text") &&
           (artworks.length > 0 || texts.length > 0) && (
           <div className="mt-sp-3">
@@ -2211,6 +2555,16 @@ export function DesignStudio({
             <span className="block text-[11px] text-text-tertiary mt-0.5">
               {DESIGN_SIDE_LABELS[activeSide].toUpperCase()} · PRINT METHOD · {selectedPrintLabel}
             </span>
+            {rosterMarksElsewhere.map((item) => (
+              <button
+                key={item.target}
+                type="button"
+                onClick={() => setActiveSide(item.side)}
+                className="block mt-0.5 text-[11px] font-semibold text-accent hover:underline"
+              >
+                {item.label} prints on {DESIGN_SIDE_LABELS[item.side]} — switch to see it
+              </button>
+            ))}
           </div>
           {activeSide === "front" ? (
             <StudioChestAlign
@@ -2299,6 +2653,11 @@ export function DesignStudio({
                 onChangeArtwork={commitArtworkChange}
                 onChangeText={commitTextChange}
                 onDragMove={handleLayerDragMove}
+                rosterPreview={rosterPreviewMarks}
+                selectedRosterTarget={selectedRosterTarget}
+                onSelectRosterMark={setSelectedRosterTarget}
+                onRosterPreviewDragEnd={handleRosterPreviewDragEnd}
+                onRosterPreviewResizeEnd={handleRosterPreviewResizeEnd}
               />
               {/* CSS overlay so the guide never lands in the Konva proof. */}
               {draggingOnFront ? (
@@ -2574,7 +2933,7 @@ export function DesignStudio({
       {studioTab === "team" && (
         <div
           id="studio-team-order"
-          className="md:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
+          className="md:col-start-3 bg-bg-raised border border-border rounded-lg p-sp-4 scroll-mt-24"
         >
           <StudioTeamOrderPanel
             roster={roster}
@@ -2582,7 +2941,10 @@ export function DesignStudio({
             rosterError={rosterError}
             sizes={studioRosterSizeOptions(productDetail?.variants ?? [])}
             decor={rosterDecor}
-            onDecorChange={(target, patch) =>
+            namesNumbersFeeMinor={
+              pricingConfig?.settings?.namesNumbersFeePerGarmentMinor ?? 0
+            }
+            onDecorChange={(target, patch) => {
               setDesign((prev) => ({
                 ...prev,
                 rosterDecor: patchRosterDecor(
@@ -2590,15 +2952,23 @@ export function DesignStudio({
                   target,
                   patch,
                 ),
-              }))
-            }
+              }));
+              // Moving a name or number to another location silently changed
+              // a garment view the customer was not looking at, so the
+              // control appeared to do nothing. Follow the change to the side
+              // it lands on, where the placeholder is actually visible.
+              if (patch.location) {
+                const side = rosterPreviewSideFor(patch.location);
+                if (side && side !== activeSide) setActiveSide(side);
+              }
+            }}
           />
         </div>
       )}
 
       {/* Saving, proof download and ordering belong to the main workspace,
           below the canvas they act on — not in a duplicate preview panel. */}
-      <div className="md:col-start-2 bg-bg-raised border border-border rounded-lg p-sp-4">
+      <div className="md:col-start-3 bg-bg-raised border border-border rounded-lg p-sp-4">
         <h3 className="font-display text-[18px] mb-sp-3">Finish your design</h3>
         <div className="flex flex-col gap-2">
           {signedIn ? (
@@ -2675,235 +3045,57 @@ export function DesignStudio({
 
           {productDetail && selectedColorwayReady && !isStaff && (
             <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              {teamOrderStarted ? (
-                <div className="mb-sp-3 rounded-md border border-border bg-bg p-sp-3">
-                  {teamOrderReady ? (
-                    <>
-                      <p className="m-0 text-xs text-text-secondary">
-                        {rosterPlayerCount.toLocaleString()} team shirt
-                        {rosterPlayerCount === 1 ? "" : "s"} · size per player
-                      </p>
-                      <button
-                        type="button"
-                        onClick={revealTeamPanel}
-                        className="mt-2 text-xs font-bold text-accent hover:underline"
-                      >
-                        Edit team list
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="m-0 text-xs text-text-secondary">
-                        Team list in progress ·{" "}
-                        {rosterPlayerCount.toLocaleString()} started. Every row
-                        needs a name and size.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={revealTeamPanel}
-                        className="mt-2 text-xs font-bold text-accent hover:underline"
-                      >
-                        Finish team list
-                      </button>
-                    </>
-                  )}
-                  {sizeChart && (
-                    <p className="m-0 mt-2 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setShowSizeChart(true)}
-                        className="font-semibold text-accent hover:underline"
-                      >
-                        Size chart
-                      </button>
-                    </p>
-                  )}
-                  {rosterError && (
-                    <p className="text-[12px] text-red-600 font-semibold mt-2 mb-0">
-                      {rosterError}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {productDetail.variants.length > 0 && (
-                    <>
-                      <span className="text-xs font-bold mb-1.5 flex items-center justify-between gap-2">
-                        <span>
-                          Size:{" "}
-                          <span className="font-normal">
-                            {selectedVariant?.sizeName ?? "Select a size"}
-                          </span>
-                        </span>
-                        {sizeChart && (
-                          <button
-                            type="button"
-                            onClick={() => setShowSizeChart(true)}
-                            className="font-semibold text-accent hover:underline"
-                          >
-                            Size chart
-                          </button>
-                        )}
-                      </span>
-                      <div className="flex gap-1.5 flex-wrap mb-sp-3">
-                        {productDetail.variants.map((v) => {
-                          const inStock = v.qty > 0 && v.active !== false;
-                          return (
-                            <button
-                              key={v.id}
-                              type="button"
-                              disabled={!inStock}
-                              onClick={() => {
-                                preferredSizeNameRef.current = v.sizeName;
-                                setSelectedVariantId(v.id);
-                              }}
-                              className={cn(
-                                "min-w-9 h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                                !inStock &&
-                                  "opacity-50 cursor-not-allowed border-amber-300 text-amber-800 bg-amber-50",
-                                inStock &&
-                                  (v.id === selectedVariantId
-                                    ? "bg-accent text-white border-accent"
-                                    : "border-border hover:border-text-tertiary"),
-                              )}
-                            >
-                              {v.sizeName}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-
-                  <span className="text-xs font-bold block mb-1.5">
-                    Quantity: <span className="font-normal">{designQty.toLocaleString()} pieces</span>
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap mb-sp-3">
-                    {DESIGN_QTY_OPTIONS.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => setDesignQty(q)}
-                        className={cn(
-                          "min-w-[46px] h-8 px-2 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                          q === designQty
-                            ? "bg-accent text-white border-accent"
-                            : "border-border bg-bg-raised hover:border-text-tertiary",
-                        )}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <div className="mb-sp-3">
-                <span className="text-xs font-bold block mb-1.5">
-                  Print method (optional)
-                </span>
-                <StudioSelect
-                  tone="panel"
-                  ariaLabel="Print method (optional)"
-                  value={selectedMethod?.key ?? methodKey}
-                  onChange={(value) => {
-                    const next = quoteMethods.find((method) => method.key === value);
-                    setMethodKey(value);
-                    setOptionKey(defaultOptionKey(next));
-                  }}
-                  options={quoteMethods.map((method) => ({
-                    value: method.key,
-                    label: method.label,
-                  }))}
-                />
-              </div>
-              {methodVariableInputs(selectedMethod).stitches && (
-                <div className="mb-sp-3">
-                  <span className="text-xs font-bold block mb-1.5">Logo size</span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {STITCH_PRESETS.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => setStitchPreset(preset.id)}
-                        className={cn(
-                          "px-2 h-8 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                          stitchPreset === preset.id
-                            ? "bg-accent text-white border-accent"
-                            : "border-border bg-bg-raised hover:border-text-tertiary",
-                        )}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {selectedMethod?.rateModel.kind === "matrixByOption" && (
-                <div className="mb-sp-3">
-                  <span className="text-xs font-bold block mb-1.5">
-                    Transfer size
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {selectedMethod.rateModel.options.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setOptionKey(option.key)}
-                        className={cn(
-                          "px-2 h-8 grid place-items-center border rounded-sm font-bold text-[12px] transition-colors",
-                          (optionKey || defaultOptionKey(selectedMethod)) ===
-                          option.key
-                            ? "bg-accent text-white border-accent"
-                            : "border-border bg-bg-raised hover:border-text-tertiary",
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
+              {/* Size, quantity, quantity presets, print method and the
+                  decoration pricing inputs used to live here. They are
+                  ordering decisions, not design ones, so they now belong to
+                  the Input Quantity step — the studio is only about what the
+                  garment looks like. (CodSphere UAT: "Design Studio should be
+                  focused exclusively on creating the garment design.") */}
               {cartError && (
                 <p className="text-sm text-danger mt-2 mb-0" role="alert">
                   {cartError}
                 </p>
               )}
 
-              <Button
-                type="button"
-                className="w-full"
-                variant="primary"
-                disabled={
-                  addingToCart ||
-                  !selectedColorwayReady ||
-                  (!teamOrderStarted &&
-                    (!selectedVariant?.active || (selectedVariant?.qty ?? 0) <= 0))
-                }
-                onClick={addDesignToCart}
-              >
-                {addingToCart
-                  ? "Attaching artwork…"
-                  : !selectedColorwayReady
-                    ? "Loading colour…"
-                    : !teamOrderStarted &&
-                        (!selectedVariant || selectedVariant.qty <= 0)
-                      ? "Unavailable"
-                      : studioFinishCtaLabel({
-                          quoteQty,
-                          placementSuffix,
-                          totalMinor:
-                            quoted?.totalMinor ??
-                            (selectedVariant
-                              ? unitPriceMinor(
-                                  selectedVariant,
-                                  quoteQty,
-                                  productDetail,
-                                ) * quoteQty
-                              : 0),
-                        })}
-              </Button>
+              {/* Step 1's real exit. Sizes and quantities now belong to the
+                  Input Quantity step, so the studio's job ends at "the design
+                  is finished". Gated on uploads finishing because a blob: URL
+                  does not survive the navigation — the artwork has to be
+                  durable before the design leaves this page. */}
+              {!isStaff && (
+                <>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    variant="primary"
+                    disabled={
+                      pendingUploads > 0 ||
+                      !selectedColorwayReady ||
+                      decoratedSides.length === 0
+                    }
+                    onClick={continueToQuantity}
+                  >
+                    {continuing
+                      ? "Preparing your design…"
+                      : pendingUploads > 0
+                        ? "Uploading artwork…"
+                        : decoratedSides.length === 0
+                          ? "Add artwork or names to continue"
+                          : "Continue to Quantity"}
+                  </Button>
+                  <p className="text-[12px] text-text-tertiary text-center mt-1.5 mb-sp-3">
+                    Choose colours, sizes and quantities on the next step.
+                  </p>
+                </>
+              )}
+
+              {/* Add to Cart lived here. Ordering now happens on the Input
+                  Quantity step — including named team orders, which arrive
+                  there as one row per person — so the studio ends at
+                  "Continue to Quantity" and asks no ordering question at
+                  all. (CodSphere UAT: "rather than asking the customer to
+                  select quantities/add pieces to cart directly from the
+                  Design Studio.") */}
              </div>
           )}
         </div>

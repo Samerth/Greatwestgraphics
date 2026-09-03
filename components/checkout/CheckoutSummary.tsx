@@ -36,15 +36,17 @@ export function CheckoutSummary({
               </span>
               <b>{money(item.qty * item.unit)}</b>
             </div>
+            {/* Always visible, not tucked behind a click: this is who each
+                shirt in the order actually goes to, confirmed here right
+                before submission — not something a customer should have to
+                go looking for. */}
             {item.roster && (
-              <details className="mt-1.5">
-                <summary className="text-[12px] font-bold text-accent cursor-pointer">
-                  Review names &amp; numbers before you submit
-                </summary>
-                <div className="mt-1.5">
-                  <RosterTable roster={item.roster} />
-                </div>
-              </details>
+              <div className="mt-1.5">
+                <span className="block text-[12px] font-bold text-text-secondary mb-1">
+                  Names &amp; numbers on this order
+                </span>
+                <RosterTable roster={item.roster} />
+              </div>
             )}
           </div>
         ))}

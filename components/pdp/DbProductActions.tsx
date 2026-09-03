@@ -30,8 +30,11 @@ export type DbVariantOption = {
 /**
  * Blanks get cheaper per piece as the order grows, exactly as they do in a
  * quote. Without the curve (no published v2 config) the catalog price stands.
+ * Exported so the lightweight "Order a Sample" flow (OrderSampleForm) can
+ * price a sample through the exact same engine instead of a second copy of
+ * this logic.
  */
-function unitPriceMinor(
+export function unitPriceMinor(
   variant: DbVariantOption | undefined,
   quantity: number,
   pricingConfig?: PricingConfigV2 | null,
@@ -214,8 +217,12 @@ export function DbProductActions({
         </div>
       ) : (
         <>
+          {/* "Sample size", not "Size": the Live Estimate above has its own
+              size control, and two identically-labelled pickers that move
+              different numbers is what made the estimate look broken when
+              this one was clicked. */}
           <span className="text-sm font-bold block mb-2">
-            Size:{" "}
+            Sample size:{" "}
             <span className="font-normal">
               {selectedVariant?.sizeName ?? "Select a size"}
             </span>

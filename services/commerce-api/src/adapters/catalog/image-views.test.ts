@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyVendorImageRole, pickImageViews } from "./image-views.js";
+import { classifyVendorImageRole, isModelShot, pickImageViews } from "./image-views.js";
 
 describe("classifyVendorImageRole", () => {
   it("reads angle from the filename, not list order", () => {
@@ -23,6 +23,27 @@ describe("classifyVendorImageRole", () => {
         "https://media.sanmarcanada.com/catalog/product/1/0/108085_black_2011.jpg",
       ),
     ).toBe("unknown");
+  });
+});
+
+describe("isModelShot", () => {
+  it("recognizes SanMar's on-model shorthand codes", () => {
+    expect(isModelShot("https://media.example.com/108085_black_omf.jpg")).toBe(true);
+    expect(isModelShot("https://media.example.com/108085_black_oms.jpg")).toBe(true);
+    expect(isModelShot("https://media.example.com/108085_black_omb.jpg")).toBe(true);
+  });
+
+  it("recognizes the words model/lifestyle in a filename", () => {
+    expect(isModelShot("https://media.example.com/108085-black-model.jpg")).toBe(true);
+    expect(isModelShot("https://media.example.com/108085-black-on-model.jpg")).toBe(true);
+    expect(isModelShot("https://media.example.com/108085-black-lifestyle.jpg")).toBe(true);
+  });
+
+  it("does not flag a plain flat/ghost product shot", () => {
+    expect(isModelShot("https://media.example.com/108085_black_front.jpg")).toBe(false);
+    expect(
+      isModelShot("https://media.sanmarcanada.com/catalog/product/1/0/108085_black_2011.jpg"),
+    ).toBe(false);
   });
 });
 

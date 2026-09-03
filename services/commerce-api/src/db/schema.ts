@@ -489,6 +489,21 @@ export const categories = pgTable(
     name: text("name").notNull(),
     parentId: uuid("parent_id"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Decoration method keys (matching `PricingConfigV2.methods[].key`)
+     * available for products in this category — e.g. Hats should not offer
+     * Screen Print. `null`/empty means unrestricted: every enabled method
+     * is available, exactly today's behaviour (CodSphere UAT V2,
+     * "Product-Specific Decoration Methods & Print Locations").
+     */
+    allowedDecorationMethods: text("allowed_decoration_methods").array(),
+    /**
+     * Decoration location ids (matching `LOCATIONS` in
+     * lib/utils/shop-quote.ts: front/back/leftChest/sleeve) available for
+     * products in this category — e.g. Bags should not offer sleeve/chest
+     * placements. `null`/empty means unrestricted.
+     */
+    allowedDecorationLocations: text("allowed_decoration_locations").array(),
     ...auditColumns,
   },
   (table) => [
