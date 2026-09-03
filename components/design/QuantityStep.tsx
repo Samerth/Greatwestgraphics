@@ -61,7 +61,13 @@ type Detail = {
     colorBackImageUrl: string | null;
     isDark?: boolean;
   };
-  style: { id: string; brandName: string; styleName: string; title?: string | null };
+  style: {
+    id: string;
+    brandName: string;
+    styleName: string;
+    title?: string | null;
+    styleImageUrl?: string | null;
+  };
   variants: Variant[];
   colorways?: Colorway[];
 };
@@ -76,11 +82,26 @@ async function fetchDetail(productId: string): Promise<Detail | null> {
   }
 }
 
+/**
+ * This colourway's own photo, falling back to the style's general photo —
+ * many colourways share one style-level shot rather than getting their own.
+ * The product page's add-to-cart already does this two-step fallback; this
+ * path (Design Studio → Quantity → cart) previously only did the first
+ * step, so any colourway without its own dedicated photo rendered as a
+ * blank box in the cart — even though the exact same design/colour showed
+ * fine everywhere the fallback was applied. Bug found via a real cart
+ * screenshot where every design-studio line was blank and every
+ * plain-product line was not.
+ */
+function detailImageUrl(detail: Detail): string | null {
+  return detail.product.colorFrontImageUrl || detail.style.styleImageUrl || null;
+}
+
 function blockFromDetail(detail: Detail): ColourMatrixBlock {
   return {
     productId: detail.product.id,
     colorName: detail.product.colorName,
-    imageUrl: detail.product.colorFrontImageUrl,
+    imageUrl: detailImageUrl(detail),
     hex: null,
     sizes: detail.variants.map((v) => ({
       variantId: v.id,
@@ -408,7 +429,7 @@ export function QuantityStep({
             color: d?.product.colorName ?? "",
             qty: rows.length,
             unit: quote.cartUnit,
-            image: proofUrl || d?.product.colorFrontImageUrl || "",
+            image: proofUrl || (d ? detailImageUrl(d) : null) || "",
             artworkProofUrl: proofUrl ?? undefined,
             designProjectId: designProjectId ?? undefined,
             pricingSnapshot: quote.snapshot,
