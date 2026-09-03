@@ -281,15 +281,15 @@ export default function CartPage() {
                       </button>
                     </div>
 
+                    {/* Always visible, not tucked behind a click: this is
+                        who each shirt in the order actually goes to. */}
                     {item.roster && (
-                      <details className="mt-sp-3">
-                        <summary className="text-[12.5px] font-bold text-accent cursor-pointer">
-                          View roster ({item.roster.length})
-                        </summary>
-                        <div className="mt-2">
-                          <RosterTable roster={item.roster} />
-                        </div>
-                      </details>
+                      <div className="mt-sp-3">
+                        <span className="block text-[12.5px] font-bold text-text-secondary mb-1.5">
+                          Names &amp; numbers ({item.roster.length})
+                        </span>
+                        <RosterTable roster={item.roster} />
+                      </div>
                     )}
                     {item.designNotes ? (
                       <p className="mt-sp-2 mb-0 text-[12.5px] text-text-secondary">

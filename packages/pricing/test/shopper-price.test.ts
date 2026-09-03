@@ -6,6 +6,7 @@ import {
   PRICING_MASTER_V2,
   priceShopperItem,
   priceShopperQuote,
+  priceShopperQuoteMulti,
 } from "../src/index.js";
 
 const config: PricingConfigV2 = structuredClone(PRICING_MASTER_V2);
@@ -187,5 +188,161 @@ describe("priceShopperQuote", () => {
       .filter((line) => line.kind === "setup")
       .reduce((sum, line) => sum + line.extendedAmountMinor, 0);
     expect(setupTotal).toBe(6000);
+  });
+});
+
+describe("priceShopperQuoteMulti", () => {
+  // The Design Studio needs this: one design that runs Screen Print on the
+  // front and Embroidery on a sleeve, each priced through its own method —
+  // priceShopperQuote can only apply one method to every location (CodSphere
+  // UAT: "a customer could select Screen Print → Front → 3 Colours for one
+  // logo and Embroidery → Left Chest → Small for another").
+  it("prices each location through its own method, matching a hand-built multi-line quote", () => {
+    const multi = priceShopperQuoteMulti(config, {
+      unitCostMinor: 800,
+      quantity: 24,
+      colourName: "White",
+      description: "Team hoodie",
+      decorations: [
+        { location: "front", methodKey: "screenPrint", colours: 2 },
+        { location: "left", methodKey: "embroidery", stitchCount: 8000 },
+      ],
+    });
+
+    const admin = calculateQuoteV2(
+      {
+        garments: [
+          {
+            id: "shopper",
+            description: "Team hoodie",
+            unitCostMinor: 800,
+            quantity: 24,
+            colourName: "White",
+          },
+        ],
+        decorations: [
+          {
+            id: "decoration-front",
+            garmentId: "shopper",
+            methodKey: "screenPrint",
+            location: "front",
+            logoGroup: "",
+            colours: 2,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+          {
+            id: "decoration-left",
+            garmentId: "shopper",
+            methodKey: "embroidery",
+            location: "left",
+            logoGroup: "",
+            variableValue: 8000,
+            isOversized: false,
+            artwork: { isRepeat: false, verifiedByStaff: false },
+          },
+        ],
+        options: {
+          rush: false,
+          includePacking: false,
+          shippingCostMinor: 0,
+          designHours: 0,
+        },
+      },
+      config,
+    );
+
+    expect(multi.totalMinor).toBe(admin.totals.totalMinor);
+    expect(multi.input.decorations).toHaveLength(2);
+    expect(multi.input.decorations[0]?.methodKey).toBe("screenPrint");
+    expect(multi.input.decorations[1]?.methodKey).toBe("embroidery");
+  });
+
+  it("charges more than a single-method quote for the same two placements, since each now carries its own decoration cost", () => {
+    const singleMethodBothPlacements = priceShopperQuote(config, {
+      unitCostMinor: 800,
+      quantity: 24,
+      colourName: "White",
+      methodKey: "screenPrint",
+      colours: 2,
+      locations: ["front", "left"],
+    });
+    const mixed = priceShopperQuoteMulti(config, {
+      unitCostMinor: 800,
+      quantity: 24,
+      colourName: "White",
+      decorations: [
+        { location: "front", methodKey: "screenPrint", colours: 2 },
+        { location: "left", methodKey: "embroidery", stitchCount: 8000 },
+      ],
+    });
+    // Not asserting an exact number (that's the admin-comparison test's
+    // job) — just that swapping one placement to a different, real method
+    // actually changed the price rather than being silently ignored.
+    expect(mixed.totalMinor).not.toBe(singleMethodBothPlacements.totalMinor);
+  });
+
+  it("drops a location whose method key does not match any enabled method, rather than throwing", () => {
+    const priced = priceShopperQuoteMulti(config, {
+      unitCostMinor: 800,
+      quantity: 24,
+      colourName: "White",
+      decorations: [
+        { location: "front", methodKey: "screenPrint", colours: 1 },
+        { location: "back", methodKey: "not-a-real-method" },
+      ],
+    });
+    expect(priced.input.decorations).toHaveLength(1);
+    expect(priced.input.decorations[0]?.location).toBe("front");
+  });
+});
+
+describe("individual names and numbers", () => {
+  // Regression guard: the fee was defined in config and shown in the UI but
+  // never actually applied, because no storefront caller passed the flag.
+  const withFee: PricingConfigV2 = {
+    ...structuredClone(config),
+    settings: {
+      ...structuredClone(config).settings,
+      namesNumbersFeePerGarmentMinor: 750,
+    },
+  };
+
+  const base = {
+    unitCostMinor: 800,
+    quantity: 20,
+    decorated: true,
+    description: "Team hoodie",
+  } as const;
+
+  it("charges nothing extra when the flag is off", () => {
+    const off = priceShopperQuote(withFee, base);
+    const explicitlyOff = priceShopperQuote(withFee, {
+      ...base,
+      includeNamesNumbers: false,
+    });
+    expect(explicitlyOff.totalMinor).toBe(off.totalMinor);
+  });
+
+  it("adds the configured fee for every piece when the flag is on", () => {
+    const off = priceShopperQuote(withFee, base);
+    const on = priceShopperQuote(withFee, {
+      ...base,
+      includeNamesNumbers: true,
+    });
+    expect(on.totalMinor - off.totalMinor).toBe(750 * base.quantity);
+  });
+
+  it("adds nothing when the configured fee is zero, flag or not", () => {
+    const free: PricingConfigV2 = {
+      ...structuredClone(config),
+      settings: {
+        ...structuredClone(config).settings,
+        namesNumbersFeePerGarmentMinor: 0,
+      },
+    };
+    const off = priceShopperQuote(free, base);
+    const on = priceShopperQuote(free, { ...base, includeNamesNumbers: true });
+    expect(on.totalMinor).toBe(off.totalMinor);
   });
 });

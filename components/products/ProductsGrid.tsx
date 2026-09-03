@@ -14,6 +14,7 @@ import type {
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
 import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
+import { visibleChildCategories } from "@/lib/commerce/category-slug";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { stitchCountForPreset } from "@/lib/utils/shop-quote";
@@ -331,34 +332,41 @@ export function ProductsGrid({
               navigate({ category: "All" });
             }}
           />
-          {visibleGroups.map((group) => (
-            <div key={group.id}>
-              <FacetCheck
-                label={group.name}
-                checked={activeCategory.toLowerCase() === group.slug.toLowerCase()}
-                onChange={() => {
-                  setActiveCategory(group.slug);
-                  navigate({ category: group.slug });
-                }}
-                emphasize
-              />
-              {group.children.length > 0 && (
-                <div className="pl-5 mt-0.5 space-y-0.5">
-                  {group.children.map((child) => (
-                    <FacetCheck
-                      key={child.slug}
-                      label={child.name}
-                      checked={activeCategory.toLowerCase() === child.slug.toLowerCase()}
-                      onChange={() => {
-                        setActiveCategory(child.slug);
-                        navigate({ category: child.slug });
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+          {visibleGroups.map((group) => {
+            // The active subcategory is dropped from its own sibling list —
+            // it's already the filter in effect, so repeating it as a
+            // checkbox beside Heavyweight/Organic/etc. reads as redundant
+            // (CodSphere UAT V2).
+            const children = visibleChildCategories(group.children, activeCategory);
+            return (
+              <div key={group.id}>
+                <FacetCheck
+                  label={group.name}
+                  checked={activeCategory.toLowerCase() === group.slug.toLowerCase()}
+                  onChange={() => {
+                    setActiveCategory(group.slug);
+                    navigate({ category: group.slug });
+                  }}
+                  emphasize
+                />
+                {children.length > 0 && (
+                  <div className="pl-5 mt-0.5 space-y-0.5">
+                    {children.map((child) => (
+                      <FacetCheck
+                        key={child.slug}
+                        label={child.name}
+                        checked={activeCategory.toLowerCase() === child.slug.toLowerCase()}
+                        onChange={() => {
+                          setActiveCategory(child.slug);
+                          navigate({ category: child.slug });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </FacetGroup>
 

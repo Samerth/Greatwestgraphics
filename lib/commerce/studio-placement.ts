@@ -7,11 +7,16 @@ import {
 export function decoratedDesignSides(
   artworksBySide: Record<DesignSide, readonly unknown[]>,
   textsBySide?: Record<DesignSide, readonly unknown[]>,
+  /** Sides carrying an enabled roster (names/numbers) mark — see
+   *  `rosterActiveSides`. A names-only design (no separate artwork) is
+   *  still a real, fully decorated order, and needs to count here too. */
+  rosterSides?: readonly DesignSide[],
 ): DesignSide[] {
   return DesignSides.filter(
     (side) =>
       artworksBySide[side].length > 0 ||
-      (textsBySide?.[side]?.length ?? 0) > 0,
+      (textsBySide?.[side]?.length ?? 0) > 0 ||
+      (rosterSides?.includes(side) ?? false),
   );
 }
 

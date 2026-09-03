@@ -24,7 +24,7 @@ import {
   stores,
   syncRuns,
 } from "../db/schema.js";
-import { isMissingColumn } from "../db/postgres-error.js";
+import { isMissingColumn, postgresSqlState } from "../db/postgres-error.js";
 import {
   DataIntegrityError,
   ResourceNotFoundError,
@@ -32,6 +32,7 @@ import {
 import { mapSizeSpecsToChart, parseSizeSpecRows } from "./size-specs.js";
 import { applyStorePricingAdjustmentV2 } from "./pricing-config-v2-service.js";
 import { pickRepresentativeByStyle } from "./style-grouping.js";
+import { resolveDecorationRules } from "./decoration-rules.js";
 
 /** S&S sells its own printed catalogue through the same styles feed.
  * These are not garment brands and are hidden from shopper-facing lists. */
@@ -207,11 +208,7 @@ export class CatalogService {
      * they need to manage ones that are empty today. */
     onlyWithProducts = false,
   ) {
-    let rows = await this.db
-      .select()
-      .from(categories)
-      .where(eq(categories.tenantId, tenantId))
-      .orderBy(asc(categories.sortOrder), asc(categories.name));
+    let rows = await this.listCategoryRows(tenantId);
 
     if (storeId) {
       const allowedIds = await this.visibleCategoryIds(storeId);
@@ -290,6 +287,13 @@ export class CatalogService {
     return this.visibleCategoryIds(storeId);
   }
 
+  /** The message shown for both a caught pre-check and a raced unique-index
+   *  violation, so which path caught it is invisible to the admin — they
+   *  see one clear reason, not an implementation detail. */
+  private duplicateCategorySlugMessage(slug: string): string {
+    return `A category with the URL "${slug}" already exists. Choose a different name, or edit the existing category instead.`;
+  }
+
   async createCategory(
     tenantId: string,
     input: {
@@ -300,19 +304,46 @@ export class CatalogService {
     },
     actor: Actor,
   ) {
-    const [created] = await this.db
-      .insert(categories)
-      .values({
-        tenantId,
-        name: input.name,
-        slug: input.slug,
-        parentId: input.parentId ?? null,
-        sortOrder: input.sortOrder ?? 0,
-        createdBy: actor,
-        source: { system: "commerce_api" },
-      })
-      .returning();
-    return created!;
+    // `slug` carries a real unique index (categories_tenant_slug_uq) — this
+    // pre-check turns the common case (an admin submitting the same name
+    // twice, e.g. after an earlier click gave no visible feedback) into a
+    // clean, specific message instead of a raw constraint violation that
+    // used to reach the customer as an uncaught 500.
+    const [existing] = await this.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(eq(categories.tenantId, tenantId), eq(categories.slug, input.slug)),
+      )
+      .limit(1);
+    if (existing) {
+      throw new DataIntegrityError(this.duplicateCategorySlugMessage(input.slug));
+    }
+    try {
+      const [created] = await this.db
+        .insert(categories)
+        .values({
+          tenantId,
+          name: input.name,
+          slug: input.slug,
+          parentId: input.parentId ?? null,
+          sortOrder: input.sortOrder ?? 0,
+          createdBy: actor,
+          source: { system: "commerce_api" },
+        })
+        .returning();
+      return created!;
+    } catch (insertError) {
+      // The pre-check above closes the gap for a normal double-click, but
+      // two concurrent submissions of the identical slug can both pass it
+      // before either has inserted. The unique index is the real guard —
+      // translate its violation into the same clean error instead of a raw
+      // constraint-violation 500.
+      if (postgresSqlState(insertError) === "23505") {
+        throw new DataIntegrityError(this.duplicateCategorySlugMessage(input.slug));
+      }
+      throw insertError;
+    }
   }
 
   async updateCategory(
@@ -323,17 +354,53 @@ export class CatalogService {
       slug: string;
       parentId: string | null;
       sortOrder: number;
+      /** `null` clears the rule back to unrestricted; `undefined` leaves it
+       * untouched. See categories.allowedDecorationMethods in the schema. */
+      allowedDecorationMethods: string[] | null;
+      allowedDecorationLocations: string[] | null;
     }>,
   ) {
-    const [updated] = await this.db
-      .update(categories)
-      .set({ ...input, updatedAt: new Date() })
-      .where(
-        and(eq(categories.tenantId, tenantId), eq(categories.id, categoryId)),
-      )
-      .returning();
-    if (!updated) throw new ResourceNotFoundError("Category not found");
-    return updated;
+    if (input.slug) {
+      const [existing] = await this.db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.tenantId, tenantId),
+            eq(categories.slug, input.slug),
+          ),
+        )
+        .limit(1);
+      if (existing && existing.id !== categoryId) {
+        throw new DataIntegrityError(
+          this.duplicateCategorySlugMessage(input.slug),
+        );
+      }
+    }
+    try {
+      const [updated] = await this.db
+        .update(categories)
+        .set({ ...input, updatedAt: new Date() })
+        .where(
+          and(eq(categories.tenantId, tenantId), eq(categories.id, categoryId)),
+        )
+        .returning();
+      if (!updated) throw new ResourceNotFoundError("Category not found");
+      return updated;
+    } catch (caught) {
+      if (caught instanceof ResourceNotFoundError) throw caught;
+      if (postgresSqlState(caught) === "23505" && input.slug) {
+        throw new DataIntegrityError(
+          this.duplicateCategorySlugMessage(input.slug),
+        );
+      }
+      if (isMissingColumn(caught, "allowed_decoration_methods")) {
+        throw new DataIntegrityError(
+          "The database is missing the decoration-rules columns. Apply pending Drizzle migrations before setting these.",
+        );
+      }
+      throw caught;
+    }
   }
 
   async deleteCategory(tenantId: string, categoryId: string) {
@@ -1189,10 +1256,12 @@ export class CatalogService {
         name: categories.name,
         slug: categories.slug,
         source: ssProductCategories.assignmentSource,
+        parentId: categories.parentId,
       })
       .from(ssProductCategories)
       .innerJoin(categories, eq(ssProductCategories.categoryId, categories.id))
       .where(eq(ssProductCategories.productUuid, productUuid));
+    const decorationRules = await this.loadDecorationRules(cats);
 
     // Mirrors the same allow-list `listCategories` applies to browsing: a
     // store curated down to specific categories must not be reachable by a
@@ -1271,6 +1340,10 @@ export class CatalogService {
       /** Quantity the `retailMinor` prices above are quoted at. */
       priceDisplayQty: garmentPricing.displayQty,
       pricingConfig: garmentPricing.pricingConfig,
+      /** Which decoration methods/locations this product's categories allow
+       * — `null` for either means unrestricted. Design Studio and the PDP
+       * Live Estimate Calculator both filter their pickers against this. */
+      decorationRules,
     };
   }
 
@@ -1309,6 +1382,102 @@ export class CatalogService {
    * Isolated so a staging DB that has not applied 0022 still serves PDPs.
    * Missing `size_specs` is treated as "vendor sent nothing".
    */
+  /**
+   * Every category row for a tenant, defensive against
+   * `allowed_decoration_methods` / `allowed_decoration_locations` not
+   * existing yet in an environment that has not run the pending migration.
+   * `select()` (no explicit column list) asks for every column the ORM
+   * schema declares, so adding those two columns to schema.ts means this
+   * — a widely-used, foundational query (category menus, the admin listing)
+   * — would otherwise 500 the moment the new code deploys ahead of the
+   * migration, not just the decoration-rules feature itself.
+   */
+  private async listCategoryRows(tenantId: string) {
+    try {
+      return await this.db
+        .select()
+        .from(categories)
+        .where(eq(categories.tenantId, tenantId))
+        .orderBy(asc(categories.sortOrder), asc(categories.name));
+    } catch (error) {
+      if (!isMissingColumn(error, "allowed_decoration_methods")) throw error;
+      const fallbackRows = await this.db
+        .select({
+          id: categories.id,
+          tenantId: categories.tenantId,
+          slug: categories.slug,
+          name: categories.name,
+          parentId: categories.parentId,
+          sortOrder: categories.sortOrder,
+          createdAt: categories.createdAt,
+          updatedAt: categories.updatedAt,
+          createdBy: categories.createdBy,
+          source: categories.source,
+        })
+        .from(categories)
+        .where(eq(categories.tenantId, tenantId))
+        .orderBy(asc(categories.sortOrder), asc(categories.name));
+      return fallbackRows.map((row) => ({
+        ...row,
+        allowedDecorationMethods: null as string[] | null,
+        allowedDecorationLocations: null as string[] | null,
+      }));
+    }
+  }
+
+  /**
+   * Effective decoration-method / decoration-location allow-list for a
+   * product, from its own categories first, then their parent departments
+   * (CodSphere UAT V2, "Product-Specific Decoration Methods & Print
+   * Locations"). Defensive against the columns not existing yet in an
+   * environment that has not run the pending migration — same rule
+   * `loadStyleSizeSpecs` follows for `size_specs` — so a database that is
+   * one ALTER TABLE behind the ORM still serves the storefront, just
+   * unrestricted, rather than 500ing every product page.
+   */
+  private async loadDecorationRules(
+    directCats: { id: string; parentId: string | null }[],
+  ) {
+    if (directCats.length === 0) return resolveDecorationRules([]);
+    try {
+      const direct = await this.db
+        .select({
+          id: categories.id,
+          allowedDecorationMethods: categories.allowedDecorationMethods,
+          allowedDecorationLocations: categories.allowedDecorationLocations,
+        })
+        .from(categories)
+        .where(inArray(categories.id, directCats.map((c) => c.id)));
+      const directHasRule = direct.some(
+        (row) =>
+          (row.allowedDecorationMethods?.length ?? 0) > 0 ||
+          (row.allowedDecorationLocations?.length ?? 0) > 0,
+      );
+      const parentIds = [
+        ...new Set(
+          directCats.map((c) => c.parentId).filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const parents =
+        !directHasRule && parentIds.length > 0
+          ? await this.db
+              .select({
+                id: categories.id,
+                allowedDecorationMethods: categories.allowedDecorationMethods,
+                allowedDecorationLocations: categories.allowedDecorationLocations,
+              })
+              .from(categories)
+              .where(inArray(categories.id, parentIds))
+          : [];
+      return resolveDecorationRules([...direct, ...parents]);
+    } catch (error) {
+      if (isMissingColumn(error, "allowed_decoration_methods")) {
+        return resolveDecorationRules([]);
+      }
+      throw error;
+    }
+  }
+
   private async loadStyleSizeSpecs(styleUuid: string) {
     try {
       const [row] = await this.db

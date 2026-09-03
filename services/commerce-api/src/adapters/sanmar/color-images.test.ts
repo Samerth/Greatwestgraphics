@@ -76,6 +76,40 @@ describe("assignSanmarColorImages", () => {
     });
     expect(assigned.get("navy")?.imageBack).toBeUndefined();
   });
+
+  it("prefers an on-model front shot over a flat/ghost shot for the same colour, regardless of feed order", () => {
+    const flat =
+      "https://media.sanmarcanada.com/catalog/product/1/0/108085_black_flat.jpg";
+    const model =
+      "https://media.sanmarcanada.com/catalog/product/1/0/108085_black_omf.jpg";
+
+    // Flat/ghost shot listed first in the vendor feed — the model shot
+    // should still win the imageFront slot (CodSphere UAT: "Use model/
+    // on-body product imagery as the primary catalogue image wherever
+    // available").
+    expect(
+      assignSanmarColorImages({
+        colorNames: ["Black"],
+        mediaUrls: [flat, model],
+      }).get("black")?.imageFront,
+    ).toBe(model);
+
+    // Order reversed — same result either way.
+    expect(
+      assignSanmarColorImages({
+        colorNames: ["Black"],
+        mediaUrls: [model, flat],
+      }).get("black")?.imageFront,
+    ).toBe(model);
+  });
+
+  it("falls back to the flat/ghost shot when no model shot exists", () => {
+    const assigned = assignSanmarColorImages({
+      colorNames: ["Black"],
+      mediaUrls: [BLACK],
+    });
+    expect(assigned.get("black")?.imageFront).toBe(BLACK);
+  });
 });
 
 describe("bulkProductsToColorwayPatches", () => {

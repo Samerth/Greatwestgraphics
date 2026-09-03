@@ -24,11 +24,15 @@ export type {
 export { PRICING_MASTER_V2 } from "./generated/pricing-master.js";
 export {
   buildShopperQuoteInput,
+  buildShopperQuoteInputMulti,
   priceShopperItem,
   priceShopperQuote,
+  priceShopperQuoteMulti,
   summarizeShopperPrice,
 } from "./shopper-price.js";
 export type {
+  ShopperDecorationInput,
+  ShopperMultiPriceInput,
   ShopperPriceInput,
   ShopperPriceSummary,
   ShopperQuoteResult,

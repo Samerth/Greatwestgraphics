@@ -26,6 +26,27 @@ export function classifyVendorImageRole(
   return "unknown";
 }
 
+/**
+ * True when a vendor filename signals an on-model / lifestyle photo rather
+ * than a flat/ghost product shot. SanMar's media commonly flags this with
+ * `_omf` / `_oms` / `_omb` ("on-model front/side/back"), or the word
+ * "model"/"lifestyle" in the filename. This does not change which angle a
+ * photo is classified as (front/side/back) — only which photo wins when a
+ * colourway has more than one candidate for the same angle (CodSphere UAT:
+ * "Use model/on-body product imagery as the primary catalogue image
+ * wherever available").
+ */
+export function isModelShot(url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // Keep the raw string when it is not a valid URL.
+  }
+  const file = (path.split("/").pop() ?? path).toLowerCase();
+  return /_om[fsb]\b|\bmodel\b|on[-_]?model|\blifestyle\b/.test(file);
+}
+
 /** Prefer distinct front / side / back URLs when a vendor returns a list. */
 export function pickImageViews(
   urls: Array<string | null | undefined> | undefined,

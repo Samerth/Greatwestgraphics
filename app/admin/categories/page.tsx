@@ -1,18 +1,17 @@
 import Link from "next/link";
-import {
-  createCategoryAction,
-  deleteCategoryAction,
-  reorderCategoryAction,
-  updateCategoryAction,
-} from "@/app/admin/actions";
+import { redirect } from "next/navigation";
+import { deleteCategoryAction, reorderCategoryAction } from "@/app/admin/actions";
+import { AddCategoryForm } from "@/components/admin/AddCategoryForm";
 import { AdminPager } from "@/components/admin/AdminPager";
-import { CategoryNameFields } from "@/components/admin/CategoryNameFields";
+import { EditCategoryForm } from "@/components/admin/EditCategoryForm";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import {
   CATEGORY_PAGE_SIZE,
   categoryListHref,
 } from "@/lib/admin/mapping-list";
 import { paginate, parsePage, textMatchesQuery } from "@/lib/admin/paged-list";
+import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
+import { LOCATIONS } from "@/lib/utils/shop-quote";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +21,15 @@ type AdminCategory = {
   slug: string;
   parentId: string | null;
   sortOrder: number;
+  /** `null`/absent means unrestricted. */
+  allowedDecorationMethods: string[] | null;
+  allowedDecorationLocations: string[] | null;
 };
+
+function toStringArrayOrNull(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value.map((entry) => String(entry));
+}
 
 function toAdminCategory(row: Record<string, unknown>): AdminCategory {
   return {
@@ -31,6 +38,8 @@ function toAdminCategory(row: Record<string, unknown>): AdminCategory {
     slug: String(row.slug ?? ""),
     parentId: row.parentId ? String(row.parentId) : null,
     sortOrder: Number(row.sortOrder ?? 0),
+    allowedDecorationMethods: toStringArrayOrNull(row.allowedDecorationMethods),
+    allowedDecorationLocations: toStringArrayOrNull(row.allowedDecorationLocations),
   };
 }
 
@@ -41,23 +50,45 @@ function categoryMatches(cat: AdminCategory, q: string) {
 export default async function AdminCategoriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    error?: string;
+    notice?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const q = (sp.q || "").trim();
   const requestedPage = parsePage(sp.page);
+  // Delete and move-up/down still fail by throwing (they have no form
+  // fields to preserve, so there is nothing `useActionState` would buy
+  // them) — a caught failure travels back here as `?error=` instead, which
+  // is what this reads. Kept separate from `loadError` below: one is "the
+  // page could not load," the other is "your last action did not save."
+  const mutationError = sp.error;
+  const mutationNotice = sp.notice;
 
   let categories: AdminCategory[] = [];
-  let error: string | undefined;
+  let loadError: string | undefined;
   try {
     const raw = await (await adminClient()).listCategories(requireAdminToken());
     categories = raw.map(toAdminCategory);
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Categories unavailable";
+    loadError =
+      caught instanceof Error ? caught.message : "Categories unavailable";
   }
 
+  // Method checkboxes offer exactly the methods the storefront currently
+  // publishes — an admin restricting a category can only pick from methods
+  // that actually exist, never a stale/removed key.
+  const pricingConfig = await loadPublishedPricingV2();
+  const methodOptions = pricingConfig.methods
+    .filter((m) => m.enabled)
+    .map((m) => ({ key: m.key, label: m.label }));
+  const locationOptions = LOCATIONS.map((l) => ({ key: l.id, label: l.label }));
+
   const totalCount = categories.length;
-  const isEmpty = !error && totalCount === 0;
+  const isEmpty = !loadError && totalCount === 0;
 
   // Only top-level categories can be picked as a parent — keeps the taxonomy
   // to two levels (category → subcategory) rather than infinite nesting.
@@ -152,9 +183,23 @@ export default async function AdminCategoriesPage({
         </Link>
       </div>
 
-      {error && (
+      {loadError && (
         <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
-          {error}
+          {loadError}
+        </p>
+      )}
+      {mutationError && (
+        <p role="alert" className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
+          {mutationError}
+        </p>
+      )}
+      {mutationNotice && (
+        <p className="border border-green-200 bg-green-50 text-green-800 rounded-md p-sp-3 m-0">
+          {mutationNotice === "moved"
+            ? "Moved."
+            : mutationNotice === "deleted"
+              ? "Category deleted."
+              : mutationNotice}
         </p>
       )}
 
@@ -199,19 +244,7 @@ export default async function AdminCategoriesPage({
             a custom URL.
           </p>
         </div>
-        <form action={createCategoryAction} className="space-y-sp-3">
-          <CategoryNameFields
-            mode="create"
-            nameId="new-category-name"
-            parentOptions={topLevelCategories}
-          />
-          <button
-            type="submit"
-            className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-          >
-            Add a category
-          </button>
-        </form>
+        <AddCategoryForm parentOptions={topLevelCategories} />
       </section>
 
       <section className="space-y-sp-3">
@@ -251,7 +284,7 @@ export default async function AdminCategoriesPage({
           </form>
         )}
 
-        {(paged.total > 0 || q || (!error && totalCount === 0)) && (
+        {(paged.total > 0 || q || (!loadError && totalCount === 0)) && (
           <p className="text-sm text-text-tertiary m-0">
             {paged.total === 0
               ? q
@@ -286,7 +319,32 @@ export default async function AdminCategoriesPage({
                             const tmp = next[globalIndex - 1]!;
                             next[globalIndex - 1] = next[globalIndex]!;
                             next[globalIndex] = tmp;
-                            await reorderCategoryAction(buildFullOrder(next));
+                            // reorderCategoryAction still throws rather than
+                            // returning a state — it has no fields to keep,
+                            // so catching here and redirecting with the
+                            // reason is enough; useActionState would add a
+                            // client component for no real benefit.
+                            try {
+                              await reorderCategoryAction(buildFullOrder(next));
+                            } catch (caught) {
+                              redirect(
+                                categoryListHref({
+                                  q,
+                                  page: requestedPage,
+                                  error:
+                                    caught instanceof Error
+                                      ? caught.message
+                                      : "Could not move this category.",
+                                }),
+                              );
+                            }
+                            redirect(
+                              categoryListHref({
+                                q,
+                                page: requestedPage,
+                                notice: "moved",
+                              }),
+                            );
                           }}
                         >
                           <button
@@ -314,7 +372,27 @@ export default async function AdminCategoriesPage({
                             const tmp = next[globalIndex + 1]!;
                             next[globalIndex + 1] = next[globalIndex]!;
                             next[globalIndex] = tmp;
-                            await reorderCategoryAction(buildFullOrder(next));
+                            try {
+                              await reorderCategoryAction(buildFullOrder(next));
+                            } catch (caught) {
+                              redirect(
+                                categoryListHref({
+                                  q,
+                                  page: requestedPage,
+                                  error:
+                                    caught instanceof Error
+                                      ? caught.message
+                                      : "Could not move this category.",
+                                }),
+                              );
+                            }
+                            redirect(
+                              categoryListHref({
+                                q,
+                                page: requestedPage,
+                                notice: "moved",
+                              }),
+                            );
                           }}
                         >
                           <button
@@ -329,35 +407,18 @@ export default async function AdminCategoriesPage({
                     </div>
                   </div>
 
-                  <form
-                    action={async (formData) => {
-                      "use server";
-                      await updateCategoryAction(parent.id, formData);
-                    }}
-                    className="space-y-sp-3"
-                  >
-                    <CategoryNameFields
-                      mode="edit"
-                      defaultName={parent.name}
-                      defaultSlug={parent.slug}
-                      defaultParentId=""
-                      parentOptions={topLevelCategories.filter(
-                        (opt) => opt.id !== parent.id,
-                      )}
-                    />
-                    <div className="flex flex-wrap gap-3 items-center">
-                      <button
-                        type="submit"
-                        className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
-                      >
-                        Save changes
-                      </button>
-                      <p className="text-xs text-text-tertiary m-0">
-                        Tip: rename for shoppers anytime; only touch the URL
-                        name if an old link must stay the same.
-                      </p>
-                    </div>
-                  </form>
+                  <EditCategoryForm
+                    categoryId={parent.id}
+                    defaultName={parent.name}
+                    defaultSlug={parent.slug}
+                    parentOptions={topLevelCategories.filter(
+                      (opt) => opt.id !== parent.id,
+                    )}
+                    methodOptions={methodOptions}
+                    locationOptions={locationOptions}
+                    defaultAllowedDecorationMethods={parent.allowedDecorationMethods}
+                    defaultAllowedDecorationLocations={parent.allowedDecorationLocations}
+                  />
 
                   <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
                     <p className="text-xs text-text-tertiary m-0">
@@ -367,7 +428,27 @@ export default async function AdminCategoriesPage({
                     <form
                       action={async () => {
                         "use server";
-                        await deleteCategoryAction(parent.id);
+                        try {
+                          await deleteCategoryAction(parent.id);
+                        } catch (caught) {
+                          redirect(
+                            categoryListHref({
+                              q,
+                              page: requestedPage,
+                              error:
+                                caught instanceof Error
+                                  ? caught.message
+                                  : "Could not delete this category.",
+                            }),
+                          );
+                        }
+                        redirect(
+                          categoryListHref({
+                            q,
+                            page: requestedPage,
+                            notice: "deleted",
+                          }),
+                        );
                       }}
                     >
                       <button
@@ -401,8 +482,28 @@ export default async function AdminCategoriesPage({
                                 const tmp = next[childIndex - 1]!;
                                 next[childIndex - 1] = next[childIndex]!;
                                 next[childIndex] = tmp;
-                                await reorderCategoryAction(
-                                  buildFullOrderWithChildren(parent.id, next),
+                                try {
+                                  await reorderCategoryAction(
+                                    buildFullOrderWithChildren(parent.id, next),
+                                  );
+                                } catch (caught) {
+                                  redirect(
+                                    categoryListHref({
+                                      q,
+                                      page: requestedPage,
+                                      error:
+                                        caught instanceof Error
+                                          ? caught.message
+                                          : "Could not move this category.",
+                                    }),
+                                  );
+                                }
+                                redirect(
+                                  categoryListHref({
+                                    q,
+                                    page: requestedPage,
+                                    notice: "moved",
+                                  }),
                                 );
                               }}
                             >
@@ -423,8 +524,28 @@ export default async function AdminCategoriesPage({
                                 const tmp = next[childIndex + 1]!;
                                 next[childIndex + 1] = next[childIndex]!;
                                 next[childIndex] = tmp;
-                                await reorderCategoryAction(
-                                  buildFullOrderWithChildren(parent.id, next),
+                                try {
+                                  await reorderCategoryAction(
+                                    buildFullOrderWithChildren(parent.id, next),
+                                  );
+                                } catch (caught) {
+                                  redirect(
+                                    categoryListHref({
+                                      q,
+                                      page: requestedPage,
+                                      error:
+                                        caught instanceof Error
+                                          ? caught.message
+                                          : "Could not move this category.",
+                                    }),
+                                  );
+                                }
+                                redirect(
+                                  categoryListHref({
+                                    q,
+                                    page: requestedPage,
+                                    notice: "moved",
+                                  }),
                                 );
                               }}
                             >
@@ -440,35 +561,18 @@ export default async function AdminCategoriesPage({
                         </div>
                       </div>
 
-                      <form
-                        action={async (formData) => {
-                          "use server";
-                          await updateCategoryAction(child.id, formData);
-                        }}
-                        className="space-y-sp-3"
-                      >
-                        <CategoryNameFields
-                          mode="edit"
-                          defaultName={child.name}
-                          defaultSlug={child.slug}
-                          defaultParentId={child.parentId ?? ""}
-                          parentOptions={topLevelCategories.filter(
-                            (opt) => opt.id !== child.id,
-                          )}
-                        />
-                        <div className="flex flex-wrap gap-3 items-center">
-                          <button
-                            type="submit"
-                            className="text-sm font-bold text-accent px-3 py-2 border border-border rounded-sm hover:bg-fill-subtle-15"
-                          >
-                            Save changes
-                          </button>
-                          <p className="text-xs text-text-tertiary m-0">
-                            Tip: rename for shoppers anytime; only touch the
-                            URL name if an old link must stay the same.
-                          </p>
-                        </div>
-                      </form>
+                      <EditCategoryForm
+                        categoryId={child.id}
+                        defaultName={child.name}
+                        defaultSlug={child.slug}
+                        parentOptions={topLevelCategories.filter(
+                          (opt) => opt.id !== child.id,
+                        )}
+                        methodOptions={methodOptions}
+                        locationOptions={locationOptions}
+                        defaultAllowedDecorationMethods={child.allowedDecorationMethods}
+                        defaultAllowedDecorationLocations={child.allowedDecorationLocations}
+                      />
 
                       <div className="border-t border-border pt-3 flex flex-wrap justify-between gap-2 items-center">
                         <p className="text-xs text-text-tertiary m-0">
@@ -478,7 +582,27 @@ export default async function AdminCategoriesPage({
                         <form
                           action={async () => {
                             "use server";
-                            await deleteCategoryAction(child.id);
+                            try {
+                              await deleteCategoryAction(child.id);
+                            } catch (caught) {
+                              redirect(
+                                categoryListHref({
+                                  q,
+                                  page: requestedPage,
+                                  error:
+                                    caught instanceof Error
+                                      ? caught.message
+                                      : "Could not delete this category.",
+                                }),
+                              );
+                            }
+                            redirect(
+                              categoryListHref({
+                                q,
+                                page: requestedPage,
+                                notice: "deleted",
+                              }),
+                            );
                           }}
                         >
                           <button

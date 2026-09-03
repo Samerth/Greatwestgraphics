@@ -42,6 +42,39 @@ describe("decoratedDesignSides", () => {
       ),
     ).toEqual(["back"]);
   });
+
+  // A names-only design (no separate artwork/text layer) used to report
+  // zero decorated sides, which blocked it from leaving the studio at all
+  // and, had it somehow left, would have priced as an undecorated blank.
+  it("counts a roster mark's side as decorated even with no artwork or text layer", () => {
+    const empty = { front: [], back: [], left: [], right: [] };
+    expect(decoratedDesignSides(empty, empty, ["back"])).toEqual(["back"]);
+  });
+
+  it("does not duplicate a side that already has a real layer and a roster mark", () => {
+    expect(
+      decoratedDesignSides(
+        { front: [{ id: "a" }], back: [], left: [], right: [] },
+        undefined,
+        ["front"],
+      ),
+    ).toEqual(["front"]);
+  });
+
+  it("combines layer sides and roster sides without dropping either", () => {
+    expect(
+      decoratedDesignSides(
+        { front: [{ id: "a" }], back: [], left: [], right: [] },
+        undefined,
+        ["back"],
+      ),
+    ).toEqual(["front", "back"]);
+  });
+
+  it("treats an empty roster-sides list the same as omitting it", () => {
+    const empty = { front: [], back: [], left: [], right: [] };
+    expect(decoratedDesignSides(empty, undefined, [])).toEqual([]);
+  });
 });
 
 describe("cartPrintMetaLabel", () => {

@@ -17,12 +17,23 @@ export function RosterEditor({
   rows,
   onChange,
   layout = "compact",
+  showSize = true,
 }: {
   sizes: { id: string; label: string }[];
   rows: RosterRow[];
   onChange: (rows: RosterRow[]) => void;
   /** compact = PDP / narrow rails. wide = Design Studio team panel. */
   layout?: "compact" | "wide";
+  /**
+   * Whether this editor asks for each person's size.
+   *
+   * False in the Design Studio, where the roster captures only what gets
+   * *printed* — the name and number. Which size each person takes is an
+   * ordering decision, and it is collected on the Input Quantity step with
+   * every other quantity input. The `size` field stays on the row either
+   * way so the two halves rejoin without a second data shape.
+   */
+  showSize?: boolean;
 }) {
   function updateRow(index: number, patch: Partial<RosterRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -54,22 +65,28 @@ export function RosterEditor({
             key={i}
             className={
               layout === "wide"
-                ? "grid grid-cols-[120px_minmax(0,1fr)_100px_36px] gap-2 items-center"
-                : "grid grid-cols-[72px_1fr_60px_28px] gap-1.5 items-center"
+                ? showSize
+                  ? "grid grid-cols-[120px_minmax(0,1fr)_100px_36px] gap-2 items-center"
+                  : "grid grid-cols-[minmax(0,1fr)_100px_36px] gap-2 items-center"
+                : showSize
+                  ? "grid grid-cols-[72px_1fr_60px_28px] gap-1.5 items-center"
+                  : "grid grid-cols-[1fr_60px_28px] gap-1.5 items-center"
             }
           >
-            <select
-              value={row.size}
-              onChange={(e) => updateRow(i, { size: e.target.value })}
-              className="border border-border rounded-sm bg-bg-raised px-1.5 py-2 text-[12.5px] font-semibold"
-            >
-              {layout === "wide" ? <option value="">Size</option> : null}
-              {sizes.map((s) => (
-                <option key={s.id} value={s.label}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            {showSize && (
+              <select
+                value={row.size}
+                onChange={(e) => updateRow(i, { size: e.target.value })}
+                className="border border-border rounded-sm bg-bg-raised px-1.5 py-2 text-[12.5px] font-semibold"
+              >
+                {layout === "wide" ? <option value="">Size</option> : null}
+                {sizes.map((s) => (
+                  <option key={s.id} value={s.label}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               value={row.name}
               onChange={(e) => updateRow(i, { name: e.target.value })}

@@ -7,7 +7,7 @@
  */
 
 import type { ImageViews } from "../catalog/image-views.js";
-import { classifyVendorImageRole } from "../catalog/image-views.js";
+import { classifyVendorImageRole, isModelShot } from "../catalog/image-views.js";
 import type { CatalogSkuRow } from "../catalog/types.js";
 import type { SanmarBulkProduct } from "./client.js";
 
@@ -115,9 +115,15 @@ function placeUrl(
   url: string,
 ) {
   const role = classifyVendorImageRole(url);
-  if (role === "side") pushUnique(bucket.sides, url);
-  else if (role === "back") pushUnique(bucket.backs, url);
-  else pushUnique(bucket.fronts, url);
+  const list =
+    role === "side" ? bucket.sides : role === "back" ? bucket.backs : bucket.fronts;
+  if (list.includes(url)) return;
+  // On-model/lifestyle shots jump to the front of the list so they win the
+  // "first" pick below (CodSphere UAT — primary catalogue image should be
+  // the model shot when the vendor sent one, falling back to the flat/ghost
+  // shot otherwise). Plain pushUnique order is preserved for everything else.
+  if (isModelShot(url)) list.unshift(url);
+  else list.push(url);
 }
 
 /**

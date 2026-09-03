@@ -108,6 +108,57 @@ describe("normalizeDesignDocument", () => {
     );
   });
 
+  it("round-trips a per-side decoration selection (method + pricing input independent per location)", () => {
+    const before: DesignDocument = {
+      ...emptyDesignDocument(),
+      artworksBySide: {
+        front: [layer({ id: "chest" })],
+        back: [],
+        left: [layer({ id: "sleeve" })],
+        right: [],
+      },
+      decorationsBySide: {
+        front: { methodKey: "screenPrint", colours: 3 },
+        back: undefined,
+        left: { methodKey: "embroidery", stitchPreset: "small" },
+        right: undefined,
+      },
+    };
+    expect(normalizeDesignDocument(toStoredDesignDocument(before))).toEqual(
+      before,
+    );
+  });
+
+  it("leaves every side's decoration undefined for an unsaved design, and for a legacy row with no decorationsBySide at all", () => {
+    expect(normalizeDesignDocument(null).decorationsBySide).toEqual({
+      front: undefined,
+      back: undefined,
+      left: undefined,
+      right: undefined,
+    });
+    expect(
+      normalizeDesignDocument({ front: [layer({ id: "legacy" })] })
+        .decorationsBySide,
+    ).toEqual({ front: undefined, back: undefined, left: undefined, right: undefined });
+  });
+
+  it("drops a malformed side decoration instead of failing the whole document", () => {
+    const document = normalizeDesignDocument({
+      artworksBySide: { front: [], back: [], left: [], right: [] },
+      decorationsBySide: {
+        front: { methodKey: "" }, // fails min(1) — dropped
+        back: { methodKey: "dtf", colours: "not-a-number" },
+        left: { methodKey: "embroidery", stitchPreset: "small" }, // valid
+      },
+    });
+    expect(document.decorationsBySide.front).toBeUndefined();
+    expect(document.decorationsBySide.back).toBeUndefined();
+    expect(document.decorationsBySide.left).toEqual({
+      methodKey: "embroidery",
+      stitchPreset: "small",
+    });
+  });
+
   it("fills missing text / notes / roster fields so older rows still load", () => {
     const document = normalizeDesignDocument({
       front: [layer({ id: "legacy" })],
@@ -119,7 +170,11 @@ describe("normalizeDesignDocument", () => {
       right: [],
     });
     expect(document.notes).toBe("");
-    expect(document.rosterDecor.names.location).toBe("Upper Back");
+    // Both default to the same location now — matching Coastal Reign's own
+    // default ("Back" / "Back") and closing real UAT confusion where
+    // independently-configurable defaults split Names and Numbers across
+    // two different sides with nothing on screen explaining why.
+    expect(document.rosterDecor.names.location).toBe("Full Back");
     expect(document.rosterDecor.numbers.location).toBe("Full Back");
     expect(designDocumentHasArtwork(document)).toBe(true);
   });
@@ -262,5 +317,45 @@ describe("designProjectPatch", () => {
     expect(patch.design?.artworksBySide.front.map((a) => a.id)).toEqual([
       "current",
     ]);
+  });
+});
+
+describe("designDocumentHasArtwork counts a real roster", () => {
+  // A customer who named their whole team and added no separate logo has
+  // absolutely built a design. Before this, every "is there an active
+  // design" check in the app — restoring a returning visitor's draft,
+  // persisting it, carrying it from the studio into Input Quantity, the
+  // step bar — went through this one function and all silently disagreed:
+  // a names-only design could never leave the studio, and if it somehow
+  // had, would have lost its own roster on the very next page.
+  it("is true once a roster row has a real name, with no artwork at all", () => {
+    const document = normalizeDesignDocument({
+      artworksBySide: { front: [], back: [], left: [], right: [] },
+      roster: [{ size: "", name: "kartik", number: "7" }],
+    });
+    expect(designDocumentHasArtwork(document)).toBe(true);
+  });
+
+  it("is true from a number alone, with no name entered yet", () => {
+    const document = normalizeDesignDocument({
+      artworksBySide: { front: [], back: [], left: [], right: [] },
+      roster: [{ size: "", name: "", number: "7" }],
+    });
+    expect(designDocumentHasArtwork(document)).toBe(true);
+  });
+
+  it("stays false for the blank starter row every fresh roster begins with", () => {
+    const document = normalizeDesignDocument({
+      artworksBySide: { front: [], back: [], left: [], right: [] },
+      roster: [{ size: "", name: "", number: "" }],
+    });
+    expect(designDocumentHasArtwork(document)).toBe(false);
+  });
+
+  it("stays false with no roster field at all — matches the pre-roster shape", () => {
+    const document = normalizeDesignDocument({
+      artworksBySide: { front: [], back: [], left: [], right: [] },
+    });
+    expect(designDocumentHasArtwork(document)).toBe(false);
   });
 });

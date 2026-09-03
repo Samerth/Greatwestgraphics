@@ -78,11 +78,54 @@ export const PlacedTextSchema = z.object({
 });
 export type PlacedText = z.infer<typeof PlacedTextSchema>;
 
+/**
+ * Decoration method + pricing input chosen for one side (CodSphere UAT V2,
+ * "Decoration Method, Location & Pricing Inputs" — method and pricing tier
+ * are picked independently per decoration location, so a customer can run
+ * Screen Print on the front and Embroidery on a sleeve in the same design).
+ * `methodKey` is a free string, not a fixed enum, because the set of
+ * decoration methods is admin-configurable (`PricingConfigV2.methods`) —
+ * this schema only needs to round-trip whatever key was in effect, not
+ * enumerate every possible one. `colours` / `stitchPreset` / `optionKey`
+ * mirror the same three shopper-facing pricing inputs the PDP quote builder
+ * and Quote Builder already use (screen-print colour count, embroidery/DTF
+ * size tier, transfer-size option) — only the one matching the method's
+ * rate model is ever read.
+ */
+export const SideDecorationSchema = z.object({
+  methodKey: z.string().min(1).max(60),
+  colours: z.number().finite().min(1).max(20).optional(),
+  stitchPreset: z.string().min(1).max(40).optional(),
+  optionKey: z.string().min(1).max(60).optional(),
+});
+export type SideDecoration = z.infer<typeof SideDecorationSchema>;
+
 export const RosterDecorPartSchema = z.object({
   printMethod: TextPrintMethodSchema,
   heightIn: z.number().finite().min(0.25).max(12),
   color: z.string().min(1).max(40),
   location: z.string().min(1).max(80),
+  /**
+   * Whether this mark actually prints. Matches the Coastal Reign benchmark
+   * ("+ Names" / "+ Numbers" checkboxes) — the customer opts each one in
+   * explicitly, rather than both appearing the moment any roster row has
+   * data. `.default(true)` keeps every design saved before this field
+   * existed showing exactly what it already showed; the checkbox is a new
+   * way to turn one off, not a new hoop to opt in through.
+   */
+  enabled: z.boolean().default(true),
+  /**
+   * Fine-tune offset from the location's default center, as a fraction of
+   * that print plate's own width/height — not canvas pixels, so the same
+   * offset reads the same whether it is drawn on the full studio canvas or
+   * a small Input Quantity preview.
+   *
+   * `.default(0)` is what makes this a safe contract addition: a design
+   * saved before this field existed parses with 0/0 here, which is exactly
+   * "no offset yet" — no explicit migration code needed.
+   */
+  offsetXNorm: z.number().finite().min(-1).max(1).default(0),
+  offsetYNorm: z.number().finite().min(-1).max(1).default(0),
 });
 export type RosterDecorPart = z.infer<typeof RosterDecorPartSchema>;
 
@@ -101,17 +144,29 @@ export type DesignRosterRow = z.infer<typeof DesignRosterRowSchema>;
 
 export function defaultRosterDecor(): RosterDecor {
   return {
+    // Both default to the same location — matching Coastal Reign's own
+    // default ("Back" / "Back") exactly, and closing the confusion two
+    // rounds of testing kept hitting: independently-configurable location
+    // is still real and still supported (the client's own spec asks for
+    // it), but the customer now has to deliberately change one for them to
+    // land on different sides, rather than starting apart by default.
     names: {
       printMethod: "print",
       heightIn: 2.5,
       color: "#111111",
-      location: "Upper Back",
+      location: "Full Back",
+      enabled: true,
+      offsetXNorm: 0,
+      offsetYNorm: 0,
     },
     numbers: {
       printMethod: "print",
       heightIn: 8,
       color: "#111111",
       location: "Full Back",
+      enabled: true,
+      offsetXNorm: 0,
+      offsetYNorm: 0,
     },
   };
 }
@@ -139,6 +194,14 @@ export interface DesignDocument {
   notes: string;
   rosterDecor: RosterDecor;
   roster?: DesignRosterRow[];
+  /**
+   * Decoration method + pricing input per side. `undefined` for a side means
+   * "not chosen yet" — the studio falls back to the document-level default
+   * method (same one the PDP handoff already seeds) until the customer
+   * actually picks one for that side, so every design saved before this
+   * field existed reads back exactly as it did before.
+   */
+  decorationsBySide: Record<DesignSide, SideDecoration | undefined>;
 }
 
 export function defaultPlacementBySide(): Record<DesignSide, string> {
@@ -150,6 +213,10 @@ export function defaultPlacementBySide(): Record<DesignSide, string> {
   };
 }
 
+export function emptyDecorationsBySide(): Record<DesignSide, SideDecoration | undefined> {
+  return { front: undefined, back: undefined, left: undefined, right: undefined };
+}
+
 export function emptyDesignDocument(): DesignDocument {
   return {
     version: DESIGN_DOCUMENT_VERSION,
@@ -158,6 +225,7 @@ export function emptyDesignDocument(): DesignDocument {
     textsBySide: emptyTextsBySide(),
     notes: "",
     rosterDecor: defaultRosterDecor(),
+    decorationsBySide: emptyDecorationsBySide(),
   };
 }
 
@@ -173,6 +241,7 @@ export interface StoredDesignDocument {
   notes?: unknown;
   rosterDecor?: unknown;
   roster?: unknown;
+  decorationsBySide?: unknown;
 }
 
 function asArtworkList(input: unknown): PlacedArtwork[] {
@@ -228,6 +297,23 @@ function asRoster(input: unknown): DesignRosterRow[] | undefined {
   return rows.length > 0 ? rows : undefined;
 }
 
+function asSideDecoration(input: unknown): SideDecoration | undefined {
+  const parsed = SideDecorationSchema.safeParse(input);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function asDecorationsBySide(
+  input: unknown,
+): Record<DesignSide, SideDecoration | undefined> {
+  const map = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  return {
+    front: asSideDecoration(map.front),
+    back: asSideDecoration(map.back),
+    left: asSideDecoration(map.left ?? map.side),
+    right: asSideDecoration(map.right),
+  };
+}
+
 /**
  * Reads any shape this table has ever held into today's document.
  *
@@ -252,6 +338,7 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
           notes: record.notes,
           rosterDecor: record.rosterDecor,
           roster: record.roster,
+          decorationsBySide: record.decorationsBySide,
         }
       : { artworksBySide: record };
 
@@ -277,6 +364,9 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
     stored.rosterDecor ?? artworkMap.rosterDecor,
   );
   const roster = asRoster(stored.roster ?? artworkMap.roster);
+  const decorationsBySide = asDecorationsBySide(
+    stored.decorationsBySide ?? artworkMap.decorationsBySide,
+  );
 
   return {
     version: DESIGN_DOCUMENT_VERSION,
@@ -296,6 +386,7 @@ export function normalizeDesignDocument(input: unknown): DesignDocument {
     notes,
     rosterDecor,
     ...(roster ? { roster } : {}),
+    decorationsBySide,
   };
 }
 
@@ -313,16 +404,39 @@ export function toStoredDesignDocument(
       ...(document.roster && document.roster.length > 0
         ? { roster: document.roster }
         : {}),
+      decorationsBySide: document.decorationsBySide,
     },
     placementBySide: document.placementBySide,
   };
 }
 
+/**
+ * Whether this design is real — has something in it worth keeping.
+ *
+ * This is the single gate every "is there an active design" check in the
+ * app goes through: whether to restore a returning visitor's draft, mirror
+ * it into the persisted store, carry it from the studio into Input
+ * Quantity, and light up the step bar. A roster (names/numbers) is a real
+ * decoration decision, printed on the garment the same as a logo — a
+ * customer who names their whole team and adds no separate artwork has
+ * absolutely built a design, and every one of those gates used to say
+ * otherwise, silently losing the roster the moment they navigated away
+ * from the studio or reloaded the page.
+ *
+ * An empty roster row (the blank one every fresh roster starts with) does
+ * not count — only a row with an actual name or number does, matching
+ * `studioActiveTeamRows`'s own definition of "a real person" so the two
+ * never disagree about what counts as started.
+ */
 export function designDocumentHasArtwork(document: DesignDocument): boolean {
-  return DesignSides.some(
+  const hasLayers = DesignSides.some(
     (side) =>
       document.artworksBySide[side].length > 0 ||
       (document.textsBySide?.[side]?.length ?? 0) > 0,
+  );
+  if (hasLayers) return true;
+  return (document.roster ?? []).some(
+    (row) => row.name.trim() !== "" || (row.number ?? "").trim() !== "",
   );
 }
 

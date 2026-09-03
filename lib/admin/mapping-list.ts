@@ -27,6 +27,10 @@ export function mappingListHref(opts: {
   tab?: MappingTab | string | null;
   q?: string | null;
   page?: number | string | null;
+  /** Carries a failed `saveMappingAction` back to the list it redirects to,
+   *  so the admin sees why nothing changed instead of the redirect quietly
+   *  discarding the error. */
+  error?: string | null;
 }): string {
   const tab = parseMappingTab(opts.tab);
   return queryHref(
@@ -35,6 +39,7 @@ export function mappingListHref(opts: {
       tab,
       q: opts.q ?? "",
       page: parsePage(opts.page == null ? undefined : String(opts.page)),
+      error: opts.error ?? "",
     },
     { tab: "review", page: "1" },
   );
@@ -43,12 +48,23 @@ export function mappingListHref(opts: {
 export function categoryListHref(opts: {
   q?: string | null;
   page?: number | string | null;
+  /** Set by the delete/move-up/move-down call sites on a caught failure, so
+   *  the admin lands back exactly where they were with the reason attached
+   *  instead of the generic admin error page. */
+  error?: string | null;
+  /** Set on a successful delete/move, so an action whose outcome is not
+   *  otherwise obvious (e.g. delete, once the row is gone, is obvious; a
+   *  reorder among many rows on a busy page is less so) still gets a
+   *  one-line confirmation. */
+  notice?: string | null;
 }): string {
   return queryHref(
     "/admin/categories",
     {
       q: opts.q ?? "",
       page: parsePage(opts.page == null ? undefined : String(opts.page)),
+      error: opts.error ?? "",
+      notice: opts.notice ?? "",
     },
     { page: "1" },
   );

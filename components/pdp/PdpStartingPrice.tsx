@@ -39,6 +39,9 @@ export function PdpStartingPrice({
   const liveBreaks = usePdpLiveEstimate((s) =>
     s.productId === productId ? s.quantityBreaks : null,
   );
+  const liveCurrent = usePdpLiveEstimate((s) =>
+    s.productId === productId ? s.current : null,
+  );
 
   const fallback = useMemo(() => {
     if (!pricingConfig || !firstInStock?.costMinor) return null;
@@ -101,7 +104,13 @@ export function PdpStartingPrice({
 
   const quantityBreaks =
     liveBreaks && liveBreaks.length > 0 ? liveBreaks : fallback;
-  const starting = quantityBreaks?.[0] ?? null;
+
+  // Track what the calculator is actually showing. Falling back to
+  // `quantityBreaks[0]` meant this headline quoted the *smallest* break —
+  // the dearest price on the page — while the calculator below showed the
+  // customer's real quantity. Two prices, both correct, that read as a
+  // contradiction.
+  const starting = liveCurrent ?? quantityBreaks?.[0] ?? null;
 
   if (!starting) return null;
 

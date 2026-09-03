@@ -14,12 +14,20 @@ function vendorLabel(vendor: string) {
 
 export default async function AdminCatalogProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  // Set by refreshCatalogProductAction on a caught failure or a completed
+  // refresh — it always redirects (single button, no fields to keep), so
+  // this query param is the only way that outcome reaches the page.
+  const mutationError = sp.error;
+  const mutationNotice = sp.notice;
   const token = requireAdminToken();
-  let error: string | undefined;
+  let loadError: string | undefined;
   let detail: Record<string, unknown> | null = null;
   let categories: Record<string, unknown>[] = [];
 
@@ -29,17 +37,18 @@ export default async function AdminCatalogProductPage({
       (await adminClient()).listCategories(token),
     ]);
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Product unavailable";
+    loadError =
+      caught instanceof Error ? caught.message : "Product unavailable";
   }
 
-  if (error || !detail) {
+  if (loadError || !detail) {
     return (
       <div>
         <Link href="/admin/catalog" className="text-sm font-bold text-accent">
           ← Catalog
         </Link>
         <p className="mt-3 border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3">
-          {error || "Not found"}
+          {loadError || "Not found"}
         </p>
       </div>
     );
@@ -65,6 +74,17 @@ export default async function AdminCatalogProductPage({
       <Link href="/admin/catalog" className="text-sm font-bold text-accent">
         ← Catalog
       </Link>
+
+      {mutationError && (
+        <p role="alert" className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
+          {mutationError}
+        </p>
+      )}
+      {mutationNotice === "refreshed" && (
+        <p className="border border-green-200 bg-green-50 text-green-800 rounded-md p-sp-3 m-0">
+          Refreshed from the vendor.
+        </p>
+      )}
 
       <div className="flex flex-wrap justify-between gap-3 items-start">
         <div>

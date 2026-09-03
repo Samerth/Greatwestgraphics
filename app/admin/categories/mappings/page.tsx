@@ -20,18 +20,26 @@ export const dynamic = "force-dynamic";
 export default async function AdminCategoryMappingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; tab?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    tab?: string;
+    page?: string;
+    error?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const q = (sp.q || "").trim();
   const requestedTab = sp.tab ? parseMappingTab(sp.tab) : undefined;
   const requestedPage = parsePage(sp.page);
+  // Set by saveMappingAction on a caught failure — it always redirects, so
+  // this is the only way a save error reaches the page it lands back on.
+  const mutationError = sp.error;
 
   const token = requireAdminToken();
   let mappings: Record<string, unknown>[] = [];
   let unmapped: Record<string, unknown>[] = [];
   let categories: Record<string, unknown>[] = [];
-  let error: string | undefined;
+  let loadError: string | undefined;
 
   try {
     const [mapPayload, cats] = await Promise.all([
@@ -42,7 +50,8 @@ export default async function AdminCategoryMappingsPage({
     unmapped = mapPayload.unmapped;
     categories = cats;
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Mappings unavailable";
+    loadError =
+      caught instanceof Error ? caught.message : "Mappings unavailable";
   }
 
   const { mapsByKey, labelByKey } = groupMappings(mappings);
@@ -86,13 +95,18 @@ export default async function AdminCategoryMappingsPage({
         </p>
       </div>
 
-      {error && (
+      {loadError && (
         <p className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
-          {error}
+          {loadError}
+        </p>
+      )}
+      {mutationError && (
+        <p role="alert" className="border border-red-200 bg-red-50 text-red-800 rounded-md p-sp-3 m-0">
+          {mutationError}
         </p>
       )}
 
-      {!hasCategories && !error && (
+      {!hasCategories && !loadError && (
         <section className="border border-amber-200 bg-amber-50/50 rounded-md p-sp-4 space-y-2">
           <h2 className="font-display font-bold text-lg m-0">
             Create categories first

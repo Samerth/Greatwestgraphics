@@ -16,35 +16,57 @@ export const LOCATIONS = [
 
 export type LocationId = (typeof LOCATIONS)[number]["id"];
 
+/**
+ * Narrows the location list down to an admin allow-list (CodSphere UAT —
+ * "Product-Specific Decoration Methods & Print Locations", e.g. Bags should
+ * not offer sleeve/chest placements). `null`/empty means unrestricted —
+ * every location stays available, today's behaviour.
+ */
+export function filterAllowedLocations<T extends { id: string }>(
+  locations: readonly T[],
+  allowedIds: string[] | null | undefined,
+): T[] {
+  if (!allowedIds || allowedIds.length === 0) return [...locations];
+  const allowed = new Set(allowedIds);
+  return locations.filter((l) => allowed.has(l.id));
+}
+
+// Customer-facing embroidery tiers, mapped to the stitch-count pricing
+// engine already uses (CodSphere UAT V2): Small ≤5,000 / Medium 5,001–10,000
+// / Large 10,001–15,000 / Oversized 15,000+. Each `stitches` value is what
+// actually gets priced for that tier, so it must sit inside its band — Large
+// and Oversized previously both passed 15000, which collapsed them into an
+// identical price. Oversized now prices at a representative stitch count
+// above the Large ceiling instead of repeating it.
 export const STITCH_PRESETS = [
   {
     id: "small",
     stitches: 5000,
     label: "Small logo",
-    dimensionGuide: "Up to about 3\" wide — left chest, cap front",
+    dimensionGuide: "Up to approximately 4\" — left chest, cap front",
   },
   {
     id: "medium",
     stitches: 10000,
     label: "Medium logo",
-    dimensionGuide: "About 3\"–5\" wide — chest or sleeve",
+    dimensionGuide: "Approximately 4\"–8\" — chest or sleeve",
   },
   {
     id: "large",
     stitches: 15000,
     label: "Large logo",
-    dimensionGuide: "About 5\"–7\" wide — back or full front",
+    dimensionGuide: "Approximately 8\"–12\" — back or full front",
   },
   {
     id: "oversized",
-    stitches: 15000,
+    stitches: 20000,
     label: "Oversized",
-    dimensionGuide: "7\"+ wide — large back designs",
+    dimensionGuide: "Approximately 12\"+ — large back designs",
   },
 ] as const;
 
 export const STITCH_PRESET_DISCLAIMER =
-  "Stitch count is an estimate. Dense, highly detailed, or lettered artwork can push a design into a higher tier — we'll confirm the exact count after digitizing and before production.";
+  "Embroidery pricing shown is an estimate based on the selected artwork tier. Final stitch count and pricing will be confirmed after artwork review/digitizing. Any required pricing adjustment will be confirmed before production.";
 
 export type StitchPresetId = (typeof STITCH_PRESETS)[number]["id"];
 
