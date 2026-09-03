@@ -39,6 +39,7 @@ export type StorefrontCatalogProduct = {
   colorSwatches: {
     colorName: string;
     imageUrl: string | null;
+    colorHex: string | null;
     productId: string;
     slug: string;
   }[];
@@ -201,6 +202,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
           ? (row.colorSwatches as {
               colorName: string;
               imageUrl: string | null;
+              colorHex: string | null;
               productId: string;
               slug: string;
             }[])

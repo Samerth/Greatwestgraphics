@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DESIGN_SIDE_LABELS, DesignSides } from "@gwg/contracts";
-import { DesignSidePreview } from "@/components/design/DesignSidePreview";
+import { DesignThumbnail } from "@/components/admin/DesignThumbnail";
 import { adminToken, getStaffSession } from "@/lib/admin/auth";
 import {
   formatDesignTimestamp,
@@ -77,21 +77,12 @@ export default async function AdminDesignsPage() {
                 className="border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col"
               >
                 <div className="aspect-square bg-fill-subtle-15 flex items-center justify-center">
-                  {design.proofImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={design.proofImageUrl}
-                      alt={design.name}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <DesignSidePreview
-                      side={previewSide}
-                      design={design.design}
-                      garmentImageUrl={null}
-                      size={200}
-                    />
-                  )}
+                  <DesignThumbnail
+                    proofImageUrl={design.proofImageUrl}
+                    alt={design.name}
+                    side={previewSide}
+                    design={design.design}
+                  />
                 </div>
                 <div className="p-sp-3 flex flex-col gap-2 flex-1">
                   <p className="font-bold m-0">{design.name}</p>

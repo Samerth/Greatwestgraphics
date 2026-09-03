@@ -6,6 +6,7 @@ import {
   type DesignSide,
 } from "@gwg/contracts";
 import { DesignSidePreview } from "@/components/design/DesignSidePreview";
+import { ProofImageOrNote } from "@/components/admin/ProofImageOrNote";
 import {
   garmentBackdrops,
   type GarmentBackdrop,
@@ -219,12 +220,7 @@ export default async function AdminDesignDetailPage({
         <section className="space-y-sp-3">
           <h2 className="font-display font-bold text-lg m-0">Saved proof</h2>
           <div className="border border-border rounded-md bg-bg-raised p-sp-3 max-w-md">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={design.proofImageUrl}
-              alt={`Proof for ${design.name}`}
-              className="w-full object-contain"
-            />
+            <ProofImageOrNote src={design.proofImageUrl} alt={`Proof for ${design.name}`} />
           </div>
         </section>
       )}
