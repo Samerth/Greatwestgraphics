@@ -512,6 +512,7 @@ export function DesignStudio({
 
   const artworkInputRef = useRef<HTMLInputElement>(null);
   const lastAiArtworkIdRef = useRef<string | null>(null);
+  const aiReviewRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const preferredSizeNameRef = useRef<string | null>(null);
   const artworks = artworksBySide[activeSide];
@@ -1653,6 +1654,12 @@ export function DesignStudio({
       );
       lastAiArtworkIdRef.current = placed.id;
       setAiReview("ask");
+      requestAnimationFrame(() => {
+        aiReviewRef.current?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      });
     } catch {
       setAiError(
         "The free generator missed or timed out. Try again with a shorter prompt, or upload your own art.",
@@ -2386,9 +2393,8 @@ export function DesignStudio({
         {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
           <div className="rounded-md border border-border bg-bg p-sp-3">
             <p className="m-0 mb-2 text-[11px] leading-4 text-text-tertiary">
-              Free try-out only — not print-ready. If the mark matches, it
-              stays on the garment as a file you can keep. If it misses, try
-              again or upload your own.
+              Free try-out — not print-ready. Keep the file if it matches;
+              otherwise try again or upload your own.
             </p>
             <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
               Describe a logo or badge
@@ -2401,7 +2407,7 @@ export function DesignStudio({
               }}
               placeholder="e.g. simple wolf head badge, two colours, no text"
               maxLength={STUDIO_AI_IDENTITY_PROMPT_MAX}
-              className="w-full min-h-24 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="w-full min-h-16 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             <button
               type="button"
@@ -2416,56 +2422,63 @@ export function DesignStudio({
             {aiError && (
               <p className="text-[11px] leading-4 text-red-600 mt-2">{aiError}</p>
             )}
-            {aiReview === "ask" && !generating && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                <p className="m-0 text-[11px] leading-4 text-text-secondary">
-                  Look at the garment. Is that the mark you asked for?
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      lastAiArtworkIdRef.current = null;
-                      setAiReview(null);
-                    }}
-                    className="rounded-sm bg-text-primary px-2 py-1 text-[11px] font-bold text-white"
-                  >
-                    Keep it
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAiReview("options")}
-                    className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                  >
-                    Not quite
-                  </button>
-                </div>
+            {aiReview && !generating ? (
+              <div
+                ref={aiReviewRef}
+                id="studio-ai-review"
+                className="mt-2 flex flex-col gap-1.5"
+              >
+                {aiReview === "ask" ? (
+                  <>
+                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
+                      Look at the garment. Is that the mark you asked for?
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          lastAiArtworkIdRef.current = null;
+                          setAiReview(null);
+                        }}
+                        className="rounded-sm bg-text-primary px-2 py-1 text-[11px] font-bold text-white"
+                      >
+                        Keep it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAiReview("options")}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Not quite
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
+                      Try another generation, or use your own logo or artwork
+                      instead.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void generateConcept()}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Try again
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => artworkInputRef.current?.click()}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Upload your own
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
-            {aiReview === "options" && !generating && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                <p className="m-0 text-[11px] leading-4 text-text-secondary">
-                  Try another generation, or use your own logo or artwork
-                  instead.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void generateConcept()}
-                    className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                  >
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => artworkInputRef.current?.click()}
-                    className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                  >
-                    Upload your own
-                  </button>
-                </div>
-              </div>
-            )}
+            ) : null}
           </div>
         )}
 
