@@ -67,11 +67,17 @@ export default async function AccountPage({
         </Container>
       </section>
 
-      <aside className="relative hidden lg:block min-h-[640px] overflow-hidden bg-[linear-gradient(155deg,var(--color-accent)_0%,#0b1f4a_48%,#0D0D0D_100%)] text-white">
+      {/* Was a gradient built from the accent colour, which is now the
+          bright action blue rather than navy — using it across this much
+          surface read as an oversized button rather than a backdrop. Navy
+          band stops instead, matching the rest of the site's dark sections. */}
+      <aside className="relative hidden lg:block min-h-[640px] overflow-hidden bg-[linear-gradient(155deg,var(--color-band-bg-raised)_0%,var(--color-band-bg)_48%,#0a1220_100%)] text-white">
         <video
           className="absolute inset-0 w-full h-full object-cover"
           src="/images/login_hero.mp4"
-          poster="/images/hero-press.jpg"
+          // Frame 0 of login_hero.mp4. Previously hero-press.jpg, an unrelated
+          // screen-print photo, so the panel visibly jumped when playback began.
+          poster="/images/login-hero-poster.jpg"
           autoPlay
           loop
           muted

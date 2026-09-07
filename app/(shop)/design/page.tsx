@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { normalizeDesignDocument } from "@gwg/contracts";
 import { Container } from "@/components/shared/Container";
+import { BackgroundVideo } from "@/components/shared/BackgroundVideo";
 import { DesignStudio, type SavedDesignProject } from "@/components/design/DesignStudio";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
@@ -68,14 +69,42 @@ export default async function DesignPage({
 
   return (
     <>
-      <section className="bg-text-primary text-white pt-sp-7 pb-sp-6 relative overflow-hidden">
-        <Container className="relative">
-          <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent mb-sp-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+      {/* The intro band above the studio — not the design canvas itself, which
+          the UAT doc requires stay white/light ("white/light background
+          instead of the large dark design canvas") and is untouched here.
+          This band was already dark and empty, so it runs the logo-reveal
+          clip: artwork resolving onto a garment, which is precisely what the
+          tool below does.
+
+          The eyebrow and highlighted headline phrase were `text-accent` —
+          navy on near-black, around 1.4:1, effectively unreadable. They now
+          use the dark-surface form of the same accent. */}
+      <section
+        data-surface="dark"
+        className="bg-text-primary text-white pt-sp-7 pb-sp-6 relative overflow-hidden"
+      >
+        <BackgroundVideo
+          src="/images/logo-reveal.mp4"
+          poster="/images/logo-reveal-poster.jpg"
+          className="opacity-70 object-right"
+        />
+        {/* Weighted to the left so the copy stays on solid ground while the
+            reveal itself — which happens on the right of frame — keeps its
+            contrast. */}
+        <div
+          className="absolute inset-0 z-[1] bg-[linear-gradient(95deg,rgba(13,13,13,.96)_18%,rgba(13,13,13,.78)_46%,rgba(13,13,13,.3)_100%)]"
+          aria-hidden
+        />
+        <Container className="relative z-[2]">
+          <div className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent-on-dark mb-sp-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-on-dark" />
             The Design Studio
           </div>
-          <h1 className="font-display font-bold text-display leading-display max-w-[14ch] text-white">
-            Design it live. <span className="text-accent">Watch the mockup update</span> as
+          {/* 14ch was tuned for the old 40px cap; at the fluid display size it
+              broke this into four ragged lines. */}
+          <h1 className="font-display font-bold text-display leading-display max-w-[20ch] text-balance text-white">
+            Design it live.{" "}
+            <span className="text-accent-on-dark">Watch the mockup update</span> as
             you go.
           </h1>
           <p className="mt-sp-3 max-w-[52ch] text-white/75 text-[16px] leading-[1.6]">

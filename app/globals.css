@@ -2,88 +2,156 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --color-bg: #F0EFEC;
-  --color-bg-90: rgba(240, 239, 236, 0.9);
-  --color-bg-raised: #FFFFFF;
-  --color-text-primary: #0D0D0D;
-  --color-text-secondary: #464645;
-  --color-text-tertiary: #686766;
-  --color-border: #ACABA9;
-  --color-fill-subtle: #CECDCB;
-  --color-fill-subtle-15: rgba(206, 205, 203, 0.4);
-  --header-offset: 96px;
-}
+/* ---------------------------------------------------------------------------
+   Base tokens.
 
-/* The desktop search bar (Header.tsx) adds a fixed 56px row below the 96px
-   main nav on screens >=1024px (Tailwind's default `lg`), which every sticky/
-   top-offset consumer of --header-offset needs to account for. Mobile and
-   tablet keep the original 96px since that strip is hidden there. */
-@media (min-width: 1024px) {
-  :root {
-    --header-offset: 152px;
+   These were previously trapped inside an unclosed `@media (min-width:1024px)`
+   block (the brace after the `--header-offset` override was never closed, so
+   everything to the end of the file inherited it). Below 1024px the site
+   therefore shipped with no radius, shadow, type-scale or accent tokens at
+   all, no body background/font rules, and none of the form defaults — which
+   is why mobile lost its accent colour entirely and iOS zoomed on every
+   focused input. Everything that is not genuinely viewport-specific now lives
+   at the top level.
+--------------------------------------------------------------------------- */
+:root {
+  /* Neutrals nudged cool (was a warm/neutral grey ladder) to match the
+     client-approved mockup — this is the "no consistent design system" /
+     "dated typography" complaint's second-largest lever after the accent
+     split below. Every token here is a value, not a hue-shift transform, so
+     it's easy to compare against the mockup's own stylesheet directly. */
+  --color-bg: #F7F8FA;
+  --color-bg-90: rgba(247, 248, 250, 0.9);
+  --color-bg-raised: #FFFFFF;
+  --color-text-primary: #141A23;
+  --color-text-secondary: #454E5C;
+  --color-text-tertiary: #626B79;
+  /* Was #ACABA9 — close to 4x the contrast of the mockup's #E2E6EB hairlines.
+     This one value is most of "visual clutter": every bordered card, table
+     row and input on the site inherits it. */
+  --color-border: #E2E6EB;
+  --color-fill-subtle: #D7DCE3;
+  --color-fill-subtle-15: rgba(98, 107, 121, 0.1);
+
+  --header-offset: 96px;
 
   --radius-lg: 12px;
   --radius-md: 8px;
   --radius-sm: 4px;
 
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.15);
-  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 2px 8px rgba(20, 26, 35, 0.1);
+  --shadow-card-hover: 0 6px 20px rgba(20, 26, 35, 0.14);
 
-  --fs-display: 40px;
-  --lh-display: 48px;
-  --fs-header: 24px;
-  --lh-header: 32px;
+  /* Display scales fluidly rather than stepping between fixed sizes. The old
+     ladder capped at 40px, which is why no headline anywhere read as a
+     statement — and why IdeaToDelivery had to bypass the token with its own
+     inline clamp to get the size it wanted. This is the *page-header* scale
+     (About, FAQ, the Design Studio intro band, etc.) — the homepage Hero has
+     its own larger, bespoke clamp in Hero.tsx, because the hero is also
+     height-capped on purpose (UAT: "the beginning of the product/category
+     section should be visible near the bottom of the initial viewport") and
+     borrowing this token there would couple two things that need to move
+     independently. */
+  --fs-display: clamp(30px, 4.6vw, 56px);
+  --lh-display: 1.08;
+  --ls-display: -0.02em;
+
+  /* New: the mockup's section-heading step (measured 38px / weight 400 on
+     its own h2s) — "Order custom products in three steps", "Best sellers,
+     ready to customize". Weight is left to call sites since not every
+     section heading should go regular (this token is size + tracking only),
+     but the size ladder itself is what most section headings should move to
+     in Phase 2/3. */
+  --fs-section: clamp(24px, 3.2vw, 38px);
+  --lh-section: 1.15;
+
+  --fs-header: 18px;
+  --lh-header: 26px;
   --fs-body: 16px;
   --lh-body: 24px;
 }
 
-/* The desktop search bar (Header.tsx) adds a fixed 64px row below the 96px
-   main nav on screens >=1024px (Tailwind's default `lg`), which every
-   sticky/top-offset consumer of --header-offset needs to account for.
-   Mobile and tablet keep the original 96px since that row is hidden there. */
+/* The desktop search bar (Header.tsx) adds a fixed row below the 96px main nav
+   on screens >=1024px (Tailwind's default `lg`), which every sticky/top-offset
+   consumer of --header-offset needs to account for. Mobile and tablet keep the
+   original 96px since that strip is hidden there. */
 @media (min-width: 1024px) {
   :root {
     --header-offset: 160px;
   }
 }
 
-@media (max-width: 1439px) {
+/* Body copy tightens slightly on mid-size screens, but never below 16px on
+   phones — iOS zooms a focused input whose font-size is under 16px. */
+@media (min-width: 768px) and (max-width: 1439px) {
   :root {
-    --fs-display: 32px;
-    --lh-display: 40px;
-    --fs-header: 20px;
-    --lh-header: 28px;
     --fs-body: 15px;
     --lh-body: 22px;
   }
 }
 
-@media (max-width: 767px) {
+@media (min-width: 768px) {
   :root {
-    --fs-display: 28px;
-    --lh-display: 36px;
-    --fs-header: 18px;
-    --lh-header: 26px;
-    /* Keep body ≥16px on mobile so iOS doesn’t zoom focused inputs
-       and form labels stay readable. */
-    --fs-body: 16px;
-    --lh-body: 24px;
+    --fs-header: 20px;
+    --lh-header: 28px;
   }
 }
 
+@media (min-width: 1440px) {
+  :root {
+    --fs-header: 24px;
+    --lh-header: 32px;
+  }
+}
+
+/* `--color-accent-on-dark` is the same accent lightened enough to survive a
+   near-black background. It is not a second brand colour: on the dark
+   sections (Idea to Delivery, the Design Studio intro, the navy band below)
+   the base accent doesn't have enough contrast on its own, so headline words
+   and eyebrows written in `text-accent` there were very close to invisible.
+   Dark surfaces use this instead. */
 html[data-theme="orange"] {
   --color-accent: #AA3300;
   --color-accent-hover: #8A2900;
   --color-accent-tint: rgba(170, 51, 0, 0.1);
   --color-accent-tint-strong: rgba(170, 51, 0, 0.18);
+  --color-accent-on-dark: #FF8B5E;
 }
 
+/* The shipped theme (see app/layout.tsx). Client-approved mockup measured at
+   #175BCC for every clickable/actionable thing (buttons, links, the
+   highlighted headline word, selected states) — a *second* blue, distinct
+   from the navy the mockup reserves for section backgrounds (the band tokens
+   further down). `--color-accent` is what nearly every interactive element
+   on the site already keys off (Button.tsx, focus rings, badges, selected
+   states), so retargeting its value here is what turns those into the
+   mockup's "action blue" everywhere at once, without touching a single
+   component file. Navy itself is still a fixed point per the UAT doc
+   ("consistent navy selected states... the main blue CTA") — #175BCC reads
+   as the same family, just the brighter, more clickable member of it. */
 html[data-theme="blue"] {
-  --color-accent: #132A66;
-  --color-accent-hover: #0C1C47;
-  --color-accent-tint: rgba(19, 42, 102, 0.1);
-  --color-accent-tint-strong: rgba(19, 42, 102, 0.18);
+  --color-accent: #175BCC;
+  --color-accent-hover: #0F49A8;
+  --color-accent-tint: rgba(23, 91, 204, 0.1);
+  --color-accent-tint-strong: rgba(23, 91, 204, 0.18);
+  --color-accent-on-dark: #7FB0FF;
+}
+
+/* Navy as a *surface*, not an action colour — the mockup's top bar, trust
+   band and footer. Distinct token family from --color-accent-on-dark above:
+   that one is "accent colour, legible on a dark background"; this one is
+   "the dark background itself". Previously those sections used a flat
+   near-black (#0D0D0D / --color-text-primary), which is why the site read as
+   one grey/black palette with a single blue used for everything rather than
+   the mockup's deliberate white → soft → navy rhythm. Fixed regardless of
+   the orange/blue accent theme — navy is the brand's surface colour, not
+   part of the accent swap. */
+:root {
+  --color-band-bg: #102A56;
+  --color-band-bg-raised: #16336B;
+  --color-band-fg: #FFFFFF;
+  --color-band-fg-dim: rgba(255, 255, 255, 0.72);
+  --color-band-border: rgba(255, 255, 255, 0.14);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -101,9 +169,6 @@ html {
   scroll-behavior: smooth;
   /* Sticky header clearance for in-page anchors (#reviews, #gallery, etc.) */
   scroll-padding-top: calc(var(--header-offset) + 16px);
-}
-
-html {
   overflow-x: clip;
 }
 
@@ -120,6 +185,26 @@ body {
 ::selection {
   background: var(--color-accent);
   color: #fff;
+}
+
+/* Keyboard focus was previously invisible everywhere except the header search
+   field, so tabbing through the site showed either nothing or the browser's
+   default hairline on top of an accent-coloured button. One ring, defined
+   once, for every focusable thing. */
+/* No `border-radius` here. Setting one changes the *element's own* shape on
+   focus rather than the ring's, which squared off the pill-shaped header
+   search field the moment it was focused. Browsers already draw the outline
+   following whatever radius the element itself has, so the ring picks up the
+   right shape on its own. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* On dark sections the navy ring disappears into the background. */
+.on-dark :focus-visible,
+[data-surface="dark"] :focus-visible {
+  outline-color: #fff;
 }
 
 /* Production form defaults — readable type, no iOS zoom, visible contrast */
@@ -159,6 +244,11 @@ body {
   .font-display {
     font-family: var(--font-display), system-ui, sans-serif;
     color: inherit;
+    /* Mockup h1 measured at -0.055em, h2 at -0.02em. One flat value rather
+       than per-level tuning — tight enough to read as intentional at display
+       sizes, small enough that body-sized headings (h4, card titles) don't
+       feel cramped. */
+    letter-spacing: var(--ls-display);
   }
 
   img,
@@ -222,5 +312,4 @@ body {
   .text-balance {
     text-wrap: balance;
   }
- }
 }

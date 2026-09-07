@@ -88,11 +88,14 @@ export default async function AdminLoginPage({
         </form>
       </div>
 
-            <aside className="relative hidden lg:block min-h-[740px] overflow-hidden bg-[linear-gradient(155deg,var(--color-accent)_0%,#0b1f4a_48%,#0D0D0D_100%)] text-white">
+            {/* Same navy-band gradient as the customer account page — see
+                the comment there. */}
+            <aside className="relative hidden lg:block min-h-[740px] overflow-hidden bg-[linear-gradient(155deg,var(--color-band-bg-raised)_0%,var(--color-band-bg)_48%,#0a1220_100%)] text-white">
         <video
           className="absolute inset-0 w-full h-full object-cover"
           src="/images/login_hero.mp4"
-          poster="/images/hero-press.jpg"
+          // Frame 0 of login_hero.mp4 — see the note on the account page.
+          poster="/images/login-hero-poster.jpg"
           autoPlay
           loop
           muted

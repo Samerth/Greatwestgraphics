@@ -2120,7 +2120,16 @@ export function DesignStudio({
           eat the fold. */}
       <nav
         aria-label="Design tools"
-        className="md:sticky md:top-[calc(var(--header-offset)+1rem)] bg-bg-raised border border-border rounded-lg p-1.5 flex md:flex-col gap-1 min-w-0 overflow-x-auto md:overflow-visible"
+        // Was the same white card as every other panel on the page — flat
+        // against the canvas next to it, and (per your note) plainer than
+        // the mockup's own tool rail, which is a distinct navy strip beside
+        // a white canvas. Recoloured to the `band` tokens used for exactly
+        // this kind of surface elsewhere on the site (top bar, footer). The
+        // canvas itself stays white/light — untouched, since that's the
+        // UAT's own explicit requirement ("white/light background instead
+        // of the large dark design canvas"); only this narrow tool selector,
+        // a separate element from the canvas, picks up the navy.
+        className="md:sticky md:top-[calc(var(--header-offset)+1rem)] bg-band border border-band-border rounded-lg p-1.5 flex md:flex-col gap-1 min-w-0 overflow-x-auto md:overflow-visible"
       >
         {STUDIO_TABS.map((tab) => {
           const active = studioTab === tab.id;
@@ -2136,8 +2145,8 @@ export function DesignStudio({
               className={cn(
                 "flex-1 md:flex-none flex flex-col items-center justify-center gap-1 rounded-md px-2 py-2.5 transition-colors min-w-[3.75rem]",
                 active
-                  ? "bg-accent/10 text-accent"
-                  : "text-text-tertiary hover:bg-fill-subtle-15 hover:text-text-secondary",
+                  ? "bg-band-raised text-white"
+                  : "text-band-fg-dim hover:bg-white/10 hover:text-band-fg",
               )}
             >
               <tab.Icon
