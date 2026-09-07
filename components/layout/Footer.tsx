@@ -104,7 +104,11 @@ export function Footer({
   ]);
 
   return (
-    <footer className="bg-text-primary text-white/70 pt-sp-7 pb-sp-4">
+    // Was `bg-text-primary` (near-black) — the mockup's footer is the same
+    // navy as its top bar and trust band, so the site now has one dark
+    // colour used deliberately for section rhythm rather than a flat
+    // grey/black shared by everything.
+    <footer data-surface="dark" className="bg-band text-white/70 pt-sp-7 pb-sp-4">
       <Container
         className={`grid grid-cols-1 sm:grid-cols-2 gap-sp-4 ${
           isBranded ? "lg:grid-cols-5" : "lg:grid-cols-6"
@@ -186,11 +190,16 @@ function FooterCol({
   titleHref?: string;
   links: { label: string; href: string }[];
 }) {
+  // The heading's hover was `text-accent` — navy on the near-black footer, so
+  // hovering a column heading faded it out instead of highlighting it.
   return (
     <div>
       <h5 className="text-white font-display text-sm mb-sp-2">
         {titleHref ? (
-          <Link href={titleHref} className="hover:text-accent transition-colors">
+          <Link
+            href={titleHref}
+            className="hover:text-accent-on-dark transition-colors"
+          >
             {title}
           </Link>
         ) : (

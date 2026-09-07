@@ -137,24 +137,46 @@ export default function FaqPage() {
             </Link>{" "}
             / FAQ
           </p>
-          <h1 className="font-display font-bold text-header mt-sp-4 m-0">
+          {/* Was `text-header` (the small heading token), so the page title
+              read as a sub-heading rather than the top of a page. */}
+          <h1 className="font-display font-bold text-display leading-display mt-sp-3 m-0">
             Frequently Asked Questions
           </h1>
+          <p className="text-text-secondary mt-sp-3 mb-0 max-w-[60ch]">
+            Ordering, artwork, print methods and shipping — answered from the
+            production floor. Can&apos;t find it here?{" "}
+            <Link href="/contact" className="text-accent font-semibold hover:underline">
+              Ask us directly
+            </Link>
+            .
+          </p>
         </Container>
       </section>
 
       <section className="py-sp-8">
         <Container className="space-y-sp-7">
+          {/* Answers stay visible rather than collapsing into an accordion:
+              there are only twelve of them, they are short, and hiding them
+              behind a click would make the page slower to scan, not faster.
+              What was missing was hierarchy — categories now read as
+              categories, and each question sits in its own card instead of
+              running together as one wall of text. */}
           {FAQ_CATEGORIES.map((category) => (
             <div key={category.title}>
-              <h2 className="font-display font-bold text-lg m-0 mb-sp-4">
+              <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-accent mb-sp-3">
+                <span className="w-4 h-0.5 bg-accent" />
                 {category.title}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-sp-4 gap-y-sp-4">
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-sp-3">
                 {category.items.map((item) => (
-                  <div key={item.q}>
-                    <h3 className="font-bold text-[15px] m-0">{item.q}</h3>
-                    <p className="text-sm text-text-secondary mt-2 mb-0">
+                  <div
+                    key={item.q}
+                    className="rounded-lg border border-border bg-bg-raised p-sp-4 transition-[border-color,box-shadow] duration-med ease-out-custom hover:border-text-tertiary hover:shadow-card"
+                  >
+                    <h3 className="font-display font-bold text-[15.5px] m-0">
+                      {item.q}
+                    </h3>
+                    <p className="text-sm text-text-secondary mt-2 mb-0 leading-relaxed">
                       {item.a}
                     </p>
                   </div>

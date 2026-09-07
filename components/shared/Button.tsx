@@ -5,8 +5,11 @@ import type { ButtonHTMLAttributes } from "react";
 type Variant = "primary" | "secondary";
 type Size = "default" | "sm";
 
+// `active:translate-y-px` is the whole of the press feedback — buttons
+// previously transitioned colour only, so nothing on the site acknowledged
+// being clicked. Kept deliberately small: a press response, not a bounce.
 const base =
-  "inline-flex items-center justify-center gap-sp-2 font-body font-bold rounded-md border transition-colors duration-fast whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none";
+  "inline-flex items-center justify-center gap-sp-2 font-body font-bold rounded-md border transition-[background-color,border-color,color,box-shadow,transform] duration-fast ease-out-custom active:translate-y-px whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:active:translate-y-0";
 
 const variants: Record<Variant, string> = {
   primary:
@@ -55,9 +58,21 @@ export function ButtonLink({
   size = "default",
   className,
   children,
-}: CommonProps & { href: string }) {
+  target,
+  rel,
+}: CommonProps & {
+  href: string;
+  /** Set for links leaving the site, so a visitor doesn't lose their place. */
+  target?: string;
+  rel?: string;
+}) {
   return (
-    <Link href={href} className={cn(base, variants[variant], sizes[size], className)}>
+    <Link
+      href={href}
+      target={target}
+      rel={target === "_blank" ? (rel ?? "noreferrer noopener") : rel}
+      className={cn(base, variants[variant], sizes[size], className)}
+    >
       {children}
     </Link>
   );

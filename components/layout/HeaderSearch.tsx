@@ -190,7 +190,14 @@ export function HeaderSearchBar() {
   }
 
   return (
-    <div ref={wrapRef} className="relative w-full max-w-[600px]">
+    // Was capped at 600px regardless of screen width, so on anything wider
+    // than a laptop it sat as a small pill in the middle of a much larger
+    // header row — the mockup's own search bar fills roughly two-thirds of
+    // the available width between the logo and the icons. 880px keeps it
+    // fluid with `flex-1` on its wrapper (Header.tsx) rather than fixed, so
+    // it still shrinks correctly on narrower desktop widths instead of
+    // forcing an overflow.
+    <div ref={wrapRef} className="relative w-full max-w-[880px]">
       <form
         role="search"
         onSubmit={(e) => {
@@ -209,21 +216,25 @@ export function HeaderSearchBar() {
           Search products
         </label>
         <div
+          // Was a plain border swap on `open` (i.e. only once the dropdown
+          // had something to show, which needs 2 typed characters — a click
+          // into an empty box just sat there with a neutral border, which
+          // read as "a border comes up" rather than the mockup's own
+          // behaviour: the whole pill glows the moment you click in, empty
+          // or not. `focus-within` reacts to the input's real focus state
+          // directly, so this no longer depends on `open`/typed-character
+          // state at all. Glow value matched from the mockup itself
+          // (measured on focus: a 3px solid ring at ~9% opacity of its own
+          // accent blue, `rgb(23,91,204)` — the same blue as ours).
           className={cn(
             "relative rounded-full border bg-bg-raised transition-all duration-med",
-            open
-              ? "border-accent shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
-              : "border-border shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-text-tertiary",
+            "border-border shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-text-tertiary",
+            "focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(23,91,204,0.094)] focus-within:hover:border-accent",
           )}
         >
-          <Search
-            size={17}
-            strokeWidth={2.25}
-            className={cn(
-              "absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-colors",
-              open ? "text-accent" : "text-text-tertiary",
-            )}
-          />
+          {/* Input before the icon in source order (icon still sits on top
+              visually via absolute positioning) — Tailwind's `peer-focus`
+              only reaches a *later* sibling of `.peer`. */}
           <input
             id="header-search"
             type="search"
@@ -246,7 +257,12 @@ export function HeaderSearchBar() {
               }
             }}
             placeholder="Search products, brands or categories"
-            className="w-full h-11 bg-transparent rounded-full pl-11 pr-4 text-[15px] text-text-primary placeholder:text-text-tertiary outline-none"
+            className="peer w-full h-11 bg-transparent rounded-full pl-11 pr-4 text-[15px] text-text-primary placeholder:text-text-tertiary outline-none"
+          />
+          <Search
+            size={17}
+            strokeWidth={2.25}
+            className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-colors text-text-tertiary peer-focus:text-accent"
           />
         </div>
       </form>

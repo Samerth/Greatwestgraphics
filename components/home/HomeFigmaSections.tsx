@@ -3,51 +3,64 @@
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Container } from "@/components/shared/Container";
+import { BackgroundVideo } from "@/components/shared/BackgroundVideo";
 import { publicQuoteOrFallback } from "@/lib/features";
 
 /**
- * Figma "Idea to Delivery" (2107:317) — large atmospheric statement on a
- * monochromatic hive/pattern field.
+ * Figma "Idea to Delivery" (2107:317) — the statement band between the quick
+ * paths and the trust strip.
+ *
+ * This was a headline floating on a CSS hive pattern: a full band of viewport
+ * with nothing in it to look at, on a page whose whole subject is a physical
+ * production floor. It now runs the shop's own press footage behind the
+ * headline (`floor-press-loop.mp4`, an 8s silent loop cut from the Sept 5
+ * drop — 831KB, so it costs roughly a quarter of what one product photo does).
+ *
+ * The supporting line is lifted from WalkTheFloor.tsx, which was written for
+ * exactly this purpose and never wired into a page.
  */
 export function IdeaToDelivery() {
   const reduceMotion = useReducedMotion();
 
   return (
-    <section className="relative overflow-hidden bg-[#0D0D0D] text-white py-[clamp(3.5rem,9vw,7rem)]">
-      <div
-        className="absolute inset-0 opacity-[0.22] pointer-events-none"
-        aria-hidden
-        style={{
-          backgroundImage: `
-            radial-gradient(circle at 20% 30%, var(--color-accent) 0%, transparent 42%),
-            radial-gradient(circle at 80% 70%, rgba(255,255,255,0.18) 0%, transparent 36%),
-            repeating-linear-gradient(
-              60deg,
-              transparent 0,
-              transparent 14px,
-              rgba(255,255,255,0.045) 14px,
-              rgba(255,255,255,0.045) 15px
-            ),
-            repeating-linear-gradient(
-              -60deg,
-              transparent 0,
-              transparent 14px,
-              rgba(255,255,255,0.03) 14px,
-              rgba(255,255,255,0.03) 15px
-            )
-          `,
-        }}
+    <section
+      data-surface="dark"
+      // bg-band rather than a literal near-black: this is what's visible for
+      // an instant before the video paints (and permanently, for anyone on
+      // reduced motion whose poster hasn't loaded), so it should be the same
+      // navy as every other dark section rather than a one-off black.
+      className="relative overflow-hidden bg-band text-white py-[clamp(3.5rem,9vw,7rem)]"
+    >
+      <BackgroundVideo
+        src="/images/floor-press-loop.mp4"
+        poster="/images/gwg-press-rotary.jpg"
       />
-      <Container className="relative z-[1] text-center px-4">
-        <motion.h2
+      <div
+        className="absolute inset-0 z-[1] bg-[linear-gradient(100deg,rgba(8,8,7,.94)_18%,rgba(8,8,7,.72)_52%,rgba(8,8,7,.42)_100%)]"
+        aria-hidden
+      />
+
+      <Container className="relative z-[2] px-4">
+        <motion.div
           initial={reduceMotion ? false : { opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.5 }}
           transition={{ duration: 0.7, ease: [0.16, 0.8, 0.3, 1] }}
-          className="font-display font-bold text-[clamp(2rem,7vw,4.5rem)] leading-[1.08] m-0 tracking-tight text-balance"
+          className="max-w-[30rem]"
         >
-          Idea to <span className="text-accent">Delivery</span>
-        </motion.h2>
+          <span className="inline-flex items-center gap-2 font-bold text-xs tracking-[0.18em] uppercase text-accent-on-dark mb-sp-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-on-dark" />
+            Idea to Delivery
+          </span>
+          <h2 className="font-display font-bold text-[clamp(2rem,6vw,3.75rem)] leading-[1.05] m-0 tracking-tight text-balance">
+            Made on <span className="text-accent-on-dark">this floor.</span>
+          </h2>
+          <p className="mt-sp-3 mb-0 text-white/75 text-[15px] sm:text-base leading-relaxed max-w-[42ch]">
+            No stock photos, no “why choose us” cards. This is the press your
+            order actually runs on — eight stations, Pantone-matched ink, cured
+            to survive a hundred washes.
+          </p>
+        </motion.div>
       </Container>
     </section>
   );
@@ -98,14 +111,14 @@ export function QuickPaths() {
             >
               <Link
                 href={path.href}
-                className="group block h-full bg-bg-raised border border-border rounded-md p-sp-4 hover:border-accent transition-colors"
+                className="group block h-full bg-bg-raised border border-border rounded-lg p-sp-4 transition-[border-color,box-shadow,transform] duration-med ease-out-custom hover:border-accent hover:shadow-card hover:-translate-y-0.5"
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex min-w-[2rem] justify-center text-xs font-bold text-accent bg-accent-tint px-2.5 py-1 rounded-sm">
                     {path.num}
                   </span>
                   <span
-                    className="text-text-tertiary group-hover:text-accent transition-colors shrink-0"
+                    className="text-text-tertiary group-hover:text-accent group-hover:translate-x-0.5 transition-[color,transform] duration-med ease-out-custom shrink-0"
                     aria-hidden
                   >
                     →

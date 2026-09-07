@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
@@ -55,20 +56,38 @@ const VALUES = [
 export default function AboutPage() {
   return (
     <>
+      {/* This page carried no photography at all — the page most likely to be
+          read by someone deciding whether to trust the shop was unbroken text
+          on white. The copy is unchanged; it now sits beside a photograph of
+          the actual premises. */}
       <section className="py-sp-8 border-b border-border">
         <Container>
-          <span className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-            Since 1980
-          </span>
-          <h1 className="font-display font-bold text-display leading-display mt-sp-2 max-w-[18ch]">
-            46 years on the print floor.
-          </h1>
-          <p className="text-text-secondary mt-sp-3 max-w-[64ch]">
-            Great West Graphics started as a screen printing and embroidery
-            partnership in Vancouver in 1980. We&apos;re still here, still
-            proofing every job before it prints, and still run by people who
-            know the difference between a good print and a great one.
-          </p>
+          <div className="grid grid-cols-1 md:grid-cols-[1.05fr_.95fr] gap-sp-5 lg:gap-sp-6 items-center">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+                Since 1980
+              </span>
+              <h1 className="font-display font-bold text-display leading-display mt-sp-2 max-w-[18ch]">
+                46 years on the print floor.
+              </h1>
+              <p className="text-text-secondary mt-sp-3 max-w-[64ch]">
+                Great West Graphics started as a screen printing and embroidery
+                partnership in Vancouver in 1980. We&apos;re still here, still
+                proofing every job before it prints, and still run by people who
+                know the difference between a good print and a great one.
+              </p>
+            </div>
+            <div className="relative rounded-lg overflow-hidden aspect-[4/3] md:aspect-[5/4] bg-fill-subtle-15">
+              <Image
+                src="/images/gwg-storefront.jpg"
+                alt="The Great West Graphics building on East Kent Avenue South in Vancouver"
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, 520px"
+                priority
+              />
+            </div>
+          </div>
         </Container>
       </section>
 
@@ -101,7 +120,51 @@ export default function AboutPage() {
         </Container>
       </section>
 
+      {/* Three frames from the shop's own footage, so "what we stand for"
+          lands against the floor it describes rather than more prose. */}
       <section className="py-sp-8">
+        <Container>
+          <h2 className="font-display text-header font-bold mb-sp-5">
+            The floor
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-sp-3">
+            {[
+              {
+                src: "/images/gwg-floor-team.jpg",
+                alt: "A Great West Graphics press operator loading a garment onto the screen printing press",
+                caption: "Every run loaded and checked by hand",
+              },
+              {
+                src: "/images/gwg-ink-dispense.jpg",
+                alt: "Ink being dispensed onto a screen on the press",
+                caption: "Ink mixed and dispensed to spec",
+              },
+              {
+                src: "/images/gwg-press-rotary.jpg",
+                alt: "The eight-station rotary screen printing press on the Great West Graphics floor",
+                caption: "Eight stations, one colour at each",
+              },
+            ].map((shot) => (
+              <figure key={shot.src} className="m-0">
+                <div className="relative rounded-lg overflow-hidden aspect-[4/3] bg-fill-subtle-15">
+                  <Image
+                    src={shot.src}
+                    alt={shot.alt}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 640px) 100vw, 33vw"
+                  />
+                </div>
+                <figcaption className="text-sm text-text-secondary mt-sp-2">
+                  {shot.caption}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </Container>
+      </section>
+
+      <section className="py-sp-8 border-t border-border">
         <Container>
           <h2 className="font-display text-header font-bold mb-sp-2">
             Trusted by teams across Canada and the USA

@@ -30,6 +30,19 @@ const STATIONS = [
   },
 ];
 
+/**
+ * SUPERSEDED — not imported anywhere, and safe to delete.
+ *
+ * This was built as the homepage process section and never wired into a page.
+ * Its job is now done by `IdeaToDelivery` (which runs the shop's real press
+ * footage and inherited this component's supporting copy) plus the rebuilt
+ * `Gallery`. The four `/images/shop-*.jpg` stills it references are stock
+ * imagery of somebody else's floor, which is the reason it should not simply
+ * be revived as-is.
+ *
+ * Left in place rather than deleted only because removing it is a call for
+ * the repo owner, not this visual pass.
+ */
 export function WalkTheFloor() {
   return (
     <section className="py-sp-8 bg-[#0D0D0D] text-white relative overflow-hidden">

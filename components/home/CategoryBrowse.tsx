@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { ArrowRight } from "lucide-react";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
@@ -78,6 +79,14 @@ export function CategoryBrowse({
     <section className="section-pad">
       <Container>
         <div className="max-w-[760px]">
+          {/* Every other homepage section pairs its heading with this same
+              uppercase eyebrow (see HowToOrder in FigmaHomeSections.tsx) —
+              this section skipped it, the one inconsistency against our own
+              established rhythm as well as the mockup's section-head pattern
+              (eyebrow, then heading). */}
+          <p className="m-0 mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+            Shop by category
+          </p>
           <h2 className="font-display font-bold text-header leading-header m-0 text-balance">
             Real Prints. Real Fast. Every Time.
           </h2>
@@ -99,8 +108,8 @@ export function CategoryBrowse({
                 href={pill.href}
                 className={
                   index === 0
-                    ? "inline-flex items-center rounded-sm bg-accent text-white text-sm font-bold px-3.5 py-2"
-                    : "inline-flex items-center rounded-sm border border-border bg-bg-raised text-sm font-bold px-3.5 py-2 hover:border-accent hover:text-accent transition-colors"
+                    ? "inline-flex items-center rounded-md bg-accent text-white text-sm font-bold px-3.5 py-2"
+                    : "inline-flex items-center rounded-md border border-border bg-bg-raised text-sm font-bold px-3.5 py-2 hover:border-accent hover:text-accent transition-colors"
                 }
               >
                 {pill.label}
@@ -110,7 +119,7 @@ export function CategoryBrowse({
         </div>
 
         {tiles.length > 0 && (
-        <div className="mt-sp-5 grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-sp-3">
+        <div className="mt-sp-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-sp-3">
           {tiles.map((tile) => (
             <Link
               key={`${tile.slug}-${tile.name}`}
@@ -119,25 +128,46 @@ export function CategoryBrowse({
                   ? "/products"
                   : `/products?category=${encodeURIComponent(tile.slug)}`
               }
-              className="group relative block rounded-md overflow-hidden aspect-[282/160] min-h-[112px] border border-border"
+              // Was a single full-bleed photo with the name overlaid in white
+              // on a dark scrim at the bottom -- the mockup's equivalent
+              // tiles (its "What are you creating?" grid) use a plain white
+              // card instead: near-square photo on top, name + arrow in a
+              // clean strip below, the whole card lifting on hover rather
+              // than the photo darkening. Same card shell as the product
+              // tiles in ProductsGrid.tsx, so this reads as one family of
+              // cards site-wide instead of a one-off treatment.
+              className="group flex flex-col rounded-lg overflow-hidden border border-border bg-bg-raised transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover"
             >
-              {tile.image ? (
-                <Image
-                  src={tile.image}
-                  alt=""
-                  fill
-                  className="object-cover transition-transform duration-700 group-hover:scale-[1.05]"
-                  sizes="(max-width: 768px) 50vw, 25vw"
+              <div className="relative aspect-square">
+                {tile.image ? (
+                  <Image
+                    src={tile.image}
+                    alt=""
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 16vw"
+                  />
+                ) : (
+                  <div
+                    // Was a gradient built from the accent colour — now that the
+                    // accent is the bright action blue rather than navy, using
+                    // it across a large fallback tile read as an oversized
+                    // button rather than a photo placeholder. Navy band stops
+                    // instead.
+                    className="absolute inset-0 bg-[linear-gradient(145deg,var(--color-band-bg-raised),var(--color-band-bg)_65%,#0a1a3a)]"
+                    aria-hidden
+                  />
+                )}
+              </div>
+              <span className="flex items-start justify-between gap-2 px-3 py-2.5 sm:px-3.5 sm:py-3">
+                <span className="font-display font-bold text-xs sm:text-sm text-text-primary line-clamp-2 leading-snug">
+                  {tile.name}
+                </span>
+                <ArrowRight
+                  size={15}
+                  strokeWidth={2.25}
+                  className="shrink-0 mt-0.5 text-text-tertiary transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-accent"
                 />
-              ) : (
-                <div
-                  className="absolute inset-0 bg-[linear-gradient(145deg,var(--color-accent),#0b1f4a_55%,#0D0D0D)]"
-                  aria-hidden
-                />
-              )}
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.2),rgba(0,0,0,.62))]" />
-              <span className="absolute inset-x-0 bottom-0 p-2.5 sm:p-3 text-center font-display font-bold text-xs sm:text-sm text-white drop-shadow line-clamp-2">
-                {tile.name}
               </span>
             </Link>
           ))}

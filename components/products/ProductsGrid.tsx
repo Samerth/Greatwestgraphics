@@ -5,120 +5,23 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
-import type { PricingConfigV2, QuoteInputV2 } from "@gwg/contracts";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import type {
   StorefrontCatalogProduct,
   StorefrontCategory,
 } from "@/lib/commerce/catalog";
-import { catalogCardSubtitle } from "@/lib/commerce/catalog-card";
+import {
+  catalogCardSubtitle,
+  catalogCardPricing,
+  type CardQuantityBreak,
+} from "@/lib/commerce/catalog-card";
 import { visibleChildCategories } from "@/lib/commerce/category-slug";
 import { studioColorwayFill } from "@/lib/commerce/studio-garments";
 import { publicQuoteOrFallback } from "@/lib/features";
-import { moneyFromMinor } from "@/lib/utils/quote-pricing";
-import { stitchCountForPreset } from "@/lib/utils/shop-quote";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
 import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
-
-type CardQuantityBreak = { qty: number; unitMinor: number };
-
-type CardPricing = {
-  text: string;
-  isEstimate: boolean;
-  /** Same method's real quantity tiers, for the hover/click pricing-details
-   * popup — empty whenever isEstimate is false (nothing to break down). */
-  quantityBreaks: CardQuantityBreak[];
-  methodLabel: string | null;
-};
-
-/**
- * Catalog card price at the customer's current browsing quantity, priced as
- * a real decorated estimate — 1-colour screen print for most products,
- * embroidery (small logo) for hats, since headwear is conventionally
- * embroidered rather than screen printed. Falls back to the server's blank
- * garment price whenever a decorated estimate can't be computed (no
- * published config, method disabled, no cost on file), rather than showing
- * nothing.
- */
-function catalogCardPricing(
-  product: StorefrontCatalogProduct,
-  pricingConfig: PricingConfigV2 | null,
-  qty: number,
-): CardPricing {
-  const empty: CardPricing = {
-    text: product.priceFrom,
-    isEstimate: false,
-    quantityBreaks: [],
-    methodLabel: null,
-  };
-  if (!product.available || !pricingConfig || !product.costMinor) return empty;
-  const methodKey = product.isHat ? "embroidery" : "screenPrint";
-  const method = pricingConfig.methods.find(
-    (m) => m.key === methodKey && m.enabled,
-  );
-  if (!method) return empty;
-
-  function inputAt(quantity: number): QuoteInputV2 {
-    return {
-      garments: [
-        {
-          id: "g1",
-          description: product.name,
-          unitCostMinor: product.costMinor,
-          quantity,
-          colourName: product.colorName,
-          mapPriceMinor: product.mapPriceMinor ?? undefined,
-        },
-      ],
-      decorations: [
-        {
-          id: "card-estimate",
-          garmentId: "g1",
-          methodKey,
-          location: "front",
-          logoGroup: "",
-          colours: methodKey === "screenPrint" ? 1 : undefined,
-          variableValue:
-            methodKey === "embroidery" ? stitchCountForPreset("small") : undefined,
-          isOversized: false,
-          artwork: { isRepeat: false, verifiedByStaff: false },
-        },
-      ],
-      options: {
-        rush: false,
-        includePacking: true,
-        namesNumbers: false,
-        shippingCostMinor: 0,
-        designHours: 0,
-      },
-    };
-  }
-
-  try {
-    const breakdown = calculateQuoteV2(inputAt(qty), pricingConfig);
-    const unitMinor = Math.round(breakdown.totals.totalMinor / qty);
-    const quantityBreaks = method.rateModel.qtyAnchors
-      .map((anchorQty) => {
-        try {
-          const b = calculateQuoteV2(inputAt(anchorQty), pricingConfig);
-          return { qty: anchorQty, unitMinor: Math.round(b.totals.totalMinor / anchorQty) };
-        } catch {
-          return null;
-        }
-      })
-      .filter((entry): entry is CardQuantityBreak => entry !== null);
-    return {
-      text: `from ${moneyFromMinor(unitMinor)}`,
-      isEstimate: true,
-      quantityBreaks,
-      methodLabel: methodKey === "screenPrint" ? "1-colour screen print" : "small embroidery",
-    };
-  } catch {
-    return empty;
-  }
-}
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -217,7 +120,6 @@ export function ProductsGrid({
   );
   const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [brandsOpen, setBrandsOpen] = useState(true);
   const [showAllBrands, setShowAllBrands] = useState(false);
   const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
   // Showing every department (Bags, Accessories, Hoodies...) while already
@@ -234,7 +136,12 @@ export function ProductsGrid({
     );
   }, [activeCategory, categoryTree]);
   const visibleGroups = activeGroup ? [activeGroup] : categoryTree;
-  const BRAND_PREVIEW_COUNT = 8;
+  // Was 8 — with Category and Brand both expanded by default (matching the
+  // mockup's own default state), 8 brands plus a typical department's
+  // subcategory list was enough to force the sidebar's internal scroll on
+  // most real categories. 5 keeps the preview genuinely short without
+  // hiding anything — "Show N more" is still one click away.
+  const BRAND_PREVIEW_COUNT = 5;
   const visibleBrands = showAllBrands
     ? dbBrands
     : dbBrands.slice(0, BRAND_PREVIEW_COUNT);
@@ -319,7 +226,7 @@ export function ProductsGrid({
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search within category"
-          className="w-full min-h-11 border border-border rounded-sm bg-bg-raised px-3.5 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          className="w-full min-h-11 border border-border rounded-md bg-bg-raised px-3.5 py-2.5 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
         />
       </form>
 
@@ -372,64 +279,39 @@ export function ProductsGrid({
       </FacetGroup>
 
       {dbBrands.length > 0 && (
-        <div className="border-t border-border pt-sp-4">
-          <button
-            type="button"
-            onClick={() => setBrandsOpen((v) => !v)}
-            aria-expanded={brandsOpen}
-            className="w-full flex items-center justify-between gap-2 group"
-          >
-            <h3 className="font-display font-bold text-sm m-0 flex items-center gap-2">
-              Brand
-              {selectedBrands.length > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[11px] font-bold leading-none">
-                  {selectedBrands.length}
-                </span>
-              )}
-            </h3>
-            <ChevronDown
-              size={16}
-              className={cn(
-                "text-text-tertiary transition-transform duration-200 group-hover:text-text-secondary",
-                brandsOpen && "rotate-180",
-              )}
+        <FacetGroup title="Brand" badge={selectedBrands.length}>
+          {visibleBrands.map((brand) => (
+            <FacetCheck
+              key={brand}
+              label={brand}
+              checked={selectedBrands.includes(brand)}
+              onChange={() => {
+                setSelectedBrands((prev) =>
+                  prev.includes(brand)
+                    ? prev.filter((b) => b !== brand)
+                    : [...prev, brand],
+                );
+              }}
             />
-          </button>
+          ))}
 
-          {brandsOpen && (
-            <div className="mt-sp-2.5 space-y-1.5">
-              {visibleBrands.map((brand) => (
-                <FacetCheck
-                  key={brand}
-                  label={brand}
-                  checked={selectedBrands.includes(brand)}
-                  onChange={() => {
-                    setSelectedBrands((prev) =>
-                      prev.includes(brand)
-                        ? prev.filter((b) => b !== brand)
-                        : [...prev, brand],
-                    );
-                  }}
-                />
-              ))}
-
-              {dbBrands.length > BRAND_PREVIEW_COUNT && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllBrands((v) => !v)}
-                  className="text-xs font-bold text-accent hover:text-accent-hover transition-colors pt-1"
-                >
-                  {showAllBrands
-                    ? "Show less"
-                    : `Show ${dbBrands.length - BRAND_PREVIEW_COUNT} more`}
-                </button>
-              )}
-            </div>
+          {dbBrands.length > BRAND_PREVIEW_COUNT && (
+            <button
+              type="button"
+              onClick={() => setShowAllBrands((v) => !v)}
+              className="text-xs font-bold text-accent hover:text-accent-hover transition-colors pt-1"
+            >
+              {showAllBrands
+                ? "Show less"
+                : `Show ${dbBrands.length - BRAND_PREVIEW_COUNT} more`}
+            </button>
           )}
-        </div>
+        </FacetGroup>
       )}
 
-      <FacetGroup title="Price">
+      {/* Collapsed by default, matching the mockup's own state — Price is
+          reached for less often than Category or Brand. */}
+      <FacetGroup title="Price" defaultOpen={false}>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -438,7 +320,7 @@ export function ProductsGrid({
             placeholder="Min"
             value={priceMinInput}
             onChange={(e) => setPriceMinInput(e.target.value)}
-            className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
+            className="w-full min-w-0 border border-border rounded-md bg-bg-raised px-2.5 py-1.5 text-sm"
           />
           <span className="text-text-tertiary">–</span>
           <input
@@ -448,7 +330,7 @@ export function ProductsGrid({
             placeholder="Max"
             value={priceMaxInput}
             onChange={(e) => setPriceMaxInput(e.target.value)}
-            className="w-full min-w-0 border border-border rounded-sm bg-bg-raised px-2.5 py-1.5 text-sm"
+            className="w-full min-w-0 border border-border rounded-md bg-bg-raised px-2.5 py-1.5 text-sm"
           />
         </div>
       </FacetGroup>
@@ -462,7 +344,7 @@ export function ProductsGrid({
             setPriceMaxInput("");
             navigate({ brands: [], priceMin: "", priceMax: "" });
           }}
-          className="flex-1 rounded-sm border border-border py-2 text-xs font-bold hover:border-text-tertiary transition-colors"
+          className="flex-1 rounded-md border border-border py-2 text-xs font-bold hover:border-text-tertiary transition-colors"
         >
           Clear
         </button>
@@ -472,7 +354,7 @@ export function ProductsGrid({
             navigate({});
             setMobileFiltersOpen(false);
           }}
-          className="flex-1 rounded-sm bg-accent text-white py-2 text-xs font-bold hover:bg-accent-hover transition-colors"
+          className="flex-1 rounded-md bg-accent text-white py-2 text-xs font-bold hover:bg-accent-hover transition-colors"
         >
           Apply
         </button>
@@ -490,7 +372,7 @@ export function ProductsGrid({
         <div className="flex flex-wrap justify-between items-center gap-3 mb-sp-4 sticky top-[var(--header-offset)] z-30 -mx-1 px-1 py-3 bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80 border-b border-border/70">
           <button
             type="button"
-            className="lg:hidden rounded-sm border border-border px-3 py-2 text-sm font-bold"
+            className="lg:hidden rounded-md border border-border px-3 py-2 text-sm font-bold"
             onClick={() => setMobileFiltersOpen((v) => !v)}
           >
             {mobileFiltersOpen ? "Hide filters" : "Show filters"}
@@ -558,7 +440,7 @@ export function ProductsGrid({
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="border border-border rounded-sm bg-bg-raised px-3 py-2 text-sm font-semibold"
+            className="border border-border rounded-md bg-bg-raised px-3 py-2 text-sm font-semibold"
           >
             <option value="popular">Sort: Popular</option>
             <option value="price-asc">Price: low to high</option>
@@ -639,7 +521,10 @@ function ProductCard({
           <div className="absolute inset-0 bg-fill-subtle-15" />
         )}
         {tile.bestSeller && tile.available && (
-          <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-accent text-white">
+          // Was `bg-accent` (blue) — a solid dark badge is the mockup's own
+          // treatment ("Best seller", black chip) and reads more like a
+          // merchandising label, less like a second, competing button.
+          <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm bg-text-primary text-white">
             Best Seller
           </span>
         )}
@@ -727,28 +612,42 @@ function ProductCard({
           {tile.sizeRange ? `${tile.sizeRange} · ` : ""}
           {tile.available ? "3 Day Quick Order" : "Ask us for lead time"}
         </p>
-        <p className="font-bold text-sm m-0 flex items-center gap-1.5">
-          <span>
-            {tile.priceFrom}
+        {/* Price phrasing adopts the mockup's own wording exactly ("From
+            $X.XX each" / "at N pieces, including decoration") — the
+            underlying value is untouched, this only reformats the same
+            string. "Including decoration" only appears when priceQty is set,
+            i.e. this is a real decorated estimate rather than the blank-
+            garment fallback or "Unavailable", so the claim stays true. */}
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm m-0">
+            <span className="font-bold text-text-primary">
+              {tile.priceFrom === "Unavailable"
+                ? "Unavailable"
+                : `${tile.priceFrom.replace(/^from\s+/i, "From ")} each`}
+            </span>
             {tile.priceQty != null && (
-              <span className="font-normal text-text-tertiary">
-                {" "}
-                at {tile.priceQty.toLocaleString()} pcs
+              <span className="block text-xs text-text-tertiary mt-0.5">
+                at {tile.priceQty.toLocaleString()} pieces, including decoration
               </span>
             )}
-          </span>
+          </p>
           {tile.quantityBreaks.length > 0 && (
             <PricingDetailsPopover
               quantityBreaks={tile.quantityBreaks}
               note={tile.methodLabel ? `For a standard ${tile.methodLabel}, one location.` : undefined}
             />
           )}
-        </p>
+        </div>
 
         <div className="mt-auto pt-sp-3 flex gap-2">
+          {/* Two actions, not the mockup's single "Customize" — merging them
+              would drop the direct route into the Design Studio, which is a
+              functional change the SOW dispute explicitly isn't asking for
+              ("we are not requesting changes to the functionality"). Styled
+              to the mockup's outlined/filled pairing instead. */}
           <Link
             href={displayHref}
-            className="flex-1 text-center rounded-sm border border-border py-2 text-sm font-bold hover:border-accent hover:text-accent transition-colors"
+            className="flex-1 text-center rounded-md border border-border py-2 text-sm font-bold hover:border-accent hover:text-accent transition-colors"
           >
             View Product
           </Link>
@@ -760,7 +659,7 @@ function ProductCard({
                   `/design?garmentId=${encodeURIComponent(designProductId)}`,
                 )
               }
-              className="rounded-sm bg-accent text-white px-3 py-2 text-sm font-bold hover:bg-accent-hover transition-colors"
+              className="rounded-md bg-accent text-white px-3 py-2 text-sm font-bold hover:bg-accent-hover transition-colors"
               title={hasDesign ? "Preview my design" : "Design this"}
             >
               Design
@@ -773,17 +672,51 @@ function ProductCard({
 }
 
 
+/** Collapsible filter section — Category, Brand and Price all use this now.
+ * Previously each facet rendered fully expanded all the time, which is why
+ * the sidebar needed a fixed height + internal scrollbar to fit on screen
+ * (visible as a thin scroll track down its left edge) where the mockup's
+ * equivalent never needs one — its facets collapse to a single header row
+ * until opened. `badge` mirrors Brand's existing "N selected" bubble so
+ * Category and Price can show the same kind of at-a-glance state once
+ * collapsed. */
 function FacetGroup({
   title,
   children,
+  defaultOpen = true,
+  badge,
 }: {
   title: string;
   children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: number;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div>
-      <h3 className="font-display font-bold text-sm m-0 mb-sp-2">{title}</h3>
-      <div className="space-y-2">{children}</div>
+    <div className="border-t border-border pt-sp-4 first:border-t-0 first:pt-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 group"
+      >
+        <h3 className="font-display font-bold text-sm m-0 flex items-center gap-2">
+          {title}
+          {!!badge && (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[11px] font-bold leading-none">
+              {badge}
+            </span>
+          )}
+        </h3>
+        <ChevronDown
+          size={16}
+          className={cn(
+            "text-text-tertiary transition-transform duration-200 group-hover:text-text-secondary",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open && <div className="space-y-2 mt-sp-2.5">{children}</div>}
     </div>
   );
 }
