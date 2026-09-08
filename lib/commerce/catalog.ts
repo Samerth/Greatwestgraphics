@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { catalogCardImageUrl } from "./catalog-images";
 import { resolveCategoryId } from "./category-slug";
 
 /**
@@ -217,10 +218,10 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
         costMinor: Number(row.costMinor || 0),
         isDark: Boolean(row.isDark),
         available,
-        imageUrl:
-          (row.colorFrontImageUrl as string | null) ||
-          (row.styleImageUrl as string | null) ||
-          null,
+        imageUrl: catalogCardImageUrl({
+          colorFrontImageUrl: row.colorFrontImageUrl as string | null,
+          styleImageUrl: row.styleImageUrl as string | null,
+        }),
         sideImageUrl: (row.colorSideImageUrl as string | null) || null,
         backImageUrl: (row.colorBackImageUrl as string | null) || null,
         priceFrom: available

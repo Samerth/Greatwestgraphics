@@ -44,7 +44,24 @@ export function isModelShot(url: string): boolean {
     // Keep the raw string when it is not a valid URL.
   }
   const file = (path.split("/").pop() ?? path).toLowerCase();
-  return /_om[fsb]\b|\bmodel\b|on[-_]?model|\blifestyle\b/.test(file);
+  // SanMar Canada uses `_modl_` + `studio-front` / `studio-back` for
+  // on-body shots. US files more often use `_omf` / "model" / "lifestyle".
+  // Do not treat S&S size tokens (`_fm`, `_fl`) as model photos.
+  return /_om[fsb]\b|\bmodl\b|\bmodel\b|on[-_]?model|\blifestyle\b|studio[-_](front|back|side)/.test(
+    file,
+  );
+}
+
+/** True when the filename is explicitly a flat / ghost product shot. */
+export function isFlatProductShot(url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // Keep the raw string when it is not a valid URL.
+  }
+  const file = (path.split("/").pop() ?? path).toLowerCase();
+  return /_flat_|\bflat\b|\bghost\b/.test(file);
 }
 
 /** Prefer distinct front / side / back URLs when a vendor returns a list. */

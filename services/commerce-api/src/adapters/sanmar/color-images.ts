@@ -7,7 +7,11 @@
  */
 
 import type { ImageViews } from "../catalog/image-views.js";
-import { classifyVendorImageRole, isModelShot } from "../catalog/image-views.js";
+import {
+  classifyVendorImageRole,
+  isFlatProductShot,
+  isModelShot,
+} from "../catalog/image-views.js";
 import type { CatalogSkuRow } from "../catalog/types.js";
 import type { SanmarBulkProduct } from "./client.js";
 
@@ -229,10 +233,17 @@ export function pickStyleFallbackImage(
         .filter((url): url is string => Boolean(url)),
     ),
   ];
+  const model = unique.find((url) => isModelShot(url));
+  if (model) return model;
   const namedFront = unique.find(
-    (url) => classifyVendorImageRole(url) === "front",
+    (url) =>
+      classifyVendorImageRole(url) === "front" && !isFlatProductShot(url),
   );
   if (namedFront) return namedFront;
+  const anyFront = unique.find(
+    (url) => classifyVendorImageRole(url) === "front",
+  );
+  if (anyFront) return anyFront;
   for (const views of assigned.values()) {
     if (views.imageFront) return views.imageFront;
   }
