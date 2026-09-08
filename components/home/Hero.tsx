@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
 import { Container } from "@/components/shared/Container";
@@ -8,25 +10,57 @@ import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
 export function Hero() {
   const reduceMotion = useReducedMotion();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [posterLoaded, setPosterLoaded] = useState(false);
+
+  useEffect(() => {
+    if (reduceMotion || !posterLoaded) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const startPlayback = () => {
+      video.play().catch(() => {});
+      setVideoReady(true);
+    };
+
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(startPlayback, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    } else {
+      const id = setTimeout(startPlayback, 100);
+      return () => clearTimeout(id);
+    }
+  }, [reduceMotion, posterLoaded]);
 
   return (
     <section className="relative min-h-[min(78svh,640px)] sm:min-h-[56vh] flex items-end overflow-hidden text-white">
-      <video
-        src="/images/Hero.mp4"
-        autoPlay={!reduceMotion}
-        loop
-        muted
-        playsInline
-        preload="metadata"
-        // Frame 0 of Hero.mp4 itself. This used to point at
-        // login-hero-poster.jpg — a photo of the storefront window used on the
-        // login page — so every visitor saw the storefront for a beat and then
-        // watched it cut to unrelated press footage the moment the video
-        // started. The poster now matches the first frame exactly, so the
-        // handoff is invisible.
-        poster="/images/hero-poster.jpg"
-        className="fill-media absolute inset-0 w-full h-full object-cover z-0"
+      {/* Poster image for LCP — painted first and visible until video takes over */}
+      <Image
+        src="/images/hero-poster.jpg"
+        alt=""
+        fill
+        priority
+        sizes="100vw"
+        onLoad={() => setPosterLoaded(true)}
+        className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-300 ${
+          videoReady && !reduceMotion ? "opacity-0" : "opacity-100"
+        }`}
       />
+      {/* Video deferred until poster paints and main thread is idle */}
+      {!reduceMotion && (
+        <video
+          ref={videoRef}
+          src="/images/Hero.mp4"
+          loop
+          muted
+          playsInline
+          preload="none"
+          className={`fill-media absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-300 ${
+            videoReady ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      )}
       <div className="absolute inset-0 z-[1] bg-[linear-gradient(0deg,rgba(13,13,13,.9)_0%,rgba(13,13,13,.4)_52%,rgba(13,13,13,.5)_100%)]" />
 
       <Container className="relative z-[2] w-full pb-sp-6 pt-[calc(var(--header-offset)+1.5rem)] sm:pb-sp-7 sm:pt-sp-8">

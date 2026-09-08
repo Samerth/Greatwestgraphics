@@ -471,8 +471,13 @@ export function ProductsGrid({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-sp-3">
-            {tiles.map((tile) => (
-              <ProductCard key={tile.key} tile={tile} hasDesign={hasDesign} />
+            {tiles.map((tile, index) => (
+              <ProductCard
+                key={tile.key}
+                tile={tile}
+                hasDesign={hasDesign}
+                isAboveFold={index < 3}
+              />
             ))}
           </div>
         )}
@@ -483,9 +488,11 @@ export function ProductsGrid({
 function ProductCard({
   tile,
   hasDesign,
+  isAboveFold = false,
 }: {
   tile: ProductTile;
   hasDesign: boolean;
+  isAboveFold?: boolean;
 }) {
   const router = useRouter();
   const [activeSwatch, setActiveSwatch] = useState<
@@ -514,6 +521,8 @@ function ProductCard({
             fill
             className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, (max-width: 1536px) 33vw, 25vw"
+            priority={isAboveFold}
+            loading={isAboveFold ? "eager" : "lazy"}
           />
         ) : (
           <div className="absolute inset-0 bg-fill-subtle-15" />
