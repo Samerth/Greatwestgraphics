@@ -221,6 +221,8 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
         imageUrl: catalogCardImageUrl({
           colorFrontImageUrl: row.colorFrontImageUrl as string | null,
           styleImageUrl: row.styleImageUrl as string | null,
+          colorOnModelFrontImageUrl:
+            row.colorOnModelFrontImageUrl as string | null,
         }),
         sideImageUrl: (row.colorSideImageUrl as string | null) || null,
         backImageUrl: (row.colorBackImageUrl as string | null) || null,

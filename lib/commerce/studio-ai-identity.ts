@@ -16,6 +16,101 @@ export const STUDIO_AI_IDENTITY_PROMPT_MAX = 280;
 export const STUDIO_AI_FLUX_SPACE_URL =
   "https://black-forest-labs-flux-1-schnell.hf.space";
 
+/**
+ * The AI Art panel (components/design/StudioAiArtPanel.tsx) collects a
+ * shopper's answers as this structured shape — never a raw prompt string.
+ * `buildStudioAiArtPrompt` below is the one place that turns it into what
+ * the *current* generator wants. Swapping generators later (OpenAI, Recraft,
+ * whatever gets picked) means changing that one function and the fetch
+ * target in the API route — the panel component itself never needs to know
+ * which backend is behind it.
+ */
+export type StudioAiStyleId =
+  | "badge"
+  | "line-art"
+  | "vintage"
+  | "mascot"
+  | "minimal"
+  | "playful";
+
+export type StudioAiStyleOption = {
+  id: StudioAiStyleId;
+  label: string;
+  blurb: string;
+  /** Appended to the free-text prompt this generator's IDENTITY_SUFFIX
+   * already constrains toward a flat, decoration-ready mark. */
+  promptModifier: string;
+};
+
+export const STUDIO_AI_STYLES: StudioAiStyleOption[] = [
+  {
+    id: "badge",
+    label: "Bold Badge",
+    blurb: "Solid shapes, high contrast",
+    promptModifier: "bold badge/emblem composition, thick confident shapes",
+  },
+  {
+    id: "line-art",
+    label: "Line Art",
+    blurb: "Clean single-weight linework",
+    promptModifier: "single-weight line art, minimal linework, no fill unless needed",
+  },
+  {
+    id: "vintage",
+    label: "Vintage",
+    blurb: "Retro, worn-in texture",
+    promptModifier: "vintage retro style, screen-printed worn texture, 1970s americana feel",
+  },
+  {
+    id: "mascot",
+    label: "Mascot",
+    blurb: "Character-style illustration",
+    promptModifier: "friendly mascot character illustration, expressive, sports-team style",
+  },
+  {
+    id: "minimal",
+    label: "Minimal",
+    blurb: "Simple geometric mark",
+    promptModifier: "minimalist geometric mark, generous negative space, restrained detail",
+  },
+  {
+    id: "playful",
+    label: "Playful",
+    blurb: "Fun, rounded, colourful",
+    promptModifier: "playful rounded shapes, energetic and colourful, hand-drawn charm",
+  },
+];
+
+export const STUDIO_AI_DEFAULT_STYLE: StudioAiStyleId = "badge";
+
+export const STUDIO_AI_PURPOSE_MAX = 160;
+export const STUDIO_AI_SUBJECTS_MAX = 160;
+
+export type StudioAiArtRequest = {
+  /** "What is this design for?" — required. */
+  purpose: string;
+  /** "Any objects, symbols, or images you want included?" — optional. */
+  subjects: string;
+  styleId: StudioAiStyleId;
+};
+
+export function studioAiStyle(id: StudioAiStyleId): StudioAiStyleOption {
+  return STUDIO_AI_STYLES.find((s) => s.id === id) ?? STUDIO_AI_STYLES[0]!;
+}
+
+/** The one translation point described above. */
+export function buildStudioAiArtPrompt(request: StudioAiArtRequest): string {
+  const style = studioAiStyle(request.styleId);
+  const purpose = request.purpose.trim();
+  const subjects = request.subjects.trim();
+  const parts = [
+    purpose,
+    subjects ? `featuring ${subjects}` : "",
+    style.promptModifier,
+  ].filter(Boolean);
+  return normalizeStudioIdentityPrompt(parts.join(", "));
+}
+
 const IDENTITY_SUFFIX =
   "flat graphic identity mark for apparel decoration, logo or badge, follow the shopper request exactly for subject colours and lettering, one to three solid colours, high contrast, clean edges, isolated on pure white background, no photorealism, no mockup, no garment, no people, no extra lettering unless the prompt names it, clipart style";
 

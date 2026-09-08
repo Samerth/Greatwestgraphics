@@ -68,6 +68,7 @@ export async function generateMetadata({
     const fullTitle = colorName ? `${title} · ${colorName}` : title;
     const description = `Custom decorated ${title}, ${colorName || "multiple colours"}. Screen printed or embroidered in Vancouver, proofed before production.`;
     const imageUrl =
+      (product.colorOnModelFrontImageUrl as string | null) ||
       (product.colorFrontImageUrl as string | null) ||
       (style.styleImageUrl as string | null);
     const canonical = `/product/${encodeURIComponent(slug)}?id=${id}`;
@@ -210,10 +211,24 @@ export default async function ProductPage({
         : variants.length === 1
           ? String(variants[0]?.sizeName || "")
           : undefined;
+    // Model imagery is the PRIMARY image when S&S shot one for this colourway
+    // (CodSphere UAT: "prioritizes model/on-body imagery as the primary
+    // catalogue image... falling back to the standard product image when no
+    // model shot exists"). The flat shot is never dropped — it still shows
+    // in the gallery below as its own entry when it's a genuinely different
+    // photo, so "the full image gallery" stays intact per the same UAT note.
+    const flatFrontImageUrl =
+      (product.colorFrontImageUrl as string | null) || null;
+    const onModelFrontImageUrl =
+      (product.colorOnModelFrontImageUrl as string | null) || null;
     const imageUrl =
-      (product.colorFrontImageUrl as string | null) ||
+      onModelFrontImageUrl ||
+      flatFrontImageUrl ||
       (style.styleImageUrl as string | null);
-    const sideImageUrl = (product.colorSideImageUrl as string | null) || null;
+    const sideImageUrl =
+      (product.colorOnModelSideImageUrl as string | null) ||
+      (product.colorSideImageUrl as string | null) ||
+      null;
     const pdpVariants = variants.map((v) => ({
       id: String(v.id),
       sizeName: String(v.sizeName || ""),
@@ -233,7 +248,10 @@ export default async function ProductPage({
         decorationRules?: { methods: string[] | null; locations: string[] | null };
       }
     ).decorationRules ?? { methods: null, locations: null };
-    const backImageUrl = (product.colorBackImageUrl as string | null) || null;
+    const backImageUrl =
+      (product.colorOnModelBackImageUrl as string | null) ||
+      (product.colorBackImageUrl as string | null) ||
+      null;
     const available =
       Boolean(product.active) && Number(product.qty || 0) > 0;
     const title = `${style.brandName || ""} ${style.styleName || ""}`.trim();
@@ -243,6 +261,17 @@ export default async function ProductPage({
     );
     const gallery = [
       { label: "Front", url: imageUrl },
+      // The flat/product shot, kept as its own gallery entry whenever the
+      // hero above is the on-model version — so choosing the model shot as
+      // the primary image never hides the plain garment photo a shopper
+      // might still want to check colour/fabric against.
+      {
+        label: "Product",
+        url:
+          flatFrontImageUrl && flatFrontImageUrl !== imageUrl
+            ? flatFrontImageUrl
+            : null,
+      },
       {
         label: "Side",
         url:

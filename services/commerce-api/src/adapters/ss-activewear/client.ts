@@ -53,6 +53,15 @@ export type SsProductSku = {
   colorSideImage?: string;
   colorBackImage?: string;
   colorSwatchImage?: string;
+  /**
+   * On-model/lifestyle photography — S&S's own field names, confirmed
+   * against their public v2 API docs (api.ssactivewear.com/V2/Products.aspx).
+   * Optional: an account without these entitled, or a style S&S hasn't shot
+   * on a model, simply omits them — never required, never throws.
+   */
+  colorOnModelFrontImage?: string;
+  colorOnModelSideImage?: string;
+  colorOnModelBackImage?: string;
 };
 
 export type SsCategory = {
@@ -114,7 +123,7 @@ type FetchResult<T> = {
 const STYLE_FIELDS =
   "styleID,partNumber,brandName,styleName,title,description,baseCategory,categories,brandImage,styleImage";
 const PRODUCT_FIELDS =
-  "skuID_Master,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage";
+  "skuID_Master,styleID,sku,gtin,colorName,colorCode,color1,color2,sizeName,sizeCode,sizeOrder,customerPrice,mapPrice,qty,colorFrontImage,colorSideImage,colorBackImage,colorSwatchImage,colorOnModelFrontImage,colorOnModelSideImage,colorOnModelBackImage";
 const STOCK_PRICE_FIELDS =
   "skuID_Master,sku,qty,customerPrice,mapPrice";
 const SPEC_FIELDS = "specID,styleID,sizeName,sizeOrder,specName,value";

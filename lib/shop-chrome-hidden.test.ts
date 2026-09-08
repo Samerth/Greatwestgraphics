@@ -20,15 +20,24 @@ describe("hidden shopper chrome", () => {
     expect(footer).toContain("withoutPublicQuoteLinks");
   });
 
-  it("gates the Design Studio AI identity try-out", () => {
+  it("gates the Design Studio AI Art try-out", () => {
     expect(SHOW_DESIGN_STUDIO_AI_CONCEPT).toBe(true);
     const studio = read("components/design/DesignStudio.tsx");
     const designPage = read("app/(shop)/design/page.tsx");
+    const panel = read("components/design/StudioAiArtPanel.tsx");
     expect(studio).toContain("SHOW_DESIGN_STUDIO_AI_CONCEPT");
-    expect(studio).toContain("Try an identity mark (experimental)");
-    expect(studio).toContain("not print-ready");
+    expect(studio).toContain("Ask AI to design it");
     expect(studio).toContain("/api/studio/identity");
     expect(studio).toContain("studioIdentityPlacementZone");
+    // "Not print-ready" honesty moved from the old inline panel into the
+    // modal itself — still asserted, just in its new home.
+    expect(panel).toContain("not print-ready");
+    // Image-to-image ("Start from Inspiration Photo") was pulled — the
+    // current free generator is text-only, so a chooser with one live card
+    // and one permanently-disabled one wasn't worth keeping. This guards
+    // against it quietly coming back half-wired.
+    expect(panel).not.toContain("Inspiration Photo");
+    expect(panel).not.toContain("Coming soon");
     expect(designPage).not.toMatch(/sample AI concept/i);
   });
 

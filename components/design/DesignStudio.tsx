@@ -9,6 +9,7 @@ import {
   Type as TypeIcon,
   Users as UsersIcon,
   StickyNote as StickyNoteIcon,
+  Sparkles,
 } from "lucide-react";
 import {
   DESIGN_CANVAS_SIZE,
@@ -78,12 +79,14 @@ import {
 import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
-  STUDIO_AI_IDENTITY_PROMPT_MAX,
+  STUDIO_AI_DEFAULT_STYLE,
   isUsableStudioIdentityBlob,
   nextStudioIdentitySeed,
   studioIdentityFilename,
   studioIdentityPlacementZone,
+  type StudioAiStyleId,
 } from "@/lib/commerce/studio-ai-identity";
+import { StudioAiArtPanel } from "@/components/design/StudioAiArtPanel";
 import {
   framedBackdropStyles,
   garmentBackdrops,
@@ -238,6 +241,11 @@ type ProductDetail = {
 
 const STUDIO_TABS = [
   { id: "images", label: "Images", Icon: ImageIcon },
+  // Same rail position as Coastal Reign's own Images → AI Art ordering.
+  // Not a content tab like the others — clicking it opens the AI Art modal
+  // directly rather than switching `studioTab`, same pattern "team" already
+  // uses for `revealTeamPanel()` below.
+  { id: "ai-art", label: "AI Art", Icon: Sparkles },
   { id: "text", label: "Text", Icon: TypeIcon },
   { id: "team", label: "Names", Icon: UsersIcon },
   { id: "notes", label: "Notes", Icon: StickyNoteIcon },
@@ -428,11 +436,13 @@ export function DesignStudio({
    * decorated side to build one combined sheet — a multi-second operation
    * since each side needs its own render pass on the live canvas. */
   const [exportingMockup, setExportingMockup] = useState<string | null>(null);
-  const [showAiPrompt, setShowAiPrompt] = useState(false);
+  const [aiArtOpen, setAiArtOpen] = useState(false);
+  const [aiPurpose, setAiPurpose] = useState("");
+  const [aiSubjects, setAiSubjects] = useState("");
+  const [aiStyleId, setAiStyleId] = useState<StudioAiStyleId>(STUDIO_AI_DEFAULT_STYLE);
   const [showDecorationSizeGuide, setShowDecorationSizeGuide] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [aiReview, setAiReview] = useState<"ask" | "options" | null>(null);
+  const [aiReview, setAiReview] = useState<"ask" | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
@@ -1635,8 +1645,8 @@ export function DesignStudio({
   }, []);
 
   async function generateConcept() {
-    const prompt = aiPrompt.trim();
-    if (!prompt) return;
+    const purpose = aiPurpose.trim();
+    if (!purpose) return;
     setGenerating(true);
     setAiError(null);
     setAiReview(null);
@@ -1646,7 +1656,9 @@ export function DesignStudio({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt,
+          purpose,
+          subjects: aiSubjects.trim(),
+          styleId: aiStyleId,
           seed: nextStudioIdentitySeed(),
         }),
         signal: AbortSignal.timeout(120_000),
@@ -1665,10 +1677,15 @@ export function DesignStudio({
       }
       const placed = await addArtworkFromBlob(
         blob,
-        studioIdentityFilename(prompt, type),
+        studioIdentityFilename(purpose, type),
         { identity: true },
       );
       lastAiArtworkIdRef.current = placed.id;
+      // The result needs to be seen against the actual garment, which the
+      // modal covers — close it the moment there is something to look at.
+      // A failure keeps the modal open instead (below) so the shopper can
+      // adjust and retry without losing what they already typed.
+      setAiArtOpen(false);
       setAiReview("ask");
       requestAnimationFrame(() => {
         aiReviewRef.current?.scrollIntoView({
@@ -1678,9 +1695,8 @@ export function DesignStudio({
       });
     } catch {
       setAiError(
-        "The free generator missed or timed out. Try again with a shorter prompt, or upload your own art.",
+        "The free generator missed or timed out. Try again, or upload your own art.",
       );
-      setAiReview("options");
     } finally {
       setGenerating(false);
     }
@@ -2179,7 +2195,10 @@ export function DesignStudio({
               aria-pressed={active}
               onClick={() => {
                 if (tab.id === "team") revealTeamPanel();
-                else setStudioTab(tab.id);
+                else if (tab.id === "ai-art") {
+                  setAiError(null);
+                  setAiArtOpen(true);
+                } else setStudioTab(tab.id);
               }}
               className={cn(
                 "flex-1 md:flex-none flex flex-col items-center justify-center gap-1 rounded-md px-2 py-2.5 transition-colors min-w-[3.75rem]",
@@ -2399,102 +2418,79 @@ export function DesignStudio({
         {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
           <button
             type="button"
-            onClick={() => setShowAiPrompt((open) => !open)}
-            className="w-full border border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent transition-colors"
+            onClick={() => {
+              setAiError(null);
+              setAiArtOpen(true);
+            }}
+            className="group w-full inline-flex items-center justify-center gap-2 rounded-md border border-accent/25 bg-accent-tint py-3 font-bold text-sm text-accent hover:bg-accent hover:border-accent hover:text-white transition-colors"
           >
-            Try an identity mark (experimental)
+            <Sparkles
+              size={16}
+              strokeWidth={2.25}
+              aria-hidden
+              className="shrink-0 transition-transform duration-med ease-out-custom group-hover:scale-110"
+            />
+            Ask AI to design it
           </button>
         ) : null}
 
-        {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
-          <div className="rounded-md border border-border bg-bg p-sp-3">
-            <p className="m-0 mb-2 text-[11px] leading-4 text-text-tertiary">
-              Free try-out — not print-ready. Keep the file if it matches;
-              otherwise try again or upload your own.
+        {aiArtOpen && (
+          <StudioAiArtPanel
+            purpose={aiPurpose}
+            onPurposeChange={setAiPurpose}
+            subjects={aiSubjects}
+            onSubjectsChange={setAiSubjects}
+            styleId={aiStyleId}
+            onStyleChange={setAiStyleId}
+            generating={generating}
+            error={aiError}
+            onGenerate={() => void generateConcept()}
+            onClose={() => setAiArtOpen(false)}
+          />
+        )}
+
+        {/* Review card — only reachable after a successful generation, since
+            the modal above stays open through a failure (error shows there
+            instead, right next to Generate) and only closes once there is
+            something on the garment worth looking at. */}
+        {aiReview === "ask" && !generating && (
+          <div
+            ref={aiReviewRef}
+            id="studio-ai-review"
+            className="rounded-md border border-border bg-bg p-sp-3"
+          >
+            <p className="m-0 mb-2 text-[13px] leading-5 text-text-secondary">
+              Look at the garment. Is that the mark you asked for?
             </p>
-            <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
-              Describe a logo or badge
-            </label>
-            <textarea
-              value={aiPrompt}
-              onChange={(event) => {
-                setAiPrompt(event.target.value);
-                setAiReview(null);
-              }}
-              placeholder="e.g. simple wolf head badge, two colours, no text"
-              maxLength={STUDIO_AI_IDENTITY_PROMPT_MAX}
-              className="w-full min-h-16 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-            />
-            <button
-              type="button"
-              onClick={() => void generateConcept()}
-              disabled={!aiPrompt.trim() || generating}
-              className="mt-2 w-full rounded-sm bg-text-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
-            >
-              {generating
-                ? "Building mark… (can take up to a minute)"
-                : "Generate and place on garment"}
-            </button>
-            {aiError && (
-              <p className="text-[11px] leading-4 text-red-600 mt-2">{aiError}</p>
-            )}
-            {aiReview && !generating ? (
-              <div
-                ref={aiReviewRef}
-                id="studio-ai-review"
-                className="mt-2 flex flex-col gap-1.5"
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  lastAiArtworkIdRef.current = null;
+                  setAiReview(null);
+                }}
+                className="rounded-sm bg-text-primary px-3 py-1.5 text-xs font-bold text-white"
               >
-                {aiReview === "ask" ? (
-                  <>
-                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
-                      Look at the garment. Is that the mark you asked for?
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          lastAiArtworkIdRef.current = null;
-                          setAiReview(null);
-                        }}
-                        className="rounded-sm bg-text-primary px-2 py-1 text-[11px] font-bold text-white"
-                      >
-                        Keep it
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAiReview("options")}
-                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                      >
-                        Not quite
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
-                      Try another generation, or use your own logo or artwork
-                      instead.
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => void generateConcept()}
-                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                      >
-                        Try again
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => artworkInputRef.current?.click()}
-                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
-                      >
-                        Upload your own
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : null}
+                Keep it
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiReview(null);
+                  setAiArtOpen(true);
+                }}
+                className="rounded-sm border border-border px-3 py-1.5 text-xs font-bold hover:border-accent hover:text-accent transition-colors"
+              >
+                Not quite
+              </button>
+              <button
+                type="button"
+                onClick={() => artworkInputRef.current?.click()}
+                className="text-xs font-bold text-text-tertiary hover:text-text-primary transition-colors underline underline-offset-2"
+              >
+                or upload your own instead
+              </button>
+            </div>
           </div>
         )}
 

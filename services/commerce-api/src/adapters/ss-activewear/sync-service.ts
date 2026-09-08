@@ -556,7 +556,15 @@ export class SsSyncService {
       const side = await this.images.ensure(sample.colorSideImage);
       const back = await this.images.ensure(sample.colorBackImage);
       const swatch = await this.images.ensure(sample.colorSwatchImage);
-      for (const url of [front, side, back, swatch]) {
+      // On-model/lifestyle shots, downloaded and stored the same way,
+      // alongside (never instead of) the flat shots above — CodSphere UAT:
+      // model imagery is the PRIMARY catalogue image, the full gallery still
+      // shows every shot. `ensure()` already no-ops on a missing/undefined
+      // path, so a style S&S hasn't shot on a model costs nothing extra.
+      const onModelFront = await this.images.ensure(sample.colorOnModelFrontImage);
+      const onModelSide = await this.images.ensure(sample.colorOnModelSideImage);
+      const onModelBack = await this.images.ensure(sample.colorOnModelBackImage);
+      for (const url of [front, side, back, swatch, onModelFront, onModelSide, onModelBack]) {
         if (url) imagesDownloaded += 1;
       }
 
@@ -598,6 +606,12 @@ export class SsSyncService {
         colorSideImageUrl: side,
         colorBackImageUrl: back,
         colorSwatchImageUrl: swatch,
+        colorOnModelFrontImagePath: sample.colorOnModelFrontImage ?? null,
+        colorOnModelSideImagePath: sample.colorOnModelSideImage ?? null,
+        colorOnModelBackImagePath: sample.colorOnModelBackImage ?? null,
+        colorOnModelFrontImageUrl: onModelFront,
+        colorOnModelSideImageUrl: onModelSide,
+        colorOnModelBackImageUrl: onModelBack,
         materialConfig: {
           baseColor: sample.color1 ?? null,
           accentColor: sample.color2 ?? null,
