@@ -1,3 +1,5 @@
+import type { DesignSide } from "@gwg/contracts";
+
 /**
  * Experimental identity-mark generator (Pollinations, free, no API key).
  * Not print-ready. Output is a file the shopper can keep, retry, or replace
@@ -50,6 +52,14 @@ export function studioIdentityExtension(mime = "image/png"): string {
   if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
   if (type.includes("webp")) return "webp";
   return "png";
+}
+
+/** Full plate so the try-out is readable on the garment, not a 5×5 speck. */
+export function studioIdentityPlacementZone(side: DesignSide): string {
+  if (side === "back") return "Full Back";
+  if (side === "left") return "Left Side Panel";
+  if (side === "right") return "Right Side Panel";
+  return "Full Front";
 }
 
 export function studioIdentityFilename(

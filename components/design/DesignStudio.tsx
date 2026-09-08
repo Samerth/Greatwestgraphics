@@ -82,6 +82,7 @@ import {
   isUsableStudioIdentityBlob,
   nextStudioIdentitySeed,
   studioIdentityFilename,
+  studioIdentityPlacementZone,
 } from "@/lib/commerce/studio-ai-identity";
 import {
   framedBackdropStyles,
@@ -1346,10 +1347,13 @@ export function DesignStudio({
   async function addArtworkFromBlob(
     blob: Blob,
     filename: string,
+    options?: { identity?: boolean },
   ): Promise<{ id: string; hostedUrl: string | null }> {
     const id = crypto.randomUUID();
     const side = activeSide;
-    const zone = placementBySide[side];
+    const zone = options?.identity
+      ? studioIdentityPlacementZone(side)
+      : placementBySide[side];
     // Unsigned visitors cannot upload. A `blob:` URL dies when they leave
     // to confirm an account, so the draft is stored as a data URL that
     // localStorage can bring back onto the canvas after sign-in.
@@ -1398,7 +1402,19 @@ export function DesignStudio({
       rotation: 0,
     };
 
-    setActiveArtworks((prev) => [...prev, newArtwork]);
+    if (options?.identity) {
+      commitDesign((prev) => ({
+        ...prev,
+        artworksBySide: {
+          ...prev.artworksBySide,
+          [side]: [...prev.artworksBySide[side], newArtwork],
+        },
+        placementBySide: { ...prev.placementBySide, [side]: zone },
+      }));
+      setZoom(2);
+    } else {
+      setActiveArtworks((prev) => [...prev, newArtwork]);
+    }
     setSelectedId(id);
 
     if (!signedIn) {
@@ -1651,6 +1667,7 @@ export function DesignStudio({
       const placed = await addArtworkFromBlob(
         blob,
         studioIdentityFilename(prompt, type),
+        { identity: true },
       );
       lastAiArtworkIdRef.current = placed.id;
       setAiReview("ask");

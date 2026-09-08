@@ -7,6 +7,7 @@ import {
   normalizeStudioIdentityPrompt,
   studioIdentityFilename,
   studioIdentityImageUrl,
+  studioIdentityPlacementZone,
 } from "./studio-ai-identity";
 
 describe("studio AI identity (Pollinations)", () => {
@@ -29,6 +30,13 @@ describe("studio AI identity (Pollinations)", () => {
 
   it("collapses prompt whitespace before wrapping", () => {
     expect(normalizeStudioIdentityPrompt("  wolf   head  ")).toBe("wolf head");
+  });
+
+  it("places the try-out on the full plate so it is readable", () => {
+    expect(studioIdentityPlacementZone("front")).toBe("Full Front");
+    expect(studioIdentityPlacementZone("back")).toBe("Full Back");
+    expect(studioIdentityPlacementZone("left")).toBe("Left Side Panel");
+    expect(studioIdentityPlacementZone("right")).toBe("Right Side Panel");
   });
 
   it("names the saved file from the prompt so they can keep it", () => {
