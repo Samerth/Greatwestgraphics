@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyVendorImageRole, isModelShot, pickImageViews } from "./image-views.js";
+import {
+  classifyVendorImageRole,
+  isFlatProductShot,
+  isModelShot,
+  pickImageViews,
+} from "./image-views.js";
 
 describe("classifyVendorImageRole", () => {
   it("reads angle from the filename, not list order", () => {
@@ -33,17 +38,38 @@ describe("isModelShot", () => {
     expect(isModelShot("https://media.example.com/108085_black_omb.jpg")).toBe(true);
   });
 
+  it("recognizes SanMar Canada _modl_ studio shots", () => {
+    expect(
+      isModelShot(
+        "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_modl_huckleberry_studio-front_crop_2025_cil.jpg",
+      ),
+    ).toBe(true);
+    expect(
+      isModelShot(
+        "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_flat_aluminum-grey_front_2025_cil.jpg",
+      ),
+    ).toBe(false);
+  });
+
   it("recognizes the words model/lifestyle in a filename", () => {
     expect(isModelShot("https://media.example.com/108085-black-model.jpg")).toBe(true);
     expect(isModelShot("https://media.example.com/108085-black-on-model.jpg")).toBe(true);
     expect(isModelShot("https://media.example.com/108085-black-lifestyle.jpg")).toBe(true);
   });
 
-  it("does not flag a plain flat/ghost product shot", () => {
+  it("does not flag a plain flat/ghost product shot or an S&S size token", () => {
     expect(isModelShot("https://media.example.com/108085_black_front.jpg")).toBe(false);
     expect(
       isModelShot("https://media.sanmarcanada.com/catalog/product/1/0/108085_black_2011.jpg"),
     ).toBe(false);
+    expect(
+      isModelShot("https://cdn.ssactivewear.com/Images/Color/115711_f_fm.jpg"),
+    ).toBe(false);
+    expect(
+      isFlatProductShot(
+        "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_flat_aluminum-grey_front_2025_cil.jpg",
+      ),
+    ).toBe(true);
   });
 });
 

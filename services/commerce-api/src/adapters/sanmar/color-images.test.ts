@@ -77,6 +77,19 @@ describe("assignSanmarColorImages", () => {
     expect(assigned.get("navy")?.imageBack).toBeUndefined();
   });
 
+  it("prefers SanMar Canada _modl_ studio shots over _flat_ product shots", () => {
+    const flat =
+      "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_flat_huckleberry_front_2025_cil.jpg";
+    const model =
+      "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_modl_huckleberry_studio-front_crop_2025_cil.jpg";
+    expect(
+      assignSanmarColorImages({
+        colorNames: ["Huckleberry"],
+        mediaUrls: [flat, model],
+      }).get("huckleberry")?.imageFront,
+    ).toBe(model);
+  });
+
   it("prefers an on-model front shot over a flat/ghost shot for the same colour, regardless of feed order", () => {
     const flat =
       "https://media.sanmarcanada.com/catalog/product/1/0/108085_black_flat.jpg";
