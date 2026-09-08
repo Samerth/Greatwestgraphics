@@ -37,11 +37,22 @@ function trimUrl(url: string | null | undefined): string | null {
 /**
  * Default PLP / Best Sellers tile. Colour swatches keep their own
  * colorFront URL so hovering a colour still shows that colourway.
+ *
+ * `colorOnModelFrontImageUrl` is S&S's own explicitly-labelled on-model
+ * shot (colorOnModelFrontImage from their v2 API) — unlike SanMar, whose
+ * media bag has to be guessed at via `isCatalogModelShot`'s filename
+ * patterns, S&S tells us definitively, so it wins outright when present
+ * rather than being run through the guesswork path. SanMar rows never
+ * populate this field, so they fall through to the existing logic
+ * unchanged.
  */
 export function catalogCardImageUrl(input: {
   colorFrontImageUrl?: string | null;
   styleImageUrl?: string | null;
+  colorOnModelFrontImageUrl?: string | null;
 }): string | null {
+  const onModel = trimUrl(input.colorOnModelFrontImageUrl);
+  if (onModel) return onModel;
   const colorFront = trimUrl(input.colorFrontImageUrl);
   const styleImage = trimUrl(input.styleImageUrl);
   const candidates = [styleImage, colorFront].filter(

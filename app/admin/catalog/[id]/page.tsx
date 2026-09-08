@@ -67,6 +67,21 @@ export default async function AdminCatalogProductPage({
     { label: "Side", url: product.colorSideImageUrl as string | null },
     { label: "Back", url: product.colorBackImageUrl as string | null },
     { label: "Swatch", url: product.colorSwatchImageUrl as string | null },
+    // On-model shots (S&S only) — shown separately from the flat shots
+    // above so staff can confirm what a sync actually fetched, rather than
+    // only seeing whichever one won as the storefront's primary image.
+    {
+      label: "On-model front",
+      url: product.colorOnModelFrontImageUrl as string | null,
+    },
+    {
+      label: "On-model side",
+      url: product.colorOnModelSideImageUrl as string | null,
+    },
+    {
+      label: "On-model back",
+      url: product.colorOnModelBackImageUrl as string | null,
+    },
   ].filter((m) => m.url);
 
   return (

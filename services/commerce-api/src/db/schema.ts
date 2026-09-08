@@ -406,6 +406,23 @@ export const ssProducts = pgTable(
     colorSideImageUrl: text("color_side_image_url"),
     colorBackImageUrl: text("color_back_image_url"),
     colorSwatchImageUrl: text("color_swatch_image_url"),
+    /**
+     * On-model/lifestyle shots, separate from the flat garment photos above.
+     * S&S's v2 API returns these as their own named fields
+     * (colorOnModelFrontImage etc.) — unlike SanMar, which only ships an
+     * unlabeled bag of media URLs, S&S tells us definitively which shots are
+     * on-model, so these are trusted as-is rather than guessed from a
+     * filename. Additive: nullable, never overwrites the flat columns above,
+     * so the PDP's full image gallery still has the flat shots to show
+     * alongside these (CodSphere UAT — "Product pages can continue to show
+     * the full image gallery").
+     */
+    colorOnModelFrontImagePath: text("color_on_model_front_image_path"),
+    colorOnModelSideImagePath: text("color_on_model_side_image_path"),
+    colorOnModelBackImagePath: text("color_on_model_back_image_path"),
+    colorOnModelFrontImageUrl: text("color_on_model_front_image_url"),
+    colorOnModelSideImageUrl: text("color_on_model_side_image_url"),
+    colorOnModelBackImageUrl: text("color_on_model_back_image_url"),
     materialConfig: jsonb("material_config").$type<Record<string, unknown>>(),
     qty: integer("qty").notNull().default(0),
     /** Vendor discontinued / sellable flag — sync may update this. */
