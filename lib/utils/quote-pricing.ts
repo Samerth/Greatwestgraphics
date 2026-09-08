@@ -65,3 +65,34 @@ export function lineSnapshotTotalMinor(pricing: unknown): number | undefined {
   const total = breakdown?.totals?.totalMinor ?? breakdown?.totalMinor;
   return typeof total === "number" ? total : undefined;
 }
+
+/**
+ * Returns the authoritative line total for display, avoiding round-then-multiply drift.
+ *
+ * When unit prices have fractional cents (e.g., $228.08 / 12 = $19.006...), storing
+ * Math.round(unit*100) as cents and then multiplying back by qty yields a different
+ * total (1901 * 12 = $228.12 instead of $228.08).
+ *
+ * This function resolves the authoritative total in priority order:
+ * 1. lineTotalMinor - explicitly stored line total
+ * 2. Pricing snapshot's totalMinor - from the pricing engine breakdown
+ * 3. unitPriceEstimateMinor * qty - fallback for legacy data
+ */
+export function getAuthoritativeLineTotalMinor(line: {
+  lineTotalMinor?: number;
+  unitPriceEstimateMinor?: number;
+  quantity: number;
+  configuration?: { pricing?: unknown };
+}): number | undefined {
+  if (typeof line.lineTotalMinor === "number") {
+    return line.lineTotalMinor;
+  }
+  const snapshotTotal = lineSnapshotTotalMinor(line.configuration?.pricing);
+  if (typeof snapshotTotal === "number") {
+    return snapshotTotal;
+  }
+  if (typeof line.unitPriceEstimateMinor === "number") {
+    return line.unitPriceEstimateMinor * line.quantity;
+  }
+  return undefined;
+}

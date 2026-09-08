@@ -378,6 +378,12 @@ export const JobRequestLineInputSchema = z.object({
   description: z.string().min(1).max(500),
   quantity: z.number().int().positive(),
   unitPriceEstimateMinor: z.number().int().nonnegative().optional(),
+  /**
+   * Authoritative line total in minor units (cents). Use this for display
+   * instead of recalculating from unitPriceEstimateMinor × qty, which can
+   * drift by cents when the unit price has fractional cents that were rounded.
+   */
+  lineTotalMinor: z.number().int().nonnegative().optional(),
   currency: z.string().length(3).toUpperCase().default("CAD"),
   configuration: z
     .object({

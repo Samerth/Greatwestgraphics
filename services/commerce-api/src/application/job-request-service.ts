@@ -180,12 +180,12 @@ function repriceLine(
     const input = QuoteInputV2Schema.parse(snapshot.input);
     const breakdown = calculateQuoteV2(input, config);
     const quantity = breakdown.totalQuantity;
+    const lineTotalMinor = breakdown.totals.totalMinor;
     return {
       ...line,
       quantity,
-      unitPriceEstimateMinor: Math.round(
-        breakdown.totals.totalMinor / Math.max(1, quantity),
-      ),
+      unitPriceEstimateMinor: Math.round(lineTotalMinor / Math.max(1, quantity)),
+      lineTotalMinor,
       currency: "CAD",
       configuration: {
         ...line.configuration,
@@ -210,6 +210,7 @@ function repriceLine(
     ...line,
     quantity: input.quantity,
     unitPriceEstimateMinor: breakdown.perPieceMinor,
+    lineTotalMinor: breakdown.totalMinor,
     currency: "CAD",
     configuration: {
       ...line.configuration,

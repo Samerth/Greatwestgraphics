@@ -10,7 +10,7 @@ import { JobTransitionForm } from "@/components/admin/JobTransitionForm";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses, type JobRequestStatus } from "@gwg/contracts";
-import { lineSnapshotTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
+import { getAuthoritativeLineTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -70,15 +70,8 @@ export default async function AdminJobDetailPage({
   // form now starts here instead of blank, and the action refuses a wild
   // mismatch unless it's explicitly confirmed.
   const computedTotalMinor = detail.lines.reduce((sum, line) => {
-    const pricing = (
-      line.snapshot.configuration as { pricing?: unknown } | undefined
-    )?.pricing;
-    const fromSnapshot = lineSnapshotTotalMinor(pricing);
-    const fromEstimate =
-      line.snapshot.unitPriceEstimateMinor != null
-        ? line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity
-        : 0;
-    return sum + (fromSnapshot ?? fromEstimate);
+    const lineTotal = getAuthoritativeLineTotalMinor(line.snapshot);
+    return sum + (lineTotal ?? 0);
   }, 0);
 
   const presentation = jobStatusPresentation[detail.status];
@@ -323,18 +316,8 @@ export default async function AdminJobDetailPage({
             productMetadata?: string;
             pricingUnverified?: boolean;
           };
-          const snapshotTotalMinor = lineSnapshotTotalMinor(
-            configuration?.pricing,
-          );
-          // Falls back to a direct qty × unit-price calculation whenever the
-          // pricing snapshot doesn't carry a precomputed breakdown total —
-          // which is the common case — so a total always shows instead of
-          // silently disappearing.
-          const computedLineTotalMinor =
-            line.snapshot.unitPriceEstimateMinor != null
-              ? line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity
-              : undefined;
-          const lineTotalMinor = snapshotTotalMinor ?? computedLineTotalMinor;
+          // Use authoritative line total, avoiding round-then-multiply drift
+          const lineTotalMinor = getAuthoritativeLineTotalMinor(line.snapshot);
           const artworkProofUrl = configuration?.artworkProofUrl;
           const designProjectId = configuration?.designProjectId;
           const roster = configuration?.roster;
