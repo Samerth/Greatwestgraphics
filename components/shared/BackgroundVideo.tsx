@@ -58,11 +58,12 @@ export function BackgroundVideo({
 
   return (
     <>
-      {/* Poster image for LCP — visible until video takes over */}
+      {/* Poster image for LCP — priority ensures eager load, not lazy */}
       <Image
         src={poster}
         alt=""
         fill
+        priority
         sizes="100vw"
         onLoad={() => setPosterLoaded(true)}
         aria-hidden
