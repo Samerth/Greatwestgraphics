@@ -22,10 +22,11 @@ for (const workspace of ["@gwg/contracts", "@gwg/pricing"]) {
   if (result.status) process.exit(result.status ?? 1);
 }
 
-const host = "127.0.0.1";
+const host = "0.0.0.0";
 const port = "3000";
-console.log(`\nDesign Studio: http://${host}:${port}/design`);
-console.log("Images → Try an identity mark (experimental)\n");
+console.log(`\nDesign Studio: http://127.0.0.1:${port}/design`);
+console.log("Images → Try an identity mark (experimental)");
+console.log("Listening on 0.0.0.0 so Cursor port-forward / preview can connect.\n");
 
 const child = spawn(
   "npx",
