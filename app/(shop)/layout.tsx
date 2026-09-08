@@ -3,6 +3,7 @@ import { TickBar } from "@/components/layout/TickBar";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { CodChatWidget } from "@/components/shared/CodChatWidget";
 import { headers } from "next/headers";
 import { loadStorefrontCategories } from "@/lib/commerce/catalog";
 import { createCommerceClient } from "@/lib/commerce/client";
@@ -186,6 +187,12 @@ export default async function ShopLayout({
       <Footer categories={categories} storeName={isBranded ? store.name : undefined} />
 
       {!isBranded && <ThemeToggle />}
+
+      {/* Same test as the toggle above: a branded team store belongs to the
+          customer whose logo is on it, and a Great West Graphics sales
+          assistant offering quotes there reads as someone else's bot on their
+          shop. The main storefront gets it; team stores don't. */}
+      {!isBranded && <CodChatWidget />}
     </div>
   );
 }

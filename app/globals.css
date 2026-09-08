@@ -116,6 +116,16 @@ html[data-theme="orange"] {
   --color-accent-tint: rgba(170, 51, 0, 0.1);
   --color-accent-tint-strong: rgba(170, 51, 0, 0.18);
   --color-accent-on-dark: #FF8B5E;
+
+  /* The band was originally fixed navy in both themes (see the band tokens
+     below), on the reasoning that navy is a surface colour rather than part
+     of the accent swap. Reversed on request: the announcement bar reading
+     navy while everything else turned orange looked like the toggle had
+     failed. These are the accent hue taken down to surface darkness, so
+     --color-band-fg (white) keeps roughly the same contrast it has on navy.
+     This drives the footer too, not just the announcement bar. */
+  --color-band-bg: #4A1800;
+  --color-band-bg-raised: #6E2200;
 }
 
 /* The shipped theme (see app/layout.tsx). Client-approved mockup measured at

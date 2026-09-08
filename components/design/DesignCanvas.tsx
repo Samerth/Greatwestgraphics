@@ -442,7 +442,11 @@ export default function DesignCanvas({
   }, [canvasSize]);
 
   const displayScale = (displaySize / canvasSize) * zoom;
-  const offset = zoom < 1 ? (displaySize - displaySize * zoom) / 2 : 0;
+  // Centre the scaled group at every zoom level. Above 100% this offset is
+  // negative, which is correct: it pulls the oversized content back so the
+  // middle of the design stays put. Clamping it to 0 above 1x anchored the
+  // zoom at the top-left corner instead, pushing the garment out of frame.
+  const offset = (displaySize - displaySize * zoom) / 2;
 
   const stacked = [
     ...artworks.map((layer) => ({
