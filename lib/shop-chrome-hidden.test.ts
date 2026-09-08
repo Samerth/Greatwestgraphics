@@ -29,7 +29,6 @@ describe("hidden shopper chrome", () => {
     expect(studio).toContain("not print-ready");
     expect(studio).toContain("/api/studio/identity");
     expect(studio).toContain("studioIdentityPlacementZone");
-    expect(studio).toContain("setZoom(2)");
     expect(designPage).not.toMatch(/sample AI concept/i);
   });
 

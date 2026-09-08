@@ -1411,7 +1411,6 @@ export function DesignStudio({
         },
         placementBySide: { ...prev.placementBySide, [side]: zone },
       }));
-      setZoom(2);
     } else {
       setActiveArtworks((prev) => [...prev, newArtwork]);
     }
