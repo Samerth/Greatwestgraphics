@@ -1,6 +1,18 @@
 import Script from "next/script";
 
-const WIDGET_KEY = process.env.NEXT_PUBLIC_CODCHAT_WIDGET_KEY;
+/**
+ * Public per-widget key. Safe in source: it is rendered into the HTML of every
+ * page by design, and CodCRM protects the widget with an origin allowlist plus
+ * signed embed tokens rather than by keeping this string private.
+ *
+ * Deliberately not an env var. NEXT_PUBLIC_* is inlined at build time and the
+ * Dockerfile passes no build args, so an env-only value can never reach the
+ * bundle in a container build — the widget would silently never appear on
+ * staging. The override below exists for a future second widget.
+ */
+const DEFAULT_WIDGET_KEY = "cw_QvxzBof5FARoSZoWlZtCFM5IptaiBVe_";
+const WIDGET_KEY =
+  process.env.NEXT_PUBLIC_CODCHAT_WIDGET_KEY || DEFAULT_WIDGET_KEY;
 const LOADER_SRC = "https://www.codcrm.com/chat/widget.js";
 
 /**
