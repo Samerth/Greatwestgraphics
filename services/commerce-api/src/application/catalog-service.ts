@@ -1201,10 +1201,9 @@ export class CatalogService {
     );
     // Every sibling colourway was already fetched above to compute the
     // count — reusing it here for real swatch thumbnails costs nothing
-    // extra. Capped at 12 per style so a style with 50 colours doesn't
-    // bloat the listing payload; the true count is still in countByStyle
-    // for a "+N more" indicator.
-        const swatchesByStyle = new Map<
+    // extra. Soft-capped so a 200-colour style cannot bloat the listing;
+    // the card pages through this list so shoppers can open every colour.
+    const swatchesByStyle = new Map<
       string,
       {
         colorName: string;
@@ -1216,7 +1215,7 @@ export class CatalogService {
     >();
     for (const row of siblings) {
       const list = swatchesByStyle.get(row.product.styleUuid) ?? [];
-      if (list.length < 12) {
+      if (list.length < 64) {
         list.push({
           colorName: row.product.colorName,
           imageUrl:
