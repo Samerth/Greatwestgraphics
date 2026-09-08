@@ -78,6 +78,13 @@ import {
 import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
 import {
+  STUDIO_AI_IDENTITY_PROMPT_MAX,
+  isUsableStudioIdentityBlob,
+  nextStudioIdentitySeed,
+  studioIdentityFilename,
+  studioIdentityPlacementZone,
+} from "@/lib/commerce/studio-ai-identity";
+import {
   framedBackdropStyles,
   garmentBackdrops,
   isStudioSideRepresentation,
@@ -350,9 +357,6 @@ function canLoadImage(src: string): Promise<boolean> {
  * Natural pixel size, so default scale can be a fraction of the print area
  * instead of `0.4 × whatever the camera dumped`.
  */
-function nextPollinationsSeed() {
-  return Math.floor(Math.random() * 1_000_000_000);
-}
 
 function measureArtworkSize(
   src: string,
@@ -428,6 +432,7 @@ export function DesignStudio({
   const [showDecorationSizeGuide, setShowDecorationSizeGuide] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [aiReview, setAiReview] = useState<"ask" | "options" | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
@@ -507,6 +512,8 @@ export function DesignStudio({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const artworkInputRef = useRef<HTMLInputElement>(null);
+  const lastAiArtworkIdRef = useRef<string | null>(null);
+  const aiReviewRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const preferredSizeNameRef = useRef<string | null>(null);
   const artworks = artworksBySide[activeSide];
@@ -1340,10 +1347,13 @@ export function DesignStudio({
   async function addArtworkFromBlob(
     blob: Blob,
     filename: string,
-  ): Promise<string | null> {
+    options?: { identity?: boolean },
+  ): Promise<{ id: string; hostedUrl: string | null }> {
     const id = crypto.randomUUID();
     const side = activeSide;
-    const zone = placementBySide[side];
+    const zone = options?.identity
+      ? studioIdentityPlacementZone(side)
+      : placementBySide[side];
     // Unsigned visitors cannot upload. A `blob:` URL dies when they leave
     // to confirm an account, so the draft is stored as a data URL that
     // localStorage can bring back onto the canvas after sign-in.
@@ -1392,16 +1402,27 @@ export function DesignStudio({
       rotation: 0,
     };
 
-    setActiveArtworks((prev) => [...prev, newArtwork]);
+    if (options?.identity) {
+      commitDesign((prev) => ({
+        ...prev,
+        artworksBySide: {
+          ...prev.artworksBySide,
+          [side]: [...prev.artworksBySide[side], newArtwork],
+        },
+        placementBySide: { ...prev.placementBySide, [side]: zone },
+      }));
+    } else {
+      setActiveArtworks((prev) => [...prev, newArtwork]);
+    }
     setSelectedId(id);
 
     if (!signedIn) {
-      return null;
+      return { id, hostedUrl: null };
     }
 
     const hostedUrl = await uploadArtwork(side, id, blob, filename);
     if (hostedUrl && src.startsWith("blob:")) URL.revokeObjectURL(src);
-    return hostedUrl;
+    return { id, hostedUrl };
   }
 
   function removeSelected() {
@@ -1618,30 +1639,48 @@ export function DesignStudio({
     if (!prompt) return;
     setGenerating(true);
     setAiError(null);
-    const seed = nextPollinationsSeed();
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
-      `${prompt}, print-ready logo design, clean vector art style, isolated on white background`,
-    )}?width=1024&height=1024&seed=${seed}&nologo=true`;
+    setAiReview(null);
 
-    // Uncached prompts commonly take 20-60s to render on Pollinations'
-    // free tier — fetch with a generous timeout so a real failure is
-    // distinguishable from "still working", instead of a bare <img> that
-    // just hangs with no feedback either way.
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
-      if (!res.ok) throw new Error(`Generation failed (${res.status})`);
+      const res = await fetch("/api/studio/identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          seed: nextStudioIdentitySeed(),
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!res.ok) {
+        throw new Error(`Generation failed (${res.status})`);
+      }
       const blob = await res.blob();
-      // Generated art goes through the same upload as an uploaded logo. It
-      // used to live only as an object URL, so a design built entirely from
-      // an AI concept saved as an empty design — the worst version of the
-      // bug, because the customer had nothing on disk to re-upload.
-      await addArtworkFromBlob(blob, "ai-concept.png");
-      setShowAiPrompt(false);
-      setAiPrompt("");
+      if (!isUsableStudioIdentityBlob(blob)) {
+        throw new Error("Generator returned an unusable file");
+      }
+      const type = blob.type || "image/png";
+      if (lastAiArtworkIdRef.current) {
+        const previousId = lastAiArtworkIdRef.current;
+        commitDesign((prev) => deleteStudioLayer(prev, previousId));
+      }
+      const placed = await addArtworkFromBlob(
+        blob,
+        studioIdentityFilename(prompt, type),
+        { identity: true },
+      );
+      lastAiArtworkIdRef.current = placed.id;
+      setAiReview("ask");
+      requestAnimationFrame(() => {
+        aiReviewRef.current?.scrollIntoView({
+          block: "nearest",
+          behavior: "smooth",
+        });
+      });
     } catch {
       setAiError(
-        "That took too long or failed — the free generator can be slow. Try again or try a shorter prompt.",
+        "The free generator missed or timed out. Try again with a shorter prompt, or upload your own art.",
       );
+      setAiReview("options");
     } finally {
       setGenerating(false);
     }
@@ -2358,39 +2397,104 @@ export function DesignStudio({
         )}
 
         {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT ? (
-        <button
-          onClick={() => setShowAiPrompt((open) => !open)}
-          className="bg-accent border border-accent text-white rounded-md py-3 font-bold text-sm hover:bg-accent-hover transition-colors"
-        >
-          Generate an AI concept
-        </button>
+          <button
+            type="button"
+            onClick={() => setShowAiPrompt((open) => !open)}
+            className="w-full border border-border rounded-md py-3 font-bold text-sm hover:border-accent hover:text-accent transition-colors"
+          >
+            Try an identity mark (experimental)
+          </button>
         ) : null}
 
         {studioTab === "images" && SHOW_DESIGN_STUDIO_AI_CONCEPT && showAiPrompt && (
           <div className="rounded-md border border-border bg-bg p-sp-3">
+            <p className="m-0 mb-2 text-[11px] leading-4 text-text-tertiary">
+              Free try-out — not print-ready. Keep the file if it matches;
+              otherwise try again or upload your own.
+            </p>
             <label className="block text-xs font-bold uppercase tracking-[0.1em] text-text-tertiary mb-2">
-              Describe your concept
+              Describe a logo or badge
             </label>
             <textarea
               value={aiPrompt}
-              onChange={(event) => setAiPrompt(event.target.value)}
-              placeholder="Vintage mountain badge for a staff tee"
-              className="w-full min-h-24 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              onChange={(event) => {
+                setAiPrompt(event.target.value);
+                setAiReview(null);
+              }}
+              placeholder="e.g. simple wolf head badge, two colours, no text"
+              maxLength={STUDIO_AI_IDENTITY_PROMPT_MAX}
+              className="w-full min-h-16 resize-y rounded-sm border border-border bg-bg-raised p-3 text-base font-body text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             <button
-              onClick={generateConcept}
+              type="button"
+              onClick={() => void generateConcept()}
               disabled={!aiPrompt.trim() || generating}
               className="mt-2 w-full rounded-sm bg-text-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
             >
-              {generating ? "Building concept… (can take up to a minute)" : "Generate preview"}
+              {generating
+                ? "Building mark… (can take up to a minute)"
+                : "Generate and place on garment"}
             </button>
             {aiError && (
               <p className="text-[11px] leading-4 text-red-600 mt-2">{aiError}</p>
             )}
-            <p className="text-[11px] leading-4 text-text-tertiary mt-2">
-              AI-generated starting point — review and adjust before printing.
-              First-time prompts can take up to a minute to render.
-            </p>
+            {aiReview && !generating ? (
+              <div
+                ref={aiReviewRef}
+                id="studio-ai-review"
+                className="mt-2 flex flex-col gap-1.5"
+              >
+                {aiReview === "ask" ? (
+                  <>
+                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
+                      Look at the garment. Is that the mark you asked for?
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          lastAiArtworkIdRef.current = null;
+                          setAiReview(null);
+                        }}
+                        className="rounded-sm bg-text-primary px-2 py-1 text-[11px] font-bold text-white"
+                      >
+                        Keep it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAiReview("options")}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Not quite
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="m-0 text-[11px] leading-4 text-text-secondary">
+                      Try another generation, or use your own logo or artwork
+                      instead.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void generateConcept()}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Try again
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => artworkInputRef.current?.click()}
+                        className="rounded-sm border border-border px-2 py-1 text-[11px] font-bold"
+                      >
+                        Upload your own
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         )}
 

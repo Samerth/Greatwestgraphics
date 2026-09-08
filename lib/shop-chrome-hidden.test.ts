@@ -20,12 +20,15 @@ describe("hidden shopper chrome", () => {
     expect(footer).toContain("withoutPublicQuoteLinks");
   });
 
-  it("gates the Design Studio AI concept control", () => {
-    expect(SHOW_DESIGN_STUDIO_AI_CONCEPT).toBe(false);
+  it("gates the Design Studio AI identity try-out", () => {
+    expect(SHOW_DESIGN_STUDIO_AI_CONCEPT).toBe(true);
     const studio = read("components/design/DesignStudio.tsx");
     const designPage = read("app/(shop)/design/page.tsx");
     expect(studio).toContain("SHOW_DESIGN_STUDIO_AI_CONCEPT");
-    expect(studio).toContain("Generate an AI concept");
+    expect(studio).toContain("Try an identity mark (experimental)");
+    expect(studio).toContain("not print-ready");
+    expect(studio).toContain("/api/studio/identity");
+    expect(studio).toContain("studioIdentityPlacementZone");
     expect(designPage).not.toMatch(/sample AI concept/i);
   });
 

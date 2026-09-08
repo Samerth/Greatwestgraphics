@@ -9,9 +9,9 @@ import {
 } from "./features";
 
 describe("shopper feature flags", () => {
-  it("keeps the quote calculator and studio AI concept hidden", () => {
+  it("keeps the quote calculator hidden and the studio AI try-out experimental", () => {
     expect(SHOW_PUBLIC_QUOTE_CALCULATOR).toBe(false);
-    expect(SHOW_DESIGN_STUDIO_AI_CONCEPT).toBe(false);
+    expect(SHOW_DESIGN_STUDIO_AI_CONCEPT).toBe(true);
   });
 
   it("recognizes public quote calculator paths", () => {

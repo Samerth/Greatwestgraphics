@@ -13,6 +13,7 @@
     "dev": "next dev",
     "dev:web": "next dev",
     "dev:api": "npm run dev --workspace @gwg/commerce-api",
+    "review:studio": "node scripts/review-studio.mjs",
     "build": "next build",
     "build:all": "npm run build --workspaces --if-present && npm run build",
     "typecheck": "tsc --noEmit",
