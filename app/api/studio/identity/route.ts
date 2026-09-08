@@ -16,10 +16,9 @@ const BodySchema = z.object({
 });
 
 /**
- * Experimental Pollinations proxy. The browser never talks to the generator
- * directly, so CORS and a long GET prompt URL are not the shopper's problem.
- * The file comes back as bytes they can keep on the garment (and later
- * upload) — not a hotlink.
+ * Experimental identity-mark proxy (FLUX.1-schnell, Pollinations fallback).
+ * The browser never talks to the generator directly. The file comes back as
+ * bytes they can keep on the garment (and later upload) — not a hotlink.
  */
 export async function POST(request: Request) {
   try {

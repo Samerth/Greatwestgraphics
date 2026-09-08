@@ -3,7 +3,7 @@
  * Flip a flag to restore the public UI without resurrecting deleted code.
  */
 export const SHOW_PUBLIC_QUOTE_CALCULATOR = false;
-/** Experimental Pollinations identity try-out — not print-ready. */
+/** Experimental FLUX identity try-out — not print-ready. */
 export const SHOW_DESIGN_STUDIO_AI_CONCEPT = true;
 
 const PUBLIC_QUOTE_PATHS = new Set(["/quote", "/get-a-quote"]);
