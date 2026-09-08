@@ -93,7 +93,8 @@ export function PaymentStep({
     [items],
   );
   const deliveryFee = DELIVERY_FEES[delivery] ?? 0;
-  const estimated = subtotal + deliveryFee;
+  const gst = subtotal * 0.05;
+  const estimated = subtotal + deliveryFee + gst;
   //const deposit = estimated * 0.5;
   //const depositNow = useWatch({ control, name: "depositNow" });
 

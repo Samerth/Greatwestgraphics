@@ -20,6 +20,7 @@ import {
   useCartStore,
   useVisibleCartItems,
 } from "@/lib/store/cart";
+import { lineSnapshotTotalMinor } from "@/lib/utils/quote-pricing";
 import type {
   ContactValues,
   ShippingValues,
@@ -160,10 +161,15 @@ export function CheckoutWizard() {
                       },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => {
+                  const unitPriceEstimateMinor = Math.round(item.unit * 100);
+                  const snapshotTotal = lineSnapshotTotalMinor(item.pricingSnapshot);
+                  const lineTotalMinor =
+                    snapshotTotal ?? Math.round(item.qty * item.unit * 100);
                   return {
                     description: item.name,
                     quantity: item.qty,
-                    unitPriceEstimateMinor: Math.round(item.unit * 100),
+                    unitPriceEstimateMinor,
+                    lineTotalMinor,
                     currency: "CAD",
                     productId: item.productId,
                     variantId: item.variantId,

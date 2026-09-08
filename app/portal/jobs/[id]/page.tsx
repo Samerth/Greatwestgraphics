@@ -4,7 +4,7 @@ import { ButtonLink } from "@/components/shared/Button";
 import { CommerceApiError } from "@/lib/commerce/client";
 import { loadPortalJob } from "@/lib/commerce/portal-client";
 import { jobStatusPresentation } from "@/lib/commerce/status";
-import { money } from "@/lib/utils/quote-pricing";
+import { money, getAuthoritativeLineTotalMinor } from "@/lib/utils/quote-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { RosterTable, type RosterEntry } from "@/components/shared/RosterTable";
 import { ProofReview } from "@/components/portal/ProofReview";
@@ -157,7 +157,8 @@ export default async function JobDetailPage({
                             </span>
                             <b className="block">
                               {money(
-                                (line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity) /
+                                (getAuthoritativeLineTotalMinor(line.snapshot) ??
+                                  line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity) /
                                   100,
                               )}{" "}
                               total
