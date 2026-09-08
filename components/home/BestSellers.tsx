@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
@@ -9,7 +10,7 @@ import {
   catalogCardSubtitle,
   catalogCardPricing,
 } from "@/lib/commerce/catalog-card";
-import { studioColorwayFill } from "@/lib/commerce/studio-garments";
+import { CatalogColorSwatches } from "@/components/products/CatalogColorSwatches";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
 import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
@@ -93,15 +94,26 @@ function BestSellerCard({
 }) {
   const qty = useBrowsingQuantity((s) => s.qty);
   const priced = catalogCardPricing(product, pricingConfig, qty);
-  const href = `/product/${encodeURIComponent(product.slug)}?id=${product.id}`;
+  const [activeSwatch, setActiveSwatch] = useState<
+    StorefrontCatalogProduct["colorSwatches"][number] | null
+  >(null);
+  const href =
+    activeSwatch?.productId && activeSwatch.slug
+      ? `/product/${encodeURIComponent(activeSwatch.slug)}?id=${activeSwatch.productId}`
+      : `/product/${encodeURIComponent(product.slug)}?id=${product.id}`;
+  const imageUrl = activeSwatch?.imageUrl || product.imageUrl;
 
   return (
     <article className="group border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover">
       <Link href={href} className="relative block aspect-[300/220] bg-bg-raised">
-        {product.imageUrl ? (
+        {imageUrl ? (
           <Image
-            src={product.imageUrl}
-            alt={product.name}
+            src={imageUrl}
+            alt={
+              activeSwatch
+                ? `${product.name} · ${activeSwatch.colorName}`
+                : product.name
+            }
             fill
             className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
             sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
@@ -120,41 +132,11 @@ function BestSellerCard({
           {product.name}
         </h3>
 
-        {product.colorSwatches.length > 0 && (
-          <div className="flex items-center gap-1 mb-1.5">
-            {product.colorSwatches.slice(0, 6).map((swatch, i) => {
-              const fill = studioColorwayFill({
-                id: swatch.productId,
-                colorName: swatch.colorName,
-                hex: swatch.colorHex ?? undefined,
-                swatchImageUrl: swatch.imageUrl ?? undefined,
-              });
-              return (
-                <span
-                  key={`${swatch.colorName}-${i}`}
-                  title={swatch.colorName}
-                  className="w-4 h-4 rounded-full border border-border/60 shrink-0 overflow-hidden bg-bg"
-                  style={fill.hex ? { backgroundColor: fill.hex } : undefined}
-                >
-                  {!fill.hex && fill.imageUrl && (
-                    <Image
-                      src={fill.imageUrl}
-                      alt=""
-                      width={16}
-                      height={16}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </span>
-              );
-            })}
-            {product.colorwayCount > 6 && (
-              <span className="text-[11px] text-text-tertiary ml-0.5">
-                +{product.colorwayCount - 6}
-              </span>
-            )}
-          </div>
-        )}
+        <CatalogColorSwatches
+          swatches={product.colorSwatches}
+          colorwayCount={product.colorwayCount}
+          onActiveChange={setActiveSwatch}
+        />
 
         <div className="flex items-center gap-1.5 mb-sp-3">
           <span className="font-bold text-text-primary text-sm">
@@ -183,7 +165,7 @@ function BestSellerCard({
             View Product
           </Link>
           <Link
-            href={`/design?garmentId=${encodeURIComponent(product.id)}`}
+            href={`/design?garmentId=${encodeURIComponent(activeSwatch?.productId || product.id)}`}
             className="rounded-md bg-accent text-white px-3 py-2 text-sm font-bold hover:bg-accent-hover transition-colors"
           >
             Design

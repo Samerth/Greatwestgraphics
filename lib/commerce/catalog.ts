@@ -35,8 +35,8 @@ export type StorefrontCatalogProduct = {
   colorName: string;
   /** Colourways of this style that matched the listing filters. */
   colorwayCount: number;
-  /** Up to 12 real colourway swatches (photo thumbnail per colour), capped
-   * server-side. Use colorwayCount for the true total / "+N more". */
+  /** Colourway swatches for the card pager. Soft-capped server-side;
+   * colorwayCount is the true total. */
   colorSwatches: {
     colorName: string;
     imageUrl: string | null;

@@ -18,8 +18,8 @@ import {
   type CardQuantityBreak,
 } from "@/lib/commerce/catalog-card";
 import { visibleChildCategories } from "@/lib/commerce/category-slug";
-import { studioColorwayFill } from "@/lib/commerce/studio-garments";
 import { publicQuoteOrFallback } from "@/lib/features";
+import { CatalogColorSwatches } from "@/components/products/CatalogColorSwatches";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
 import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 
@@ -488,11 +488,9 @@ function ProductCard({
   hasDesign: boolean;
 }) {
   const router = useRouter();
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const activeIdx = hoveredIdx ?? selectedIdx;
-  const activeSwatch =
-    activeIdx != null ? tile.colorSwatches[activeIdx] : undefined;
+  const [activeSwatch, setActiveSwatch] = useState<
+    ProductTile["colorSwatches"][number] | null
+  >(null);
 
   const displayImageUrl = activeSwatch?.imageUrl || tile.imageUrl;
   const displayHref =
@@ -540,68 +538,11 @@ function ProductCard({
           {catalogCardSubtitle(tile)}
         </p>
 
-        {tile.colorSwatches.length > 0 && (
-          <div className="flex items-center gap-1 mb-1.5" onMouseLeave={() => setHoveredIdx(null)}>
-            {tile.colorSwatches.slice(0, 7).map((swatch, i) => {
-              // Flat colour circle, matching Design Studio's swatches and
-              // the client's explicit ask ("product swatches in catalog
-              // need to show as filled circular swatches, currently
-              // showing a cropped photo of the garment") — a vendor photo
-              // is used only when neither a real hex nor a name-based
-              // guess is available at all.
-              const fill = studioColorwayFill({
-                id: swatch.productId,
-                colorName: swatch.colorName,
-                hex: swatch.colorHex ?? undefined,
-                swatchImageUrl: swatch.imageUrl ?? undefined,
-              });
-              return (
-                <button
-                  key={`${swatch.colorName}-${i}`}
-                  type="button"
-                  title={swatch.colorName}
-                  aria-label={`View in ${swatch.colorName}`}
-                  aria-pressed={selectedIdx === i}
-                  onMouseEnter={() => setHoveredIdx(i)}
-                  onFocus={() => setHoveredIdx(i)}
-                  onBlur={() => setHoveredIdx(null)}
-                  onClick={() =>
-                    setSelectedIdx((current) => (current === i ? null : i))
-                  }
-                  className={cn(
-                    "relative w-4 h-4 rounded-full border overflow-hidden bg-bg shrink-0 transition-shadow",
-                    activeIdx === i
-                      ? "border-accent ring-2 ring-accent ring-offset-1"
-                      : "border-border hover:border-accent",
-                  )}
-                >
-                  {fill.hex ? (
-                    <span
-                      aria-hidden
-                      className="absolute inset-0"
-                      style={{ backgroundColor: fill.hex }}
-                    />
-                  ) : (
-                    fill.imageUrl && (
-                      <Image
-                        src={fill.imageUrl}
-                        alt={swatch.colorName}
-                        fill
-                        className="object-cover"
-                        sizes="16px"
-                      />
-                    )
-                  )}
-                </button>
-              );
-            })}
-            {tile.colorwayCount > 7 && (
-              <span className="text-[11px] text-text-tertiary ml-0.5">
-                +{tile.colorwayCount - 7}
-              </span>
-            )}
-          </div>
-        )}
+        <CatalogColorSwatches
+          swatches={tile.colorSwatches}
+          colorwayCount={tile.colorwayCount}
+          onActiveChange={setActiveSwatch}
+        />
 
         <h3 className="font-display font-bold text-[17px] m-0 leading-snug">
           <Link href={displayHref} className="hover:text-accent transition-colors">
