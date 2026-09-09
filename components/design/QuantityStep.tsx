@@ -856,17 +856,20 @@ export function QuantityStep({
                 design={design}
                 sides={decoratedSides as DesignSide[]}
                 imageForSide={(side) => {
+                  // Use the same image as the color chip for consistency.
+                  // The chip uses detailImageUrl() which prefers colorFrontImageUrl,
+                  // so the preview should match. Previous attempts used on-model
+                  // or catalogCardImageUrl fallbacks that could return different
+                  // (wrong-color) images.
+                  const chipImage = detail
+                    ? detailImageUrl(detail)
+                    : null;
                   const photos: GarmentPhotoSet = {
-                    colorFrontImageUrl:
-                      detail?.product.colorOnModelFrontImageUrl ||
-                      detail?.product.colorFrontImageUrl ||
-                      null,
+                    colorFrontImageUrl: chipImage,
                     colorSideImageUrl:
-                      detail?.product.colorOnModelSideImageUrl ||
                       detail?.product.colorSideImageUrl ||
                       null,
                     colorBackImageUrl:
-                      detail?.product.colorOnModelBackImageUrl ||
                       detail?.product.colorBackImageUrl ||
                       null,
                     styleImageUrl: detail?.style.styleImageUrl ?? null,
