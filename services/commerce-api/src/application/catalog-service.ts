@@ -651,7 +651,19 @@ export class CatalogService {
     if (query?.storeId) {
       const allowedCategoryIds = await this.visibleCategoryIds(query.storeId);
       if (allowedCategoryIds !== null) {
-        if (query.categoryId && !allowedCategoryIds.includes(query.categoryId)) {
+        // Expand allowed categories to include all descendants. The store
+        // allowlist may contain parent categories like "Accessories", while
+        // products are assigned to children like "Bags". Without expansion,
+        // the bare-slug → search → redirect path would fail to find products
+        // in child categories, causing 404s on curated store PDPs.
+        const expandedAllowedIds = new Set<string>();
+        for (const categoryId of allowedCategoryIds) {
+          const expanded = await this.expandCategoryIds(tenantId, categoryId);
+          for (const id of expanded) {
+            expandedAllowedIds.add(id);
+          }
+        }
+        if (query.categoryId && !expandedAllowedIds.has(query.categoryId)) {
           return { whereClause: undefined, empty: true };
         }
         if (!query.categoryId) {
@@ -661,7 +673,7 @@ export class CatalogService {
             .where(
               and(
                 eq(ssProductCategories.tenantId, tenantId),
-                inArray(ssProductCategories.categoryId, allowedCategoryIds),
+                inArray(ssProductCategories.categoryId, [...expandedAllowedIds]),
               ),
             );
           visibleProductIds = rows.map((row) => row.productUuid);
