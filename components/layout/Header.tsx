@@ -429,13 +429,8 @@ export function Header({
       </Container>
 
       {/* Nav row — the mockup's third tier: category links on the left, a
-          single persistent CTA on the right. Label and destination match the
-          hero's own "Get an Instant Quote" (UAT-specified, points at Best
-          Sellers) rather than the flag-gated /quote calculator that used to
-          sit here — that calculator is `SHOW_PUBLIC_QUOTE_CALCULATOR`-gated
-          and off, so this replaces a button that was never actually
-          rendering with one that is, and keeps both "Get an Instant Quote"
-          entry points on the site behaving identically. */}
+          single persistent CTA on the right. The "Get an Instant Quote" link
+          points to the /quote calculator. */}
       <div className="hidden lg:block border-t border-border/70">
         <Container className="h-16 flex items-center justify-between gap-sp-4">
           <nav
@@ -544,7 +539,7 @@ export function Header({
           </nav>
 
           <Link
-            href="/products?category=best-sellers"
+            href="/quote"
             className="group inline-flex items-center gap-1.5 whitespace-nowrap font-bold text-sm text-accent shrink-0"
           >
             Get an instant quote
@@ -802,7 +797,7 @@ export function Header({
             {/* Mirrors the desktop nav row's CTA — that row is hidden below
                 lg, so mobile needs its own way to reach it. */}
             <Link
-              href="/products?category=best-sellers"
+              href="/quote"
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2 text-accent"
             >
