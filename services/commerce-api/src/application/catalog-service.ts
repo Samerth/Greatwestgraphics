@@ -1288,8 +1288,19 @@ export class CatalogService {
     if (options?.storeId) {
       const allowedIds = await this.visibleCategoryIds(options.storeId);
       if (allowedIds !== null) {
-        const allowed = new Set(allowedIds);
-        const visible = cats.some((cat) => allowed.has(cat.id));
+        // Expand allowed categories to include all descendants. The store
+        // allowlist may contain parent categories like "Accessories", while
+        // products are assigned to children like "Bags". Without expansion
+        // a product in "Bags" would 404 even though it correctly appeared
+        // in the listing (which expands categories for filtering).
+        const expandedAllowedIds = new Set<string>();
+        for (const categoryId of allowedIds) {
+          const expanded = await this.expandCategoryIds(tenantId, categoryId);
+          for (const id of expanded) {
+            expandedAllowedIds.add(id);
+          }
+        }
+        const visible = cats.some((cat) => expandedAllowedIds.has(cat.id));
         if (!visible) {
           throw new ResourceNotFoundError("Product not found");
         }
