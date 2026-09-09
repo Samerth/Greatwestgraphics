@@ -851,13 +851,16 @@ export function QuantityStep({
               <DesignPreviewViewer
                 design={design}
                 sides={decoratedSides as DesignSide[]}
-                imageForSide={(side) =>
-                  side === "back"
-                    ? detail?.product.colorBackImageUrl ?? null
-                    : side === "front"
-                      ? detail?.product.colorFrontImageUrl ?? null
-                      : detail?.product.colorSideImageUrl ?? null
-                }
+                imageForSide={(side) => {
+                  const styleFallback = detail?.style.styleImageUrl ?? null;
+                  if (side === "back") {
+                    return detail?.product.colorBackImageUrl ?? styleFallback;
+                  }
+                  if (side === "front") {
+                    return detail?.product.colorFrontImageUrl ?? styleFallback;
+                  }
+                  return detail?.product.colorSideImageUrl ?? styleFallback;
+                }}
               />
             </div>
             <div className="px-sp-4 pb-sp-3">

@@ -35,12 +35,13 @@ export function Hero() {
 
   return (
     <section className="relative min-h-[min(78svh,640px)] sm:min-h-[56vh] flex items-end overflow-hidden text-white">
-      {/* Poster image for LCP — painted first and visible until video takes over */}
+      {/* Poster image for LCP — priority + fetchPriority="high" for eager load */}
       <Image
         src="/images/hero-poster.jpg"
         alt=""
         fill
         priority
+        fetchPriority="high"
         sizes="100vw"
         onLoad={() => setPosterLoaded(true)}
         className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-300 ${
@@ -115,7 +116,7 @@ export function Hero() {
                 same way — filled, not ghosted), rather than the previous
                 ghost-on-dark outline. */}
             <ButtonLink
-              href="/products?category=best-sellers"
+              href="/quote"
               variant={SHOW_PUBLIC_QUOTE_CALCULATOR ? "secondary" : "primary"}
               className="shadow-[0_2px_14px_rgba(0,0,0,0.35)]"
             >
