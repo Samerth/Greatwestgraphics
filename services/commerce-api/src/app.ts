@@ -2,6 +2,7 @@ import {
   AcceptFinalQuoteSchema,
   CanonicalIdSchema,
   CheckoutSessionResponseSchema,
+  CodChatOrderStatusResponseSchema,
   CommerceHeaders,
   CreateCheckoutSessionSchema,
   StripeWebhookRelaySchema,
@@ -82,6 +83,7 @@ import {
   DesignProjectService,
 } from "./application/design-project-service.js";
 import { StoreService } from "./application/store-service.js";
+import { CodChatOrderLookupService } from "./application/codchat-order-lookup-service.js";
 import { PersonService } from "./application/person-service.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
 import {
@@ -98,7 +100,12 @@ import {
   InvalidServiceTokenError,
   secretsMatch,
 } from "./auth.js";
-import { adminRoutesEnabled, stripeEnabled, type Environment } from "./config.js";
+import {
+  adminRoutesEnabled,
+  codChatLookupEnabled,
+  stripeEnabled,
+  type Environment,
+} from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
 import { outboxEvents } from "./db/schema.js";
 import { InvalidJobRequestTransitionError } from "./domain/job-request-state.js";
@@ -199,6 +206,28 @@ function assertAdmin(request: FastifyRequest, environment: Environment): void {
   }
 }
 
+/**
+ * CodChat's connector framework sends a fixed bearer token for any operation
+ * marked private (see the CodChat live-data-tools memory note) — the same
+ * shape ServiceTokenAuth already expects from the Next.js web tier, but this
+ * is a distinct secret so the two credentials can be rotated independently.
+ */
+function assertCodChatToken(
+  request: FastifyRequest,
+  environment: Environment,
+): void {
+  const header = request.headers.authorization;
+  const expectedToken = environment.CODCHAT_LOOKUP_API_TOKEN;
+  if (
+    typeof header !== "string" ||
+    !header.startsWith("Bearer ") ||
+    !expectedToken ||
+    !secretsMatch(header.slice("Bearer ".length), expectedToken)
+  ) {
+    throw new UnauthorizedError("Invalid CodChat credentials");
+  }
+}
+
 export function buildApp(input: {
   db: CommerceDatabase;
   auth: AuthContextPort<FastifyRequest>;
@@ -230,6 +259,7 @@ export function buildApp(input: {
   const personService = new PersonService(input.db);
   const accountService = new AccountService(input.db);
   const inviteService = new InviteService(input.db);
+  const codChatOrderLookupService = new CodChatOrderLookupService(input.db);
   // Absent a key there is no payment service at all, rather than one that
   // fails deep inside a checkout the customer already started.
   const stripePaymentService = stripeEnabled(input.environment)
@@ -472,6 +502,57 @@ export function buildApp(input: {
       await customerPersonFilter(auth),
     );
   });
+
+  // CodChat's public website assistant, not the storefront's own auth: a
+  // fixed bearer secret (assertCodChatToken) instead of session cookies or
+  // ServiceTokenAuth's tenant-scope headers, because the connector framework
+  // that calls this can only ever send a static credential plus a small
+  // closed set of named arguments — never a tenant id (see the CodChat
+  // live-data-tools memory note on connector argument boundaries). Scope is
+  // resolved from this deployment's own SITE_BASE_URL instead, the same way
+  // a Host header resolves it for a real storefront request — this
+  // deployment serves exactly one store, so there is only one to resolve to.
+  // Registered only when CODCHAT_LOOKUP_API_TOKEN is set, the same "absent a
+  // key, no service" shape already used for Stripe.
+  if (codChatLookupEnabled(input.environment)) {
+    app.get("/v1/codchat/order-status", async (request) => {
+      assertCodChatToken(request, input.environment);
+      const query = request.query as {
+        orderRef?: string;
+        verifiedEmail?: string;
+      };
+      const orderRef = z.string().trim().min(1).max(80).parse(query.orderRef);
+      const verifiedEmail = z
+        .string()
+        .trim()
+        .email()
+        .max(320)
+        .parse(query.verifiedEmail);
+
+      const host = new URL(input.environment.SITE_BASE_URL).host;
+      const store = await storeService.resolveByHost(host);
+      if (!store) {
+        throw new ResourceNotFoundError(
+          "No store is configured for this deployment's site URL",
+        );
+      }
+
+      const result = await codChatOrderLookupService.lookup(
+        store.tenantId,
+        orderRef,
+        verifiedEmail,
+      );
+      // Same error, same message, whether the order does not exist or the
+      // email does not match it — see the service method's own comment for
+      // why those two cases must not be distinguishable from the response.
+      if (!result) {
+        throw new ResourceNotFoundError(
+          "No order matches that reference and email",
+        );
+      }
+      return CodChatOrderStatusResponseSchema.parse(result);
+    });
+  }
 
   // The customer half of the proof round trip. The service refuses a decision
   // from the side that raised the proof, so this cannot be used to self-approve

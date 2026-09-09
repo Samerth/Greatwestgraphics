@@ -273,6 +273,15 @@ export function notificationsForEvent(
     if (!toStatus || !notifyCustomer || !context.customerEmail) return [];
 
     const copy: Partial<Record<string, { subject: string; body: string }>> = {
+      // "paid" is deliberately absent from this table, not missing by
+      // oversight: recordPayment (the only path that ever reaches "paid")
+      // always overrides its outbox event to
+      // commerce.job_request.payment.recorded.v1, which has its own
+      // unconditional handler above ("we received your payment") — an entry
+      // here for "paid" would be dead code, since nothing ever emits a
+      // status_changed.v1 event with that toStatus today. See
+      // test/paid-notification.integration.test.ts for the real, working
+      // path proved end to end.
       ready_for_production: {
         subject: `${context.jobDisplayId}: your order is queued for production`,
         body: "Design and payment are complete. Your order is queued and production will start once the studio releases it.",
