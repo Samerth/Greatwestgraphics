@@ -35,18 +35,33 @@ The GWG storefront only passes the widget key - no logo configuration:
 
 Update the `logoUrl` field in CodCRM's widget database to use a valid GWG logo URL.
 
-### Correct Logo URLs (Verified Working)
+### Recommended Logo URL
 
-| URL | Size | Status |
-|-----|------|--------|
-| `https://d1so4a0f4v7ki5.cloudfront.net/images/logo-mark.png` | 77KB | ✓ Returns `image/png` |
-| `https://d1so4a0f4v7ki5.cloudfront.net/images/logo.png` | 132KB | ✓ Returns `image/png` |
+```
+https://d1so4a0f4v7ki5.cloudfront.net/icon.png
+```
 
-**Recommended:** Use `logo-mark.png` (smaller, better for 28x28px avatar size)
+| Property | Value |
+|----------|-------|
+| URL | `https://d1so4a0f4v7ki5.cloudfront.net/icon.png` |
+| Dimensions | 366x366px **(square - ideal for circular avatar)** |
+| Size | 72KB |
+| Content-Type | `image/png` ✓ |
+| Source file | `app/icon.png` (GWG app icon) |
+
+### Alternative Logo URLs (Also Verified Working)
+
+| URL | Dimensions | Size |
+|-----|------------|------|
+| `https://d1so4a0f4v7ki5.cloudfront.net/images/logo-mark.png` | 366x209px | 77KB |
+| `https://d1so4a0f4v7ki5.cloudfront.net/images/logo.png` | 761x536px | 133KB |
+| `https://d1so4a0f4v7ki5.cloudfront.net/images/company_logo.png` | 170x107px | 15KB |
+
+**Recommended:** Use `icon.png` - it's square and crops perfectly to the 28x28px circular avatar
 
 ### CodCRM Admin Steps
 
-1. Log into CodCRM admin
+1. Log into CodCRM admin / Studio
 2. Navigate to widget settings for key `cw_QvxzBof5FARoSZoWlZtCFM5IptaiBVe_`
 3. Change `logoUrl` from:
    ```
@@ -54,7 +69,7 @@ Update the `logoUrl` field in CodCRM's widget database to use a valid GWG logo U
    ```
    to:
    ```
-   https://d1so4a0f4v7ki5.cloudfront.net/images/logo-mark.png
+   https://d1so4a0f4v7ki5.cloudfront.net/icon.png
    ```
 4. Save and verify
 
@@ -81,8 +96,8 @@ After CodCRM config update and redeploy:
 
 | Component | Action Required |
 |-----------|-----------------|
-| GWG (Greatwestgraphics) | **None** - embed is correct |
-| CodCRM Admin | Update `logoUrl` to `https://d1so4a0f4v7ki5.cloudfront.net/images/logo-mark.png` |
+| GWG (Greatwestgraphics) | **None** - embed is correct, logo already in repo |
+| CodCRM Admin/Studio | Update `logoUrl` to `https://d1so4a0f4v7ki5.cloudfront.net/icon.png` |
 | CodCRM Code | Redeploy to apply PR #6 (onError fallback) |
 
 ## Widget Details
@@ -91,4 +106,4 @@ After CodCRM config update and redeploy:
 - **Widget ID:** `85dba5f0-ad5f-482c-97d4-1795cbdb0d62`
 - **Staging URL:** https://d1so4a0f4v7ki5.cloudfront.net
 - **Broken Logo URL:** `https://kommodo.ai/i/D33nLk5dvvmxWhrDv0N7` (returns HTML)
-- **Correct Logo URL:** `https://d1so4a0f4v7ki5.cloudfront.net/images/logo-mark.png`
+- **Correct Logo URL:** `https://d1so4a0f4v7ki5.cloudfront.net/icon.png` (366x366px square PNG)
