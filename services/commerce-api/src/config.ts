@@ -114,6 +114,14 @@ const EnvironmentSchema = z
     SANMAR_PRICING_URL: z.string().url().optional(),
     SANMAR_MEDIA_URL: z.string().url().optional(),
     SANMAR_BULK_URL: z.string().url().optional(),
+    /**
+     * Default tenant/account/store IDs for external connectors (e.g. Cod Chat)
+     * that authenticate with COMMERCE_SERVICE_TOKEN but cannot send tenant
+     * headers. When missing, falls back to staging GWG test UUIDs.
+     */
+    STOREFRONT_DEFAULT_TENANT_ID: z.string().uuid().optional(),
+    STOREFRONT_DEFAULT_ACCOUNT_ID: z.string().uuid().optional(),
+    STOREFRONT_DEFAULT_STORE_ID: z.string().uuid().optional(),
   })
   .superRefine((environment, context) => {
     if (environment.ENABLE_DEV_ADMIN_ROUTES && environment.NODE_ENV === "production") {
