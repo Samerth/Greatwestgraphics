@@ -34,6 +34,7 @@ import { DesignPreviewViewer } from "@/components/design/DesignPreviewViewer";
 import { DesignStepBar } from "@/components/design/DesignStepBar";
 import { cn } from "@/lib/utils/cn";
 import { garmentBackdropForSide, type GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
+import { catalogCardImageUrl } from "@/lib/commerce/catalog-images";
 
 type Variant = {
   id: string;
@@ -856,11 +857,17 @@ export function QuantityStep({
                 design={design}
                 sides={decoratedSides as DesignSide[]}
                 imageForSide={(side) => {
+                  // Use catalogCardImageUrl for front - the same smart image
+                  // selection logic that the catalog listing and Design Studio
+                  // use (prefers on-model shots, S&S style heroes, etc.)
+                  const frontImage = catalogCardImageUrl({
+                    colorFrontImageUrl: detail?.product.colorFrontImageUrl,
+                    styleImageUrl: detail?.style.styleImageUrl,
+                    colorOnModelFrontImageUrl:
+                      detail?.product.colorOnModelFrontImageUrl,
+                  });
                   const photos: GarmentPhotoSet = {
-                    colorFrontImageUrl:
-                      detail?.product.colorOnModelFrontImageUrl ||
-                      detail?.product.colorFrontImageUrl ||
-                      null,
+                    colorFrontImageUrl: frontImage,
                     colorSideImageUrl:
                       detail?.product.colorOnModelSideImageUrl ||
                       detail?.product.colorSideImageUrl ||
