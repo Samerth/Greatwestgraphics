@@ -116,7 +116,7 @@ export function Hero() {
                 same way — filled, not ghosted), rather than the previous
                 ghost-on-dark outline. */}
             <ButtonLink
-              href="/products?category=best-sellers"
+              href="/quote"
               variant={SHOW_PUBLIC_QUOTE_CALCULATOR ? "secondary" : "primary"}
               className="shadow-[0_2px_14px_rgba(0,0,0,0.35)]"
             >

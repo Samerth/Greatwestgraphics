@@ -18,7 +18,7 @@ import {
   Transformer,
 } from "react-konva";
 import useImage from "use-image";
-import type Konva from "konva";
+import Konva from "konva";
 import type { DesignSide, PlacedArtwork, PlacedText } from "@gwg/contracts";
 import { ArtworkLayer } from "@/components/design/ArtworkLayer";
 import { TextLayer } from "@/components/design/TextLayer";
@@ -424,6 +424,7 @@ export default function DesignCanvas({
   ) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<Konva.Layer>(null);
   const [displaySize, setDisplaySize] = useState(canvasSize);
 
   useEffect(() => {
@@ -440,6 +441,56 @@ export default function DesignCanvas({
       window.removeEventListener("resize", update);
     };
   }, [canvasSize]);
+
+  // Synchronize Konva's pixel ratio with the browser's devicePixelRatio.
+  // Browser zoom changes (e.g. 75%, 50%) alter devicePixelRatio, but Konva
+  // caches its pixel ratio at layer creation. Without this sync, the canvas
+  // renders at the wrong scale, producing duplicated/misaligned content.
+  useEffect(() => {
+    let currentMql: MediaQueryList | null = null;
+    let currentHandler: (() => void) | null = null;
+
+    function syncPixelRatio() {
+      const dpr = window.devicePixelRatio;
+      Konva.pixelRatio = dpr;
+      const layer = layerRef.current;
+      if (!layer) return;
+      layer.canvas.setPixelRatio(dpr);
+      // Shapes with opacity use a buffer canvas; sync it too to prevent blur.
+      const stage = layer.getStage();
+      if (stage?.bufferCanvas) {
+        stage.bufferCanvas.setPixelRatio(dpr);
+      }
+      layer.batchDraw();
+    }
+
+    // Use a recursive matchMedia pattern: each query fires once when the
+    // devicePixelRatio crosses its threshold, then we create a new query
+    // for the updated value to catch subsequent changes.
+    function watchDevicePixelRatio() {
+      // Clean up any previous listener
+      if (currentMql && currentHandler) {
+        currentMql.removeEventListener("change", currentHandler);
+      }
+      currentMql = window.matchMedia(
+        `(resolution: ${window.devicePixelRatio}dppx)`,
+      );
+      currentHandler = () => {
+        syncPixelRatio();
+        watchDevicePixelRatio();
+      };
+      currentMql.addEventListener("change", currentHandler);
+    }
+
+    syncPixelRatio();
+    watchDevicePixelRatio();
+
+    return () => {
+      if (currentMql && currentHandler) {
+        currentMql.removeEventListener("change", currentHandler);
+      }
+    };
+  }, []);
 
   const displayScale = (displaySize / canvasSize) * zoom;
   // Centre the scaled group at every zoom level. Above 100% this offset is
@@ -479,7 +530,7 @@ export default function DesignCanvas({
           }
         }}
       >
-        <Layer>
+        <Layer ref={layerRef}>
           <Group x={offset} y={offset} scaleX={displayScale} scaleY={displayScale}>
             {garmentImageUrl ? (
               <GarmentLayer

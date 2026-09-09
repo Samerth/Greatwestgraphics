@@ -17,7 +17,7 @@ export default async function AccountPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  const session = await getCustomerSession();
+  const session = await getCustomerSession().catch(() => null);
   if (session) {
     let memberships: Awaited<
       ReturnType<Awaited<ReturnType<typeof createCommerceClient>>["listMyMemberships"]>

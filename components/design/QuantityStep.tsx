@@ -33,6 +33,7 @@ import { OptionalImage } from "@/components/shared/OptionalImage";
 import { DesignPreviewViewer } from "@/components/design/DesignPreviewViewer";
 import { DesignStepBar } from "@/components/design/DesignStepBar";
 import { cn } from "@/lib/utils/cn";
+import { garmentBackdropForSide, type GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
 
 type Variant = {
   id: string;
@@ -59,6 +60,9 @@ type Detail = {
     colorFrontImageUrl: string | null;
     colorSideImageUrl: string | null;
     colorBackImageUrl: string | null;
+    colorOnModelFrontImageUrl?: string | null;
+    colorOnModelSideImageUrl?: string | null;
+    colorOnModelBackImageUrl?: string | null;
     isDark?: boolean;
   };
   style: {
@@ -851,13 +855,26 @@ export function QuantityStep({
               <DesignPreviewViewer
                 design={design}
                 sides={decoratedSides as DesignSide[]}
-                imageForSide={(side) =>
-                  side === "back"
-                    ? detail?.product.colorBackImageUrl ?? null
-                    : side === "front"
-                      ? detail?.product.colorFrontImageUrl ?? null
-                      : detail?.product.colorSideImageUrl ?? null
-                }
+                imageForSide={(side) => {
+                  const photos: GarmentPhotoSet = {
+                    colorFrontImageUrl:
+                      detail?.product.colorOnModelFrontImageUrl ||
+                      detail?.product.colorFrontImageUrl ||
+                      null,
+                    colorSideImageUrl:
+                      detail?.product.colorOnModelSideImageUrl ||
+                      detail?.product.colorSideImageUrl ||
+                      null,
+                    colorBackImageUrl:
+                      detail?.product.colorOnModelBackImageUrl ||
+                      detail?.product.colorBackImageUrl ||
+                      null,
+                    styleImageUrl: detail?.style.styleImageUrl ?? null,
+                    styleName: detail?.style.styleName ?? null,
+                    styleTitle: detail?.style.title ?? null,
+                  };
+                  return garmentBackdropForSide(side, photos).url;
+                }}
               />
             </div>
             <div className="px-sp-4 pb-sp-3">
