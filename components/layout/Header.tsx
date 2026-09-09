@@ -85,24 +85,52 @@ export function Header({
   // that one department.
   const [openDeptId, setOpenDeptId] = useState<string | null>(null);
   const deptCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deptPinnedRef = useRef(false);
   const openDept = (id: string) => {
     if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
     setOpenDeptId(id);
   };
+  const openDeptViaClick = (id: string) => {
+    if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
+    deptPinnedRef.current = true;
+    setOpenDeptId((prev) => (prev === id ? null : id));
+  };
   const scheduleDeptClose = () => {
+    if (deptPinnedRef.current) return;
     deptCloseTimer.current = setTimeout(() => setOpenDeptId(null), 120);
+  };
+  const unpinDept = () => {
+    deptPinnedRef.current = false;
   };
   const activeDept = SHOP_SECTIONS.find((s) => s.id === openDeptId);
 
   // --- The full "Shop" mega menu: every category, everywhere, at once.
   const [shopOpen, setShopOpen] = useState(false);
   const shopCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shopPinnedRef = useRef(false);
   const openShop = () => {
     if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
     setShopOpen(true);
   };
+  const openShopViaClick = () => {
+    if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
+    shopPinnedRef.current = true;
+    setShopOpen((prev) => !prev);
+  };
   const scheduleShopClose = () => {
+    if (shopPinnedRef.current) return;
     shopCloseTimer.current = setTimeout(() => setShopOpen(false), 120);
+  };
+  const unpinShop = () => {
+    shopPinnedRef.current = false;
+  };
+  const closeDept = () => {
+    setOpenDeptId(null);
+    deptPinnedRef.current = false;
+  };
+  const closeShop = () => {
+    setShopOpen(false);
+    shopPinnedRef.current = false;
   };
 
   const [openMobileSection, setOpenMobileSection] = useState<string | null>(null);
@@ -137,6 +165,8 @@ export function Header({
       setOpenDeptId(null);
       setShopOpen(false);
       setAccountOpen(false);
+      deptPinnedRef.current = false;
+      shopPinnedRef.current = false;
     }
     function handleClickOutside(e: MouseEvent) {
       if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
@@ -493,9 +523,7 @@ export function Header({
                         : "hidden"
                   }
                   isOpen={openDeptId === section.id}
-                  onToggle={() =>
-                    setOpenDeptId((v) => (v === section.id ? null : section.id))
-                  }
+                  onToggle={() => openDeptViaClick(section.id)}
                   onMouseEnter={() => openDept(section.id)}
                   onMouseLeave={scheduleDeptClose}
                 />
@@ -504,7 +532,7 @@ export function Header({
             <NavTrigger
               label="Shop"
               isOpen={shopOpen}
-              onToggle={() => setShopOpen((v) => !v)}
+              onToggle={openShopViaClick}
               onMouseEnter={openShop}
               onMouseLeave={scheduleShopClose}
             />
@@ -568,7 +596,10 @@ export function Header({
           separation instead of a border-all-around card. */}
         {activeDept && (
           <div
-            onMouseEnter={() => openDept(activeDept.id)}
+            onMouseEnter={() => {
+              unpinDept();
+              openDept(activeDept.id);
+            }}
             onMouseLeave={scheduleDeptClose}
             className="absolute left-0 right-0 top-full bg-bg border-b border-border shadow-[0_16px_40px_rgba(20,26,35,0.08)]"
           >
@@ -586,12 +617,12 @@ export function Header({
                   <div className="columns-2 lg:columns-4 gap-x-sp-5">
                     {activeDept.groups.map((group) => (
                       <div key={group.id} className="break-inside-avoid mb-sp-5">
-                        <CategoryGroupBlock group={group} onNavigate={() => setOpenDeptId(null)} />
+                        <CategoryGroupBlock group={group} onNavigate={closeDept} />
                       </div>
                     ))}
                   </div>
                 </div>
-                <DepartmentPromoTile deptId={activeDept.id} onNavigate={() => setOpenDeptId(null)} />
+                <DepartmentPromoTile deptId={activeDept.id} onNavigate={closeDept} />
               </div>
             </Container>
             <div className="border-t border-border bg-bg-raised">
@@ -601,7 +632,7 @@ export function Header({
                 </span>
                 <Link
                   href="/products"
-                  onClick={() => setOpenDeptId(null)}
+                  onClick={closeDept}
                   className="text-xs font-bold text-accent hover:underline"
                 >
                   View all products →
@@ -617,7 +648,10 @@ export function Header({
             Corporate & Team Stores. */}
         {shopOpen && (
           <div
-            onMouseEnter={openShop}
+            onMouseEnter={() => {
+              unpinShop();
+              openShop();
+            }}
             onMouseLeave={scheduleShopClose}
             className="absolute left-0 right-0 top-full bg-bg border-b border-border shadow-[0_16px_40px_rgba(20,26,35,0.08)]"
           >
@@ -638,7 +672,7 @@ export function Header({
                         <div key={group.id} className="break-inside-avoid mb-sp-5">
                           <CategoryGroupBlock
                             group={group}
-                            onNavigate={() => setShopOpen(false)}
+                            onNavigate={closeShop}
                           />
                         </div>
                       ))}
@@ -652,7 +686,7 @@ export function Header({
                         <Link
                           key={service.label}
                           href={service.href}
-                          onClick={() => setShopOpen(false)}
+                          onClick={closeShop}
                           className="block rounded-lg border border-border bg-bg px-3.5 py-3.5 hover:border-accent transition-colors"
                         >
                           <span className="block font-bold text-sm">{service.label}</span>
@@ -663,7 +697,7 @@ export function Header({
                       ))}
                       <Link
                         href="/contact"
-                        onClick={() => setShopOpen(false)}
+                        onClick={closeShop}
                         className="mt-auto block rounded-lg px-3.5 py-3 text-center text-xs font-bold text-text-secondary hover:text-accent transition-colors"
                       >
                         Need help? Contact the team →
@@ -677,7 +711,7 @@ export function Header({
                     <Link
                       key={cat.label}
                       href={cat.href}
-                      onClick={() => setShopOpen(false)}
+                      onClick={closeShop}
                       className="rounded-md px-3 py-2.5 text-sm font-semibold text-text-primary hover:bg-fill-subtle-15 hover:text-accent transition-colors"
                     >
                       {cat.label}
@@ -693,7 +727,7 @@ export function Header({
                 </span>
                 <Link
                   href="/products"
-                  onClick={() => setShopOpen(false)}
+                  onClick={closeShop}
                   className="text-xs font-bold text-accent hover:underline"
                 >
                   View all products →
