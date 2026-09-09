@@ -242,17 +242,16 @@ export function Header({
               onMouseEnter={openAccount}
               onMouseLeave={scheduleAccountClose}
             >
-              <button
-                type="button"
-                onClick={() => setAccountOpen((v) => !v)}
-                aria-expanded={accountOpen}
+              <Link
+                href="/portal"
+                onMouseEnter={openAccount}
                 aria-label="Your account"
                 title="Your account"
                 className="hidden sm:flex flex-col items-center gap-1 px-1.5 py-1 rounded-md text-text-primary hover:text-accent transition-colors"
               >
                 <UserRound size={20} strokeWidth={2} aria-hidden />
                 <span className="text-[11px] font-bold leading-none">Account</span>
-              </button>
+              </Link>
               {accountOpen && (
                 <div
                   onMouseEnter={openAccount}
@@ -310,86 +309,15 @@ export function Header({
               )}
             </div>
           ) : (
-            <div
-              className="relative hidden sm:block"
-              onMouseEnter={openAccount}
-              onMouseLeave={scheduleAccountClose}
+            <Link
+              href="/account"
+              aria-label="Sign in"
+              title="Sign in"
+              className="hidden sm:flex flex-col items-center gap-1 px-1.5 py-1 rounded-md text-text-primary hover:text-accent transition-colors"
             >
-              <button
-                type="button"
-                onClick={() => setAccountOpen((v) => !v)}
-                aria-expanded={accountOpen}
-                aria-label="Sign in"
-                title="Sign in"
-                className="hidden sm:flex flex-col items-center gap-1 px-1.5 py-1 rounded-md text-text-primary hover:text-accent transition-colors"
-              >
-                <UserRound size={20} strokeWidth={2} aria-hidden />
-                <span className="text-[11px] font-bold leading-none">Account</span>
-              </button>
-              {accountOpen && (
-                <div
-                  onMouseEnter={openAccount}
-                  onMouseLeave={scheduleAccountClose}
-                  className="absolute right-0 top-full pt-2 w-[320px] z-50"
-                >
-                  <div className="rounded-md border border-border bg-bg-raised shadow-[0_16px_40px_rgba(0,0,0,0.12)] p-2">
-                    <p className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-text-tertiary m-0">
-                      Sign In
-                    </p>
-                    <Link
-                      href="/account"
-                      onClick={() => setAccountOpen(false)}
-                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
-                    >
-                      <span className="block font-bold text-sm">Personal Login</span>
-                      <span className="block text-xs text-text-secondary mt-1">
-                        For individual customers and small orders.
-                      </span>
-                    </Link>
-                    <Link
-                      href="/start"
-                      onClick={() => setAccountOpen(false)}
-                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
-                    >
-                      <span className="block font-bold text-sm">
-                        Corporate &amp; Institutional
-                      </span>
-                      <span className="block text-xs text-text-secondary mt-1">
-                        Bulk-order accounts and branded team stores.
-                      </span>
-                    </Link>
-                    <Link
-                      href="/admin/login"
-                      onClick={() => setAccountOpen(false)}
-                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
-                    >
-                      <span className="block font-bold text-sm">Staff Login</span>
-                      <span className="block text-xs text-text-secondary mt-1">
-                        Internal team and production access only.
-                      </span>
-                    </Link>
-                    <div className="border-t border-border my-1" />
-                    {/* Read "Continue via Chat — Quick, no password needed",
-                        sitting under a Sign In heading beside three real
-                        sign-in routes. There is no chat anywhere in the
-                        product and this signs nobody in; it opens the contact
-                        form, which genuinely does not need an account. */}
-                    <Link
-                      href="/contact"
-                      onClick={() => setAccountOpen(false)}
-                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
-                    >
-                      <span className="block font-bold text-sm">
-                        No account? Send us your project
-                      </span>
-                      <span className="block text-xs text-text-secondary mt-1">
-                        Email the team — no sign-in needed.
-                      </span>
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+              <UserRound size={20} strokeWidth={2} aria-hidden />
+              <span className="text-[11px] font-bold leading-none">Account</span>
+            </Link>
           )}
           <Link
             href="/cart"
@@ -798,6 +726,7 @@ export function Header({
                 ))}
           </div>
 
+          {/* Public navigation links - always visible */}
           <div className="flex flex-wrap gap-2 border-t border-border pt-sp-3">
             {/* Mirrors the desktop nav row's CTA — that row is hidden below
                 lg, so mobile needs its own way to reach it. */}
@@ -875,7 +804,11 @@ export function Header({
             >
               Contact
             </Link>
-            {customerName ? (
+          </div>
+
+          {/* Auth section - shows different items based on login state */}
+          <div className="flex flex-wrap gap-2 border-t border-border pt-sp-3 mt-sp-3">
+            {customerName !== null && customerName !== undefined && customerName !== "" ? (
               <>
                 <Link
                   href="/portal"
@@ -908,13 +841,22 @@ export function Header({
                 <SignOutButton className="text-sm font-bold px-3 py-2 text-left" />
               </>
             ) : (
-              <Link
-                href="/account"
-                onClick={() => setMobileOpen(false)}
-                className="text-sm font-bold px-3 py-2"
-              >
-                Sign In
-              </Link>
+              <>
+                <Link
+                  href="/account"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/account"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-sm font-bold px-3 py-2"
+                >
+                  Create Account
+                </Link>
+              </>
             )}
             <Link
               href="/admin/login"
