@@ -592,3 +592,49 @@ export const PreviewQuoteV2ResponseSchema = z.object({
 export type PreviewQuoteV2Response = z.infer<
   typeof PreviewQuoteV2ResponseSchema
 >;
+
+/* ------------------------------------------------------------------ */
+/* Storefront-safe quote endpoint (Cod Chat estimate connector)        */
+/* ------------------------------------------------------------------ */
+
+export const StorefrontQuoteDecorationSchema = z.object({
+  method: z.string().min(1).max(50),
+  location: z.string().min(1).max(100).default("front"),
+  colours: z.number().int().positive().max(12).optional(),
+  stitch_count: z.number().nonnegative().optional(),
+  option_key: z.string().max(50).optional(),
+  is_oversized: z.boolean().default(false),
+});
+export type StorefrontQuoteDecoration = z.infer<
+  typeof StorefrontQuoteDecorationSchema
+>;
+
+export const StorefrontQuoteRequestSchema = z.object({
+  product_id: z.string().uuid().optional(),
+  sku: z.string().max(100).optional(),
+  garment_cost_minor: z.number().int().nonnegative().optional(),
+  qty: z.number().int().positive(),
+  decorations: z.array(StorefrontQuoteDecorationSchema).max(20).default([]),
+  rush: z.boolean().default(false),
+});
+export type StorefrontQuoteRequest = z.infer<
+  typeof StorefrontQuoteRequestSchema
+>;
+
+export const StorefrontQuoteResponseSchema = z.object({
+  unit_price: z.number(),
+  total: z.number(),
+  turnaround_days: z.number().int(),
+  currency: z.string().length(3),
+  breakdown: z
+    .object({
+      garment_per_piece: z.number(),
+      decoration_per_piece: z.number(),
+      setup_total: z.number(),
+      rush_total: z.number(),
+    })
+    .optional(),
+});
+export type StorefrontQuoteResponse = z.infer<
+  typeof StorefrontQuoteResponseSchema
+>;

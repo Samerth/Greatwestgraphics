@@ -37,6 +37,8 @@ import {
   SubmitJobRequestSchema,
   TransitionJobRequestSchema,
   UpsertPricingConfigDraftSchema,
+  StorefrontQuoteRequestSchema,
+  StorefrontQuoteResponseSchema,
   type AuthContext,
   type AuthContextPort,
 } from "@gwg/contracts";
@@ -75,6 +77,7 @@ import {
   applyStorePricingAdjustmentV2,
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
+import { calculateQuoteV2 } from "@gwg/pricing";
 import { CatalogService } from "./application/catalog-service.js";
 import { databaseAuthMessage, schemaDriftMessage } from "./db/postgres-error.js";
 import {
@@ -395,6 +398,110 @@ export function buildApp(input: {
             store.pricingAdjustmentPercent,
           )
         : published.config,
+    });
+  });
+
+  /**
+   * Storefront-safe pricing quote endpoint for external estimate connectors
+   * (e.g. Cod Chat). Authenticated via COMMERCE_SERVICE_TOKEN bearer + tenant
+   * headers. Does NOT require admin session.
+   *
+   * Maps simplified request params to the internal QuoteInputV2 shape and
+   * returns a streamlined response for external integrations.
+   */
+  app.post("/pricing/quote", async (request, reply) => {
+    const auth = await input.auth.resolve(request);
+    const body = StorefrontQuoteRequestSchema.parse(request.body);
+
+    const published = await pricingV2Service.getPublished(auth.tenantId);
+    const store = await storeService
+      .getById(auth.tenantId, auth.storeId)
+      .catch(() => null);
+    const config = store
+      ? applyStorePricingAdjustmentV2(
+          published.config,
+          store.pricingAdjustmentPercent,
+        )
+      : published.config;
+
+    let garmentCostMinor = body.garment_cost_minor;
+
+    if (garmentCostMinor === undefined && body.product_id) {
+      const detail = await catalogService.getProductDetail(
+        auth.tenantId,
+        body.product_id,
+        { storeId: auth.storeId },
+      );
+      const firstVariant = detail.variants[0];
+      if (firstVariant) {
+        garmentCostMinor = firstVariant.customerPriceMinor;
+      }
+    }
+
+    if (garmentCostMinor === undefined) {
+      return reply.code(400).send({
+        error: {
+          code: "MISSING_GARMENT_COST",
+          message:
+            "Provide garment_cost_minor or a valid product_id to look up cost",
+        },
+      });
+    }
+
+    const decorations = body.decorations.map((dec, idx) => ({
+      id: `d${idx}`,
+      garmentId: "g1",
+      methodKey: dec.method,
+      location: dec.location,
+      logoGroup: "",
+      colours: dec.colours,
+      variableValue: dec.stitch_count,
+      optionKey: dec.option_key,
+      isOversized: dec.is_oversized,
+      artwork: { isRepeat: false, verifiedByStaff: false },
+    }));
+
+    const quoteInput = {
+      garments: [
+        {
+          id: "g1",
+          description: body.sku ?? body.product_id ?? "Quote item",
+          unitCostMinor: garmentCostMinor,
+          quantity: body.qty,
+          colourName: "",
+        },
+      ],
+      decorations,
+      options: {
+        rush: body.rush,
+        includePacking: false,
+        namesNumbers: false,
+        shippingCostMinor: 0,
+        designHours: 0,
+      },
+    };
+
+    const breakdown = calculateQuoteV2(quoteInput, config);
+
+    const unitPrice = breakdown.garments[0]?.unitPriceMinor ?? 0;
+    const total = breakdown.totals.totalMinor;
+    const garmentPerPiece = breakdown.garments[0]?.sellPerPieceMinor ?? 0;
+    const decorationPerPiece =
+      breakdown.garments[0]?.decorationPerPieceMinor ?? 0;
+
+    const standardTurnaroundDays = 10;
+
+    return StorefrontQuoteResponseSchema.parse({
+      unit_price: unitPrice / 100,
+      total: total / 100,
+      turnaround_days: standardTurnaroundDays,
+      currency: breakdown.currency,
+      breakdown: {
+        garment_per_piece: garmentPerPiece / 100,
+        decoration_per_piece: decorationPerPiece / 100,
+        setup_total: breakdown.totals.setupMinor / 100,
+        rush_total: breakdown.totals.rushMinor / 100,
+      },
     });
   });
 
