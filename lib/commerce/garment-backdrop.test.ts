@@ -11,6 +11,7 @@ import {
   isStudioSideRepresentation,
   namedVendorView,
   plateContainRect,
+  proxyExternalImageUrl,
   studioBackdropFallbackUrl,
   studioCanvasImageUrl,
   studioSideViewTemplate,
@@ -331,5 +332,38 @@ describe("framedBackdropStyles", () => {
     expect(frame.left).toBe("0%");
     expect(frame.width).toBe("100%");
     expect(image.objectFit).toBe("contain");
+  });
+});
+
+describe("proxyExternalImageUrl", () => {
+  it("proxies external CDN URLs through Next.js image optimizer", () => {
+    const cdn = "https://cdn.ssactivewear.com/Images/Color/17190_f_fm.jpg";
+    expect(proxyExternalImageUrl(cdn)).toBe(
+      `/_next/image?url=${encodeURIComponent(cdn)}&w=640&q=75`,
+    );
+  });
+
+  it("leaves local /images paths unchanged", () => {
+    expect(proxyExternalImageUrl("/images/t-shirt.png")).toBe(
+      "/images/t-shirt.png",
+    );
+    expect(proxyExternalImageUrl("/images/studio/side-tee.png")).toBe(
+      "/images/studio/side-tee.png",
+    );
+  });
+
+  it("leaves data: URLs unchanged", () => {
+    const dataUrl = "data:image/svg+xml;charset=utf-8,%3Csvg%20...";
+    expect(proxyExternalImageUrl(dataUrl)).toBe(dataUrl);
+  });
+
+  it("leaves blob: URLs unchanged", () => {
+    const blobUrl = "blob:https://example.com/abc123";
+    expect(proxyExternalImageUrl(blobUrl)).toBe(blobUrl);
+  });
+
+  it("returns null for null/undefined input", () => {
+    expect(proxyExternalImageUrl(null)).toBeNull();
+    expect(proxyExternalImageUrl(undefined)).toBeNull();
   });
 });
