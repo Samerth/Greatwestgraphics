@@ -100,6 +100,7 @@ import {
   AuthenticationUnavailableError,
   InvalidServiceTokenError,
   secretsMatch,
+  StorefrontQuoteAuth,
 } from "./auth.js";
 import { adminRoutesEnabled, stripeEnabled, type Environment } from "./config.js";
 import type { CommerceDatabase } from "./db/client.js";
@@ -406,11 +407,24 @@ export function buildApp(input: {
    * (e.g. Cod Chat). Authenticated via COMMERCE_SERVICE_TOKEN bearer + tenant
    * headers. Does NOT require admin session.
    *
+   * When authenticated with a valid service token but missing tenant headers,
+   * soft-defaults to configured env vars (STOREFRONT_DEFAULT_TENANT_ID, etc.)
+   * or staging GWG test UUIDs for Cod Chat connector compatibility.
+   *
    * Maps simplified request params to the internal QuoteInputV2 shape and
    * returns a streamlined response for external integrations.
    */
+  const storefrontQuoteAuth = input.environment.COMMERCE_SERVICE_TOKEN
+    ? new StorefrontQuoteAuth(
+        input.environment.COMMERCE_SERVICE_TOKEN,
+        input.environment,
+      )
+    : null;
+
   app.post("/pricing/quote", async (request, reply) => {
-    const auth = await input.auth.resolve(request);
+    const auth = storefrontQuoteAuth
+      ? await storefrontQuoteAuth.resolve(request)
+      : await input.auth.resolve(request);
     const body = StorefrontQuoteRequestSchema.parse(request.body);
 
     const published = await pricingV2Service.getPublished(auth.tenantId);
