@@ -86,14 +86,31 @@ export function Header({
   const [openDeptId, setOpenDeptId] = useState<string | null>(null);
   const deptCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deptPinnedRef = useRef(false);
+  const closeDept = () => {
+    setOpenDeptId(null);
+    deptPinnedRef.current = false;
+  };
+  const closeShop = () => {
+    setShopOpen(false);
+    shopPinnedRef.current = false;
+  };
+
   const openDept = (id: string) => {
     if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
+    closeShop();
     setOpenDeptId(id);
   };
   const openDeptViaClick = (id: string) => {
     if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
-    deptPinnedRef.current = true;
-    setOpenDeptId((prev) => (prev === id ? null : id));
+    closeShop();
+    setOpenDeptId((prev) => {
+      if (prev === id && deptPinnedRef.current) {
+        deptPinnedRef.current = false;
+        return null;
+      }
+      deptPinnedRef.current = true;
+      return id;
+    });
   };
   const scheduleDeptClose = () => {
     if (deptPinnedRef.current) return;
@@ -110,26 +127,26 @@ export function Header({
   const shopPinnedRef = useRef(false);
   const openShop = () => {
     if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
+    closeDept();
     setShopOpen(true);
   };
   const openShopViaClick = () => {
     if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
-    shopPinnedRef.current = true;
-    setShopOpen((prev) => !prev);
+    closeDept();
+    setShopOpen((prev) => {
+      if (prev && shopPinnedRef.current) {
+        shopPinnedRef.current = false;
+        return false;
+      }
+      shopPinnedRef.current = true;
+      return true;
+    });
   };
   const scheduleShopClose = () => {
     if (shopPinnedRef.current) return;
     shopCloseTimer.current = setTimeout(() => setShopOpen(false), 120);
   };
   const unpinShop = () => {
-    shopPinnedRef.current = false;
-  };
-  const closeDept = () => {
-    setOpenDeptId(null);
-    deptPinnedRef.current = false;
-  };
-  const closeShop = () => {
-    setShopOpen(false);
     shopPinnedRef.current = false;
   };
 
