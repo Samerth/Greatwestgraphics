@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { buildApp } from "../src/app.js";
-import { ServiceTokenAuth, StorefrontQuoteAuth } from "../src/auth.js";
+import { ServiceTokenAuth } from "../src/auth.js";
 import { createDatabase, type CommerceDatabase } from "../src/db/client.js";
 import {
   accounts,
-  pricingConfigsV2,
+  pricingConfigs,
   stores,
   tenants,
 } from "../src/db/schema.js";
@@ -32,15 +32,17 @@ integration("/pricing/quote endpoint integration", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    database = createDatabase(databaseUrl!);
+    if (!databaseUrl) return;
+    database = createDatabase(databaseUrl);
     db = database.db;
     await db.insert(tenants).values({ id: tenantId, name: "Test tenant" }).onConflictDoNothing();
     await db.insert(accounts).values({ id: accountId, tenantId, name: "Test account" }).onConflictDoNothing();
     await db.insert(stores).values({ id: storeId, tenantId, accountId, name: "Test store", slug: "test" }).onConflictDoNothing();
-    await db.insert(pricingConfigsV2).values({
+    await db.insert(pricingConfigs).values({
       id: randomUUID(),
       tenantId,
       version: 1,
+      schemaVersion: 2,
       status: "published",
       config: PRICING_MASTER_V2,
       publishedAt: new Date(),
@@ -51,7 +53,7 @@ integration("/pricing/quote endpoint integration", () => {
       auth: new ServiceTokenAuth(SERVICE_TOKEN),
       environment: {
         NODE_ENV: "test",
-        DATABASE_URL: databaseUrl!,
+        DATABASE_URL: databaseUrl,
         COMMERCE_API_HOST: "127.0.0.1",
         COMMERCE_API_PORT: 4000,
         ENABLE_DEV_ADMIN_ROUTES: false,
@@ -66,7 +68,9 @@ integration("/pricing/quote endpoint integration", () => {
   afterAll(async () => {
     await app?.close();
     if (!db) return;
-    await db.delete(pricingConfigsV2).where(eq(pricingConfigsV2.tenantId, tenantId));
+    await db.delete(pricingConfigs).where(
+      and(eq(pricingConfigs.tenantId, tenantId), eq(pricingConfigs.schemaVersion, 2))
+    );
     await db.delete(stores).where(eq(stores.tenantId, tenantId));
     await db.delete(accounts).where(eq(accounts.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
