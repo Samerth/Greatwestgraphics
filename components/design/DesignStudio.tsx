@@ -2717,34 +2717,60 @@ export function DesignStudio({
           <div className="min-w-0 w-full max-w-full bg-fill-subtle-15 rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
             <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
-              className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square"
+              className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square overflow-hidden"
               onClick={(e) => {
                 // Clicking empty canvas area deselects the active layer.
                 if (e.target === e.currentTarget) setSelectedId(null);
               }}
             >
-              {currentPhoto ? (
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <GarmentBackdropImage
-                    url={currentPhoto}
-                    fallbackUrl={studioBackdropFallbackUrl(
-                      backdrop,
-                      garmentPhotos,
-                    )}
-                    frame={framedBackdrop.frame}
-                    image={framedBackdrop.image}
-                    tintHex={sleeveTintHex}
-                  />
-                </div>
-              ) : null}
-              {isLoadingGarment && !currentPhoto && (
-                <div className="absolute inset-0 grid place-items-center">
-                  <div className="w-2/3 h-2/3 rounded-md bg-fill-subtle-15 animate-pulse" />
-                </div>
-              )}
+              {/* This backdrop photo is plain DOM, positioned edge-to-edge
+                  behind the Konva canvas below, so it never tracked that
+                  canvas's internal zoom: the photo held still while the
+                  Konva-drawn garment (see GarmentLayer, which paints the
+                  same image again onto the canvas) scaled and moved under
+                  the artwork, so the two copies drifted apart into a
+                  doubled, ghosted garment at anything but 100%. `scale(zoom)`
+                  with the browser's default center transform-origin
+                  reproduces the exact centered scaling DesignCanvas applies
+                  internally (see the offset math there), so this copy now
+                  tracks the Konva one exactly. It has to stay its own
+                  wrapper, separate from the guides below, because it must
+                  paint *behind* the Konva canvas while the guides paint
+                  *above* it — one shared wrapper would put the backdrop on
+                  top and hide the artwork. The `overflow-hidden` added to
+                  the parent above clips it at the canvas edge past 100%,
+                  matching how Konva's own canvas raster already clips
+                  itself. */}
+              <div
+                className="absolute inset-0"
+                style={{ transform: `scale(${zoom})` }}
+              >
+                {currentPhoto ? (
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <GarmentBackdropImage
+                      url={currentPhoto}
+                      fallbackUrl={studioBackdropFallbackUrl(
+                        backdrop,
+                        garmentPhotos,
+                      )}
+                      frame={framedBackdrop.frame}
+                      image={framedBackdrop.image}
+                      tintHex={sleeveTintHex}
+                    />
+                  </div>
+                ) : null}
+                {isLoadingGarment && !currentPhoto && (
+                  <div className="absolute inset-0 grid place-items-center">
+                    <div className="w-2/3 h-2/3 rounded-md bg-fill-subtle-15 animate-pulse" />
+                  </div>
+                )}
+              </div>
 
               {/* One stage owns garment and artwork, so what the customer
-                  edits is exactly what the proof download contains. */}
+                  edits is exactly what the proof download contains. Konva
+                  applies its own centered zoom internally (see the offset
+                  math in DesignCanvas.tsx), so it is left unscaled here,
+                  between the two DOM wrappers whose scale it matches. */}
               <DesignCanvas
                 activeSide={activeSide}
                 artworks={artworks}
@@ -2768,76 +2794,85 @@ export function DesignStudio({
                 onRosterPreviewDragEnd={handleRosterPreviewDragEnd}
                 onRosterPreviewResizeEnd={handleRosterPreviewResizeEnd}
               />
-              {/* CSS overlay so the guide never lands in the Konva proof. */}
-              {draggingOnFront ? (
-                <>
-                  {/* Chest marks only — do not draw the leftover full-plate box
-                      that sat flush to the top of the printable area. */}
-                  {chestGuides.map(({ zone, rect }) => {
-                    const active = liveZone === zone;
-                    return (
+
+              {/* Print-area guides, same plain-DOM problem and same fix as
+                  the backdrop above — a second wrapper because these must
+                  paint *above* the Konva canvas, not behind it. */}
+              <div
+                className="absolute inset-0"
+                style={{ transform: `scale(${zoom})` }}
+              >
+                {/* CSS overlay so the guide never lands in the Konva proof. */}
+                {draggingOnFront ? (
+                  <>
+                    {/* Chest marks only — do not draw the leftover full-plate box
+                        that sat flush to the top of the printable area. */}
+                    {chestGuides.map(({ zone, rect }) => {
+                      const active = liveZone === zone;
+                      return (
+                        <div
+                          key={zone}
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none absolute z-[3] rounded-[2px] border border-dashed",
+                            active
+                              ? "border-accent bg-accent/25 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+                              : "border-white/40 bg-white/5",
+                          )}
+                          style={{
+                            left: `${rect.x * 100}%`,
+                            top: `${rect.y * 100}%`,
+                            width: `${rect.width * 100}%`,
+                            height: `${rect.height * 100}%`,
+                          }}
+                        />
+                      );
+                    })}
+                    {liveZone === "Full Front" ? (
                       <div
-                        key={zone}
                         aria-hidden
-                        className={cn(
-                          "pointer-events-none absolute z-[3] rounded-[2px] border border-dashed",
-                          active
-                            ? "border-accent bg-accent/25 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
-                            : "border-white/40 bg-white/5",
-                        )}
+                        className="pointer-events-none absolute z-[4] rounded-[2px] border-2 border-dashed border-accent bg-accent/10"
                         style={{
-                          left: `${rect.x * 100}%`,
-                          top: `${rect.y * 100}%`,
-                          width: `${rect.width * 100}%`,
-                          height: `${rect.height * 100}%`,
+                          left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
+                          top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
+                          width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
+                          height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
                         }}
                       />
-                    );
-                  })}
-                  {liveZone === "Full Front" ? (
-                    <div
-                      aria-hidden
-                      className="pointer-events-none absolute z-[4] rounded-[2px] border-2 border-dashed border-accent bg-accent/10"
-                      style={{
-                        left: `${STUDIO_PRINT_AREAS.front.x * 100}%`,
-                        top: `${STUDIO_PRINT_AREAS.front.y * 100}%`,
-                        width: `${STUDIO_PRINT_AREAS.front.width * 100}%`,
-                        height: `${STUDIO_PRINT_AREAS.front.height * 100}%`,
-                      }}
-                    />
-                  ) : null}
-                </>
-              ) : (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
-                style={{
-                  left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
-                  top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
-                  width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
-                  height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
-                }}
-              />
-              )}
-              {sleeveView && artworks.length === 0 && texts.length === 0 && (
+                    ) : null}
+                  </>
+                ) : (
                 <div
-                  className="absolute z-[3] flex flex-col items-center justify-center gap-2"
+                  aria-hidden
+                  className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
                   style={{
                     left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
                     top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
                     width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
                     height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                   }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => artworkInputRef.current?.click()}
-                    className="min-h-9 rounded-md bg-white px-3 py-1.5 text-[12px] font-bold text-text-primary hover:bg-accent hover:text-white transition-colors"
+                />
+                )}
+                {sleeveView && artworks.length === 0 && texts.length === 0 && (
+                  <div
+                    className="absolute z-[3] flex flex-col items-center justify-center gap-2"
+                    style={{
+                      left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
+                      top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
+                      width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
+                      height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
+                    }}
                   >
-                    Upload art
-                  </button>
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => artworkInputRef.current?.click()}
+                      className="min-h-9 rounded-md bg-white px-3 py-1.5 text-[12px] font-bold text-text-primary hover:bg-accent hover:text-white transition-colors"
+                    >
+                      Upload art
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Zone + inch size sits under the whole mockup — not a chip on the plate. */}
             <p
