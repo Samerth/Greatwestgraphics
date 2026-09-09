@@ -37,6 +37,7 @@ Canonical app docs: [`docs/AWS_DEPLOYMENT.md`](../../docs/AWS_DEPLOYMENT.md).
 | 22 | `22-wait-ecs.sh` | Nothing new. Polls web+api until stable (or dumps service events). `JOIN_OR_ROLL=1` joins an in-flight roll instead of stacking another |
 | 20 | `20-refresh-database-url.sh` | Rewrites `$NAME_PREFIX/api` `DATABASE_URL` from the live RDS master-user secret and rolls the API. Fixes Postgres `28P01` after a managed password rotation |
 | 21 | `21-set-stripe-secrets.sh` | Writes `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` into the existing api/web JSON secrets and attaches them to the ECS task definitions |
+| 23 | `23-set-codchat-secret.sh` | Generates (or reuses) `CODCHAT_LOOKUP_API_TOKEN`, writes the *same* value into both the api and web JSON secrets, and attaches it to both ECS task definitions. Prints it once at the end to paste into CodCRM's Data sources screen |
 
 ## Running more than one environment
 

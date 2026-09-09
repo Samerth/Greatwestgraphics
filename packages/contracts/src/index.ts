@@ -716,6 +716,23 @@ export type CheckoutSessionResponse = z.infer<
 >;
 
 /**
+ * The CodChat website assistant's order-status lookup — deliberately the
+ * smallest response in this file. A verified customer's own order status,
+ * and nothing else: no pricing, no line items, no other person's data. See
+ * services/commerce-api/src/application/codchat-order-lookup-service.ts for
+ * how `verifiedEmail` is checked against the order's actual owner before
+ * this is ever built.
+ */
+export const CodChatOrderStatusResponseSchema = z.object({
+  orderRef: z.string().min(1).max(80),
+  status: z.string().min(1).max(60),
+  updatedAt: z.string().datetime(),
+});
+export type CodChatOrderStatusResponse = z.infer<
+  typeof CodChatOrderStatusResponseSchema
+>;
+
+/**
  * A Stripe event the web tier has already signature-verified.
  *
  * Only identifiers travel: the amount is re-checked against our own recorded

@@ -13,6 +13,7 @@ import { ChangesReply } from "@/components/portal/ChangesReply";
 import { InvoiceRequest } from "@/components/portal/InvoiceRequest";
 import { PayNowButton } from "@/components/portal/PayNowButton";
 import { OrderHandoff } from "@/components/portal/OrderHandoff";
+import { PaymentConfirmationPoller } from "@/components/portal/PaymentConfirmationPoller";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,10 @@ export default async function JobDetailPage({
   searchParams?: Promise<{ payment?: string }>;
 }) {
   const { id } = await params;
-  // Stripe sends the customer back here. The banner is cosmetic only — the
-  // job's real status comes from the webhook, never from this query string.
+  // Stripe sends the customer back here with this flag, but it only ever
+  // decides whether to show PaymentConfirmationPoller — the job's real
+  // status still comes from the webhook and a fresh read of the database on
+  // every poll, never from this query string itself.
   const paymentReturn = (await searchParams)?.payment;
   const session = await getCustomerSession();
   if (!session) {
@@ -270,11 +273,8 @@ export default async function JobDetailPage({
                       : "Payment stays locked until design approval and final pricing are complete."}
               </div>
             )}
-            {paymentReturn === "success" && !alreadyPaid ? (
-              <p className="text-sm border border-border rounded-md p-sp-3 bg-fill-subtle-15">
-                Thanks — your card payment is confirming. This page updates as
-                soon as the bank settles it, usually within a minute.
-              </p>
+            {paymentReturn === "success" ? (
+              <PaymentConfirmationPoller active={!alreadyPaid} />
             ) : null}
             {paymentReturn === "cancelled" ? (
               <p className="text-sm border border-border rounded-md p-sp-3">

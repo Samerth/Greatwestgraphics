@@ -197,6 +197,30 @@ describe("notificationsForEvent", () => {
     ).toEqual([]);
     expect(notificationsForEvent({}, JOB_ID, context)).toEqual([]);
   });
+
+  it("has no copy for a status_changed.v1 event with toStatus paid, on purpose", () => {
+    // "paid" is never reached through this event type in the real system —
+    // recordPayment always overrides its outbox event to
+    // commerce.job_request.payment.recorded.v1 instead (tested below, and
+    // proved to actually reach a customer's inbox in
+    // test/paid-notification.integration.test.ts). An earlier version of
+    // this fix added a "paid" entry here, believing that omission was the
+    // reason payment confirmations were missing — the entry was harmless
+    // but never executed, because nothing emits this shape for a real
+    // payment. Left as a guard: if this ever starts returning a message,
+    // something new is emitting status_changed.v1 for "paid" and that new
+    // path needs its own real test, not a copy-table entry added by feel.
+    expect(
+      notificationsForEvent(
+        {
+          type: "commerce.job_request.status_changed.v1",
+          data: { toStatus: "paid" },
+        },
+        JOB_ID,
+        context,
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("backoffSeconds", () => {

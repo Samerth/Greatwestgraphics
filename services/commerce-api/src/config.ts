@@ -24,6 +24,16 @@ const EnvironmentSchema = z
      */
     ADMIN_API_TOKEN: z.string().min(32).optional(),
     /**
+     * Shared secret for CodChat's order-status lookup — CodCRM's public
+     * website assistant, checking a customer's own order on their behalf
+     * after verifying they control the email on file. Its own trust
+     * boundary, separate from COMMERCE_SERVICE_TOKEN and ADMIN_API_TOKEN, so
+     * a leaked chatbot credential exposes only this one read-only,
+     * single-record lookup — never the storefront's full tenant scope or any
+     * admin action. Absent, the route is not registered at all.
+     */
+    CODCHAT_LOOKUP_API_TOKEN: z.string().min(32).optional(),
+    /**
      * Notification delivery via Amazon SES. Without AWS_REGION the dispatcher
      * leaves events queued rather than marking them sent, so wiring the region
      * up later still delivers the backlog instead of silently dropping it.
@@ -160,6 +170,28 @@ const EnvironmentSchema = z
           "ADMIN_API_TOKEN must differ from COMMERCE_SERVICE_TOKEN, or storefront credentials would grant admin access",
       });
     }
+    if (
+      environment.CODCHAT_LOOKUP_API_TOKEN &&
+      environment.CODCHAT_LOOKUP_API_TOKEN === environment.COMMERCE_SERVICE_TOKEN
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CODCHAT_LOOKUP_API_TOKEN"],
+        message:
+          "CODCHAT_LOOKUP_API_TOKEN must differ from COMMERCE_SERVICE_TOKEN, or storefront credentials would grant chatbot order lookups",
+      });
+    }
+    if (
+      environment.CODCHAT_LOOKUP_API_TOKEN &&
+      environment.CODCHAT_LOOKUP_API_TOKEN === environment.ADMIN_API_TOKEN
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CODCHAT_LOOKUP_API_TOKEN"],
+        message:
+          "CODCHAT_LOOKUP_API_TOKEN must differ from ADMIN_API_TOKEN, or a leaked chatbot credential would grant admin access",
+      });
+    }
   });
 
 export type Environment = z.infer<typeof EnvironmentSchema>;
@@ -167,6 +199,15 @@ export type Environment = z.infer<typeof EnvironmentSchema>;
 /** Whether card payment can be offered at all. */
 export function stripeEnabled(environment: Environment): boolean {
   return Boolean(environment.STRIPE_SECRET_KEY);
+}
+
+/**
+ * Whether the CodChat order-status lookup is served at all. Absent a token,
+ * the route is not registered — the same "no key, no service" shape already
+ * used for Stripe, rather than one that exists and 401s forever.
+ */
+export function codChatLookupEnabled(environment: Environment): boolean {
+  return Boolean(environment.CODCHAT_LOOKUP_API_TOKEN);
 }
 
 /** Whether the admin API is served: development flag, or a production token. */
