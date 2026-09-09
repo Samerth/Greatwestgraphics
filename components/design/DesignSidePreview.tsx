@@ -14,6 +14,7 @@ import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import {
   framedBackdropStyles,
   garmentBackdropForSide,
+  proxyExternalImageUrl,
   type PhotoCrop,
 } from "@/lib/commerce/garment-backdrop";
 
@@ -56,7 +57,7 @@ export function DesignSidePreview({
   const artworks = design.artworksBySide[side] ?? [];
   const texts = design.textsBySide?.[side] ?? [];
   const fallback = garmentBackdropForSide(side, {});
-  const imageUrl = garmentImageUrl || fallback.url;
+  const imageUrl = proxyExternalImageUrl(garmentImageUrl) || fallback.url;
   const mirrored = mirrorGarment ?? fallback.mirror;
   const crop = garmentCrop ?? (garmentImageUrl ? undefined : fallback.crop);
   const plate = garmentPlate ?? (garmentImageUrl ? undefined : fallback.plate);

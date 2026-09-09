@@ -54,6 +54,30 @@ export type BackdropImageStyle = {
 
 export const GARMENT_FALLBACK = "/images/t-shirt.png";
 
+/**
+ * External CDN images need to go through Next.js image optimizer to avoid
+ * CORS failures. GarmentBackdropImage sets crossOrigin="anonymous" which
+ * breaks when the CDN lacks CORS headers — the image fails to load and
+ * silently falls back to a generic white tee. Proxying through /_next/image
+ * makes the request same-origin, sidestepping CORS entirely.
+ *
+ * Local paths (/images/..., data:, blob:) are returned unchanged since they
+ * never trigger CORS in the first place.
+ */
+export function proxyExternalImageUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) return null;
+  if (
+    url.startsWith("/") ||
+    url.startsWith("data:") ||
+    url.startsWith("blob:")
+  ) {
+    return url;
+  }
+  return `/_next/image?url=${encodeURIComponent(url)}&w=640&q=75`;
+}
+
 /** Padding around a sleeve plate, as a fraction of the square canvas. */
 export const SLEEVE_PLATE_INSET = 0.08;
 
