@@ -411,4 +411,5 @@ So **most photographed SanMar styles have several images**, not one. The 121 wit
 ## Files
 
 - CSV (one row per style): `sanmar-staging-photo-audit.csv`
+- CSV (one row per colorway, 2,754 rows): `sanmar-staging-photo-audit-colorways.csv`
 - Full JSON (every colorway + file names): `sanmar-staging-photo-audit.json`
