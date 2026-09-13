@@ -81,10 +81,8 @@ should resolve people/accounts through explicit external-identity mappings and
 call supported CodCRM/commerce interfaces. No shared-database writes are
 allowed between these systems.
 
-No CodCRM or CodChat network adapter is implemented. The shared contracts only
-define initial ports and versioned commerce events. The detailed hybrid
-workflow is in the local Cursor artifact
-`/Users/sam/.cursor/projects/Users-sam-Greatwestgraphics/canvases/backend-architecture.canvas.tsx`.
+Cod Chat’s live estimate path is `POST /pricing/quote` (service token). See
+[`docs/CODCHAT.md`](CODCHAT.md) for the surface map and connector contract.
 
 ## Prioritized milestones
 
