@@ -552,6 +552,7 @@ export default function DesignCanvas({
                   onChange={onChangeArtwork}
                   onDragMove={onDragMove}
                   maxSize={maxArtworkDisplaySize(activeSide, displaySize)}
+                  canvasSize={displaySize}
                 />
               ) : (
                 <TextLayer

@@ -281,6 +281,17 @@ export type ShopperDecorationInput = {
   colours?: number;
   stitchCount?: number;
   optionKey?: string;
+  /**
+   * Stable id for this decoration, echoed onto every line the engine emits
+   * for it so a caller can attribute cost back to the row the customer is
+   * looking at. Defaults to `decoration-<location>`, which is only unique
+   * while one location carries one decoration — the product page's estimate
+   * builder lets a customer put two prints on the same location, and without
+   * an explicit id those two rows would share one.
+   */
+  id?: string;
+  /** Above the largest priced tier — carries the method's oversize handling. */
+  isOversized?: boolean;
 };
 
 export type ShopperMultiPriceInput = Omit<
@@ -327,13 +338,13 @@ export function buildShopperQuoteInputMulti(
       storefront,
     );
     decorations.push({
-      id: `decoration-${line.location}`,
+      id: line.id ?? `decoration-${line.location}`,
       garmentId: "shopper",
       methodKey: method.key,
       location: line.location,
       logoGroup: input.shareSetup ? "primary" : "",
       ...fields,
-      isOversized: false,
+      isOversized: line.isOversized ?? false,
       artwork: {
         isRepeat: !storefront.assumeNewArtwork,
         verifiedByStaff: !storefront.assumeNewArtwork,

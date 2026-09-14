@@ -503,12 +503,16 @@ export function CtaBand() {
             </p>
           </div>
           <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
+            {/* Was "Start Designing" into the bare studio - the last studio
+                entry point on the homepage after rows 57 and 64 removed the
+                others. An order starts from a garment, so it starts from
+                Best Sellers like the other order buttons. */}
             <ButtonLink
-              href="/design"
+              href="/best-sellers"
               variant="secondary"
               className="!bg-white !text-accent hover:!bg-white/90 border-transparent flex-1 sm:flex-none justify-center"
             >
-              Start Designing
+              Start an Order
             </ButtonLink>
             {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
               <ButtonLink

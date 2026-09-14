@@ -1,8 +1,12 @@
-import type { PricingConfigV2, QuoteInputV2 } from "@gwg/contracts";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 import type { StorefrontCatalogProduct } from "./catalog";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { stitchCountForPreset } from "@/lib/utils/shop-quote";
+import {
+  priceStorefrontQuote,
+  storefrontQuantityBreaks,
+  type StorefrontQuoteRequest,
+} from "./storefront-quote";
 
 /** Shop-card subtitle: brand, plus a real colourway count when the style has more than one. */
 export function catalogCardSubtitle(product: {
@@ -61,55 +65,35 @@ export function catalogCardPricing(
   );
   if (!method) return empty;
 
-  function inputAt(quantity: number): QuoteInputV2 {
-    return {
-      garments: [
-        {
-          id: "g1",
-          description: product.name,
-          unitCostMinor: product.costMinor,
-          quantity,
-          colourName: product.colorName,
-          mapPriceMinor: product.mapPriceMinor ?? undefined,
-        },
-      ],
-      decorations: [
-        {
-          id: "card-estimate",
-          garmentId: "g1",
-          methodKey,
-          location: "front",
-          logoGroup: "",
-          colours: methodKey === "screenPrint" ? 1 : undefined,
-          variableValue:
-            methodKey === "embroidery" ? stitchCountForPreset("small") : undefined,
-          isOversized: false,
-          artwork: { isRepeat: false, verifiedByStaff: false },
-        },
-      ],
-      options: {
-        rush: false,
-        includePacking: true,
-        namesNumbers: false,
-        shippingCostMinor: 0,
-        designHours: 0,
+  // Was a hand-built engine request with its own options block, which is how
+  // the card came to include an individual-packing charge the order itself
+  // never charged (CodSphere UAT V2 row 53).
+  const request: StorefrontQuoteRequest = {
+    description: product.name,
+    unitCostMinor: product.costMinor,
+    quantity: qty,
+    colourName: product.colorName,
+    mapPriceMinor: product.mapPriceMinor ?? null,
+    decorations: [
+      {
+        id: "card-estimate",
+        methodKey,
+        location: "front",
+        ...(methodKey === "screenPrint" ? { colours: 1 } : {}),
+        ...(methodKey === "embroidery"
+          ? { stitchCount: stitchCountForPreset("small") }
+          : {}),
       },
-    };
-  }
+    ],
+  };
 
   try {
-    const breakdown = calculateQuoteV2(inputAt(qty), pricingConfig);
-    const unitMinor = Math.round(breakdown.totals.totalMinor / qty);
-    const quantityBreaks = method.rateModel.qtyAnchors
-      .map((anchorQty) => {
-        try {
-          const b = calculateQuoteV2(inputAt(anchorQty), pricingConfig);
-          return { qty: anchorQty, unitMinor: Math.round(b.totals.totalMinor / anchorQty) };
-        } catch {
-          return null;
-        }
-      })
-      .filter((entry): entry is CardQuantityBreak => entry !== null);
+    const unitMinor = priceStorefrontQuote(pricingConfig, request).unitMinor;
+    const quantityBreaks = storefrontQuantityBreaks(
+      pricingConfig,
+      request,
+      method.rateModel.qtyAnchors,
+    );
     return {
       text: `from ${moneyFromMinor(unitMinor)}`,
       isEstimate: true,

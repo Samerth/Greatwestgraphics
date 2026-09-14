@@ -99,6 +99,47 @@ export const RequestContextSchema = z.object({
 });
 export type RequestContext = z.infer<typeof RequestContextSchema>;
 
+/**
+ * The URL segment for a brand page: "Bella+Canvas" -> "bella-canvas",
+ * "The North Face" -> "the-north-face". Lives here so the API (which matches
+ * a requested slug against live brand names) and the web tier (which builds
+ * the links) cannot disagree on how a name becomes a slug.
+ */
+export function brandSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** One brand as the storefront lists it - the brands index and the header. */
+export const BrandSummarySchema = z.object({
+  name: z.string(),
+  slug: z.string(),
+  logoUrl: z.string().nullable(),
+  /** Distinct styles with at least one storefront-visible colourway. */
+  styleCount: z.number().int().nonnegative(),
+});
+export type BrandSummary = z.infer<typeof BrandSummarySchema>;
+
+/** A category as seen from inside one brand: how many of that brand's
+ * styles it holds, and a photo of one of them for the tile. */
+export const BrandCategorySchema = z.object({
+  id: CanonicalIdSchema,
+  name: z.string(),
+  slug: z.string(),
+  parentId: CanonicalIdSchema.nullable(),
+  styleCount: z.number().int().nonnegative(),
+  imageUrl: z.string().nullable(),
+});
+export type BrandCategory = z.infer<typeof BrandCategorySchema>;
+
+/** Everything the brand landing page needs in one call. */
+export const BrandOverviewSchema = BrandSummarySchema.extend({
+  categories: z.array(BrandCategorySchema),
+});
+export type BrandOverview = z.infer<typeof BrandOverviewSchema>;
+
 export const CommerceHeaders = {
   tenantId: "x-tenant-id",
   accountId: "x-account-id",
@@ -418,11 +459,49 @@ export const PostalAddressSchema = z.object({
 });
 export type PostalAddress = z.infer<typeof PostalAddressSchema>;
 
+/**
+ * Production turnaround, which is deliberately not a delivery method
+ * (CodSphere UAT V2 row 50: "This should be completely separate from
+ * shipping/pickup").
+ *
+ * A rush is a *request*, never a priced option: `requestedDate` is the date
+ * the customer asked for, and no fee is calculated at checkout. Staff confirm
+ * both the date and any charge afterwards, which is why there is no amount on
+ * this shape at all — there is nothing for a stale client to send.
+ */
+export const TurnaroundSnapshotSchema = z
+  .object({
+    kind: z.enum(["standard", "rush"]),
+    /** ISO `YYYY-MM-DD`. Present only on a rush request. */
+    requestedDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected an ISO date (YYYY-MM-DD)")
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === "rush" && !value.requestedDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["requestedDate"],
+        message: "A rush request needs the date the order is needed by.",
+      });
+    }
+  });
+export type TurnaroundSnapshot = z.infer<typeof TurnaroundSnapshotSchema>;
+
 export const FulfillmentSnapshotSchema = z
   .object({
+    /**
+     * Delivery only. `priority` and `rush` are turnaround choices that used to
+     * be mixed in here; the checkout now offers `standard` (ship) or `pickup`
+     * and asks about turnaround separately (row 49). Both legacy values stay
+     * in the enum so jobs submitted before that change still parse.
+     */
     method: z.enum(["standard", "priority", "rush", "pickup"]),
     address: PostalAddressSchema.optional(),
     deliveryNotes: z.string().max(1_000).optional(),
+    /** Optional so every job written before row 50 still validates. */
+    turnaround: TurnaroundSnapshotSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.method !== "pickup" && !value.address) {

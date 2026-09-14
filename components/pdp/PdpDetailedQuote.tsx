@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type {
-  PricingConfigV2,
-  QuoteDecorationLine,
-  QuoteInputV2,
-} from "@gwg/contracts";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
+import {
+  priceStorefrontQuote,
+  type StorefrontQuoteRequest,
+} from "@/lib/commerce/storefront-quote";
 import { Button } from "@/components/shared/Button";
 import { InfoNote } from "@/components/shared/InfoNote";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -180,63 +179,57 @@ export function PdpDetailedQuote({
     setBrowsingQty(clamped);
   }
 
-  function decorationLinesFor(quantity: number): QuoteDecorationLine[] {
-    return rows.map((row) => {
-      const method = methods.find((m) => m.key === row.methodKey);
-      const fields = methodVariableInputs(method);
-      return {
-        id: row.id,
-        garmentId: "g1",
-        methodKey: row.methodKey,
-        location: row.location,
-        logoGroup: "",
-        colours: fields.colours
-          ? row.colours ?? colourOptions(method)[0] ?? 1
-          : undefined,
-        variableValue: fields.stitches
-          ? stitchCountForPreset(row.stitchPreset ?? "medium")
-          : undefined,
-        optionKey: fields.option
-          ? row.optionKey ?? defaultOptionKey(method)
-          : undefined,
-        isOversized:
-         fields.stitches && row.stitchPreset === "oversized",
-
-        artwork: { isRepeat: false, verifiedByStaff: false },
-      };
-    });
-  }
-
-  function quoteInputAt(quantity: number): QuoteInputV2 | null {
+  /**
+   * One request per estimate, built by the same helper the catalogue card,
+   * the "estimated from" headline and the Input Quantity step all use.
+   *
+   * This used to assemble a `QuoteInputV2` by hand with its own options
+   * block, which is how the page came to quote an individual-packing charge
+   * the order never applied — $75 on a hundred pieces (UAT V2 row 53). Row
+   * ids are passed explicitly so two prints on the same location stay
+   * separately attributable in the breakdown.
+   */
+  function quoteRequest(quantity: number): StorefrontQuoteRequest | null {
     if (!selectedVariant?.costMinor) return null;
     return {
-      garments: [
-        {
-          id: "g1",
-          description: name,
-          unitCostMinor: selectedVariant.costMinor,
-          quantity,
-          colourName: color,
-          mapPriceMinor: selectedVariant.mapPriceMinor ?? undefined,
-        },
-      ],
-      decorations: decorationLinesFor(quantity),
-      options: {
-        rush: false,
-        includePacking: true,
-        namesNumbers: false,
-        shippingCostMinor: 0,
-        designHours: 0,
-      },
+      description: name,
+      unitCostMinor: selectedVariant.costMinor,
+      quantity,
+      colourName: color,
+      mapPriceMinor: selectedVariant.mapPriceMinor ?? null,
+      decorations: rows.map((row) => {
+        const method = methods.find((m) => m.key === row.methodKey);
+        const fields = methodVariableInputs(method);
+        return {
+          id: row.id,
+          methodKey: row.methodKey,
+          location: row.location,
+          ...(fields.colours
+            ? { colours: row.colours ?? colourOptions(method)[0] ?? 1 }
+            : {}),
+          ...(fields.stitches
+            ? {
+                stitchCount: stitchCountForPreset(row.stitchPreset ?? "medium"),
+                isOversized: row.stitchPreset === "oversized",
+              }
+            : {}),
+          ...(fields.option
+            ? { optionKey: row.optionKey ?? defaultOptionKey(method) }
+            : {}),
+        };
+      }),
     };
   }
 
   const result = useMemo(() => {
     if (!pricingConfig) return null;
-    const input = quoteInputAt(qty);
-    if (!input) return null;
+    const request = quoteRequest(qty);
+    if (!request) return null;
     try {
-      return { breakdown: calculateQuoteV2(input, pricingConfig), error: null };
+      return {
+        breakdown: priceStorefrontQuote(pricingConfig, request).breakdown,
+        error: null,
+      };
     } catch (error) {
       return {
         breakdown: null,
@@ -271,11 +264,13 @@ export function PdpDetailedQuote({
     return [...anchors]
       .sort((a, b) => a - b)
       .map((anchorQty) => {
-        const input = quoteInputAt(anchorQty);
-        if (!input) return null;
+        const request = quoteRequest(anchorQty);
+        if (!request) return null;
         try {
-          const b = calculateQuoteV2(input, pricingConfig);
-          return { qty: anchorQty, unitMinor: b.totals.totalMinor / anchorQty };
+          return {
+            qty: anchorQty,
+            unitMinor: priceStorefrontQuote(pricingConfig, request).unitMinor,
+          };
         } catch {
           return null;
         }

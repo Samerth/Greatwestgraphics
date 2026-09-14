@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 import { ArrowRight } from "lucide-react";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { Container } from "@/components/shared/Container";
@@ -19,7 +19,7 @@ import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
  * Mirrors the mockup's "Best sellers, ready to customize" section, right
  * after the category tiles. Sourced from `isBestSeller` — the same real,
  * admin-curated flag the header's "Best Sellers" nav link and
- * /products?category=best-sellers already use (UAT: "Best Seller products
+ * /best-sellers already use (UAT: "Best Seller products
  * should be manageable through the existing product/category administration
  * functionality; an automated sales-ranking algorithm is not required"), not
  * an invented "popular" ranking.
@@ -43,7 +43,15 @@ export function BestSellers({
   products: StorefrontCatalogProduct[];
   pricingConfig: PricingConfigV2 | null;
 }) {
-  const items = products.filter((p) => p.isBestSeller && p.available).slice(0, 4);
+  // The caller now queries the Best Sellers category directly, so this is a
+  // safety net rather than the selection itself — it used to filter a general
+  // page of 120 products, which meant a best seller further down the
+  // catalogue never reached the homepage at all.
+  const curated = products.filter((product) => product.isBestSeller);
+  const inStock = curated.filter((product) => product.available);
+  // Prefer in-stock, but never show an empty section just because the first
+  // few curated products happen to be out of stock.
+  const items = (inStock.length > 0 ? inStock : curated).slice(0, 4);
   if (items.length === 0) return null;
 
   return (
@@ -59,7 +67,7 @@ export function BestSellers({
             </h2>
           </div>
           <Link
-            href="/products?category=best-sellers"
+            href="/best-sellers"
             className="group inline-flex items-center gap-1.5 whitespace-nowrap font-bold text-sm text-accent shrink-0"
           >
             View all best sellers
@@ -107,7 +115,7 @@ function BestSellerCard({
     <article className="group border border-border rounded-lg bg-bg-raised overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-card-hover">
       <Link href={href} className="relative block aspect-[300/220] bg-bg-raised">
         {imageUrl ? (
-          <Image
+          <CatalogImage
             src={imageUrl}
             alt={
               activeSwatch

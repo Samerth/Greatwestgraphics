@@ -8,8 +8,18 @@ import { Pagination } from "@/components/products/Pagination";
 import { CatalogUnavailable } from "@/components/shared/CatalogUnavailable";
 //import { cn } from "@/lib/utils/cn";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
-import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
+import {
+  loadStorefrontBrand,
+  loadStorefrontCatalog,
+  loadStorefrontCategories,
+} from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
+import { brandSlug } from "@gwg/contracts";
+import {
+  brandCategoryLabel,
+  brandHeading,
+  brandPageHref,
+} from "@/lib/commerce/brand-page";
 
 
 export const dynamic = "force-dynamic";
@@ -17,9 +27,30 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; brand?: string | string[] }>;
 }): Promise<Metadata> {
-  const { category } = await searchParams;
+  const { category, brand } = await searchParams;
+  // A single-brand listing is that brand's catalogue, and is titled as such
+  // - "Custom Gildan", or "Gildan T-Shirts" when a category is set too.
+  const brandName = singleBrand(brand);
+  if (brandName) {
+    const [result, categories] = await Promise.all([
+      loadStorefrontBrand(brandSlug(brandName)),
+      category ? loadStorefrontCategories(false) : Promise.resolve([]),
+    ]);
+    if (result.kind === "found") {
+      const match = category
+        ? categories.find((c) => c.slug === category.toLowerCase())
+        : undefined;
+      const parent = match?.parentId
+        ? categories.find((c) => c.id === match.parentId)
+        : undefined;
+      const title = match
+        ? `${brandCategoryLabel(result.brand, match, parent)} — Custom Decorated`
+        : `${brandHeading(result.brand)} — Custom Decorated`;
+      return { title, alternates: { canonical: brandPageHref(result.brand) } };
+    }
+  }
   if (!category) {
     return {
       title: "Full Catalogue",
@@ -47,6 +78,14 @@ export async function generateMetadata({
 }
 
 const PAGE_SIZE = 60;
+
+/** The brand a listing is "of", when exactly one is selected. Two brands
+ * ticked is a comparison, not a brand page, and stays the plain catalogue. */
+function singleBrand(brand: string | string[] | undefined): string | null {
+  const list = brand ? (Array.isArray(brand) ? brand : [brand]) : [];
+  const trimmed = list.map((b) => b.trim()).filter(Boolean);
+  return trimmed.length === 1 ? trimmed[0]! : null;
+}
 
 /** The catalogue is the widest surface on the site: a 280px filter rail plus
  * a product grid. The default container caps out too early and left the grid
@@ -77,7 +116,11 @@ export default async function ProductsPage({
   const brands = brand ? (Array.isArray(brand) ? brand : [brand]) : undefined;
   const priceMinMinor = priceMin ? Number(priceMin) : undefined;
   const priceMaxMinor = priceMax ? Number(priceMax) : undefined;
-  const [catalog, pricingConfig] = await Promise.all([
+  // One brand selected: this is that brand's listing (UAT V2 row 62, second
+  // pass), so it is headed by the brand and its sidebar shows the brand's own
+  // categories with counts rather than the whole taxonomy.
+  const brandName = singleBrand(brand);
+  const [catalog, pricingConfig, brandResult] = await Promise.all([
     loadStorefrontCatalog({
       search,
       categorySlug: category,
@@ -91,7 +134,9 @@ export default async function ProductsPage({
     // print, embroidery for hats) at the customer's browsing quantity,
     // computed client-side without a round trip per card.
     loadPublishedPricingV2(),
+    brandName ? loadStorefrontBrand(brandSlug(brandName)) : Promise.resolve(null),
   ]);
+  const brandScope = brandResult?.kind === "found" ? brandResult.brand : null;
   // "db" and "empty" are both successful responses — a category with no
   // synced inventory is a real answer and gets a real empty state. Only
   // "error" means we could not reach the catalogue at all.
@@ -114,8 +159,14 @@ export default async function ProductsPage({
   // used rather than `catalog.categories`, which only carries the ones that
   // currently have stock — an empty category still deserves its real name.
   const allCategories = category ? await loadStorefrontCategories(false) : [];
-  const heading = category
-    ? (allCategories.find((c) => c.slug === category.toLowerCase())?.name ??
+  const activeCategory = category
+    ? allCategories.find((c) => c.slug === category.toLowerCase())
+    : undefined;
+  const activeParent = activeCategory?.parentId
+    ? allCategories.find((c) => c.id === activeCategory.parentId)
+    : undefined;
+  const categoryHeading = category
+    ? (activeCategory?.name ??
       // Unknown slug, or the category list itself is unreachable. The listing
       // below is empty or unavailable either way, so show the slug readably
       // rather than pretending the filter was the whole catalogue.
@@ -127,14 +178,36 @@ export default async function ProductsPage({
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(" "))
     : "Shop All Products";
+  const heading = brandScope
+    ? activeCategory
+      ? brandCategoryLabel(brandScope, activeCategory, activeParent)
+      : brandHeading(brandScope)
+    : categoryHeading;
 
   return (
     <>
       <section className="pt-sp-6 pb-sp-5 border-b border-border bg-bg-raised">
         <Container className={SHOP_SHELL}>
           <div className="text-[13px] text-text-tertiary mb-sp-3">
-            Home /{" "}
-            {category ? (
+            <Link href="/" className="hover:text-accent">
+              Home
+            </Link>{" "}
+            /{" "}
+            {brandScope ? (
+              <>
+                <Link href="/brands" className="hover:text-accent">
+                  Brands
+                </Link>{" "}
+                /{" "}
+                <Link href={brandPageHref(brandScope)} className="hover:text-accent">
+                  {brandScope.name}
+                </Link>{" "}
+                /{" "}
+                <b className="text-text-primary">
+                  {activeCategory ? categoryHeading : `All ${brandScope.name}`}
+                </b>
+              </>
+            ) : category ? (
               <>
                 <Link href="/products" className="hover:text-accent">
                   Shop All Products
@@ -185,6 +258,7 @@ export default async function ProductsPage({
                 activePriceMaxMinor={priceMaxMinor}
                 activeSearch={search ?? null}
                 pricingConfig={pricingConfig}
+                brandScope={brandScope}
               />
 
               <Pagination

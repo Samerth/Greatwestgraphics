@@ -53,22 +53,120 @@ export type PaymentValues = z.infer<typeof paymentSchema>;
 
 export type DeliveryKey = "standard" | "priority" | "rush" | "pickup";
 
-// Ported 1:1 from DELIVERY_FEES in the original script.js
-export const DELIVERY_FEES: Record<DeliveryKey, number> = {
-  standard: 0,
-  priority: 28,
-  rush: 149,
-  pickup: 0,
-};
+/*
+ * A `DELIVERY_FEES` map lived here, charging $28 for "Priority Line" and $149
+ * for "Rush 48-Hour". Both were production speeds sold as delivery methods,
+ * which row 49 removed, and row 50 forbids pricing a rush at checkout at all
+ * — so there is no fee table left to keep. `priority` and `rush` survive on
+ * `DeliveryKey` only so orders placed before the change still read back.
+ */
+
+/** Free shipping starts here, before tax. Confirmed by the client on 13
+ *  September 2026: "Free shipping over $300 across Canada." */
+export const FREE_SHIPPING_THRESHOLD = 300;
+
+export const FREE_SHIPPING_BANNER = `FREE SHIPPING ON ORDERS $${FREE_SHIPPING_THRESHOLD}+`;
 
 export const DELIVERY_OPTIONS: {
   key: DeliveryKey;
   name: string;
   eta: string;
-  badge?: string;
+  detail: string;
+  price: string;
 }[] = [
-  { key: "standard", name: "Standard Studio", eta: "5–7 business days" },
-  { key: "priority", name: "Priority Line", eta: "3–4 business days", badge: "Popular" },
-  { key: "rush", name: "Rush 48-Hour", eta: "Ready in 2 business days" },
-  { key: "pickup", name: "Studio Pickup", eta: "Pick up at our Vancouver studio" },
+  {
+    key: "standard",
+    name: "Ship My Order",
+    eta: "Canada-wide shipping",
+    detail: `Free shipping on orders $${FREE_SHIPPING_THRESHOLD}+ before tax. Under $${FREE_SHIPPING_THRESHOLD}, shipping is calculated and confirmed after we review your order.`,
+    price: "",
+  },
+  {
+    key: "pickup",
+    name: "Free Vancouver Pickup",
+    eta: "Collect from our Vancouver studio",
+    detail:
+      "We will let you know as soon as your order is ready to collect. Pickup address is confirmed with your proof.",
+    price: "FREE",
+  },
 ];
+
+/**
+ * What the order summary should say on the shipping line.
+ *
+ * Under the threshold it must read "To be confirmed" and must *not* show $0 or
+ * Free — the client was explicit about that, because showing a zero would read
+ * as a promise we have not made and cannot keep on a small order.
+ */
+export type ShippingState =
+  | { kind: "pickup"; label: string; includedInTotal: true }
+  | { kind: "free"; label: string; includedInTotal: true }
+  | { kind: "to-be-confirmed"; label: string; includedInTotal: false };
+
+export function shippingStateFor(
+  deliveryKey: DeliveryKey,
+  subtotalBeforeTax: number,
+): ShippingState {
+  if (deliveryKey === "pickup") {
+    return { kind: "pickup", label: "FREE", includedInTotal: true };
+  }
+  if (subtotalBeforeTax >= FREE_SHIPPING_THRESHOLD) {
+    return { kind: "free", label: "FREE", includedInTotal: true };
+  }
+  // Nothing is added to the estimate until GWG has quoted it.
+  return {
+    kind: "to-be-confirmed",
+    label: "To be confirmed",
+    includedInTotal: false,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * Turnaround (CodSphere UAT V2 row 50)
+ * ---------------------------------------------------------------------- */
+
+export type TurnaroundKind = "standard" | "rush";
+
+export const STANDARD_TURNAROUND_LABEL = "Standard Production — 5–7 Business Days";
+export const STANDARD_TURNAROUND_NOTE = "No additional charge.";
+export const RUSH_TURNAROUND_LABEL = "Request Rush Production";
+export const RUSH_DATE_PROMPT = "When do you need your order?";
+
+/** Verbatim from the client. Reproduced exactly because it sets expectations
+ *  about a date we have not agreed to yet. */
+export const RUSH_DISCLAIMER =
+  "Rush availability and pricing depend on your order requirements and our current production schedule. A Great West Graphics customer service representative will contact you to confirm the requested date and any applicable rush charges. Selecting a date does not guarantee completion by that date.";
+
+/** Shown to staff, and to the customer on their own order. */
+export const RUSH_FEE_LABEL = "To Be Confirmed";
+export const RUSH_FLAG_LABEL = "RUSH REQUEST";
+
+/** Earliest date the picker accepts — tomorrow, in the browser's timezone.
+ *  A rush for today is not a production request, it is a typo. */
+export function earliestRushDate(today = new Date()): string {
+  const next = new Date(today);
+  next.setDate(next.getDate() + 1);
+  return toIsoDate(next);
+}
+
+export function toIsoDate(value: Date): string {
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
+/** `2026-09-22` → `Sept 22, 2026`, for summaries and the admin job page. */
+export function formatRequestedDate(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const [, year, month, day] = match;
+  // Built from the parts rather than `new Date(iso)`, which parses a bare
+  // ISO date as UTC midnight and can render as the previous day west of
+  // Greenwich — which is exactly where Vancouver is.
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return date.toLocaleDateString("en-CA", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}

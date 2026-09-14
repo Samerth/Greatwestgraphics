@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { PricingConfigV2, QuoteInputV2 } from "@gwg/contracts";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import type { PricingConfigV2 } from "@gwg/contracts";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import {
   defaultOptionKey,
@@ -12,6 +11,7 @@ import {
 } from "@/lib/utils/shop-quote";
 import type { DbVariantOption } from "@/components/pdp/DbProductActions";
 import { usePdpLiveEstimate } from "@/lib/store/pdp-live-estimate";
+import { priceStorefrontQuote } from "@/lib/commerce/storefront-quote";
 import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
 
 export function PdpStartingPrice({
@@ -56,47 +56,32 @@ export function PdpStartingPrice({
     const fields = methodVariableInputs(method);
     const anchorQty = method.rateModel.qtyAnchors[0] ?? 48;
 
-    const input: QuoteInputV2 = {
-      garments: [
-        {
-          id: "g1",
-          description: name,
-          unitCostMinor: firstInStock.costMinor,
-          quantity: anchorQty,
-          colourName: color,
-          mapPriceMinor: firstInStock.mapPriceMinor ?? undefined,
-        },
-      ],
-      decorations: [
-        {
-          id: "starting-price",
-          garmentId: "g1",
-          methodKey: defaultMethodKey,
-          location: pricingConfig.storefront?.defaultLocation ?? "front",
-          logoGroup: "",
-          colours: fields.colours
-            ? pricingConfig.storefront?.defaultColours ?? 1
-            : undefined,
-          variableValue: fields.stitches
-            ? stitchCountForPreset("medium")
-            : undefined,
-          optionKey: fields.option ? defaultOptionKey(method) : undefined,
-          isOversized: false,
-          artwork: { isRepeat: false, verifiedByStaff: false },
-        },
-      ],
-      options: {
-        rush: false,
-        includePacking: true,
-        namesNumbers: false,
-        shippingCostMinor: 0,
-        designHours: 0,
-      },
-    };
-
+    // Shares one request builder with the calculator below and with the
+    // catalogue card, so this headline cannot quote on different assumptions
+    // from the price the customer is about to see (UAT V2 row 53).
     try {
-      const breakdown = calculateQuoteV2(input, pricingConfig);
-      return [{ qty: anchorQty, unitMinor: Math.round(breakdown.totals.totalMinor / anchorQty) }];
+      const { unitMinor } = priceStorefrontQuote(pricingConfig, {
+        description: name,
+        unitCostMinor: firstInStock.costMinor,
+        quantity: anchorQty,
+        colourName: color,
+        mapPriceMinor: firstInStock.mapPriceMinor ?? null,
+        decorations: [
+          {
+            id: "starting-price",
+            methodKey: defaultMethodKey,
+            location: pricingConfig.storefront?.defaultLocation ?? "front",
+            ...(fields.colours
+              ? { colours: pricingConfig.storefront?.defaultColours ?? 1 }
+              : {}),
+            ...(fields.stitches
+              ? { stitchCount: stitchCountForPreset("medium") }
+              : {}),
+            ...(fields.option ? { optionKey: defaultOptionKey(method) } : {}),
+          },
+        ],
+      });
+      return [{ qty: anchorQty, unitMinor }];
     } catch {
       return null;
     }

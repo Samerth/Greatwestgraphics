@@ -845,7 +845,31 @@ export function buildApp(input: {
 
   app.get("/v1/catalog/brands", async (request) => {
     const auth = await input.auth.resolve(request);
-    return catalogService.listBrands(auth.tenantId);
+    // `detail=true` is the brands index page: logo and style count per
+    // brand. The bare call stays the names-only list the header renders.
+    const detail = (request.query as { detail?: string }).detail === "true";
+    return detail
+      ? catalogService.listBrandSummaries(auth.tenantId)
+      : catalogService.listBrands(auth.tenantId);
+  });
+
+  app.get("/v1/catalog/brands/:slug", async (request) => {
+    const auth = await input.auth.resolve(request);
+    const slug = z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9-]+$/)
+      .parse((request.params as { slug?: string }).slug);
+    const overview = await catalogService.brandOverview(
+      auth.tenantId,
+      slug,
+      auth.storeId,
+    );
+    if (!overview) {
+      throw new ResourceNotFoundError(`No brand at "${slug}"`);
+    }
+    return overview;
   });
 
   app.get("/v1/catalog/products/:productId", async (request) => {
@@ -1977,12 +2001,32 @@ export function buildApp(input: {
     } else {
       const authFailed = databaseAuthMessage(error);
       const drift = schemaDriftMessage(error);
+      // Fastify's own request errors — an empty JSON body, an unsupported
+      // media type, a payload that is too large — arrive carrying a 4xx
+      // `statusCode` and a `code` of their own. They used to fall through
+      // to the 500 below, so a malformed request was reported as an
+      // unexplained server fault: a body-less DELETE sent with a JSON
+      // content-type came back as "An unexpected error occurred" (15 Sep).
+      const fastifyStatus = (error as { statusCode?: unknown }).statusCode;
+      const fastifyCode = (error as { code?: unknown }).code;
+      const fastifyMessage = (error as { message?: unknown }).message;
       if (authFailed) {
         code = "DATABASE_AUTH";
         message = authFailed;
       } else if (drift) {
         code = "SCHEMA_DRIFT";
         message = drift;
+      } else if (
+        typeof fastifyStatus === "number" &&
+        fastifyStatus >= 400 &&
+        fastifyStatus < 500
+      ) {
+        statusCode = fastifyStatus;
+        code = typeof fastifyCode === "string" ? fastifyCode : "BAD_REQUEST";
+        message =
+          typeof fastifyMessage === "string" && fastifyMessage
+            ? fastifyMessage
+            : "The request could not be read.";
       }
     }
 

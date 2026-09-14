@@ -271,8 +271,11 @@ function ShopTeaser({ page }: { page: LandingPage }) {
               Get a quote
             </ButtonLink>
           ) : null}
-          <ButtonLink href="/design" variant="secondary">
-            Design studio
+          {/* Was "Design studio" into the bare studio. The studio is reached
+              from a product (UAT V2 rows 57 and 64), so the second button
+              leads to the most-ordered garments instead. */}
+          <ButtonLink href="/best-sellers" variant="secondary">
+            Best sellers
           </ButtonLink>
         </div>
       </Container>

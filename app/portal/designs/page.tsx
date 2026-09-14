@@ -13,14 +13,20 @@ import { deleteDesignAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function MyDesignsPage() {
+export default async function MyDesignsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string }>;
+}) {
   const session = await getCustomerSession();
   if (!session) {
     redirect("/account?next=/portal/designs");
   }
 
   let designs: Record<string, unknown>[] = [];
-  let error: string | undefined;
+  // A failed delete comes back here with its reason, rather than taking the
+  // whole page down (see deleteDesignAction).
+  let error: string | undefined = (await searchParams)?.error || undefined;
   try {
     designs = await (await createCommerceClient()).listDesignProjects();
   } catch (caught) {

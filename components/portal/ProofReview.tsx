@@ -3,6 +3,11 @@
 import { useActionState, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import {
+  PROOF_APPROVAL_WARNING,
+  formatPortalDate,
+  formatPortalDateTime,
+} from "@/lib/commerce/portal-progress";
+import {
   decideProofAction,
   type ProofDecisionState,
 } from "@/app/portal/jobs/actions";
@@ -16,6 +21,7 @@ export interface ProofForReview {
   decidedAt: string | null;
   decisionNote: string | null;
   awaitingDecisionFrom: string | null;
+  createdAt?: string | null;
 }
 
 function safeProofUrl(storageKey: string): string | null {
@@ -30,6 +36,11 @@ function safeProofUrl(storageKey: string): string | null {
   }
 }
 
+/**
+ * The proof itself, given the room the client asked for: "The current proof
+ * area is too small. The proof should have a large preview, ideally using
+ * most of the available content width." (UAT V2 row 55, point 4.)
+ */
 function ProofAsset({ proof }: { proof: ProofForReview }) {
   const url = safeProofUrl(proof.storageKey);
   const [fileMissing, setFileMissing] = useState(false);
@@ -45,54 +56,92 @@ function ProofAsset({ proof }: { proof: ProofForReview }) {
     url.includes("/api/uploads/");
 
   return (
-    <div className="my-sp-3">
-      <a href={url} target="_blank" rel="noreferrer" className="inline-block">
-        {imageLike && (
-          /* eslint-disable-next-line @next/next/no-img-element */
+    <figure data-portal="proof-asset" className="m-0 my-sp-3">
+      {imageLike ? (
+        <a href={url} target="_blank" rel="noreferrer" className="block">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={url}
             alt={`Proof version ${proof.version}`}
-            className="max-h-80 max-w-full object-contain border border-border rounded-sm bg-white"
+            className="w-full max-h-[32rem] object-contain border border-border rounded-md bg-white"
             // Same message as a malformed URL — a 404'd file reads no
             // differently to the person reviewing it, and a broken-image
             // icon on a customer-facing proof review page is exactly the
             // kind of thing worth never showing (found during a live audit).
             onError={() => setFileMissing(true)}
           />
-        )}
-        <span className="block text-sm font-bold text-accent mt-1">
-          Open proof file ↗
+        </a>
+      ) : null}
+      <figcaption className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm text-text-secondary">
+          <b className="text-text-primary">Proof V{proof.version}</b>
+          {proof.createdAt
+            ? ` · Uploaded ${formatPortalDate(proof.createdAt)}`
+            : ""}
         </span>
-      </a>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm font-bold text-accent hover:underline"
+        >
+          View Full Proof ↗
+        </a>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * Point 5: "Once approved, don't continue showing it as an open action."
+ * The proof stays viewable; every control that implies a pending decision is
+ * gone.
+ */
+function ApprovedProof({ proof }: { proof: ProofForReview }) {
+  return (
+    <div
+      data-portal="proof-approved"
+      className="border-2 border-accent rounded-md p-sp-4 bg-accent-tint"
+    >
+      <p className="m-0 font-display font-bold text-lg text-accent">
+        ✓ PROOF APPROVED
+      </p>
+      {proof.decidedAt ? (
+        <p className="m-0 mt-1 text-sm text-text-secondary">
+          Approved {formatPortalDateTime(proof.decidedAt)}
+        </p>
+      ) : null}
+      <p className="m-0 mt-1 text-sm text-text-secondary">
+        This order has been released for production.
+      </p>
+      <ProofAsset proof={proof} />
+      {proof.decisionNote && (
+        <p className="text-sm text-text-secondary mt-sp-2 mb-0">
+          Your note: “{proof.decisionNote}”
+        </p>
+      )}
     </div>
   );
 }
 
-function DecidedProof({ proof }: { proof: ProofForReview }) {
-  const approved = proof.decision === "approved";
+function ChangesRequestedProof({ proof }: { proof: ProofForReview }) {
   return (
-    <div className="border border-border rounded-md p-sp-3">
+    <div className="border border-border rounded-md p-sp-4">
       <div className="flex flex-wrap items-center justify-between gap-sp-2">
-        <b>Proof v{proof.version}</b>
-        <span
-          className={`px-3 py-1 rounded-full text-sm font-bold ${
-            approved
-              ? "bg-accent-tint text-accent"
-              : "bg-fill-subtle-15 text-text-secondary"
-          }`}
-        >
-          {approved ? "Approved by you" : "Changes requested"}
+        <b>Proof V{proof.version}</b>
+        <span className="bg-fill-subtle-15 text-text-secondary px-3 py-1 rounded-full text-sm font-bold">
+          Changes requested
         </span>
       </div>
       <ProofAsset proof={proof} />
       {proof.decisionNote && (
         <p className="text-sm text-text-secondary mt-sp-2 mb-0">
-          “{proof.decisionNote}”
+          You asked for: “{proof.decisionNote}”
         </p>
       )}
       {proof.decidedAt && (
         <p className="text-xs text-text-tertiary mt-1 mb-0">
-          {new Date(proof.decidedAt).toLocaleString("en-CA")}
+          {formatPortalDateTime(proof.decidedAt)}
         </p>
       )}
     </div>
@@ -101,9 +150,9 @@ function DecidedProof({ proof }: { proof: ProofForReview }) {
 
 function PendingWithStaff({ proof }: { proof: ProofForReview }) {
   return (
-    <div className="border border-border rounded-md p-sp-3">
+    <div className="border border-border rounded-md p-sp-4">
       <div className="flex flex-wrap items-center justify-between gap-sp-2">
-        <b>Proof v{proof.version}</b>
+        <b>Proof V{proof.version}</b>
         <span className="bg-fill-subtle-15 text-text-secondary px-3 py-1 rounded-full text-sm font-bold">
           With our team
         </span>
@@ -132,16 +181,20 @@ function ProofDecisionForm({
   >(decideProofAction.bind(null, jobId, proof.id), {});
 
   return (
-    <form action={formAction} className="border border-border rounded-md p-sp-3">
-      <div className="flex flex-wrap items-center justify-between gap-sp-2 mb-sp-3">
-        <b>Proof v{proof.version}</b>
-        <span className="bg-accent-tint text-accent px-3 py-1 rounded-full text-sm font-bold">
+    <form
+      action={formAction}
+      data-portal="proof-decision"
+      className="border-2 border-accent rounded-md p-sp-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-sp-2">
+        <b className="font-display text-lg">Proof V{proof.version}</b>
+        <span className="bg-accent text-white px-3 py-1 rounded-full text-sm font-bold">
           Awaiting your approval
         </span>
       </div>
 
       {proof.note && (
-        <p className="text-sm text-text-secondary mt-0 mb-sp-3">
+        <p className="text-sm text-text-secondary mt-sp-2 mb-0">
           Note from our team: {proof.note}
         </p>
       )}
@@ -151,17 +204,31 @@ function ProofDecisionForm({
         <legend className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
           Your response
         </legend>
-        <label className="flex items-center gap-2 text-sm mb-1">
+        <label className="flex items-start gap-2 text-sm mb-2 cursor-pointer">
           <input
             type="radio"
             name="decision"
             value="approved"
             checked={decision === "approved"}
             onChange={() => setDecision("approved")}
+            className="mt-1"
           />
-          Approve this proof and move to production
+          <span>
+            <span className="font-semibold">
+              Approve this proof for production
+            </span>
+            {/* Sits with the control it qualifies, not in the small print at
+                the bottom — this is the sentence that makes an approval
+                mean something. */}
+            <span
+              data-portal="approval-warning"
+              className="block text-[12.5px] leading-snug text-text-tertiary mt-1"
+            >
+              {PROOF_APPROVAL_WARNING}
+            </span>
+          </span>
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input
             type="radio"
             name="decision"
@@ -169,28 +236,26 @@ function ProofDecisionForm({
             checked={decision === "changes_requested"}
             onChange={() => setDecision("changes_requested")}
           />
-          Request changes
+          <span className="font-semibold">Request changes</span>
         </label>
       </fieldset>
 
-      <label className="block text-sm mb-sp-3">
-        <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary block mb-1.5">
-          {decision === "changes_requested"
-            ? "What should we change?"
-            : "Anything to add? (optional)"}
-        </span>
-        <textarea
-          name="note"
-          rows={3}
-          required={decision === "changes_requested"}
-          className="w-full border border-border rounded-md p-2 text-sm"
-          placeholder={
-            decision === "changes_requested"
-              ? "e.g. Make the left-chest logo about 20% smaller"
-              : ""
-          }
-        />
-      </label>
+      {/* Only asked for when it is actually needed (point 4). An optional box
+          under an approval invites people to type instead of approving. */}
+      {decision === "changes_requested" && (
+        <label className="block text-sm mb-sp-3">
+          <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary block mb-1.5">
+            What should we change?
+          </span>
+          <textarea
+            name="note"
+            rows={3}
+            required
+            className="w-full border border-border rounded-md p-2 text-sm"
+            placeholder="e.g. Make the left-chest logo about 20% smaller"
+          />
+        </label>
+      )}
 
       {state.error && (
         <p role="alert" className="text-sm text-error mb-sp-3">
@@ -202,8 +267,8 @@ function ProofDecisionForm({
         {pending
           ? "Sending…"
           : decision === "approved"
-            ? "Approve proof"
-            : "Request changes"}
+            ? "APPROVE PROOF"
+            : "SUBMIT REVISION REQUEST"}
       </Button>
     </form>
   );
@@ -236,7 +301,13 @@ export function ProofReview({
         .sort((a, b) => b.version - a.version)
         .map((proof) => {
           const undecided = !proof.decision || proof.decision === "pending";
-          if (!undecided) return <DecidedProof key={proof.id} proof={proof} />;
+          if (!undecided) {
+            return proof.decision === "approved" ? (
+              <ApprovedProof key={proof.id} proof={proof} />
+            ) : (
+              <ChangesRequestedProof key={proof.id} proof={proof} />
+            );
+          }
           if (proof.awaitingDecisionFrom === "staff") {
             return <PendingWithStaff key={proof.id} proof={proof} />;
           }

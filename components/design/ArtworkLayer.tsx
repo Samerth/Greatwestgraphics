@@ -8,6 +8,9 @@ import type { PlacedArtwork } from "@gwg/contracts";
 
 export type { PlacedArtwork };
 
+/** How much of the artwork must stay on the canvas, in display pixels. */
+const KEEP_ON_CANVAS_PX = 24;
+
 export function ArtworkLayer({
   artwork,
   isSelected,
@@ -15,6 +18,7 @@ export function ArtworkLayer({
   onChange,
   onDragMove,
   maxSize = Infinity,
+  canvasSize,
 }: {
   artwork: PlacedArtwork;
   isSelected: boolean;
@@ -30,6 +34,9 @@ export function ArtworkLayer({
   /** Upper bound (display pixels) a resize handle can grow the artwork to —
    * keeps it from being dragged past the visible canvas. */
   maxSize?: number;
+  /** Canvas edge, in display pixels. Artwork is kept at least partly inside
+   * it while dragging and resizing. */
+  canvasSize?: number;
 }) {
   const [img] = useImage(artwork.src, "anonymous");
   const shapeRef = useRef<Konva.Group>(null);
@@ -55,6 +62,19 @@ export function ArtworkLayer({
         scaleY={artwork.scaleY}
         rotation={artwork.rotation}
         draggable
+        /* Keeps a graspable part of the artwork on the canvas. Without this
+           a logo could be dragged entirely off the stage, leaving nothing to
+           click and no way back but delete-and-redo (Pavin, 10 Sep). A
+           margin rather than a hard box, so artwork may still overhang the
+           edge — which is legitimate for a wrap-around print. */
+        dragBoundFunc={(pos) => {
+          if (!canvasSize) return pos;
+          const keep = KEEP_ON_CANVAS_PX;
+          return {
+            x: Math.min(Math.max(pos.x, -canvasSize + keep), canvasSize - keep),
+            y: Math.min(Math.max(pos.y, -canvasSize + keep), canvasSize - keep),
+          };
+        }}
         onClick={onSelect}
         onTap={onSelect}
         onDragMove={(event) =>
@@ -125,14 +145,32 @@ export function ArtworkLayer({
             "bottom-left",
             "bottom-right",
           ]}
-          boundBoxFunc={(oldBox, newBox) =>
-            newBox.width < 20 ||
-            newBox.height < 20 ||
-            newBox.width > maxSize ||
-            newBox.height > maxSize
-              ? oldBox
-              : newBox
-          }
+          /* Size was already capped here; position was not, so a corner
+             drag could grow a logo straight off the canvas even though its
+             dimensions were legal (Pavin, 10 Sep: "increasing the size of the
+             image gets it out of bound from the canvas"). Both are checked
+             now, and a rejected box returns the previous one so the shape
+             stops at the edge rather than snapping back. */
+          boundBoxFunc={(oldBox, newBox) => {
+            if (
+              newBox.width < 20 ||
+              newBox.height < 20 ||
+              newBox.width > maxSize ||
+              newBox.height > maxSize
+            ) {
+              return oldBox;
+            }
+            if (canvasSize) {
+              const keep = KEEP_ON_CANVAS_PX;
+              const offCanvas =
+                newBox.x > canvasSize - keep ||
+                newBox.y > canvasSize - keep ||
+                newBox.x + newBox.width < keep ||
+                newBox.y + newBox.height < keep;
+              if (offCanvas) return oldBox;
+            }
+            return newBox;
+          }}
         />
       )}
     </>

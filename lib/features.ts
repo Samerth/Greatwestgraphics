@@ -3,6 +3,20 @@
  * Flip a flag to restore the public UI without resurrecting deleted code.
  */
 export const SHOW_PUBLIC_QUOTE_CALCULATOR = false;
+/**
+ * Branded per-client storefronts — the team store / web store feature served
+ * at `/s/<slug>`.
+ *
+ * Off for the first deployment. UAT row 51 asks for the existing team store to
+ * be disabled in the interim, and row 52 replaces it with a different design
+ * altogether, so nothing customer-facing should reference it in the meantime.
+ *
+ * Every route, component, API handler and database table stays exactly where
+ * it is — this hides the feature, it does not remove it. Turning the flag back
+ * on restores the whole thing, which is what makes the rebuild in row 52 a
+ * decision rather than a salvage job.
+ */
+export const SHOW_TEAM_STORES = false;
 /** Experimental FLUX identity try-out — not print-ready. */
 export const SHOW_DESIGN_STUDIO_AI_CONCEPT = true;
 

@@ -8,20 +8,43 @@ export function resolveCategoryId(
   return categories.find((c) => c.slug.toLowerCase() === wanted)?.id;
 }
 
+/** The sidebar's "no category" sentinel — `navigate()` drops the query param. */
+export const ALL_CATEGORIES = "All";
+
 /**
- * Drop the currently-active subcategory from a sidebar filter list.
+ * Is this sidebar row the category currently being browsed?
  *
- * A shopper who has navigated into T-Shirts → Short Sleeve is already
- * filtered to that subcategory — showing "Short Sleeve" again as a checkbox
- * beside Heavyweight/Organic/etc. is redundant and reads as if it were just
- * another optional attribute (CodSphere UAT V2). Every other sibling filter
- * stays untouched.
+ * Slug casing is not consistent between the URL, the DB and the nav tree, so
+ * every comparison goes through here rather than `===`.
  */
-export function visibleChildCategories<T extends { slug: string }>(
-  children: T[],
+export function isCategoryActive(
+  slug: string,
   activeCategorySlug: string,
-): T[] {
+): boolean {
   const active = activeCategorySlug.trim().toLowerCase();
-  if (!active) return children;
-  return children.filter((c) => c.slug.toLowerCase() !== active);
+  if (!active) return false;
+  return slug.trim().toLowerCase() === active;
+}
+
+/**
+ * Where a sidebar checkbox should navigate when clicked.
+ *
+ * An earlier pass hid the active subcategory from its own sibling list, on
+ * the grounds that filtering to Short Sleeve and *also* offering Short Sleeve
+ * as a checkbox was redundant. In use that read as a bug — the shopper ticks
+ * "Heavyweight" and watches it vanish from the list, with no way to untick it
+ * (CodSphere UAT V2 row 66, reported against that very change). So the row now
+ * stays put and stays ticked, and clicking it again clears it.
+ *
+ * Clearing steps *up* to `parentSlug` rather than jumping to All, so leaving
+ * T-Shirts → Heavyweight lands on T-Shirts and keeps the shopper's place.
+ * Departments pass no parent and therefore clear to All.
+ */
+export function categoryToggleTarget(
+  slug: string,
+  activeCategorySlug: string,
+  parentSlug?: string,
+): string {
+  if (!isCategoryActive(slug, activeCategorySlug)) return slug;
+  return parentSlug ?? ALL_CATEGORIES;
 }

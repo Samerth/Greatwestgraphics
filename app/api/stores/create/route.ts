@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { getCustomerSession } from "@/lib/auth/session";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { OptionalLogoUrlSchema } from "@/lib/commerce/logo-url";
+import { SHOW_TEAM_STORES } from "@/lib/features";
 
 const BodySchema = z.object({
   accountName: z.string().min(1).max(200),
@@ -18,6 +19,13 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // The UI is hidden, but a hidden button is not a closed door — the
+  // endpoint has to refuse too, or a store can still be created by
+  // anyone who kept the request (row 51).
+  if (!SHOW_TEAM_STORES) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const session = await getCustomerSession();
   if (!session) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { headers } from "next/headers";
 import { loadCommerceWebEnvironment } from "./config";
+import { SHOW_TEAM_STORES } from "@/lib/features";
 import { STORE_COOKIE, STORE_SLUG_HEADER } from "./store-cookie";
 
 export type StoreContext = {
@@ -128,8 +129,16 @@ export const resolveStoreContext = cache(async (): Promise<StoreContext> => {
   // which store this deployment serves by default, not which one this visitor
   // asked for. Scoped to the pinned tenant because a slug is only unique
   // inside one.
-  const selected = await selectedStore(pinned?.tenantId);
-  if (selected) return selected;
+  //
+  // Skipped entirely while team stores are off (UAT row 51). This is the one
+  // place a branded store can enter a request, so gating it here means a
+  // stale cookie from before the flag flipped cannot resurrect the feature —
+  // no banner, no branding, no store-scoped catalogue. Every other surface is
+  // hidden too, but this is the one that has to hold.
+  if (SHOW_TEAM_STORES) {
+    const selected = await selectedStore(pinned?.tenantId);
+    if (selected) return selected;
+  }
 
   if (pinned) return pinned;
 

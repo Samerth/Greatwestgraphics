@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CatalogImage } from "@/components/shared/CatalogImage";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 export type PdpGalleryImage = {
@@ -22,7 +23,23 @@ export function PdpImageGallery({
   );
   const [active, setActive] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const current = usable[Math.min(active, Math.max(usable.length - 1, 0))];
+  // Clamped rather than used raw: switching colourway can shorten the list
+  // while `active` still points past the end.
+  const activeIndex = Math.min(active, Math.max(usable.length - 1, 0));
+  const current = usable[activeIndex];
+
+  /** Move by one, wrapping at both ends. Shared by the arrows and the
+   *  lightbox's keyboard handler so they can never disagree. */
+  const step = useCallback(
+    (delta: number) => {
+      setActive((prev) => {
+        const count = usable.length;
+        if (count === 0) return 0;
+        return (((prev + delta) % count) + count) % count;
+      });
+    },
+    [usable.length],
+  );
 
   // Esc closes the lightbox; left/right cycle through the other angles
   // without needing to close and reopen.
@@ -30,16 +47,12 @@ export function PdpImageGallery({
     if (!lightboxOpen) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") setLightboxOpen(false);
-      if (e.key === "ArrowRight") {
-        setActive((prev) => (prev + 1) % usable.length);
-      }
-      if (e.key === "ArrowLeft") {
-        setActive((prev) => (prev - 1 + usable.length) % usable.length);
-      }
+      if (e.key === "ArrowRight") step(1);
+      if (e.key === "ArrowLeft") step(-1);
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [lightboxOpen, usable.length]);
+  }, [lightboxOpen, step]);
 
   if (usable.length === 0) {
     return (
@@ -51,6 +64,10 @@ export function PdpImageGallery({
 
   return (
     <div className="space-y-sp-3">
+      {/* The main image is itself a button (click to enlarge), so the cycle
+          arrows sit beside it rather than inside it — a button nested in a
+          button is invalid and the inner one stops receiving clicks. */}
+      <div className="relative">
       <button
         type="button"
         onClick={() => setLightboxOpen(true)}
@@ -58,7 +75,7 @@ export function PdpImageGallery({
         aria-label={`View full-screen image — ${alt}, ${current.label}`}
       >
         <div className="absolute inset-6 sm:inset-10">
-          <Image
+          <CatalogImage
             src={current.url}
             alt={`${alt} — ${current.label}`}
             fill
@@ -76,6 +93,37 @@ export function PdpImageGallery({
         </span>
       </button>
 
+      {/* Cycle arrows on the image itself. The thumbnails below already
+          switch views, but they only work if the shopper realises they are
+          controls — arrows are the pattern people expect on a product photo
+          (Pavin, 10 Sep: "product images to have arrow to cycle through
+          photos"). Always visible rather than hover-only, so they exist on
+          touch devices too. */}
+      {usable.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label="Previous image"
+            className="absolute left-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full border border-border bg-bg/90 text-text-primary shadow-sm hover:bg-bg hover:border-accent hover:text-accent transition-colors"
+          >
+            <ChevronLeft size={18} strokeWidth={2.25} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            aria-label="Next image"
+            className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full border border-border bg-bg/90 text-text-primary shadow-sm hover:bg-bg hover:border-accent hover:text-accent transition-colors"
+          >
+            <ChevronRight size={18} strokeWidth={2.25} aria-hidden />
+          </button>
+          <span className="absolute bottom-3 left-3 text-[11px] font-bold px-2.5 py-1 rounded-sm bg-bg/90 border border-border tabular-nums">
+            {activeIndex + 1} / {usable.length}
+          </span>
+        </>
+      )}
+      </div>
+
       {usable.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {usable.map((image, index) => (
@@ -85,14 +133,14 @@ export function PdpImageGallery({
               onClick={() => setActive(index)}
               className={cn(
                 "relative w-20 h-20 rounded-md overflow-hidden border-2 bg-bg-raised transition-colors",
-                index === active
+                index === activeIndex
                   ? "border-accent"
                   : "border-border hover:border-text-tertiary",
               )}
               aria-label={`Show ${image.label} view`}
-              aria-pressed={index === active}
+              aria-pressed={index === activeIndex}
             >
-              <Image
+              <CatalogImage
                 src={image.url}
                 alt=""
                 fill
@@ -127,7 +175,7 @@ export function PdpImageGallery({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActive((prev) => (prev - 1 + usable.length) % usable.length);
+                  step(-1);
                 }}
                 className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-4xl leading-none z-10 px-2"
                 aria-label="Previous image"
@@ -138,7 +186,7 @@ export function PdpImageGallery({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActive((prev) => (prev + 1) % usable.length);
+                  step(1);
                 }}
                 className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-4xl leading-none z-10 px-2"
                 aria-label="Next image"
@@ -152,7 +200,7 @@ export function PdpImageGallery({
             className="relative w-full h-full max-w-5xl max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <Image
+            <CatalogImage
               src={current.url}
               alt={`${alt} — ${current.label}`}
               fill

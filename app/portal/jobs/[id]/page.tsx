@@ -13,6 +13,13 @@ import { ChangesReply } from "@/components/portal/ChangesReply";
 import { InvoiceRequest } from "@/components/portal/InvoiceRequest";
 import { PayNowButton } from "@/components/portal/PayNowButton";
 import { OrderHandoff } from "@/components/portal/OrderHandoff";
+import { PortalSubmittedItems } from "@/components/portal/PortalSubmittedItems";
+import {
+  PortalNextAction,
+  PortalOrderHeader,
+  PortalTimeline,
+} from "@/components/portal/PortalProgress";
+import { portalNextAction } from "@/lib/commerce/portal-progress";
 import { PaymentConfirmationPoller } from "@/components/portal/PaymentConfirmationPoller";
 
 export const dynamic = "force-dynamic";
@@ -94,6 +101,27 @@ export default async function JobDetailPage({
     ] as const
   ).includes(job.status as never);
 
+  // Point 2: derived from what is actually outstanding, not from the status
+  // label — a job can read "Submitted" and still have a proof in front of the
+  // customer.
+  const awaitingProofDecision = job.proofs.some(
+    (proof) =>
+      (!proof.decision || proof.decision === "pending") &&
+      proof.awaitingDecisionFrom !== "staff",
+  );
+  const nextAction = portalNextAction({
+    status: job.status,
+    awaitingProofDecision,
+    hasUnacceptedQuote: Boolean(latestQuote),
+    quoteAccepted,
+    alreadyPaid,
+    invoiceRequested: Boolean(job.invoiceRequestedAt),
+  });
+  const placedAt =
+    [...job.timeline].sort(
+      (a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt),
+    )[0]?.occurredAt ?? null;
+
   return (
     <section className="py-sp-8">
       <Container>
@@ -103,21 +131,28 @@ export default async function JobDetailPage({
         <ButtonLink href="/portal/jobs" variant="secondary" size="sm">
           ← All jobs
         </ButtonLink>
-        <div className="flex flex-wrap items-start justify-between gap-sp-3 mt-sp-4 mb-sp-5">
-          <div>
-            <h1 className="font-display font-bold text-display-sm mb-1">
-              {job.displayId}
-            </h1>
-            <p className="text-sm text-text-secondary m-0">Job status</p>
-          </div>
-          <span className="bg-accent-tint text-accent px-3 py-1 rounded-full text-sm font-bold">
-            {presentation.label}
-          </span>
+
+        <div className="mt-sp-4 mb-sp-5 space-y-sp-3">
+          <PortalOrderHeader
+            displayId={job.displayId}
+            placedAt={placedAt}
+            statusLabel={presentation.label}
+            status={job.status}
+          />
+          <PortalNextAction action={nextAction} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-sp-5 items-start">
           <div className="space-y-sp-5">
-            <OrderHandoff contact={job.contact} fulfillment={job.fulfillment} />
+            {/* The proof leads. It is the reason the customer opened this
+                page, and burying it under the order summary was point 4 of
+                the client's list. */}
+            <section className="border border-border rounded-md p-sp-4">
+              <h2 className="font-display font-bold text-lg mb-sp-3">
+                Your proof
+              </h2>
+              <ProofReview jobId={job.id} proofs={job.proofs} />
+            </section>
 
             {job.status === "changes_requested" ? (
               <section className="border border-accent rounded-md p-sp-4 bg-accent-tint">
@@ -132,93 +167,10 @@ export default async function JobDetailPage({
               <h2 className="font-display font-bold text-lg mb-sp-3">
                 Submitted items
               </h2>
-              <div className="space-y-sp-3">
-                {job.lines.map((line) => {
-                  const roster = line.snapshot.configuration.roster as
-                    | RosterEntry[]
-                    | undefined;
-                  const artworkProofUrl = line.snapshot.configuration
-                    .artworkProofUrl as string | undefined;
-                  const designProjectId = line.snapshot.configuration
-                    .designProjectId as string | undefined;
-                  return (
-                    <article key={line.id} className="border-b border-fill-subtle pb-sp-3 last:border-0 last:pb-0">
-                      <div className="flex justify-between gap-sp-3">
-                        <div>
-                          <b>{line.snapshot.description}</b>
-                          <p className="text-sm text-text-secondary mt-1 mb-0">
-                            Quantity {line.snapshot.quantity}
-                            {typeof line.snapshot.configuration.color === "string"
-                              ? ` · ${line.snapshot.configuration.color}`
-                              : ""}
-                          </p>
-                        </div>
-                        {line.snapshot.unitPriceEstimateMinor !== undefined && (
-                          <span className="text-sm text-right whitespace-nowrap">
-                            <span className="block text-text-secondary">
-                              {money(line.snapshot.unitPriceEstimateMinor / 100)} each
-                            </span>
-                            <b className="block">
-                              {money(
-                                (getAuthoritativeLineTotalMinor(line.snapshot) ??
-                                  line.snapshot.unitPriceEstimateMinor * line.snapshot.quantity) /
-                                  100,
-                              )}{" "}
-                              total
-                            </b>
-                          </span>
-                        )}
-                      </div>
-                      {(artworkProofUrl || designProjectId) && (
-                        <div className="mt-sp-3">
-                          <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
-                            Artwork you sent
-                          </p>
-                          {artworkProofUrl && (
-                            <a href={artworkProofUrl} target="_blank" rel="noreferrer">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={artworkProofUrl}
-                                alt={`Artwork for ${line.snapshot.description}`}
-                                className="h-28 w-auto border border-border rounded-sm bg-white"
-                              />
-                            </a>
-                          )}
-                          {designProjectId && (
-                            <div className={artworkProofUrl ? "mt-2" : undefined}>
-                              <ButtonLink
-                                href={`/design?loadDesignId=${encodeURIComponent(designProjectId)}`}
-                                variant="secondary"
-                                size="sm"
-                              >
-                                Reopen in the studio
-                              </ButtonLink>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {roster && roster.length > 0 && (
-                        <div className="mt-sp-3">
-                          <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
-                            Team roster submitted
-                          </p>
-                          <RosterTable roster={roster} />
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-              {job.customerNote && (
-                <div className="mt-sp-3 border-t border-fill-subtle pt-sp-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary mb-1.5">
-                    Your note to us
-                  </p>
-                  <p className="text-sm text-text-secondary m-0 whitespace-pre-wrap">
-                    {job.customerNote}
-                  </p>
-                </div>
-              )}
+              <PortalSubmittedItems
+                lines={job.lines}
+                customerNote={job.customerNote}
+              />
               <p className="text-xs text-text-tertiary mt-sp-3 mb-0">
                 These are immutable submission snapshots. Final pricing follows
                 design and availability review.
@@ -238,25 +190,12 @@ export default async function JobDetailPage({
 
             <section className="border border-border rounded-md p-sp-4">
               <h2 className="font-display font-bold text-lg mb-sp-3">
-                Proofs &amp; approvals
+                Order timeline
               </h2>
-              <ProofReview jobId={job.id} proofs={job.proofs} />
+              <PortalTimeline status={job.status} history={job.timeline} />
             </section>
 
-            <section className="border border-border rounded-md p-sp-4">
-              <h2 className="font-display font-bold text-lg mb-sp-3">Timeline</h2>
-              <ol className="space-y-sp-3">
-                {job.timeline.map((entry) => (
-                  <li key={entry.id} className="border-l-2 border-accent pl-sp-3">
-                    <b>{jobStatusPresentation[entry.toStatus].label}</b>
-                    <p className="text-sm text-text-tertiary mt-1 mb-0">
-                      {new Date(entry.occurredAt).toLocaleString("en-CA")}
-                      {entry.reason ? ` · ${entry.reason}` : ""}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            </section>
+            <OrderHandoff contact={job.contact} fulfillment={job.fulfillment} />
           </div>
 
           <aside className="border border-border rounded-md p-sp-4">

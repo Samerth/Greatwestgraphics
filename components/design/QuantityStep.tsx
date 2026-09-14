@@ -16,6 +16,11 @@ import { decoratedDesignSides } from "@/lib/commerce/studio-placement";
 import { decorationLinesForPricing } from "@/lib/commerce/studio-decoration";
 import { rosterActiveSides } from "@/lib/commerce/studio-roster-preview";
 import { useActiveDesignStore } from "@/lib/store/active-design";
+import {
+  STOREFRONT_ESTIMATE_ASSUMPTIONS,
+  customerUnitMinor,
+  hasExtendedSizes,
+} from "@/lib/commerce/storefront-quote";
 import { useDesignOrderStore } from "@/lib/store/design-order";
 import { useCartStore } from "@/lib/store/cart";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
@@ -34,6 +39,7 @@ import { DesignPreviewViewer } from "@/components/design/DesignPreviewViewer";
 import { DesignStepBar } from "@/components/design/DesignStepBar";
 import { cn } from "@/lib/utils/cn";
 import { garmentBackdropForSide, type GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
+import { storefrontProductName } from "@/lib/commerce/product-name";
 
 type Variant = {
   id: string;
@@ -75,6 +81,20 @@ type Detail = {
   variants: Variant[];
   colorways?: Colorway[];
 };
+
+/**
+ * What the cart line - and so the order, the admin work order and the
+ * customer's portal - calls the garment. Was brand + style *code* ("Adidas
+ * A556"), which is how the row 69 work order ended up reading; the same
+ * helper the catalogue cards use gives the garment's name instead.
+ */
+function lineProductName(detail: Detail): string {
+  return storefrontProductName({
+    brandName: detail.style.brandName,
+    title: detail.style.title ?? null,
+    styleName: detail.style.styleName,
+  });
+}
 
 async function fetchDetail(productId: string): Promise<Detail | null> {
   try {
@@ -305,13 +325,18 @@ export function QuantityStep({
     if (cost.unitCostMinor <= 0) return null;
     try {
       return priceShopperQuoteMulti(pricingConfig, {
+        // The same assumptions the product page's estimate and the catalogue
+        // card quote on. Spread rather than restated so this page and the
+        // estimates the customer saw on the way here cannot drift apart —
+        // they had, by the individual-packing charge, which this page left
+        // off and they switched on (CodSphere UAT V2 row 53).
+        ...STOREFRONT_ESTIMATE_ASSUMPTIONS,
         unitCostMinor: cost.unitCostMinor,
         quantity: cost.quantity,
         mapPriceMinor: cost.mapPriceMinor,
         colourName: activeBlocks[0]?.colorName ?? "",
         isDark: detail?.product.isDark,
         decorations: decorationLines,
-        shareSetup: false,
         description: designName || "Custom design",
         // The engine applies the names/numbers fee across the whole quote's
         // quantity, all-or-nothing. That is exactly right when every piece is
@@ -420,9 +445,7 @@ export function QuantityStep({
         });
         for (const [productId, rows] of byColour) {
           const d = detailsById[productId];
-          const productName = d
-            ? `${d.style.brandName} ${d.style.styleName}`.trim()
-            : "Custom design";
+          const productName = d ? lineProductName(d) : "Custom design";
           addItem({
             id: `${productId}:roster`,
             productId,
@@ -459,9 +482,7 @@ export function QuantityStep({
 
       for (const { block, size } of rosterMode ? matrixOrderedLines(blocks) : lines) {
         const d = detailsById[block.productId];
-        const productName = d
-          ? `${d.style.brandName} ${d.style.styleName}`.trim()
-          : block.colorName;
+        const productName = d ? lineProductName(d) : block.colorName;
         addItem({
           id: `${block.productId}:${size.variantId}`,
           productId: block.productId,
@@ -686,11 +707,24 @@ export function QuantityStep({
                         answer "what is this colour costing me". */}
                     {qty > 0 && quote && (
                       <div className="text-right shrink-0">
+                        {/* The same setup-inclusive per-piece the "Your
+                            price" box shows, not the engine's raw
+                            perPieceMinor, which leaves setup off. Row 48
+                            folded setup into the unit price in the box below
+                            but this row was missed, so for a 24-piece run it
+                            read $1,059.12 here and $1,094.12 there — the $35
+                            screen-print setup, showing up in one place and
+                            not the other on the same page. */}
                         <p className="m-0 font-bold text-[15px] tabular-nums">
-                          {moneyFromMinor(quote.perPieceMinor * qty)}
+                          {moneyFromMinor(
+                            customerUnitMinor(quote.totalMinor, totalQty) * qty,
+                          )}
                         </p>
                         <p className="m-0 text-[11px] text-text-tertiary tabular-nums">
-                          {moneyFromMinor(quote.perPieceMinor)} ea
+                          {moneyFromMinor(
+                            customerUnitMinor(quote.totalMinor, totalQty),
+                          )}{" "}
+                          ea
                         </p>
                       </div>
                     )}
@@ -904,7 +938,9 @@ export function QuantityStep({
                     Price per piece
                   </span>
                   <span className="font-display text-[26px] leading-none tabular-nums">
-                    {moneyFromMinor(quote.perPieceMinor)}
+                    {moneyFromMinor(
+                      customerUnitMinor(quote.totalMinor, totalQty),
+                    )}
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between text-[13px] text-text-secondary border-t border-border pt-2 mt-2">
@@ -916,20 +952,12 @@ export function QuantityStep({
                     {moneyFromMinor(quote.totalMinor)}
                   </span>
                 </div>
-                {/* `perPieceMinor` excludes setup by definition and
-                    `totalMinor` includes it, so the two never multiply out.
-                    Say so, rather than letting the customer find a gap they
-                    cannot account for. */}
-                {quote.totalMinor - quote.perPieceMinor * totalQty > 0 && (
-                  <div className="flex items-baseline justify-between text-[12px] text-text-tertiary mt-1">
-                    <span>One-off setup</span>
-                    <span className="tabular-nums">
-                      {moneyFromMinor(
-                        quote.totalMinor - quote.perPieceMinor * totalQty,
-                      )}
-                    </span>
-                  </div>
-                )}
+                {/* A separate "one-off setup" line sat here, because the
+                    engine's per-piece price excludes setup while the total
+                    includes it, so the two never multiplied out. Setup is now
+                    folded into the per-piece figure instead, which both
+                    removes the charge from view and makes price x quantity
+                    read back as the total (UAT V2 row 48). */}
                 {namesFeeMinor > 0 && namedQty > 0 && spareQty > 0 && (
                   <p className="mt-sp-3 mb-0 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">
                     {namedQty} of these pieces are personalised with a name or
@@ -943,6 +971,14 @@ export function QuantityStep({
                   {decoratedSides
                     .map((s) => DESIGN_SIDE_LABELS[s as DesignSide].toLowerCase())
                     .join(", ")}
+                  {/* The product page warned "2XL+ — additional surcharge,
+                      confirmed with your size breakdown". This is the size
+                      breakdown, so it says when that surcharge is in the
+                      number — otherwise the estimate the customer saw on the
+                      product page appears to have simply gone up. */}
+                  {activeBlocks.some((block) => hasExtendedSizes(block.sizes))
+                    ? ", and the larger-size surcharge for 2XL and up"
+                    : ""}
                   . Taxes and shipping are added at checkout.
                 </p>
               </>

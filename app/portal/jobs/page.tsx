@@ -7,7 +7,7 @@ import { teamMemberships } from "@/lib/commerce/membership";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
-import { publicQuoteOrFallback } from "@/lib/features";
+import { publicQuoteOrFallback, SHOW_TEAM_STORES } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,11 @@ export default async function JobsPage() {
   }
 
   const scope = await resolvePortalScope();
-  const otherTeams = teamMemberships(scope.memberships).filter(
+  // Cross-links into other branded storefronts, which are closed
+  // (row 51). Left in place behind the flag rather than deleted.
+  const otherTeams = !SHOW_TEAM_STORES
+    ? []
+    : teamMemberships(scope.memberships).filter(
     (membership) => membership.storeId !== scope.store.storeId,
   );
 

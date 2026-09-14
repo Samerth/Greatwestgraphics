@@ -32,7 +32,10 @@ describe("studioSleeveFillHex", () => {
   it("falls back to the named-colour map, then a neutral fill", () => {
     expect(studioSleeveFillHex({ colorName: "Forest" })).toBe("#1f4d2e");
     expect(studioSleeveFillHex({ colorName: "Navy" })).toBe("#1b2a4a");
-    expect(studioSleeveFillFromColorway({ colorName: "Azalea Blast" })).toBe(
+    // Was "Azalea Blast". The colour-name table was widened for UAT V2 rows
+    // 44/45 and azalea is a real apparel pink, so this needs a name carrying
+    // no colour word at all to still exercise the neutral fallback.
+    expect(studioSleeveFillFromColorway({ colorName: "Mombasa Twist" })).toBe(
       DEFAULT_SLEEVE_FILL_HEX,
     );
   });

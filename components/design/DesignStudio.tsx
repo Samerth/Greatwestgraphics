@@ -72,12 +72,18 @@ import {
 } from "@/lib/utils/shop-quote";
 import {
   allowedDesignSides,
+  artworksNeedingDecoration,
+  confirmArtworkDecoration,
   filterAllowedMethods,
+  isArtworkDecorationConfirmed,
+  resolveArtworkDecoration,
   resolveSideDecoration,
+  withArtworkDecoration,
   withSideDecoration,
 } from "@/lib/commerce/studio-decoration";
 import { type RosterRow } from "@/components/shared/RosterEditor";
 import { SHOW_DESIGN_STUDIO_AI_CONCEPT } from "@/lib/features";
+import { storefrontProductName } from "@/lib/commerce/product-name";
 import {
   STUDIO_AI_DEFAULT_STYLE,
   isUsableStudioIdentityBlob,
@@ -119,6 +125,7 @@ import {
 } from "@/lib/commerce/studio-text";
 import {
   detectPlacementZone,
+  formatPlateInchLabel,
   formatZoneInchLabel,
   frontChestGuideRects,
 } from "@/lib/commerce/studio-zones";
@@ -517,6 +524,7 @@ export function DesignStudio({
     initialDesign?.id ?? null,
   );
   const [designName, setDesignName] = useState(initialDesign?.name ?? "");
+  const [confirmingNewDesign, setConfirmingNewDesign] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -775,7 +783,14 @@ export function DesignStudio({
     setExtraGarment({
       id: String(productDetail.product.id),
       slug: productDetail.product.slug,
-      label: `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim(),
+      // Brand + descriptive title, not brand + style code — the same rule the
+      // catalogue applies, so the Studio never labels a garment "Allmade
+      // AL2004" while the shop calls it "Allmade Unisex Tri-Blend Tee".
+      label: storefrontProductName({
+        brandName: productDetail.style.brandName,
+        title: productDetail.style.title,
+        styleName: productDetail.style.styleName,
+      }),
       colorName: productDetail.product.colorName,
       brandName: productDetail.style.brandName,
       styleName: productDetail.style.styleName,
@@ -823,7 +838,11 @@ export function DesignStudio({
   const selectedArticleLabel = selectedGarment
     ? studioArticleLabel(selectedGarment)
     : productDetail
-      ? `${productDetail.style.brandName} ${productDetail.style.styleName}`.trim()
+      ? storefrontProductName({
+          brandName: productDetail.style.brandName as string | null,
+          title: (productDetail.style as { title?: string | null }).title ?? null,
+          styleName: productDetail.style.styleName as string | null,
+        })
       : "Garment";
   const [showSizeChart, setShowSizeChart] = useState(false);
   // Opens inline via StudioSizeChartModal instead of navigating to the PDP's
@@ -899,16 +918,78 @@ export function DesignStudio({
     stitchPreset,
     optionKey: optionKey || undefined,
   };
-  const activeDecoration = resolveSideDecoration(design, activeSide, decorationFallback);
+  // Decoration belongs to the selected logo, not to the side (UAT V2 row
+  // 59). With nothing selected — or with only text on the side — it falls
+  // back to the side's own choice, which is also what every design saved
+  // before row 59 resolves to.
+  const decorationArtworkId =
+    selectedId && artworks.some((artwork) => artwork.id === selectedId)
+      ? selectedId
+      : (artworks[0]?.id ?? null);
+  const activeDecoration = decorationArtworkId
+    ? resolveArtworkDecoration(
+        design,
+        activeSide,
+        decorationArtworkId,
+        decorationFallback,
+      )
+    : resolveSideDecoration(design, activeSide, decorationFallback);
   const activeDecorationMethod =
     quoteMethods.find((method) => method.key === activeDecoration.methodKey) ??
     quoteMethods[0];
   const activeDecorationFields = methodVariableInputs(activeDecorationMethod);
 
+  /** Applies a decoration change to the selected logo alone. Falls back to
+   *  the side only when there is no artwork to attach it to. */
   function updateActiveSideDecoration(patch: Partial<SideDecoration>) {
     setDesign((prev) =>
-      withSideDecoration(prev, activeSide, patch, decorationFallback),
+      decorationArtworkId
+        ? withArtworkDecoration(
+            prev,
+            activeSide,
+            decorationArtworkId,
+            patch,
+            decorationFallback,
+          )
+        : withSideDecoration(prev, activeSide, patch, decorationFallback),
     );
+  }
+
+  /**
+   * Row 46: a logo whose decoration has never been looked at is priced on
+   * whatever the studio defaulted to, which is where the "inaccurate
+   * pricing" in the report comes from. These drive a visible unconfirmed
+   * state on the panel and a block on the exit to the Quantity step.
+   */
+  const pendingDecorations = artworksNeedingDecoration(design, DesignSides);
+  const activeDecorationConfirmed = decorationArtworkId
+    ? isArtworkDecorationConfirmed(
+        artworks.find((artwork) => artwork.id === decorationArtworkId) ?? {},
+      )
+    : true;
+
+  /** Agreeing with the default is a real answer — see the note on
+   *  `confirmArtworkDecoration`, which freezes what was agreed. */
+  function confirmActiveDecoration() {
+    if (!decorationArtworkId) return;
+    setDesign((prev) =>
+      confirmArtworkDecoration(
+        prev,
+        activeSide,
+        decorationArtworkId,
+        decorationFallback,
+      ),
+    );
+  }
+
+  /** Sends the customer to the logo that still needs a decision, rather
+   *  than only telling them one exists somewhere. */
+  function goToPendingDecoration(target: {
+    side: DesignSide;
+    artworkId: string;
+  }) {
+    setActiveSide(target.side);
+    setSelectedId(target.artworkId);
   }
 
   /**
@@ -1930,19 +2011,36 @@ export function DesignStudio({
   async function continueToQuantity() {
     setContinuing(true);
     try {
-      let proofUrl: string | null = null;
+      // The mockup - garment with the artwork on it. A first attempt can
+      // miss when the stage has just re-rendered, so it gets one more go a
+      // frame later before anything falls back (an order on 15 Sep reached
+      // staff with the bare logo file where the mockup should have been).
+      let mockupUrl: string | null = null;
       try {
-        proofUrl = (await uploadProofImage()) ?? firstDurableArtworkUrl(design) ?? null;
+        mockupUrl = await uploadProofImage();
+        if (!mockupUrl) {
+          await nextFrame();
+          mockupUrl = await uploadProofImage();
+        }
       } catch {
-        proofUrl = firstDurableArtworkUrl(design) ?? null;
+        mockupUrl = null;
       }
+      if (!mockupUrl) {
+        console.warn(
+          "[design-studio] no mockup could be exported; the order will carry the artwork file instead",
+        );
+      }
+      // The artwork file is the fallback for the order line, so staff have
+      // something to print from; it is never a substitute for the saved
+      // design's proof image, which keeps whatever it already had.
+      const proofUrl = mockupUrl ?? firstDurableArtworkUrl(design) ?? null;
 
       let projectId = savedDesignId ?? null;
       if (signedIn && (createUrl || (updateUrl && savedDesignId))) {
         try {
           const name = designName.trim() || defaultDesignName();
           if (!designName.trim()) setDesignName(name);
-          projectId = (await persistDesign(name, proofUrl)) ?? projectId;
+          projectId = (await persistDesign(name, mockupUrl)) ?? projectId;
         } catch {
           // Saving is a convenience here, not a gate — the design is already
           // mirrored into the browser store that step 2 reads.
@@ -2037,6 +2135,27 @@ export function DesignStudio({
     if (!id) throw new Error("The design saved without an id.");
     if (!currentId) setSavedDesignId(id);
     return id;
+  }
+
+  /**
+   * Discard the in-progress design and open a clean studio.
+   *
+   * Clears the persisted store, then reloads rather than resetting the two
+   * dozen pieces of local state this component holds — artwork and text per
+   * side, the selected garment and colourway, decoration per side, the roster
+   * and its placement, the save name and id. Resetting those by hand is where
+   * a "start over" silently leaves something behind; a reload cannot.
+   *
+   * A full document load is the point, so `router.push` is deliberately not
+   * used: it keeps this component mounted, which would leave the cleared
+   * design still sitting on the canvas. Going to the bare path also drops any
+   * `?loadDesignId` / `?garmentId` that would otherwise re-open what we just
+   * discarded.
+   */
+  function startNewDesign() {
+    useActiveDesignStore.getState().clear();
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a client-side navigation would not remount the studio, so the discarded design would stay on the canvas
+    window.location.href = "/design";
   }
 
   async function handleSaveDesign() {
@@ -2501,9 +2620,38 @@ export function DesignStudio({
             pricing input that method needs," picked independently per
             side rather than once for the whole design. */}
         {artworks.length > 0 && (
-          <div className="mt-sp-3 pt-sp-3 border-t border-border">
+          <div
+            data-studio="decoration-panel"
+            data-confirmed={activeDecorationConfirmed ? "yes" : "no"}
+            className={cn(
+              "mt-sp-3 pt-sp-3 border-t border-border",
+              // Row 46: an unreviewed logo is the thing that mis-prices the
+              // order, so the panel stops being a quiet sidebar block and
+              // announces itself until it has been dealt with.
+              !activeDecorationConfirmed &&
+                "-mx-sp-3 -mb-sp-3 mt-sp-3 rounded-md border border-amber-400 bg-amber-50 px-sp-3 pb-sp-3 dark:bg-amber-950/30",
+            )}
+          >
+            {!activeDecorationConfirmed && (
+              <p className="m-0 mb-2 text-[12px] font-semibold leading-snug text-amber-900 dark:text-amber-200">
+                Choose how this logo is printed — this sets the price.
+              </p>
+            )}
             <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
               Decoration — {DESIGN_SIDE_LABELS[activeSide]}
+              {artworks.length > 1 && decorationArtworkId ? (
+                /* With more than one logo on a side these settings apply to
+                   the selected one only, so the panel has to say which.
+                   Otherwise a customer changes a colour count and cannot
+                   tell which logo it landed on (UAT V2 row 59). */
+                <span className="ml-1 normal-case tracking-normal text-accent">
+                  · logo{" "}
+                  {artworks.findIndex(
+                    (artwork) => artwork.id === decorationArtworkId,
+                  ) + 1}{" "}
+                  of {artworks.length}
+                </span>
+              ) : null}
             </span>
             <select
               value={activeDecoration.methodKey}
@@ -2600,6 +2748,26 @@ export function DesignStudio({
                   </option>
                 ))}
               </select>
+            )}
+
+            {/* Agreeing with what the studio suggested is a decision, and
+                needs somewhere to be recorded — changing a dropdown already
+                counts, but a customer who reads "Screen Print / 1 Colour"
+                and is happy with it would otherwise have no way to say so
+                and would stay blocked (row 46). */}
+            {activeDecorationConfirmed ? (
+              <p className="mt-2 mb-0 flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-400">
+                <span aria-hidden>✓</span> Decoration confirmed for this logo
+              </p>
+            ) : (
+              <button
+                type="button"
+                data-studio="confirm-decoration"
+                onClick={confirmActiveDecoration}
+                className="mt-2 w-full rounded-md bg-accent px-3 py-2 text-sm font-bold text-white transition-colors hover:opacity-90"
+              >
+                Confirm decoration
+              </button>
             )}
           </div>
         )}
@@ -2714,7 +2882,14 @@ export function DesignStudio({
 
         <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
         <div className="p-sp-3 min-h-[280px] sm:min-h-[360px] lg:min-h-[520px] overflow-x-auto flex-1 min-w-0">
-          <div className="min-w-0 w-full max-w-full bg-fill-subtle-15 rounded-md flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3 p-sp-3">
+          {/* One surface, not three. This wrapper used to carry its own
+              `bg-fill-subtle-15 rounded-md p-sp-3` wash, which put a tinted
+              card between the white studio panel and the white garment photo
+              — so the mockup read as a garment on white, on grey, on white
+              again (Pavin, 10 Sep: "the stacked layers read as cluttered",
+              Coastal Reign given as the reference). The layout it provides is
+              load-bearing and stays; only the surface it painted is gone. */}
+          <div className="min-w-0 w-full max-w-full flex flex-col-reverse sm:flex-row items-stretch justify-center gap-3">
             <div className="min-w-0 flex-1 flex flex-col items-center justify-center">
             <div
               className="relative w-full max-w-[min(820px,calc(100dvh-12rem))] aspect-square overflow-hidden"
@@ -2797,9 +2972,18 @@ export function DesignStudio({
 
               {/* Print-area guides, same plain-DOM problem and same fix as
                   the backdrop above — a second wrapper because these must
-                  paint *above* the Konva canvas, not behind it. */}
+                  paint *above* the Konva canvas, not behind it.
+
+                  `pointer-events-none` is load-bearing. This wrapper is
+                  `absolute inset-0` over the whole stage, so without it every
+                  click and drag lands on this div instead of reaching Konva
+                  underneath, and artwork cannot be selected or moved at all
+                  (Pavin, 10 Sep: "drag and drop is not working for uploaded
+                  art"). The individual guides inside already opt out, but the
+                  wrapper is the element that actually sits in front of the
+                  canvas. */}
               <div
-                className="absolute inset-0"
+                className="pointer-events-none absolute inset-0"
                 style={{ transform: `scale(${zoom})` }}
               >
                 {/* CSS overlay so the guide never lands in the Konva proof. */}
@@ -2851,11 +3035,26 @@ export function DesignStudio({
                     width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
                     height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
                   }}
-                />
+                >
+                  {/* The plate's own size, on the plate (UAT row 47). Sits
+                      just outside the top edge so it never covers the area
+                      the shopper is about to drop artwork into, and carries
+                      its own dark chip so it stays legible over a white tee
+                      and a black one alike. */}
+                  <span
+                    data-studio="plate-dimensions"
+                    className="absolute -top-[1.35rem] left-0 rounded-[2px] bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-[0.02em] text-white"
+                  >
+                    {formatPlateInchLabel(activeSide)}
+                  </span>
+                </div>
                 )}
+                {/* The only interactive thing inside the guides overlay, so it
+                    opts pointer events back in — the wrapper turns them off
+                    for everything else so drags reach the canvas. */}
                 {sleeveView && artworks.length === 0 && texts.length === 0 && (
                   <div
-                    className="absolute z-[3] flex flex-col items-center justify-center gap-2"
+                    className="pointer-events-auto absolute z-[3] flex flex-col items-center justify-center gap-2"
                     style={{
                       left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
                       top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
@@ -3179,7 +3378,7 @@ export function DesignStudio({
                 : "Download Mockup"}
           </Button>
           {exportError && (
-            <p className="m-0 text-sm text-danger" role="alert">
+            <p className="m-0 text-sm text-red-600" role="alert">
               {exportError}
             </p>
           )}
@@ -3196,7 +3395,7 @@ export function DesignStudio({
                   garment looks like. (CodSphere UAT: "Design Studio should be
                   focused exclusively on creating the garment design.") */}
               {cartError && (
-                <p className="text-sm text-danger mt-2 mb-0" role="alert">
+                <p className="text-sm text-red-600 mt-2 mb-0" role="alert">
                   {cartError}
                 </p>
               )}
@@ -3215,7 +3414,8 @@ export function DesignStudio({
                     disabled={
                       pendingUploads > 0 ||
                       !selectedColorwayReady ||
-                      decoratedSides.length === 0
+                      decoratedSides.length === 0 ||
+                      pendingDecorations.length > 0
                     }
                     onClick={continueToQuantity}
                   >
@@ -3225,11 +3425,39 @@ export function DesignStudio({
                         ? "Uploading artwork…"
                         : decoratedSides.length === 0
                           ? "Add artwork or names to continue"
-                          : "Continue to Quantity"}
+                          : pendingDecorations.length > 0
+                            ? "Confirm decoration to continue"
+                            : "Continue to Quantity"}
                   </Button>
-                  <p className="text-[12px] text-text-tertiary text-center mt-1.5 mb-sp-3">
-                    Choose colours, sizes and quantities on the next step.
-                  </p>
+                  {/* Naming the logo that still needs a decision, and
+                      going there on click — being told "something is
+                      unconfirmed" without being told which is worse than
+                      not being stopped at all (row 46). */}
+                  {pendingDecorations.length > 0 ? (
+                    <p
+                      data-studio="pending-decorations"
+                      className="mt-1.5 mb-sp-3 text-center text-[12px] text-text-secondary"
+                    >
+                      Needs a decoration choice:{" "}
+                      {pendingDecorations.map((pending, position) => (
+                        <span key={pending.artworkId}>
+                          {position > 0 ? ", " : ""}
+                          <button
+                            type="button"
+                            onClick={() => goToPendingDecoration(pending)}
+                            className="font-semibold text-accent hover:underline"
+                          >
+                            {DESIGN_SIDE_LABELS[pending.side]} logo{" "}
+                            {pending.index + 1}
+                          </button>
+                        </span>
+                      ))}
+                    </p>
+                  ) : (
+                    <p className="text-[12px] text-text-tertiary text-center mt-1.5 mb-sp-3">
+                      Choose colours, sizes and quantities on the next step.
+                    </p>
+                  )}
                 </>
               )}
 
@@ -3241,6 +3469,53 @@ export function DesignStudio({
                   select quantities/add pieces to cart directly from the
                   Design Studio.") */}
              </div>
+          )}
+
+          {/* Discarding the in-progress design used to be possible only from
+              the header chip, which row 56 removed. Without a replacement a
+              customer could never start over — the saved design would follow
+              them as "Continue my design" on every product forever. The
+              studio is where row 56 says the current design belongs, so the
+              control belongs here too. Two-step rather than a browser
+              confirm(), which this codebase uses nowhere. */}
+          {!isStaff && hasAnyDecoration && (
+            <div className="mt-sp-3 pt-sp-3 border-t border-border">
+              {confirmingNewDesign ? (
+                <div className="flex flex-col gap-2">
+                  <p className="m-0 text-[12.5px] text-text-secondary">
+                    Discard this design and start over? Anything you have not
+                    saved will be lost.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={startNewDesign}
+                      // `bg-danger` is not a token in this theme, so the
+                      // button rendered white-on-white and the confirmation
+                      // appeared to offer only "Keep editing" (found 15 Sep).
+                      className="min-h-9 flex-1 rounded-sm bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700 transition-colors"
+                    >
+                      Discard and start over
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingNewDesign(false)}
+                      className="min-h-9 flex-1 rounded-sm border border-border px-3 py-1.5 text-sm font-bold"
+                    >
+                      Keep editing
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingNewDesign(true)}
+                  className="text-[12.5px] font-bold text-text-tertiary underline underline-offset-2 hover:text-text-primary transition-colors"
+                >
+                  Start a new design
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

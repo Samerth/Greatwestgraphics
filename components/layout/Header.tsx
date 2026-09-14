@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ShoppingBag, UserRound, PenTool, Headphones } from "lucide-react";
+import { ShoppingBag, UserRound, Headphones } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { Container } from "@/components/shared/Container";
 import { cn } from "@/lib/utils/cn";
 import { useCartStore } from "@/lib/store/cart";
-import { ActiveDesignBadge } from "@/components/design/ActiveDesignBadge";
 import { HeaderSearchBar, HeaderSearchMobile } from "@/components/layout/HeaderSearch";
 import { SignOutButton } from "@/components/account/SignOutButton";
 import type { StorefrontCategory } from "@/lib/commerce/catalog";
@@ -19,31 +18,54 @@ import {
   type CategoryNode,
 } from "@/lib/navigation/shop-section";
 
-import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { SHOW_PUBLIC_QUOTE_CALCULATOR, SHOW_TEAM_STORES } from "@/lib/features";
+import type { BrandSummary } from "@gwg/contracts";
+import { brandPageHref } from "@/lib/commerce/brand-page";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 
 // Used only when the commerce API returned no categories.
 const FALLBACK_CATEGORIES = [{ label: "All Products", href: "/products" }];
+
+/** Preferred order for the Brands menu's featured rail. Names are matched
+ *  case-insensitively against the live catalogue, so anything we do not
+ *  actually stock simply never renders. */
+const FEATURED_BRAND_ORDER = [
+  "Gildan",
+  "ATC",
+  "Bella+Canvas",
+  "Carhartt",
+  "Nike",
+  "The North Face",
+  "Champion",
+  "New Era",
+  "Stormtech",
+  "Port Authority",
+  "Under Armour",
+  "OGIO",
+];
 
 /** One promotional tile per department, shown beside the category columns in
  * the dropdown — the mockup's own mega-menu treatment. Images are ones
  * already used elsewhere for these exact departments (CategoryBrowse.tsx),
  * not new assets, so nothing here is invented. */
 const DEPARTMENT_PROMO: Record<string, { image: string; label: string; href: string }> = {
-  apparel: { image: "/images/prod-tee.jpg", label: "Shop apparel best sellers", href: "/products?category=best-sellers" },
-  "promotional-products": { image: "/images/prod-tote.jpg", label: "Shop promo best sellers", href: "/products?category=best-sellers" },
-  "signs-displays": { image: "/images/category-outdoor.jpg", label: "Shop signs & displays", href: "/products?category=best-sellers" },
-  "print-products": { image: "/images/category-more.jpg", label: "Shop print products", href: "/products?category=best-sellers" },
+  apparel: { image: "/images/prod-tee.jpg", label: "Shop apparel best sellers", href: "/best-sellers" },
+  "promotional-products": { image: "/images/prod-tote.jpg", label: "Shop promo best sellers", href: "/best-sellers" },
+  "signs-displays": { image: "/images/category-outdoor.jpg", label: "Shop signs & displays", href: "/best-sellers" },
+  "print-products": { image: "/images/category-more.jpg", label: "Shop print products", href: "/best-sellers" },
 };
-
-const PRIMARY_LINKS = [{ label: "Design Studio", href: "/design" }];
 
 export function Header({
   categories = [],
+  brands = [],
   customerName = null,
   storeName,
   storeLogoUrl = null,
 }: {
   categories?: StorefrontCategory[];
+  /** Live catalogue brands for the Brands menu (UAT V2 row 62): name, page
+   * slug, and the vendor's logo where one exists for the featured rail. */
+  brands?: BrandSummary[];
   customerName?: string | null;
   /** Set only for a branded corporate store — swaps the GWG logo/name. */
   storeName?: string;
@@ -62,13 +84,16 @@ export function Header({
   const ALL_GROUPS = SHOP_SECTIONS.flatMap((section) => section.groups);
 
   // The right rail used to list three shortcuts — Design Studio, Get a
-  // Quote, Corporate & Team Stores. The first two already have their own
-  // entry points in the header (the "Design Studio" nav link and the "Get a
-  // Quote" button), so the rail now surfaces only the one shortcut that
+  // Quote, Corporate & Team Stores. Get a Quote has its own header button,
+  // and the Design Studio is deliberately no longer a header destination at
+  // all (UAT V2 rows 56/57), so the rail surfaces only the one shortcut that
   // doesn't live anywhere else: Corporate & Team Stores.
-  const CORPORATE_SERVICE = SHOP_SERVICES.filter((s) =>
-    s.label.toLowerCase().includes("corporate"),
-  );
+  // That shortcut leads into the store-creation flow, which is closed while
+  // team stores are off (UAT V2 row 51) - so the rail is empty and hidden
+  // until the flag comes back. Found still showing on 15 Sep.
+  const CORPORATE_SERVICE = SHOW_TEAM_STORES
+    ? SHOP_SERVICES.filter((s) => s.label.toLowerCase().includes("corporate"))
+    : [];
 
   const rawPieceCount = useCartStore((s) => s.pieceCount());
   // Zustand's persist middleware only reads localStorage on the client, so
@@ -98,11 +123,13 @@ export function Header({
   const openDept = (id: string) => {
     if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
     closeShop();
+    closeBrands();
     setOpenDeptId(id);
   };
   const openDeptViaClick = (id: string) => {
     if (deptCloseTimer.current) clearTimeout(deptCloseTimer.current);
     closeShop();
+    closeBrands();
     setOpenDeptId((prev) => {
       if (prev === id && deptPinnedRef.current) {
         deptPinnedRef.current = false;
@@ -128,11 +155,13 @@ export function Header({
   const openShop = () => {
     if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
     closeDept();
+    closeBrands();
     setShopOpen(true);
   };
   const openShopViaClick = () => {
     if (shopCloseTimer.current) clearTimeout(shopCloseTimer.current);
     closeDept();
+    closeBrands();
     setShopOpen((prev) => {
       if (prev && shopPinnedRef.current) {
         shopPinnedRef.current = false;
@@ -149,6 +178,54 @@ export function Header({
   const unpinShop = () => {
     shopPinnedRef.current = false;
   };
+
+  // --- Brands menu. Same open/pin/close behaviour as the Shop mega menu, so
+  // hover and click work identically across every nav trigger.
+  const [brandsOpen, setBrandsOpen] = useState(false);
+  const brandsCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const brandsPinnedRef = useRef(false);
+  const closeBrands = () => {
+    setBrandsOpen(false);
+    brandsPinnedRef.current = false;
+  };
+  const openBrands = () => {
+    if (brandsCloseTimer.current) clearTimeout(brandsCloseTimer.current);
+    closeDept();
+    closeShop();
+    setBrandsOpen(true);
+  };
+  const openBrandsViaClick = () => {
+    if (brandsCloseTimer.current) clearTimeout(brandsCloseTimer.current);
+    closeDept();
+    closeShop();
+    setBrandsOpen((prev) => {
+      if (prev && brandsPinnedRef.current) {
+        brandsPinnedRef.current = false;
+        return false;
+      }
+      brandsPinnedRef.current = true;
+      return true;
+    });
+  };
+  const scheduleBrandsClose = () => {
+    if (brandsPinnedRef.current) return;
+    brandsCloseTimer.current = setTimeout(() => setBrandsOpen(false), 120);
+  };
+  const unpinBrands = () => {
+    brandsPinnedRef.current = false;
+  };
+  const HAS_BRANDS = brands.length > 0;
+  // Preference order for the featured rail, intersected with the live brand
+  // list — a tile for a brand we do not stock would land on an empty page,
+  // which is the same defect row 2 reported.
+  const FEATURED_BRANDS = FEATURED_BRAND_ORDER.filter((brand) =>
+    brands.some((candidate) => candidate.name.toLowerCase() === brand.toLowerCase()),
+  )
+    .slice(0, 9)
+    .map(
+      (brand) =>
+        brands.find((candidate) => candidate.name.toLowerCase() === brand.toLowerCase())!,
+    );
 
   const [openMobileSection, setOpenMobileSection] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -181,9 +258,11 @@ export function Header({
     function closeAll() {
       setOpenDeptId(null);
       setShopOpen(false);
+      setBrandsOpen(false);
       setAccountOpen(false);
       deptPinnedRef.current = false;
       shopPinnedRef.current = false;
+      brandsPinnedRef.current = false;
     }
     function handleClickOutside(e: MouseEvent) {
       if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
@@ -268,7 +347,12 @@ export function Header({
 
         {/* Actions */}
         <div className="flex items-center gap-sp-2 shrink-0 ml-auto lg:ml-0">
-          <ActiveDesignBadge />
+          {/* The customer's current design used to render here as a
+              persistent header chip ("ATC Everyday Cotton Tee · 2026-09-08")
+              linking into the studio. Removed on both desktop and mobile at
+              the client's request (CodSphere UAT V2 row 56): saved work
+              belongs under Account → My Designs, not following the shopper
+              around the site. */}
           {/* Was an icon-only circle — easy to mistake for decoration rather
               than a control, which is exactly what got flagged ("help icon
               is not there"). The mockup's own header labels Help/Account/Cart
@@ -339,16 +423,21 @@ export function Header({
                         Reopen artwork in the studio.
                       </span>
                     </Link>
-                    <Link
-                      href="/account/team"
-                      onClick={() => setAccountOpen(false)}
-                      className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
-                    >
-                      <span className="block font-bold text-sm">Team store</span>
-                      <span className="block text-xs text-text-secondary mt-1">
-                        Create or invite people to a branded store.
-                      </span>
-                    </Link>
+                    {/* Row 51: the branded-store feature is off, and this was
+                        the one customer-facing link into it left behind when
+                        the pages themselves were closed. */}
+                    {SHOW_TEAM_STORES && (
+                      <Link
+                        href="/account/team"
+                        onClick={() => setAccountOpen(false)}
+                        className="block rounded-sm px-3 py-3 hover:bg-fill-subtle-15 transition-colors"
+                      >
+                        <span className="block font-bold text-sm">Team store</span>
+                        <span className="block text-xs text-text-secondary mt-1">
+                          Create or invite people to a branded store.
+                        </span>
+                      </Link>
+                    )}
                     <div className="border-t border-border my-1" />
                     <SignOutButton className="block w-full text-left rounded-sm px-3 py-3 text-sm font-bold hover:bg-fill-subtle-15 transition-colors" />
                   </div>
@@ -426,7 +515,7 @@ export function Header({
             className="flex items-center gap-sp-4 min-w-0 overflow-hidden"
           >
             <Link
-              href="/products?category=best-sellers"
+              href="/best-sellers"
               className="relative whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
             >
               Best Sellers
@@ -477,38 +566,34 @@ export function Header({
               onMouseLeave={scheduleShopClose}
             />
 
-            {/* No dedicated Brands page exists — the catalogue's Brand
-                filter already covers this, so this points at the same place
-                rather than a landing page that doesn't exist yet. */}
-            <Link
-              href="/products"
-              className="relative whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
-            >
-              Brands
-              <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
-            </Link>
-
-            {/* Everything to the left of this is a place to browse. The Design
-                Studio is the one thing in the nav you *do* rather than look at,
-                so it is shaped like an action — a tinted pill with a tool icon —
-                instead of being a category link that happens to be last. The
-                pen nib nudges on hover; the whole pill fills on hover so it
-                still reads as one target rather than a decorated word. */}
-            {PRIMARY_LINKS.map((link) => (
+            {/* Was a plain link to the unfiltered catalogue, on the grounds
+                that the sidebar's Brand filter already covered it. In use a
+                shopper clicking "Brands" and landing on an unfiltered listing
+                reads as the brand being absent — which is what UAT row 2
+                ("Gildan missing") was describing. It is now a real menu of
+                the brands the catalogue actually carries (row 62). */}
+            {HAS_BRANDS ? (
+              <NavTrigger
+                label="Brands"
+                isOpen={brandsOpen}
+                onToggle={openBrandsViaClick}
+                onMouseEnter={openBrands}
+                onMouseLeave={scheduleBrandsClose}
+              />
+            ) : (
               <Link
-                key={link.label}
-                href={link.href}
-                className="group inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-accent/25 bg-accent-tint px-3 py-1.5 text-sm font-bold text-accent transition-[background-color,border-color,color] duration-med ease-out-custom hover:bg-accent hover:border-accent hover:text-white"
+                href="/brands"
+                className="relative whitespace-nowrap font-bold text-sm text-text-primary py-1 group"
               >
-                <PenTool
-                  size={15}
-                  strokeWidth={2.25}
-                  aria-hidden
-                  className="shrink-0 transition-transform duration-med ease-out-custom group-hover:-rotate-12"
-                />
-                {link.label}
+                Brands
+                <span className="absolute left-0 right-0 -bottom-0.5 h-0.5 bg-accent scale-x-0 origin-left transition-transform duration-med group-hover:scale-x-100" />
               </Link>
-            ))}
+            )}
+
+            {/* A "Design Studio" action pill sat here. Removed at the
+                client's request (CodSphere UAT V2 row 57) — the nav is for
+                places to browse, and the studio is reached from a product,
+                from Account → My Designs, or from the quote CTA. */}
           </nav>
 
           <Link
@@ -586,6 +671,105 @@ export function Header({
             view. Same full-width treatment as the single-department panel
             above, for the same reason. The right rail is trimmed to just
             Corporate & Team Stores. */}
+        {/* Brands menu (UAT V2 row 62), following the Coastal Reign
+            reference: an alphabetical multi-column list, a featured rail on
+            the right, and a help line across the bottom.
+
+            Featured tiles carry the vendor's logo where the catalogue has
+            one, with the name beneath; a brand with no logo on file shows
+            its name alone. */}
+        {brandsOpen && HAS_BRANDS && (
+          <div
+            onMouseEnter={() => {
+              unpinBrands();
+              openBrands();
+            }}
+            onMouseLeave={scheduleBrandsClose}
+            className="absolute left-0 right-0 top-full bg-bg border-b border-border shadow-[0_16px_40px_rgba(20,26,35,0.08)]"
+          >
+            <Container>
+              <div className="flex max-h-[70vh]">
+                <div className="flex-1 min-w-0 py-sp-5 pr-sp-5 overflow-y-auto">
+                  <div className="mb-sp-4">
+                    <h3 className="m-0 font-display font-bold text-lg text-text-primary">
+                      Shop by Brand
+                    </h3>
+                    <p className="m-0 mt-1 text-xs text-text-secondary">
+                      {brands.length} brands currently in the catalogue.
+                    </p>
+                  </div>
+                  <div className="columns-2 sm:columns-3 xl:columns-4 gap-x-sp-5">
+                    {brands.map((brand) => (
+                      <Link
+                        key={brand.slug}
+                        href={brandPageHref(brand)}
+                        onClick={closeBrands}
+                        className="block break-inside-avoid py-1.5 text-sm text-text-secondary hover:text-accent transition-colors"
+                      >
+                        {brand.name}
+                      </Link>
+                    ))}
+                    <Link
+                      href="/brands"
+                      onClick={closeBrands}
+                      className="block break-inside-avoid py-1.5 text-sm font-bold text-accent hover:underline"
+                    >
+                      View All Brands
+                    </Link>
+                  </div>
+                </div>
+
+                {FEATURED_BRANDS.length > 0 && (
+                  <div className="hidden lg:block w-[300px] shrink-0 border-l border-border py-sp-5 pl-sp-5 overflow-y-auto">
+                    <h4 className="m-0 mb-sp-3 font-display font-bold text-sm text-text-primary">
+                      Featured Brands
+                    </h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* The vendor's logo where the catalogue has one (the
+                          brand page shows the same file); the name in text
+                          beneath so a small or unfamiliar mark still reads. */}
+                      {FEATURED_BRANDS.map((brand) => (
+                        <Link
+                          key={brand.slug}
+                          href={brandPageHref(brand)}
+                          onClick={closeBrands}
+                          className="flex flex-col items-center justify-center gap-1.5 rounded-md border border-border bg-bg-raised px-2 py-2.5 text-center text-[11px] font-bold leading-tight text-text-secondary hover:border-accent hover:text-accent transition-colors"
+                        >
+                          {brand.logoUrl ? (
+                            <span className="relative block h-8 w-full">
+                              <CatalogImage
+                                src={brand.logoUrl}
+                                alt=""
+                                fill
+                                sizes="80px"
+                                className="object-contain"
+                              />
+                            </span>
+                          ) : null}
+                          <span>{brand.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Container>
+            <div className="border-t border-border bg-bg-raised">
+              <Container>
+                <div className="py-sp-3 text-center text-sm">
+                  <Link
+                    href="/contact"
+                    onClick={closeBrands}
+                    className="font-bold text-accent hover:underline"
+                  >
+                    Need help? Get in touch
+                  </Link>
+                </div>
+              </Container>
+            </div>
+          </div>
+        )}
+
         {shopOpen && (
           <div
             onMouseEnter={() => {
@@ -684,7 +868,7 @@ export function Header({
         >
           <div className="flex flex-col gap-1.5 mb-sp-3">
             <Link
-              href="/products?category=best-sellers"
+              href="/best-sellers"
               onClick={() => setMobileOpen(false)}
               className="rounded-md border border-border bg-bg-raised px-3 py-2.5 text-sm font-bold"
             >
@@ -790,22 +974,59 @@ export function Header({
             >
               All Products
             </Link>
-            {/* No dedicated Brands page — points at the catalogue, same as
-                the desktop nav's Brands link. */}
-            <Link
-              href="/products"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm font-bold px-3 py-2"
-            >
-              Brands
-            </Link>
-            <Link
-              href="/design"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm font-bold px-3 py-2"
-            >
-              Design Studio
-            </Link>
+            {/* Mobile counterpart of the desktop Brands menu (UAT V2 row
+                62). Collapsed by default so a long brand list does not bury
+                the rest of the mobile nav. */}
+            {HAS_BRANDS ? (
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={openMobileSection === "brands"}
+                  onClick={() =>
+                    setOpenMobileSection((prev) =>
+                      prev === "brands" ? null : "brands",
+                    )
+                  }
+                  className="w-full flex items-center justify-between text-sm font-bold px-3 py-2"
+                >
+                  Brands
+                  <span aria-hidden className="text-text-tertiary">
+                    {openMobileSection === "brands" ? "−" : "+"}
+                  </span>
+                </button>
+                {openMobileSection === "brands" && (
+                  <div className="pl-3 pb-2 max-h-64 overflow-y-auto">
+                    {brands.map((brand) => (
+                      <Link
+                        key={brand.slug}
+                        href={brandPageHref(brand)}
+                        onClick={() => setMobileOpen(false)}
+                        className="block px-3 py-1.5 text-sm text-text-secondary"
+                      >
+                        {brand.name}
+                      </Link>
+                    ))}
+                    <Link
+                      href="/brands"
+                      onClick={() => setMobileOpen(false)}
+                      className="block px-3 py-1.5 text-sm font-bold text-accent"
+                    >
+                      View All Brands
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Link
+                href="/products"
+                onClick={() => setMobileOpen(false)}
+                className="text-sm font-bold px-3 py-2"
+              >
+                Brands
+              </Link>
+            )}
+            {/* Mobile counterpart of the removed desktop pill — row 57 asks
+                for it gone from both. */}
             <Link
               href="/services"
               onClick={() => setMobileOpen(false)}
@@ -877,13 +1098,15 @@ export function Header({
                 >
                   Your designs
                 </Link>
-                <Link
-                  href="/account/team"
-                  onClick={() => setMobileOpen(false)}
-                  className="text-sm font-bold px-3 py-2"
-                >
-                  Team store
-                </Link>
+                {SHOW_TEAM_STORES && (
+                  <Link
+                    href="/account/team"
+                    onClick={() => setMobileOpen(false)}
+                    className="text-sm font-bold px-3 py-2"
+                  >
+                    Team store
+                  </Link>
+                )}
                 <SignOutButton className="text-sm font-bold px-3 py-2 text-left" />
               </>
             ) : (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Image from "next/image";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 import Link from "next/link";
 import { ButtonLink } from "@/components/shared/Button";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
@@ -51,7 +51,7 @@ export function CatalogProductDetail({
     <div className="grid lg:grid-cols-2 gap-sp-5">
       <div className="relative aspect-square rounded-lg overflow-hidden border border-border bg-bg-raised">
         {imageUrl ? (
-          <Image
+          <CatalogImage
             src={imageUrl}
             alt={`${brandName} ${styleName}`}
             fill

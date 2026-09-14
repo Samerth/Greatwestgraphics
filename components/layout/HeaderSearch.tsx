@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -116,7 +116,7 @@ function SuggestDropdown({
               >
                 <span className="relative w-11 h-11 shrink-0 rounded-sm overflow-hidden bg-bg border border-border">
                   {r.imageUrl ? (
-                    <Image src={r.imageUrl} alt={r.name} fill className="object-contain p-1" sizes="44px" />
+                    <CatalogImage src={r.imageUrl} alt={r.name} fill className="object-contain p-1" sizes="44px" />
                   ) : null}
                 </span>
                 <span className="min-w-0">
