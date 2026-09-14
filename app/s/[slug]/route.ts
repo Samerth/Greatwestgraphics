@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SHOW_TEAM_STORES } from "@/lib/features";
 import {
   isStoreSlug,
   safeInternalNextPath,
@@ -19,6 +20,14 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ slug: string }> },
 ) {
+  // Row 51: the branded storefront entry point is closed while team
+  // stores are off. A 404 rather than a redirect, so a link that leaks
+  // out reads as 'no such page' instead of silently landing on the main
+  // shop and looking like the store was deleted.
+  if (!SHOW_TEAM_STORES) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const { slug } = await context.params;
   const normalized = slug.trim().toLowerCase();
   const nextPath = safeInternalNextPath(new URL(request.url).searchParams.get("next"));

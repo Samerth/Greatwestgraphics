@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
-import type { PricingConfigV2 } from "@gwg/contracts";
+import type { BrandOverview, PricingConfigV2 } from "@gwg/contracts";
 import { cn } from "@/lib/utils/cn";
 import { useActiveDesignStore, hasActiveArtwork } from "@/lib/store/active-design";
 import type {
@@ -17,11 +17,16 @@ import {
   catalogCardPricing,
   type CardQuantityBreak,
 } from "@/lib/commerce/catalog-card";
-import { visibleChildCategories } from "@/lib/commerce/category-slug";
+import {
+  ALL_CATEGORIES,
+  categoryToggleTarget,
+  isCategoryActive,
+} from "@/lib/commerce/category-slug";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { CatalogColorSwatches } from "@/components/products/CatalogColorSwatches";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
 import { PricingDetailsPopover } from "@/components/shared/PricingDetailsPopover";
+import { BrowsingQuantityControl } from "@/components/products/BrowsingQuantityControl";
 
 type SortKey = "popular" | "price-asc" | "price-desc" | "new";
 
@@ -82,6 +87,10 @@ type Props = {
   /** Published v2 pricing config, used to price cards as a real decorated
    * estimate at the customer's browsing quantity rather than a blank cost. */
   pricingConfig?: PricingConfigV2 | null;
+  /** Set when the listing is one brand's catalogue (UAT V2 row 62, second
+   * pass). The category facet then lists only that brand's categories, each
+   * with how many of the brand's styles it holds, under "All <Brand>". */
+  brandScope?: BrandOverview | null;
 };
 
 export function ProductsGrid({
@@ -95,6 +104,7 @@ export function ProductsGrid({
   activePriceMaxMinor = null,
   activeSearch = null,
   pricingConfig = null,
+  brandScope = null,
 }: Props) {
   const router = useRouter();
   // The quantity the customer was last using on any product's Live
@@ -107,9 +117,20 @@ export function ProductsGrid({
   useEffect(() => setMounted(true), []);
   const activeDesign = useActiveDesignStore((s) => s.design);
   const hasDesign = mounted && hasActiveArtwork(activeDesign);
+  // Held as state, not derived, so ticking a filter moves the checkbox
+  // immediately rather than after the server round-trip. It therefore has to
+  // be re-synced whenever the URL changes by any route other than our own
+  // `navigate()` — browser back/forward, or a category link elsewhere on the
+  // page while this grid stays mounted. Without this the checkbox keeps the
+  // previous selection while the heading below (which reads the prop
+  // directly) shows the new one. Only visible since row 66 stopped hiding
+  // the active filter, but the staleness predates it.
   const [activeCategory, setActiveCategory] = useState<string>(
-    activeCategorySlug || "All",
+    activeCategorySlug || ALL_CATEGORIES,
   );
+  useEffect(() => {
+    setActiveCategory(activeCategorySlug || ALL_CATEGORIES);
+  }, [activeCategorySlug]);
   const [sort, setSort] = useState<SortKey>("popular");
   const [selectedBrands, setSelectedBrands] = useState<string[]>(activeBrands);
   const [priceMinInput, setPriceMinInput] = useState(
@@ -121,13 +142,41 @@ export function ProductsGrid({
   const [searchInput, setSearchInput] = useState(activeSearch ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [showAllBrands, setShowAllBrands] = useState(false);
-  const categoryTree = useMemo(() => buildCategoryTree(dbCategories), [dbCategories]);
+  // Inside a brand, the sidebar is that brand's categories - a Gildan
+  // shopper is not offered Hats or Bags that Gildan does not make - and each
+  // one says how many of the brand's styles it holds.
+  // Sorted by how many styles they hold rather than by taxonomy order, so
+  // Gildan's 43 T-shirt styles are the first thing listed, not the last.
+  const facetCategories = useMemo<StorefrontCategory[]>(
+    () =>
+      brandScope
+        ? [...brandScope.categories].sort(
+            (a, b) => b.styleCount - a.styleCount || a.name.localeCompare(b.name),
+          )
+        : dbCategories,
+    [brandScope, dbCategories],
+  );
+  const styleCountBySlug = useMemo(
+    () =>
+      new Map(
+        (brandScope?.categories ?? []).map((category) => [
+          category.slug,
+          category.styleCount,
+        ]),
+      ),
+    [brandScope],
+  );
+  const facetLabel = (category: { name: string; slug: string }) => {
+    const count = styleCountBySlug.get(category.slug);
+    return count === undefined ? category.name : `${category.name} (${count})`;
+  };
+  const categoryTree = useMemo(() => buildCategoryTree(facetCategories), [facetCategories]);
   // Showing every department (Bags, Accessories, Hoodies...) while already
   // browsing a specific one (e.g. Short Sleeve) buries the sibling
   // categories a shopper actually wants under unrelated ones. Once a
   // category is active, narrow the sidebar down to just its department.
   const activeGroup = useMemo(() => {
-    if (activeCategory === "All") return null;
+    if (activeCategory === ALL_CATEGORIES) return null;
     const matchesSlug = (slug: string) => slug.toLowerCase() === activeCategory.toLowerCase();
     return (
       categoryTree.find((group) => matchesSlug(group.slug)) ??
@@ -135,7 +184,9 @@ export function ProductsGrid({
       null
     );
   }, [activeCategory, categoryTree]);
-  const visibleGroups = activeGroup ? [activeGroup] : categoryTree;
+  // A brand's own list is short enough to show whole, and hiding the other
+  // departments would hide what else the brand makes.
+  const visibleGroups = activeGroup && !brandScope ? [activeGroup] : categoryTree;
   // Was 8 — with Category and Brand both expanded by default (matching the
   // mockup's own default state), 8 brands plus a typical department's
   // subcategory list was enough to force the sidebar's internal scroll on
@@ -160,7 +211,7 @@ export function ProductsGrid({
     const search = next.search !== undefined ? next.search : searchInput;
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
-    if (category && category !== "All") params.set("category", category);
+    if (category && category !== ALL_CATEGORIES) params.set("category", category);
     for (const brand of brands) params.append("brand", brand);
     if (priceMin) params.set("priceMin", String(Math.round(parseFloat(priceMin) * 100)));
     if (priceMax) params.set("priceMax", String(Math.round(parseFloat(priceMax) * 100)));
@@ -230,30 +281,36 @@ export function ProductsGrid({
         />
       </form>
 
-      <FacetGroup title="Product Category">
+      <FacetGroup title={brandScope ? `${brandScope.name} categories` : "Product Category"}>
         <div className="space-y-2.5">
           <FacetCheck
-            label="All products"
-            checked={activeCategory === "All"}
+            label={
+              brandScope
+                ? `All ${brandScope.name} (${brandScope.styleCount})`
+                : "All products"
+            }
+            checked={activeCategory === ALL_CATEGORIES}
             onChange={() => {
-              setActiveCategory("All");
-              navigate({ category: "All" });
+              setActiveCategory(ALL_CATEGORIES);
+              navigate({ category: ALL_CATEGORIES });
             }}
           />
           {visibleGroups.map((group) => {
-            // The active subcategory is dropped from its own sibling list —
-            // it's already the filter in effect, so repeating it as a
-            // checkbox beside Heavyweight/Organic/etc. reads as redundant
-            // (CodSphere UAT V2).
-            const children = visibleChildCategories(group.children, activeCategory);
+            // Every sibling stays listed, including the one in effect — it
+            // renders ticked and untickable rather than disappearing the
+            // moment it is chosen (CodSphere UAT V2 row 66).
+            const children = group.children;
             return (
               <div key={group.id}>
                 <FacetCheck
-                  label={group.name}
-                  checked={activeCategory.toLowerCase() === group.slug.toLowerCase()}
+                  label={facetLabel(group)}
+                  checked={isCategoryActive(group.slug, activeCategory)}
                   onChange={() => {
-                    setActiveCategory(group.slug);
-                    navigate({ category: group.slug });
+                    // A department has no parent to step up to, so unticking
+                    // it clears the category filter entirely.
+                    const next = categoryToggleTarget(group.slug, activeCategory);
+                    setActiveCategory(next);
+                    navigate({ category: next });
                   }}
                   emphasize
                 />
@@ -262,11 +319,18 @@ export function ProductsGrid({
                     {children.map((child) => (
                       <FacetCheck
                         key={child.slug}
-                        label={child.name}
-                        checked={activeCategory.toLowerCase() === child.slug.toLowerCase()}
+                        label={facetLabel(child)}
+                        checked={isCategoryActive(child.slug, activeCategory)}
                         onChange={() => {
-                          setActiveCategory(child.slug);
-                          navigate({ category: child.slug });
+                          // Unticking a subcategory steps up to its
+                          // department rather than jumping out to All.
+                          const next = categoryToggleTarget(
+                            child.slug,
+                            activeCategory,
+                            group.slug,
+                          );
+                          setActiveCategory(next);
+                          navigate({ category: next });
                         }}
                       />
                     ))}
@@ -385,9 +449,16 @@ export function ProductsGrid({
                 {" "}
                 in{" "}
                 <b className="text-text-primary">
-                  {dbCategories.find((c) => c.slug === activeCategorySlug)?.name ??
+                  {facetCategories.find((c) => c.slug === activeCategorySlug)?.name ??
                     activeCategorySlug}
                 </b>
+              </>
+            ) : null}
+            {brandScope ? (
+              <>
+                {" "}
+                from{" "}
+                <b className="text-text-primary">{brandScope.name}</b>
               </>
             ) : null}
             {activeSearch ? (
@@ -397,45 +468,7 @@ export function ProductsGrid({
               </>
             ) : null}
           </p>
-          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-bg-raised py-1 pl-3 pr-1.5">
-            <label
-              htmlFor="browse-qty"
-              className="text-[13px] font-semibold text-text-secondary whitespace-nowrap"
-            >
-              Show prices at
-            </label>
-            <div className="flex items-center">
-              <button
-                type="button"
-                aria-label="Decrease quantity"
-                onClick={() => setQty(qty - 1)}
-                disabled={qty <= 1}
-                className="h-8 w-8 grid place-items-center rounded-md font-bold text-text-secondary transition-colors hover:bg-fill-subtle-15 hover:text-accent disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-secondary"
-              >
-                −
-              </button>
-              <input
-                id="browse-qty"
-                type="number"
-                min={1}
-                value={qty}
-                onChange={(e) => setQty(Number(e.target.value) || 1)}
-                className="w-12 h-8 bg-transparent text-center text-sm font-bold text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                aria-label="Quantity to price at"
-              />
-              <button
-                type="button"
-                aria-label="Increase quantity"
-                onClick={() => setQty(qty + 1)}
-                className="h-8 w-8 grid place-items-center rounded-md font-bold text-text-secondary transition-colors hover:bg-fill-subtle-15 hover:text-accent"
-              >
-                +
-              </button>
-            </div>
-            <span className="text-[13px] font-semibold text-text-secondary whitespace-nowrap pr-1">
-              pieces
-            </span>
-          </div>
+          <BrowsingQuantityControl />
 
           <select
             value={sort}
@@ -515,7 +548,7 @@ function ProductCard({
     >
       <Link href={displayHref} className="relative block aspect-[300/220] bg-bg-raised">
         {displayImageUrl ? (
-          <Image
+          <CatalogImage
             src={displayImageUrl}
             alt={activeSwatch ? `${tile.name} · ${activeSwatch.colorName}` : tile.name}
             fill
@@ -577,7 +610,8 @@ function ProductCard({
             </span>
             {tile.priceQty != null && (
               <span className="block text-xs text-text-tertiary mt-0.5">
-                at {tile.priceQty.toLocaleString()} pieces, including decoration
+                at {tile.priceQty.toLocaleString()}{" "}
+                {tile.priceQty === 1 ? "piece" : "pieces"}, including decoration
               </span>
             )}
           </p>

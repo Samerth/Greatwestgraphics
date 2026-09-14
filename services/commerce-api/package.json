@@ -29,6 +29,7 @@
     "db:studio": "drizzle-kit studio",
     "sync:ss": "tsx src/scripts/sync-ss.ts",
     "sync:sanmar": "tsx src/scripts/sync-sanmar.ts",
+    "probe:sanmar": "tsx src/scripts/probe-sanmar.ts",
     "catalog:reclassify": "tsx src/scripts/reclassify-categories.ts",
     "catalog:seed-categories": "tsx src/scripts/seed-categories.ts"
   },

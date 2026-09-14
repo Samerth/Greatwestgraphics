@@ -1,8 +1,10 @@
 import { cache } from "react";
+import type { BrandOverview, BrandSummary } from "@gwg/contracts";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { catalogCardImageUrl } from "./catalog-images";
 import { resolveCategoryId } from "./category-slug";
+import { storefrontProductName } from "./product-name";
 
 /**
  * Next signals control flow by throwing: notFound() and redirect() raise
@@ -193,7 +195,13 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       return {
         id: String(row.id),
         slug: String(row.slug || row.id),
-        name: `${row.brandName || ""} ${row.styleName || row.title || ""}`.trim(),
+        // Was `brandName + styleName`, which put the vendor's *style code* on
+        // the card — "Under Armour 1373881" rather than the garment's name.
+        name: storefrontProductName({
+          brandName: row.brandName as string | null,
+          title: row.title as string | null,
+          styleName: row.styleName as string | null,
+        }),
         brandName: String(row.brandName || ""),
         styleName: String(row.styleName || ""),
         title: (row.title as string | null) || null,
@@ -209,7 +217,12 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
             }[])
           : [],
         sizeRange: (row.sizeRange as string | null) || null,
-        categorySlugs: [],
+        // The API now returns these; it previously did not, so this was
+        // hard-coded empty and every consumer of the field silently saw
+        // a product that belonged to no category at all.
+        categorySlugs: Array.isArray(row.categorySlugs)
+          ? (row.categorySlugs as string[]).map(String)
+          : [],
         isBestSeller: Boolean(row.isBestSeller),
         isHat: Boolean(row.isHat),
         mapPriceMinor:
@@ -335,6 +348,94 @@ export async function loadStorefrontCategories(
       }),
     );
     return [];
+  }
+}
+
+/**
+ * Brand names carried by real catalogue products, for the header's Brands
+ * menu (CodSphere UAT V2 row 62).
+ *
+ * Deliberately the live list rather than `SHOP_BRAND_SEED`, which was a
+ * hand-written placeholder from before the vendor sync existed: a seeded name
+ * with nothing behind it sends the shopper to an empty listing, which is the
+ * complaint row 2 was actually describing.
+ *
+ * Fails to an empty list like the category loader, so the header falls back to
+ * a plain link rather than the nav breaking during an outage.
+ */
+export async function loadStorefrontBrands(): Promise<string[]> {
+  try {
+    const brands = await (await createCommerceClient()).listBrands();
+    return brands
+      .map((brand) => String(brand).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch (caught) {
+    if (isFrameworkControlFlow(caught)) throw caught;
+    console.error(
+      "[storefront] BRANDS_UNAVAILABLE loadStorefrontBrands failed",
+      JSON.stringify({
+        status: caught instanceof CommerceApiError ? caught.status : null,
+        message: caught instanceof Error ? caught.message : String(caught),
+      }),
+    );
+    return [];
+  }
+}
+
+/**
+ * The brands index page. Empty on an outage, like the other list loaders -
+ * the page says so rather than the route failing.
+ */
+export async function loadStorefrontBrandIndex(): Promise<{
+  brands: BrandSummary[];
+  source: "db" | "error";
+}> {
+  try {
+    const brands = await (await createCommerceClient()).listBrandSummaries();
+    return { brands, source: "db" };
+  } catch (caught) {
+    if (isFrameworkControlFlow(caught)) throw caught;
+    console.error(
+      "[storefront] BRANDS_UNAVAILABLE loadStorefrontBrandIndex failed",
+      JSON.stringify({
+        status: caught instanceof CommerceApiError ? caught.status : null,
+        message: caught instanceof Error ? caught.message : String(caught),
+      }),
+    );
+    return { brands: [], source: "error" };
+  }
+}
+
+/**
+ * One brand's landing page. "missing" and "unavailable" are kept apart for
+ * the same reason as the product loader below: a brand page must only
+ * answer 404 when the brand really is not there, never because the
+ * catalogue could not be reached.
+ */
+export type StorefrontBrandResult =
+  | { kind: "found"; brand: BrandOverview }
+  | { kind: "missing" }
+  | { kind: "unavailable" };
+
+export async function loadStorefrontBrand(slug: string): Promise<StorefrontBrandResult> {
+  try {
+    const brand = await (await createCommerceClient()).getBrandOverview(slug);
+    return { kind: "found", brand };
+  } catch (caught) {
+    if (isFrameworkControlFlow(caught)) throw caught;
+    if (caught instanceof CommerceApiError && caught.status === 404) {
+      return { kind: "missing" };
+    }
+    console.error(
+      "[storefront] BRAND_UNAVAILABLE loadStorefrontBrand failed",
+      JSON.stringify({
+        slug,
+        status: caught instanceof CommerceApiError ? caught.status : null,
+        message: caught instanceof Error ? caught.message : String(caught),
+      }),
+    );
+    return { kind: "unavailable" };
   }
 }
 

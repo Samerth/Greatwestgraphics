@@ -1,4 +1,6 @@
 import {
+  BrandOverviewSchema,
+  BrandSummarySchema,
   CheckoutSessionResponseSchema,
   CommerceErrorResponseSchema,
   CommerceHeaders,
@@ -92,10 +94,22 @@ export class CommerceClient {
   ): Promise<z.output<TSchema>> {
     let response: Response;
     const { revalidate, tags, ...restInit } = init;
+    // `content-type: application/json` is only true of a request that carries
+    // a JSON body. Sent on a body-less DELETE it told Fastify to parse an empty
+    // body as JSON, which it refuses — and the API reported that refusal as a
+    // generic 500, so deleting a saved design from My Designs failed with "An
+    // unexpected error occurred" and nothing to go on (15 Sep). The header is
+    // dropped whenever there is no body to describe.
+    // (`deleteCategory` worked around the same fault by sending `{}`.)
+    const headers = new Headers(this.headers());
+    new Headers(init.headers ?? {}).forEach((value, name) => headers.set(name, value));
+    if (restInit.body === undefined || restInit.body === null) {
+      headers.delete("content-type");
+    }
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         ...restInit,
-        headers: { ...this.headers(), ...init.headers },
+        headers,
         // Most catalog reads never change within a request lifecycle and
         // are identical across every visitor for a given store, so
         // short-lived revalidation avoids paying a fresh cross-region DB
@@ -1166,6 +1180,29 @@ export class CommerceClient {
       revalidate: 300,
       tags: ["catalog-brands"],
     });
+  }
+
+  /** The brands index: name, slug, logo and style count per brand. */
+  listBrandSummaries() {
+    return this.request("/v1/catalog/brands?detail=true", z.array(BrandSummarySchema), {
+      headers: this.headers(),
+      revalidate: 300,
+      tags: ["catalog-brands"],
+    });
+  }
+
+  /** One brand's landing page data. Throws a 404 CommerceApiError for a
+   * slug that matches no brand with storefront-visible products. */
+  getBrandOverview(slug: string) {
+    return this.request(
+      `/v1/catalog/brands/${encodeURIComponent(slug)}`,
+      BrandOverviewSchema,
+      {
+        headers: this.headers(),
+        revalidate: 300,
+        tags: ["catalog-brands", "catalog-products"],
+      },
+    );
   }
 
   createCategory(

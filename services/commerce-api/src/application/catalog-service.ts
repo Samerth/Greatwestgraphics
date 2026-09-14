@@ -1,6 +1,12 @@
 import { and, asc, desc, eq, exists, gt, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
-import type { Actor, PricingConfigV2 } from "@gwg/contracts";
-import { PricingConfigV2Schema } from "@gwg/contracts";
+import type {
+  Actor,
+  BrandCategory,
+  BrandOverview,
+  BrandSummary,
+  PricingConfigV2,
+} from "@gwg/contracts";
+import { brandSlug, PricingConfigV2Schema } from "@gwg/contracts";
 import {
   garmentPriceCurve,
   PRICING_MASTER_V2,
@@ -36,7 +42,17 @@ import { resolveDecorationRules } from "./decoration-rules.js";
 
 /** S&S sells its own printed catalogue through the same styles feed.
  * These are not garment brands and are hidden from shopper-facing lists. */
-const NON_GARMENT_BRANDS = ["Catalogs"];
+const NON_GARMENT_BRANDS = [
+  "Catalogs",
+  // SanMar's PromoStandards feed answers a style it cannot resolve with a
+  // placeholder - product "Unknown Product" under brand "Unknown", or
+  // "Error Product" under "Marketing". They are feed noise, not brands, and
+  // a shopper must not be offered a "Unknown" brand page (found 15 Sep,
+  // 46 + 1 rows on staging).
+  "Unknown",
+  "Unknown Brand",
+  "Marketing",
+];
 
 type ProductFilterQuery = {
   search?: string;
@@ -641,6 +657,132 @@ export class CatalogService {
     return rows.map((row) => row.brandName);
   }
 
+  /**
+   * The brands index: every brand with something to sell, its logo where the
+   * vendor supplied one, and how many styles it has in the storefront.
+   * Same visibility rule as `listBrands`, which stays as the cheap names-only
+   * call the header uses.
+   */
+  async listBrandSummaries(tenantId: string): Promise<BrandSummary[]> {
+    const rows = await this.db
+      .select({
+        brandName: ssStyles.brandName,
+        styleCount: sql<number>`count(distinct ${ssStyles.id})::int`,
+        // Any one of the brand's styles carries the same logo; max() is
+        // just a way to pick a non-null one without a second query.
+        logoUrl: sql<string | null>`max(${ssStyles.brandImageUrl})`,
+      })
+      .from(ssStyles)
+      .innerJoin(ssProducts, eq(ssProducts.styleUuid, ssStyles.id))
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssProducts.active, true),
+          eq(ssProducts.storefrontVisible, true),
+          not(inArray(ssStyles.brandName, NON_GARMENT_BRANDS)),
+        ),
+      )
+      .groupBy(ssStyles.brandName)
+      .orderBy(asc(ssStyles.brandName));
+    return rows.map((row) => ({
+      name: row.brandName,
+      slug: brandSlug(row.brandName),
+      logoUrl: row.logoUrl ?? null,
+      styleCount: Number(row.styleCount ?? 0),
+    }));
+  }
+
+  /**
+   * One brand's landing page (UAT V2 row 62 follow-up, 15 Sep): the brand
+   * itself plus every category that holds at least one of its styles, with
+   * a style count and a representative photo per category.
+   *
+   * Matched by slug rather than name so the URL can be `/brands/bella-canvas`
+   * while the filter behind it stays the exact vendor spelling. Counts are
+   * of styles, not colourways, because that is what a shopper sees as "a
+   * product" on the tiles. A style filed under a subcategory also counts
+   * for the department above it, so the department tile is never smaller
+   * than the sum of its children.
+   */
+  async brandOverview(
+    tenantId: string,
+    slug: string,
+    storeId?: string,
+  ): Promise<BrandOverview | null> {
+    const summaries = await this.listBrandSummaries(tenantId);
+    const brand = summaries.find((entry) => entry.slug === slug);
+    if (!brand) return null;
+
+    let categoryRows = await this.listCategoryRows(tenantId);
+    if (storeId) {
+      const allowedIds = await this.visibleCategoryIds(storeId);
+      if (allowedIds !== null) {
+        const allowed = new Set(allowedIds);
+        categoryRows = categoryRows.filter((row) => allowed.has(row.id));
+      }
+    }
+    const parentById = new Map(categoryRows.map((row) => [row.id, row.parentId]));
+
+    const memberships = await this.db
+      .select({
+        styleUuid: ssProducts.styleUuid,
+        categoryId: ssProductCategories.categoryId,
+        frontImageUrl: ssProducts.colorFrontImageUrl,
+        styleImageUrl: ssStyles.styleImageUrl,
+      })
+      .from(ssProducts)
+      .innerJoin(ssStyles, eq(ssProducts.styleUuid, ssStyles.id))
+      .innerJoin(
+        ssProductCategories,
+        eq(ssProductCategories.productUuid, ssProducts.id),
+      )
+      .where(
+        and(
+          eq(ssStyles.tenantId, tenantId),
+          eq(ssStyles.brandName, brand.name),
+          eq(ssProducts.active, true),
+          eq(ssProducts.storefrontVisible, true),
+        ),
+      )
+      .orderBy(asc(ssStyles.styleName), asc(ssProducts.colorName));
+
+    const stylesByCategory = new Map<string, Set<string>>();
+    const imageByCategory = new Map<string, string>();
+    const note = (categoryId: string, styleUuid: string, image: string | null) => {
+      let styles = stylesByCategory.get(categoryId);
+      if (!styles) {
+        styles = new Set();
+        stylesByCategory.set(categoryId, styles);
+      }
+      styles.add(styleUuid);
+      if (image && !imageByCategory.has(categoryId)) {
+        imageByCategory.set(categoryId, image);
+      }
+    };
+    for (const row of memberships) {
+      const image = row.frontImageUrl ?? row.styleImageUrl ?? null;
+      let categoryId: string | null = row.categoryId;
+      // Walk up so the department counts what its subcategories hold.
+      while (categoryId && parentById.has(categoryId)) {
+        note(categoryId, row.styleUuid, image);
+        categoryId = parentById.get(categoryId) ?? null;
+      }
+    }
+
+    const categoriesOut: BrandCategory[] = categoryRows
+      .filter((row) => (stylesByCategory.get(row.id)?.size ?? 0) > 0)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        parentId: row.parentId ?? null,
+        styleCount: stylesByCategory.get(row.id)!.size,
+        imageUrl: imageByCategory.get(row.id) ?? null,
+      }));
+
+    return { ...brand, categories: categoriesOut };
+  }
+
   /** Shared by listProducts/countProducts so the row count and the page of
    * rows are always computed against identical filters. */
   private async resolveProductFilters(
@@ -721,10 +863,7 @@ export class CatalogService {
     // necessarily in the same column — "navy hoodie" is colour on the
     // product and garment type in the style title, so matching the raw
     // phrase against any single column would return nothing.
-    const searchTerms = (query?.search ?? "")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+    const searchTerms = this.searchTermsOf(query?.search);
     const searchClauses = searchTerms.map((term) =>
       or(
         ilike(ssProducts.colorName, `%${term}%`),
@@ -762,6 +901,15 @@ export class CatalogService {
         : visibility === "hidden"
           ? eq(ssProducts.storefrontVisible, false)
           : undefined;
+    // The brands hidden from the shopper's brand list are hidden from the
+    // shopper's listings and search too: a printed catalogue, SanMar's
+    // "Unknown Product" placeholders, and its own marketing wearables
+    // ("Marketing CF Wearable Hoodie", part HOODIECF) were all reachable by
+    // search - the last one outranked every real hoodie (15 Sep). Staff
+    // views keep them, since they need to see what the feed delivered.
+    const feedNoiseClause = storefrontOnly
+      ? not(inArray(ssStyles.brandName, NON_GARMENT_BRANDS))
+      : undefined;
 
     const stock = query?.stock ?? "any";
     const stockClause =
@@ -779,12 +927,63 @@ export class CatalogService {
       priceFilteredIds ? inArray(ssProducts.id, priceFilteredIds) : undefined,
       query?.vendor ? eq(ssProducts.vendor, query.vendor) : undefined,
       visibilityClause,
+      feedNoiseClause,
       stockClause,
     );
     return { whereClause, empty: false };
   }
 
-  private productOrderBy(sort?: ProductFilterQuery["sort"]) {
+  /**
+   * How well one row answers a search, as a number the query can sort by.
+   *
+   * Matching alone was never the problem - "5000" already matched Gildan
+   * 5000 - but it also matched every SKU and slug with 5000 somewhere in it,
+   * and the results came back in brand order, so the shirt the shopper meant
+   * sat behind sixty Atlantis caps and Bella tees (15 Sep). Each search word
+   * now scores the row: an exact style number or part number first, then a
+   * style number that starts with the word, then the brand, the garment's
+   * title, and last a match that lives only in a SKU or URL. Words add up,
+   * so "gildan 5000" puts the Gildan 5000 above the 5000B and 5000L.
+   */
+  private searchRelevance(terms: readonly string[]) {
+    if (terms.length === 0) return null;
+    const perTerm = terms.map((raw) => {
+      const term = raw.toLowerCase();
+      const prefix = `${term}%`;
+      const anywhere = `%${term}%`;
+      return sql`(CASE
+        WHEN lower(${ssStyles.styleName}) = ${term}
+          OR lower(${ssStyles.partNumber}) = ${term}
+          OR lower(${ssStyles.externalKey}) = ${term} THEN 100
+        WHEN lower(${ssStyles.styleName}) LIKE ${prefix}
+          OR lower(${ssStyles.partNumber}) LIKE ${prefix} THEN 60
+        WHEN lower(${ssStyles.brandName}) = ${term} THEN 50
+        WHEN ${ssStyles.brandName} ILIKE ${anywhere} THEN 40
+        WHEN ${ssStyles.title} ILIKE ${anywhere} THEN 30
+        WHEN ${ssStyles.styleName} ILIKE ${anywhere} THEN 20
+        WHEN ${ssProducts.colorName} ILIKE ${anywhere} THEN 10
+        ELSE 0 END)`;
+    });
+    return sql`(${sql.join(perTerm, sql` + `)})`;
+  }
+
+  private searchTermsOf(search: string | undefined): string[] {
+    return (search ?? "").trim().split(/\s+/).filter(Boolean);
+  }
+
+  private productOrderBy(sort?: ProductFilterQuery["sort"], search?: string) {
+    // An explicit sort is the caller's choice; the default order is where a
+    // search result has to be ranked, or the best match is lost in the list.
+    const relevance =
+      !sort || sort === "brand" ? this.searchRelevance(this.searchTermsOf(search)) : null;
+    if (relevance) {
+      return [
+        desc(relevance),
+        asc(ssStyles.brandName),
+        asc(ssStyles.styleName),
+        asc(ssProducts.id),
+      ];
+    }
     switch (sort) {
       case "style":
         return [asc(ssStyles.styleName), asc(ssProducts.colorName), asc(ssProducts.id)];
@@ -876,7 +1075,21 @@ export class CatalogService {
       ? await this.expandCategoryIds(tenantId, query.categoryId)
       : null;
 
+    const relevance =
+      !query.sort || query.sort === "brand"
+        ? this.searchRelevance(this.searchTermsOf(query.search))
+        : null;
     const orderBy = (() => {
+      // Rows are grouped per style, so the style's best colourway score is
+      // what ranks it - the colour-name clause is the only per-row part.
+      if (relevance) {
+        return [
+          desc(sql`max(${relevance})`),
+          asc(ssStyles.brandName),
+          asc(ssStyles.styleName),
+          asc(ssProducts.styleUuid),
+        ];
+      }
       switch (query.sort) {
         case "style":
           return [
@@ -961,7 +1174,7 @@ export class CatalogService {
       : query?.categoryId
         ? await this.expandCategoryIds(tenantId, query.categoryId)
         : null;
-    const orderBy = this.productOrderBy(query?.sort);
+    const orderBy = this.productOrderBy(query?.sort, query?.search);
     const rows = grouped
       ? grouped.rows
       : categoryIds
@@ -1101,6 +1314,32 @@ export class CatalogService {
       : [];
     const hatProductIds = new Set(hatRows.map((r) => r.productUuid));
 
+    // Every category each product belongs to, by slug. Same batched-lookup
+    // pattern as the two flags above, and it replaces both of them in spirit:
+    // a caller that needs "is this a hat" can ask, but a caller that needs to
+    // *group* products by department could not, because the storefront type
+    // declared `categorySlugs` and the listing never filled it in. The Best
+    // Sellers page (UAT V2 row 68) groups by category, so it needs this.
+    const categoryRows = await this.db
+      .select({
+        productUuid: ssProductCategories.productUuid,
+        slug: categories.slug,
+      })
+      .from(ssProductCategories)
+      .innerJoin(categories, eq(ssProductCategories.categoryId, categories.id))
+      .where(
+        and(
+          eq(categories.tenantId, tenantId),
+          inArray(ssProductCategories.productUuid, productIds),
+        ),
+      );
+    const categorySlugsByProduct = new Map<string, string[]>();
+    for (const entry of categoryRows) {
+      const existing = categorySlugsByProduct.get(entry.productUuid);
+      if (existing) existing.push(entry.slug);
+      else categorySlugsByProduct.set(entry.productUuid, [entry.slug]);
+    }
+
     return rows.map((row) => {
       const variant = variantByProduct.get(row.product.id);
       const cost = variant?.customerPriceMinor ?? 0;
@@ -1133,6 +1372,7 @@ export class CatalogService {
         sizeRange: sizeRangeByProduct.get(row.product.id) ?? null,
         isBestSeller: bestSellerProductIds.has(row.product.id),
         isHat: hatProductIds.has(row.product.id),
+        categorySlugs: categorySlugsByProduct.get(row.product.id) ?? [],
       };
     });
   }

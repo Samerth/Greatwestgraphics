@@ -41,7 +41,15 @@ export default async function DesignPage({
       brandName: p.brandName,
       styleName: p.styleName,
       styleTitle: p.title,
-      imageUrl: p.imageUrl,
+      // The colour-specific flat photo, not the catalogue card's hero. The
+      // card deliberately prefers an on-model style shot (UAT row 28), and a
+      // style's hero is one colourway's photo — for an Allmade tee it is the
+      // Huckleberry model — so borrowing it here painted the Studio purple for
+      // a grey garment until the product detail arrived and corrected it.
+      // The swatch for this exact product carries its own front photo.
+      imageUrl:
+        p.colorSwatches.find((swatch) => swatch.productId === p.id)?.imageUrl ??
+        p.imageUrl,
       sideImageUrl: p.sideImageUrl,
       backImageUrl: p.backImageUrl,
       isDark: p.isDark,

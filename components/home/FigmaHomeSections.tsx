@@ -75,18 +75,32 @@ export function PrintMethods() {
   );
 }
 
-const ORDER_STEPS = [
+/**
+ * CodSphere UAT V2 row 64: the opening step now sends the visitor to Best
+ * Sellers rather than to a quote form, and step 02's "Open design studio"
+ * call to action is gone — the same instruction as rows 56 and 57, which
+ * removed the studio's other two top-level entry points. Browsing a real
+ * garment is the intended way in; the studio is reached from a product.
+ *
+ * `cta` is optional so a step can describe itself without demanding an
+ * action, which is exactly what step 02 now does.
+ */
+const ORDER_STEPS: {
+  num: string;
+  title: string;
+  body: string;
+  cta?: { label: string; href: string };
+}[] = [
   {
     num: "01",
     title: "Tell us what you need",
     body: "Send us the garment, the quantity and your deadline — or start from a price in the quote builder.",
-    cta: { label: "Start a quote", href: "/quote" },
+    cta: { label: "Start an order", href: "/best-sellers" },
   },
   {
     num: "02",
     title: "Send artwork, or make it here",
     body: "Upload a logo or build something from scratch in the design studio. We clean up the file either way.",
-    cta: { label: "Open design studio", href: "/design" },
   },
   {
     num: "03",
@@ -145,13 +159,15 @@ export function HowToOrder() {
                 <p className="text-sm sm:text-base text-text-secondary m-0 leading-relaxed">
                   {step.body}
                 </p>
-                <Link
-                  href={step.cta.href}
-                  className="mt-sp-3 inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:underline"
-                >
-                  {step.cta.label}
-                  <span aria-hidden>&rarr;</span>
-                </Link>
+                {step.cta && (
+                  <Link
+                    href={step.cta.href}
+                    className="mt-sp-3 inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:underline"
+                  >
+                    {step.cta.label}
+                    <span aria-hidden>&rarr;</span>
+                  </Link>
+                )}
               </div>
             </li>
           ))}
@@ -159,7 +175,7 @@ export function HowToOrder() {
 
         <div className="mt-sp-5 flex flex-wrap items-center justify-between gap-sp-3 rounded-md border border-border bg-bg px-sp-4 py-sp-3">
           <p className="m-0 text-sm sm:text-base text-text-secondary">
-            Know what you want already? Skip ahead and price it in a minute.
+            Know what you want already? Skip ahead to our most-ordered styles.
           </p>
           <div className="flex flex-wrap items-center gap-sp-3">
             <Link
@@ -174,7 +190,10 @@ export function HowToOrder() {
             >
               Locations we serve
             </Link>
-            <ButtonLink href="/quote" variant="primary">
+            {/* Row 64: "start an order" leads to Best Sellers. This button
+                still pointed at the quote page after the step-01 link was
+                changed (found 15 Sep). */}
+            <ButtonLink href="/best-sellers" variant="primary">
               Start an Order
             </ButtonLink>
           </div>
@@ -218,9 +237,12 @@ export function OrderNowBand() {
             Order Now!
           </ButtonLink>
         </div>
-        <p className="mt-sp-4 mb-0 text-sm text-white/80">
-          Free shipping for all custom product orders.
-        </p>
+        {/* "Free shipping for all custom product orders." sat here. It stated
+            a shipping charge away from checkout, which the client decided
+            against on 11 September, and it was an over-promise: free shipping
+            starts at $300, so "all custom product orders" committed us to
+            something we do not offer. The $300 message belongs above the
+            delivery options at checkout (UAT row 49), where it applies. */}
       </Container>
     </section>
   );

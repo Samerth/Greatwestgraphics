@@ -1,14 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Container } from "@/components/shared/Container";
 import { BackgroundVideo } from "@/components/shared/BackgroundVideo";
-import { publicQuoteOrFallback } from "@/lib/features";
 
 /**
- * Figma "Idea to Delivery" (2107:317) — the statement band between the quick
- * paths and the trust strip.
+ * Figma "Idea to Delivery" (2107:317) — the statement band that now follows
+ * the four "how to order" steps.
  *
  * This was a headline floating on a CSS hive pattern: a full band of viewport
  * with nothing in it to look at, on a page whose whole subject is a physical
@@ -66,75 +64,11 @@ export function IdeaToDelivery() {
   );
 }
 
-const QUICK_PATHS = [
-  {
-    num: "01",
-    title: "I need uniforms",
-    body: "Kit out a team, crew or school. Bulk apparel, embroidered or printed, sized and sorted.",
-    href: "/products",
-  },
-  {
-    num: "02",
-    title: "I need promo products",
-    body: "Swag, giveaways and event gear. Pens to tote bags, branded and delivered on deadline.",
-    // Pointed at "?category=promo", which is not a catalogue category — the
-    // listing came back empty. We do not stock a promo line in the synced
-    // catalogue, so sourcing these starts with a conversation.
-    href: publicQuoteOrFallback("/contact"),
-  },
-  {
-    num: "03",
-    title: "I have my own design",
-    body: "Upload artwork and go. We proof it, match your colours, and print it right the first time.",
-    href: "/design",
-  },
-];
-
-export function QuickPaths() {
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <section className="section-pad">
-      <Container>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-sp-3">
-          {QUICK_PATHS.map((path, index) => (
-            <motion.div
-              key={path.num}
-              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{
-                duration: 0.45,
-                delay: reduceMotion ? 0 : index * 0.08,
-                ease: [0.16, 0.8, 0.3, 1],
-              }}
-            >
-              <Link
-                href={path.href}
-                className="group block h-full bg-bg-raised border border-border rounded-lg p-sp-4 transition-[border-color,box-shadow,transform] duration-med ease-out-custom hover:border-accent hover:shadow-card hover:-translate-y-0.5"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex min-w-[2rem] justify-center text-xs font-bold text-accent bg-accent-tint px-2.5 py-1 rounded-sm">
-                    {path.num}
-                  </span>
-                  <span
-                    className="text-text-tertiary group-hover:text-accent group-hover:translate-x-0.5 transition-[color,transform] duration-med ease-out-custom shrink-0"
-                    aria-hidden
-                  >
-                    →
-                  </span>
-                </div>
-                <h3 className="mt-sp-3 mb-1.5 text-lg font-display font-bold m-0 text-text-primary">
-                  {path.title}
-                </h3>
-                <p className="text-sm sm:text-base text-text-secondary m-0 leading-relaxed">
-                  {path.body}
-                </p>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </Container>
-    </section>
-  );
-}
+/* A "Quick Paths" trio lived here — I need uniforms / I need promo
+   products / I have my own design — as the first section under the hero.
+   Removed at the client's request (CodSphere UAT V2 row 63): the four
+   "how to order" steps now occupy that slot instead, so the page opens by
+   explaining the process rather than asking the visitor to self-classify.
+   Its three destinations are all still reachable — /products from the nav
+   and the four steps, /contact from the header, and the Design Studio from
+   any product page. */

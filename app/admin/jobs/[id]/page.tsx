@@ -6,11 +6,24 @@ import {
   recordPaymentAction,
 } from "@/app/admin/actions";
 import { ProofUploadForm } from "@/components/admin/ProofUploadForm";
+import {
+  formatSizeBreakdown,
+  groupAdminJobLines,
+  placementKey,
+  productKeyFromStorefrontId,
+  withoutSizeSegment,
+} from "@/lib/admin/job-lines";
 import { JobTransitionForm } from "@/components/admin/JobTransitionForm";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
 import { jobStatusPresentation } from "@/lib/commerce/status";
 import { validNextStatuses, type JobRequestStatus } from "@gwg/contracts";
 import { getAuthoritativeLineTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
+import {
+  RUSH_FEE_LABEL,
+  RUSH_FLAG_LABEL,
+  formatRequestedDate,
+} from "@/lib/schemas/checkout";
+import { portalDecorations } from "@/lib/commerce/portal-progress";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +98,43 @@ export default async function AdminJobDetailPage({
     detail.status === "payment_pending" ||
     detail.status === "payment_failed";
 
+  // One row per product rather than one per size (client feedback, 10 Sep).
+  const linesById = new Map(detail.lines.map((line) => [line.id, line]));
+  const lineGroups = groupAdminJobLines(
+    detail.lines.map((line) => {
+      const config = (line.snapshot.configuration ?? {}) as {
+        color?: string;
+        size?: string;
+        storefrontProductId?: string;
+        productMetadata?: string;
+        designProjectId?: string;
+        artworkProofUrl?: string;
+        pricing?: unknown;
+      };
+      return {
+        id: line.id,
+        description: line.snapshot.description,
+        quantity: line.snapshot.quantity,
+        color: config.color ?? null,
+        size: config.size ?? null,
+        // Product only - the storefront id carries the size variant too, and
+        // the meta line names the size, so both kept a size run apart (15 Sep).
+        productKey: productKeyFromStorefrontId(config.storefrontProductId),
+        placement: placementKey(config),
+        unitPriceEstimateMinor: line.snapshot.unitPriceEstimateMinor ?? null,
+        totalMinor: getAuthoritativeLineTotalMinor(line.snapshot) ?? null,
+      };
+    }),
+  );
+  const orderQuantity = lineGroups.reduce((sum, g) => sum + g.quantity, 0);
+  const orderTotalMinor = lineGroups.reduce(
+    (sum, g) => sum + (g.totalMinor ?? 0),
+    0,
+  );
+  // submittedAt is when the customer placed it; createdAt covers a draft that
+  // was never formally submitted, so the date is never blank.
+  const orderedAt = detail.submittedAt ?? detail.createdAt;
+
   return (
     <div className="space-y-sp-4 max-w-4xl">
       <Link href="/admin/jobs" className="text-sm font-bold text-accent">
@@ -103,6 +153,65 @@ export default async function AdminJobDetailPage({
           {presentation.label}
         </span>
       </div>
+
+      {/* Order date, size and value at a glance. The date was previously only
+          readable at the bottom of the timeline, so answering "when did this
+          come in?" meant scrolling past everything (client feedback, 10 Sep:
+          "make order date more visible"). A rush flag belongs here too, but
+          nothing captures rush yet - that arrives with the checkout
+          turnaround step, UAT row 50. */}
+      <div className="flex flex-wrap items-center gap-x-sp-4 gap-y-1 border border-border rounded-md bg-bg-raised px-sp-3 py-sp-2">
+        <span className="text-sm">
+          <span className="text-text-tertiary">Order date </span>
+          <b className="tabular-nums">
+            {new Date(orderedAt).toLocaleDateString("en-CA", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </b>
+        </span>
+        <span className="text-sm">
+          <span className="text-text-tertiary">Quantity </span>
+          <b className="tabular-nums">
+            {orderQuantity.toLocaleString("en-CA")}
+          </b>
+        </span>
+        {orderTotalMinor > 0 && (
+          <span className="text-sm">
+            <span className="text-text-tertiary">Order total </span>
+            <b className="tabular-nums">{moneyFromMinor(orderTotalMinor)}</b>
+          </span>
+        )}
+      </div>
+
+      {/* A rush request is the one thing on a job that is time-critical for
+          staff, so it sits at the top in its own colour rather than in the
+          fulfilment card further down. The customer has asked for a date and
+          been told we will call to confirm it and any charge (UAT row 50) —
+          this is what makes sure somebody actually does. */}
+      {detail.fulfillment?.turnaround?.kind === "rush" ? (
+        <div
+          data-admin="rush-request"
+          className="border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/30 rounded-md px-sp-3 py-sp-2"
+        >
+          <p className="m-0 font-display font-bold text-amber-900 dark:text-amber-200 tracking-[0.06em]">
+            {RUSH_FLAG_LABEL}
+          </p>
+          <p className="m-0 mt-0.5 text-sm text-amber-900/90 dark:text-amber-200/90">
+            Requested date:{" "}
+            <b className="tabular-nums">
+              {detail.fulfillment.turnaround.requestedDate
+                ? formatRequestedDate(
+                    detail.fulfillment.turnaround.requestedDate,
+                  )
+                : "not supplied"}
+            </b>{" "}
+            · Rush fee: {RUSH_FEE_LABEL} · Contact the customer to confirm the
+            date and any charge.
+          </p>
+        </div>
+      ) : null}
 
       {detail.invoiceRequestedAt ? (
         <p className="border border-accent bg-accent-tint rounded-md px-sp-3 py-sp-2 text-sm m-0">
@@ -267,6 +376,20 @@ export default async function AdminJobDetailPage({
                   {detail.fulfillment.address.country}
                 </address>
               ) : null}
+              {detail.fulfillment.turnaround && (
+                <p className="border-t border-fill-subtle mt-2 pt-2 mb-0">
+                  Turnaround:{" "}
+                  <b>
+                    {detail.fulfillment.turnaround.kind === "rush"
+                      ? `Rush requested${
+                          detail.fulfillment.turnaround.requestedDate
+                            ? ` — ${formatRequestedDate(detail.fulfillment.turnaround.requestedDate)}`
+                            : ""
+                        }`
+                      : "Standard production, 5–7 business days"}
+                  </b>
+                </p>
+              )}
               {detail.fulfillment.deliveryNotes && (
                 <p className="border-t border-fill-subtle mt-2 pt-2 mb-0 whitespace-pre-wrap">
                   Delivery note: {detail.fulfillment.deliveryNotes}
@@ -296,28 +419,27 @@ export default async function AdminJobDetailPage({
       ) : null}
 
       <section className="space-y-sp-3">
-        <h2 className="font-display font-bold text-xl m-0">Lines</h2>
-        {detail.lines.map((line) => {
-          const configuration = line.snapshot.configuration as {
-            pricing?: {
-              // v1 keeps the total at the top of the breakdown, v2 nests it
-              // under totals.
-              breakdown?: {
-                totalMinor?: number;
-                totals?: { totalMinor?: number };
-              };
-            };
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-display font-bold text-xl m-0">Products</h2>
+          <span className="text-sm text-text-tertiary">
+            {orderQuantity.toLocaleString("en-CA")}{" "}
+            {orderQuantity === 1 ? "piece" : "pieces"} across{" "}
+            {lineGroups.length} {lineGroups.length === 1 ? "product" : "products"}
+          </span>
+        </div>
+        {lineGroups.map((group) => {
+          // Anything not size-specific - artwork, roster, warnings - belongs
+          // to the group, so it is read off the first line folded into it.
+          const first = linesById.get(group.ids[0]!);
+          const configuration = (first?.snapshot.configuration ?? {}) as {
             artworkProofUrl?: string;
             designProjectId?: string;
             roster?: { size: string; name: string; number?: string }[];
-            color?: string;
-            size?: string;
             storefrontProductId?: string;
             productMetadata?: string;
             pricingUnverified?: boolean;
+            pricing?: unknown;
           };
-          // Use authoritative line total, avoiding round-then-multiply drift
-          const lineTotalMinor = getAuthoritativeLineTotalMinor(line.snapshot);
           const artworkProofUrl = configuration?.artworkProofUrl;
           const designProjectId = configuration?.designProjectId;
           const roster = configuration?.roster;
@@ -325,23 +447,30 @@ export default async function AdminJobDetailPage({
             configuration?.productMetadata ||
             configuration?.storefrontProductId ||
             null;
+          // The meta line's size belongs to one folded line, not the group;
+          // the breakdown above already lists every size.
+          const placementNote = withoutSizeSegment(configuration?.productMetadata);
           return (
             <article
-              key={line.id}
+              key={group.key}
               className="border border-border rounded-md p-sp-3"
             >
-              <p className="font-semibold m-0">{line.snapshot.description}</p>
+              <p className="font-semibold m-0">{group.description}</p>
               <p className="text-sm text-text-secondary mt-1 mb-0">
-                Qty {line.snapshot.quantity}
-                {configuration?.color ? ` · ${configuration.color}` : ""}
-                {configuration?.size ? ` · ${configuration.size}` : ""}
-                {line.snapshot.unitPriceEstimateMinor != null
-                  ? ` · est. ${moneyFromMinor(line.snapshot.unitPriceEstimateMinor)} / unit`
+                {group.color ? `${group.color} · ` : ""}
+                Qty {group.quantity.toLocaleString("en-CA")}
+                {group.unitPriceEstimateMinor != null
+                  ? ` · est. ${moneyFromMinor(group.unitPriceEstimateMinor)} / unit`
                   : ""}
-                {lineTotalMinor != null
-                  ? ` · total ${moneyFromMinor(lineTotalMinor)}`
+                {group.totalMinor != null
+                  ? ` · total ${moneyFromMinor(group.totalMinor)}`
                   : ""}
               </p>
+              {group.sizes.length > 0 && (
+                <p className="text-sm font-semibold text-text-primary mt-1 mb-0 tabular-nums">
+                  {formatSizeBreakdown(group.sizes)}
+                </p>
+              )}
               {configuration?.pricingUnverified && (
                 <p className="text-xs font-semibold text-amber-700 mt-1 mb-0">
                   Customer-side estimate — not re-priced by the pricing engine.
@@ -349,10 +478,33 @@ export default async function AdminJobDetailPage({
                 </p>
               )}
 
-              {configuration?.productMetadata && (
+              {/* One line per decoration method and location, read from the
+                  order's own pricing snapshot — "Front: Screen Print · 2
+                  colours", "Back: DTF" — so staff read the garment the way a
+                  work order is written rather than reconstructing it from the
+                  placement string (UAT V2 row 69). Same reader the customer
+                  portal uses, so the two never disagree about an order. */}
+              {(() => {
+                const decorations = portalDecorations(configuration?.pricing);
+                return decorations.length > 0 ? (
+                  <ul
+                    data-admin="decoration-lines"
+                    className="m-0 mt-2 list-none p-0 space-y-0.5 text-sm"
+                  >
+                    {decorations.map((decoration) => (
+                      <li key={`${decoration.location}-${decoration.method}`}>
+                        <span className="font-bold">{decoration.location}: </span>
+                        {decoration.method}
+                        {decoration.detail ? ` · ${decoration.detail}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null;
+              })()}
+              {placementNote && (
                 <p className="text-sm text-text-primary mt-2 mb-0">
                   <span className="font-bold">Print placement. </span>
-                  {configuration.productMetadata}
+                  {placementNote}
                 </p>
               )}
               {catalogHint && catalogHint !== configuration?.productMetadata && (
@@ -367,7 +519,7 @@ export default async function AdminJobDetailPage({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={artworkProofUrl}
-                        alt={`Artwork proof for ${line.snapshot.description}`}
+                        alt={`Artwork proof for ${group.description}`}
                         className="h-24 w-auto border border-border rounded-sm bg-white"
                       />
                     </a>

@@ -11,6 +11,7 @@ import { StepPills } from "./StepPills";
 import { ContactStep } from "./ContactStep";
 import { ShippingStep } from "./ShippingStep";
 import { DeliveryStep, PickupStep } from "./DeliveryStep";
+import { TurnaroundStep, type TurnaroundSelection } from "./TurnaroundStep";
 import { PaymentStep } from "./PaymentStep";
 import { CheckoutSummary } from "./CheckoutSummary";
 import { CheckoutSuccess } from "./CheckoutSuccess";
@@ -32,6 +33,7 @@ interface CheckoutData {
   shipping?: ShippingValues;
   pickupNotes?: string;
   delivery: DeliveryKey;
+  turnaround: TurnaroundSelection;
 }
 
 export function CheckoutWizard() {
@@ -39,7 +41,13 @@ export function CheckoutWizard() {
   const clearCart = useCartStore((s) => s.clear);
 
   const [step, setStep] = useState(1);
-  const [data, setData] = useState<CheckoutData>({ delivery: "priority" });
+  // Defaults to shipping and standard production: the delivery step no
+  // longer sells "priority", and nobody should arrive at checkout already
+  // holding a rush request they did not ask for.
+  const [data, setData] = useState<CheckoutData>({
+    delivery: "standard",
+    turnaround: { kind: "standard" },
+  });
   const [placed, setPlaced] = useState<JobRequestResponse>();
   const [submissionError, setSubmissionError] = useState<string>();
   const checkoutTracked = useRef(false);
@@ -59,7 +67,19 @@ export function CheckoutWizard() {
     const saved = window.localStorage.getItem("gwg-checkout-details");
     if (!saved) return;
     try {
-      setData(JSON.parse(saved) as CheckoutData);
+      const parsed = JSON.parse(saved) as Partial<CheckoutData>;
+      setData({
+        ...parsed,
+        // A checkout left open across this change can hold a delivery method
+        // that is no longer offered, and will hold no turnaround at all.
+        // Both are repaired on the way in rather than rendering a step with
+        // nothing selected.
+        delivery: parsed.delivery === "pickup" ? "pickup" : "standard",
+        turnaround:
+          parsed.turnaround?.kind === "rush" && parsed.turnaround.requestedDate
+            ? parsed.turnaround
+            : { kind: "standard" },
+      });
     } catch {
       window.localStorage.removeItem("gwg-checkout-details");
     }
@@ -105,32 +125,47 @@ export function CheckoutWizard() {
           />
         )}
 
-        {step === 3 && data.delivery === "pickup" && (
+        {step === 3 && (
+          <TurnaroundStep
+            defaultValue={data.turnaround}
+            nextLabel={
+              data.delivery === "pickup"
+                ? "Continue to Pickup →"
+                : "Continue to Address →"
+            }
+            onBack={() => setStep(2)}
+            onNext={(turnaround) => {
+              setData((d) => ({ ...d, turnaround }));
+              setStep(4);
+            }}
+          />
+        )}
+
+        {step === 4 && data.delivery === "pickup" && (
           <PickupStep
             defaultNotes={data.pickupNotes}
-            onBack={() => setStep(2)}
+            onBack={() => setStep(3)}
             onNext={(pickupNotes) => {
               setData((d) => ({ ...d, pickupNotes, shipping: undefined }));
-              setStep(4);
+              setStep(5);
             }}
           />
         )}
 
-        {step === 3 && data.delivery !== "pickup" && (
+        {step === 4 && data.delivery !== "pickup" && (
           <ShippingStep
             defaultValues={data.shipping ?? {}}
-            onBack={() => setStep(2)}
+            onBack={() => setStep(3)}
             onNext={(shipping) => {
               setData((d) => ({ ...d, shipping }));
-              setStep(4);
+              setStep(5);
             }}
           />
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <PaymentStep
-            onBack={() => setStep(3)}
-            delivery={data.delivery}
+            onBack={() => setStep(4)}
             error={submissionError}
             onSubmit={async (customerNote) => {
               if (!data.contact) return;
@@ -153,11 +188,16 @@ export function CheckoutWizard() {
                     ? {
                         method: "pickup" as const,
                         deliveryNotes: data.pickupNotes || undefined,
+                        turnaround: data.turnaround,
                       }
                     : {
                         method: data.delivery,
                         address,
                         deliveryNotes: notes || undefined,
+                        // Carried on the order itself rather than buried in
+                        // the customer note, so staff can flag and filter on
+                        // a rush request instead of reading for it (row 50).
+                        turnaround: data.turnaround,
                       },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => {
@@ -254,7 +294,11 @@ export function CheckoutWizard() {
         )}
       </div>
 
-      <CheckoutSummary items={items} deliveryKey={data.delivery} />
+      <CheckoutSummary
+        items={items}
+        deliveryKey={data.delivery}
+        turnaround={data.turnaround}
+      />
     </div>
   );
 }

@@ -1,11 +1,17 @@
 import type { MetadataRoute } from "next";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
-import { loadStorefrontCatalog, loadStorefrontCategories } from "@/lib/commerce/catalog";
+import {
+  loadStorefrontBrandIndex,
+  loadStorefrontCatalog,
+  loadStorefrontCategories,
+} from "@/lib/commerce/catalog";
+import { brandPageHref } from "@/lib/commerce/brand-page";
 import { sitemapLegacyPaths } from "@/lib/seo/inventory";
 
 const STATIC_ROUTES = [
   { path: "/", priority: 1, frequency: "daily" as const },
   { path: "/design", priority: 0.8, frequency: "weekly" as const },
+  { path: "/brands", priority: 0.7, frequency: "weekly" as const },
   { path: "/locations", priority: 0.7, frequency: "weekly" as const },
   { path: "/start", priority: 0.6, frequency: "monthly" as const },
 ];
@@ -60,6 +66,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   } catch {
     // Categories unavailable — static routes above still get indexed.
+  }
+
+  // Brand pages (UAT V2 row 62): "custom gildan vancouver" is exactly the
+  // query a brand page exists to answer, so every brand with stock is listed.
+  const { brands } = await loadStorefrontBrandIndex();
+  for (const brand of brands) {
+    entries.push({
+      url: `${siteUrl}${brandPageHref(brand)}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    });
   }
 
   try {

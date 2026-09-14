@@ -9,6 +9,7 @@ import {
   studioArticleKey,
   studioArticleLabel,
   studioColorwayFill,
+  UNRESOLVED_SWATCH_HEX,
   studioColorwaysForArticle,
   studioColorwaysUseSwatches,
   studioDetailColorwaysForSelection,
@@ -316,7 +317,11 @@ describe("studioVariantIdForColorway", () => {
 describe("studioColorwayFill", () => {
   it("normalizes vendor hex and maps common colour names", () => {
     expect(normalizeStudioHex("1B2A4A")).toBe("#1b2a4a");
-    expect(hexForColorName("Sport Grey")).toBe("#8a8a8a");
+    // Was #8a8a8a, reached by falling through to the bare "grey". Sport Grey
+    // is a specific light heather, so it now has its own entry rather than
+    // borrowing the generic mid-grey (CodSphere UAT V2 rows 44/45).
+    expect(hexForColorName("Sport Grey")).toBe("#a3a3a3");
+    expect(hexForColorName("grey")).toBe("#8a8a8a");
     expect(hexForColorName("Arctic Blue")).toBe("#7eb8d4");
     expect(hexForColorName("Athletic Gold")).toBe("#d4a017");
     expect(hexForColorName("NightSkyNavy")).toBe("#1b2a4a");
@@ -352,15 +357,28 @@ describe("studioColorwayFill", () => {
         colorHex: null,
       }),
     ).toEqual({ imageUrl: null, hex: "#111111" });
+    // Row 44: the vendor photo used to win here, which is what put a picture
+    // of the garment inside the swatch circle. A real hex now beats it.
     expect(
       pdpColorwaySwatch({
         colorName: "Navy",
         colorHex: "1b2a4a",
         swatchImageUrl: "https://cdn.example/navy-swatch.jpg",
       }),
+    ).toEqual({ imageUrl: null, hex: "#1b2a4a" });
+
+    // This used to fall back to the photo when no colour could be determined
+    // — which is exactly the picture-in-a-circle row 44 reported, on every
+    // product whose name the lookup did not know. A neutral fill now, always.
+    expect(
+      pdpColorwaySwatch({
+        colorName: "Mombasa Twist",
+        colorHex: null,
+        swatchImageUrl: "https://cdn.example/unknown-swatch.jpg",
+      }),
     ).toEqual({
-      imageUrl: "https://cdn.example/navy-swatch.jpg",
-      hex: "#1b2a4a",
+      imageUrl: null,
+      hex: UNRESOLVED_SWATCH_HEX,
     });
   });
 
@@ -373,9 +391,54 @@ describe("studioColorwayFill", () => {
         { id: "p-x", colorName: "Safety Orange Heather Twist" },
       ]),
     ).toBe(true);
+    // "Azalea Blast" used to land here; azalea is a real apparel pink and is
+    // now recognised, so this needs a name carrying no colour word at all.
     expect(
-      studioColorwaysUseSwatches([{ id: "p-x", colorName: "Azalea Blast" }]),
+      studioColorwaysUseSwatches([{ id: "p-x", colorName: "Mombasa Twist" }]),
     ).toBe(false);
+  });
+
+  /**
+   * Rows 44 and 45 are one defect: a swatch painted from a photograph rather
+   * than from the colour. On the product page the photo beat an available
+   * hex; in the studio the colour-name table was too small to produce a hex
+   * for most real colourways, so it fell through to a remote vendor image
+   * that could fail to load — the "swatches are not loading" report.
+   */
+  it("resolves the everyday catalogue colour names the old table missed", () => {
+    for (const name of [
+      "Athletic Heather",
+      "Dark Heather",
+      "Carolina Blue",
+      "Vegas Gold",
+      "Kelly Green",
+      "Safety Green",
+      "Heather Grey",
+      "Light Grey",
+      "Burgundy",
+      "Cardinal",
+      "Hot Pink",
+      "Olive",
+      "Charcoal",
+      "Sand",
+    ]) {
+      expect(hexForColorName(name), `${name} should resolve`).toMatch(
+        /^#[0-9a-f]{6}$/,
+      );
+    }
+  });
+
+  it("prefers the qualified name over the bare colour inside it", () => {
+    expect(hexForColorName("Light Grey")).not.toBe(hexForColorName("grey"));
+    expect(hexForColorName("Safety Green")).not.toBe(hexForColorName("green"));
+    expect(hexForColorName("Forest Green")).not.toBe(hexForColorName("green"));
+  });
+
+  it("ignores qualifier words that describe rather than name a colour", () => {
+    // "Heather" must not outrank the orange it is qualifying.
+    expect(hexForColorName("Safety Orange Heather Twist")).toBe(
+      hexForColorName("Safety Orange"),
+    );
   });
 });
 
@@ -405,5 +468,90 @@ describe("filterStudioArticles", () => {
 
   it("returns every article when the query is blank", () => {
     expect(filterStudioArticles(articles, "  ")).toEqual(articles);
+  });
+});
+
+/**
+ * Reported on 14 September, on the ATC Y3550 product page: one swatch still
+ * showed a photo of the garment. The vendor had shipped no hex for any colour
+ * on the style, so every swatch depended on the name lookup — and "Carolina"
+ * was not in it. A scan of the whole catalogue then found 129 of 520 no-hex
+ * names failed the same way. Every name below is real, taken from that scan.
+ */
+describe("colour names as vendors actually ship them", () => {
+  it("knows the bare colour names that were missing", () => {
+    for (const name of [
+      "Carolina", "Caramel", "Pewter", "Sangria", "Spruce", "Anthracite",
+      "Terracotta", "Huckleberry", "Midnight", "Chrome", "Concrete", "Dove",
+    ]) {
+      expect(hexForColorName(name), name).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
+
+  it("expands vendor shorthand", () => {
+    expect(hexForColorName("Athletic Hthr")).toBe(hexForColorName("Athletic Heather"));
+    expect(hexForColorName("Dark Hthr Gry")).toBe(hexForColorName("Dark Heather Grey"));
+    expect(hexForColorName("Team DrkHthr")).toBe(hexForColorName("Dark Heather"));
+    expect(hexForColorName("Team FrstGrn")).toBe(hexForColorName("Forest Green"));
+    expect(hexForColorName("AthleticOxfrd")).toBe(hexForColorName("Athletic Oxford"));
+  });
+
+  it("copes with names the vendor truncates at thirteen characters", () => {
+    expect(hexForColorName("BrilliantOran")).toBe(hexForColorName("Brilliant Orange"));
+    expect(hexForColorName("Extreme Yello")).toBe(hexForColorName("Extreme Yellow"));
+    expect(hexForColorName("Dark Chocolat")).toBe(hexForColorName("Dark Chocolate"));
+  });
+
+  it("takes the body colour of a trim combination, not the trim", () => {
+    // "Crem/Nav/Gry" is a cream garment with navy and grey trim. Scanning
+    // right to left would have painted it grey.
+    expect(hexForColorName("Crem/Nav/Gry")).toBe(hexForColorName("Cream"));
+    expect(hexForColorName("Carolina/Coal")).toBe(hexForColorName("Carolina"));
+    expect(hexForColorName("CARA/BLK/BLK")).toBe(hexForColorName("Caramel"));
+    expect(hexForColorName("Concrete/Wht")).toBe(hexForColorName("Concrete"));
+  });
+
+  it("drops collection prefixes that are not colours", () => {
+    expect(hexForColorName("Flag Roy/Wht")).toBe(hexForColorName("Royal"));
+    expect(hexForColorName("TNF DrkGryHth")).toBe(hexForColorName("Dark Grey Heather"));
+  });
+
+  it("still returns nothing for a name that is not a colour", () => {
+    // These are the catalogue's internal items — the neutral fill is right.
+    for (const name of ["Sample", "Location", "Backpack", "English Logo", "ATC"]) {
+      expect(hexForColorName(name), name).toBeNull();
+    }
+  });
+});
+
+describe("a swatch is always a fill, never a photo (row 44)", () => {
+  const photo = "https://media.sanmarcanada.com/x/front.jpg";
+
+  it("paints a neutral fill when the name cannot be resolved", () => {
+    const fill = pdpColorwaySwatch({ colorName: "Sample", frontImageUrl: photo });
+    expect(fill.hex).toBe(UNRESOLVED_SWATCH_HEX);
+    expect(fill.imageUrl).toBeNull();
+  });
+
+  it("does the same in the studio", () => {
+    const fill = studioColorwayFill({
+      colorName: "Sample",
+      hex: null,
+      swatchImageUrl: photo,
+      frontImageUrl: photo,
+    } as never);
+    expect(fill.hex).toBe(UNRESOLVED_SWATCH_HEX);
+    expect(fill.imageUrl).toBeNull();
+  });
+
+  it("never returns an image URL from either helper", () => {
+    // The photo-in-a-circle is the exact thing the row reported.
+    for (const name of ["Black", "Carolina", "Crem/Nav/Gry", "Sample", ""]) {
+      expect(pdpColorwaySwatch({ colorName: name, frontImageUrl: photo }).imageUrl).toBeNull();
+    }
+  });
+
+  it("still prefers a real vendor hex over the lookup", () => {
+    expect(pdpColorwaySwatch({ colorName: "Carolina", colorHex: "#123456" }).hex).toBe("#123456");
   });
 });

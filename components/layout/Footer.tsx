@@ -65,7 +65,10 @@ export function Footer({
     { label: "Screen Printing", href: publicPrintMethodHref("screen") },
     { label: "DTF Printing", href: publicPrintMethodHref("dtf") },
     { label: "Sublimation Printing", href: publicPrintMethodHref("sublimation") },
-    { label: "Design Studio", href: "/design" },
+    // "Design Studio" sat here too. The studio is reached from a product,
+    // from Account → My Designs or from a quote, not from site navigation
+    // (CodSphere UAT V2 row 57 took it out of the header; the footer is the
+    // same navigation, one screen lower).
   ];
 
   const locationLinks = [
@@ -80,10 +83,9 @@ export function Footer({
   // not exist on that page, and "Sitemap" pointed at /products — neither went
   // where its label promised.
   const importantLinks = withoutPublicQuoteLinks([
-    {
-      label: "Start an Order",
-      href: SHOW_PUBLIC_QUOTE_CALCULATOR ? "/quote" : "/products",
-    },
+    // "Start an order" leads to Best Sellers wherever it appears (UAT V2
+    // row 64); this one still went to the full catalogue (15 Sep).
+    { label: "Start an Order", href: "/best-sellers" },
     { label: "How to Order", href: "/how-to-order" },
     { label: "Decoration Processes", href: "/decoration-processes" },
     { label: "FAQ", href: "/faq" },

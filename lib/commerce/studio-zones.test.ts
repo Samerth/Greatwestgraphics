@@ -129,18 +129,33 @@ describe("detectPlacementZone", () => {
         canvasSize: canvas,
       }),
     ).toBe("Full Back");
-    expect(detectPlacementZone(markAt("left", 0.5, 0.2))).toBe("Left Sleeve");
+    // The sleeve plate is the 3.5" square mark itself, so a logo that fills
+    // it is still a sleeve print — including one placed at the plate's full
+    // width, which is how uploads now land there.
     const left = printAreaPixels("left", canvas);
+    expect(detectPlacementZone(markAt("left", 0.5, 0.5))).toBe("Left Sleeve");
+    expect(
+      detectPlacementZone({
+        side: "left",
+        x: left.x,
+        y: left.y,
+        width: left.width * 0.76,
+        height: left.height * 0.76,
+        canvasSize: canvas,
+      }),
+    ).toBe("Left Sleeve");
+    // A side panel is the 4" x 12" vertical strip: much taller than the
+    // square plate, not merely filling it.
     expect(
       detectPlacementZone({
         side: "left",
         x: left.x,
         y: left.y,
         width: left.width * 0.7,
-        height: 40,
+        height: left.height * 2,
         canvasSize: canvas,
       }),
     ).toBe("Left Side Panel");
-    expect(detectPlacementZone(markAt("right", 0.5, 0.2))).toBe("Right Sleeve");
+    expect(detectPlacementZone(markAt("right", 0.5, 0.5))).toBe("Right Sleeve");
   });
 });

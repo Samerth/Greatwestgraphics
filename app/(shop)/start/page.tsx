@@ -1,14 +1,20 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { RedirectIfExistingStore } from "@/components/account/RedirectIfExistingStore";
 import { StoreWizard } from "@/components/account/StoreWizard";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { existingTeamStorePath } from "@/lib/commerce/membership";
+import { SHOW_TEAM_STORES } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export default async function StartPage() {
+  // Nobody should be able to create a branded store while the feature
+  // is off (row 51) — one created now would be invisible and would then
+  // have to be migrated into whatever row 52 becomes.
+  if (!SHOW_TEAM_STORES) notFound();
+
   const session = await getCustomerSession();
   if (!session) {
     redirect("/account?next=/start");

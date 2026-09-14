@@ -398,7 +398,14 @@ export default function CartPage() {
                   accent
                 />
               )}
-              <SummaryRow label="Shipping (Vancouver)" value="Free" />
+              {/* A "Shipping (Vancouver) · Free" row sat here. It stated a
+                  shipping charge on a page that is not checkout, which the
+                  client decided against on 11 September ("shipping charges
+                  appear at checkout only, not on other pages"), and it was
+                  wrong twice over: it promised free shipping unconditionally
+                  when the threshold is $300, and named Vancouver when pickup
+                  is a separate choice made at checkout. Where shipping lands
+                  is said below instead, without quoting a price for it. */}
             </div>
 
             {/* A "Promo code" field and an Apply button sat here. There is no
@@ -427,7 +434,13 @@ export default function CartPage() {
             {/* Read "🔒 Secure checkout · Visa · Mastercard · Amex" directly
                 under the checkout button. Checkout takes no card and has no
                 processor behind it; it submits the job for design review. */}
-            <p className="text-[12px] text-text-tertiary text-center mt-sp-3 mb-1">
+            <p
+              data-cart="shipping-note"
+              className="text-[12px] text-text-tertiary text-center mt-sp-3 mb-1"
+            >
+              Shipping and tax are calculated at checkout.
+            </p>
+            <p className="text-[12px] text-text-tertiary text-center mb-1">
               No payment is taken at checkout — we price and invoice after
               design review.
             </p>
@@ -438,7 +451,7 @@ export default function CartPage() {
         </div>
 
         <div className="mt-sp-7 flex flex-wrap justify-center gap-x-sp-5 gap-y-2 text-sm text-text-secondary border border-border rounded-md py-3 px-4 bg-bg-raised">
-          <span>✓ Proof before print</span>
+          <span>✓ Pay after proof</span>
           <span>✓ Reprint guarantee</span>
           <span>✓ Quick Order 48-hour available</span>
           <span>✓ Vancouver made since 1980</span>

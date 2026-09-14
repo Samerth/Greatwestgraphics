@@ -138,18 +138,25 @@ describe("studio print areas", () => {
   it("puts sleeve plates on the near sleeve of the 3/4 side view", () => {
     const left = STUDIO_PRINT_AREAS.left;
     const right = STUDIO_PRINT_AREAS.right;
-    // Unmirrored plate faces left — near sleeve is on the right of the photo.
-    expect(left.x).toBeGreaterThan(0.5);
-    expect(left.x + left.width).toBeLessThan(0.75);
+    // Unmirrored plate faces left — near sleeve is on the right of the photo,
+    // so the plate's centre sits right of the midline. (Its left edge may
+    // start a touch left of 0.5: the sleeve does.)
+    expect(left.x + left.width / 2).toBeGreaterThan(0.5);
+    // And stays on the sleeve. Measured on a real vendor side photo inside
+    // the studio's inset frame, the sleeve's outer edge is at about 0.62; a
+    // plate reaching 0.70 hung off the garment (Pavin, 15 Sep).
+    expect(left.x + left.width).toBeLessThanOrEqual(0.62);
     expect(left.width).toBeLessThan(0.24);
     expect(left.height).toBeLessThan(0.34);
     expect(left.width).toBeLessThan(STUDIO_PRINT_AREAS.front.width);
+    // A sleeve print is square (3.5" × 3.5"), so its plate is too.
+    expect(left.width).toBeCloseTo(left.height, 5);
     // Right view is the same plate flipped, so the sleeve flips with it.
     expect(right.x).toBeCloseTo(1 - left.x - left.width, 5);
     expect(right.y).toBe(left.y);
     expect(right.width).toBe(left.width);
     expect(right.height).toBe(left.height);
-    expect(right.x + right.width).toBeLessThan(0.5);
+    expect(right.x + right.width / 2).toBeLessThan(0.5);
   });
 });
 

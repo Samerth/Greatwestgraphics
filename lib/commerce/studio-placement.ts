@@ -63,12 +63,25 @@ export type NormalizedRect = {
  * left/center/right align inside, and where new uploads start.
  */
 export const STUDIO_PRINT_AREAS: Record<DesignSide, NormalizedRect> = {
-  front: { x: 0.3, y: 0.26, width: 0.4, height: 0.36 },
-  back: { x: 0.3, y: 0.24, width: 0.4, height: 0.4 },
+  // `y` sits the plate just under the collar rather than mid-chest. It was
+  // 0.26 / 0.24 / 0.22, which read as a box floating around the belly on a
+  // typical square colorway photo (Pavin, UAT row 47: "please move the
+  // printable box upwards, reference coastal reign for location"). Widths and
+  // heights are unchanged — this is where the plate sits, not how big it is.
+  front: { x: 0.3, y: 0.2, width: 0.4, height: 0.36 },
+  back: { x: 0.3, y: 0.18, width: 0.4, height: 0.4 },
   // 3/4 plates face left. The near sleeve is on the right of the photo
   // (~3.5" face, not a front plate). Right view mirrors that plate.
-  left: { x: 0.54, y: 0.22, width: 0.16, height: 0.26 },
-  right: { x: 0.3, y: 0.22, width: 0.16, height: 0.26 },
+  //
+  // Square, because the sleeve print it stands for is square (3.5" × 3.5",
+  // see STUDIO_ZONE_INCHES) — it was a 0.16 × 0.26 upright rectangle, which
+  // reached from the shoulder seam to the hem. And narrower: on a vendor side
+  // photo framed by the studio's 8% inset, the sleeve itself spans roughly
+  // x 0.48–0.62, so a box out to 0.70 hung off the garment into blank canvas
+  // (Pavin, 15 Sep: "the box is not exactly at sleeve — see Coastal Reign").
+  // Placed by drawing it onto the real ATC Y3550 side photo, not by eye.
+  left: { x: 0.49, y: 0.23, width: 0.12, height: 0.12 },
+  right: { x: 0.39, y: 0.23, width: 0.12, height: 0.12 },
 };
 
 /** Chest / sleeve mark — ~32% of the print-area width, not of the canvas. */
@@ -119,7 +132,11 @@ export function placementIntent(
       return { alignX: "center", alignY: "upper", extent: "mark" };
     case "Left Sleeve":
     case "Right Sleeve":
-      return { alignX: "center", alignY: "upper", extent: "mark" };
+      // "full", not "mark": the sleeve plate *is* the 3.5" mark (see
+      // STUDIO_ZONE_INCHES), so a logo should fill it. The chest rule — a
+      // mark is ~32% of its plate — sized sleeve uploads at 13px on a 340px
+      // canvas, which is how the plate could look empty with art on it.
+      return { alignX: "center", alignY: "center", extent: "full" };
     case "Full Front":
     case "Full Back":
     case "Left Side Panel":

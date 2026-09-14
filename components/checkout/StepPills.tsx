@@ -7,11 +7,15 @@ export function StepPills({
   current: number;
   pickup: boolean;
 }) {
+  // Delivery Method → Turnaround → Address → Review, the order the client
+  // asked for in UAT row 50. Turnaround is its own stage rather than a block
+  // inside delivery, because mixing the two is the thing row 49 removed.
   const STEPS = [
     { n: 1, label: "Contact" },
-    { n: 2, label: "Fulfilment" },
-    { n: 3, label: pickup ? "Pickup" : "Address" },
-    { n: 4, label: "Review" },
+    { n: 2, label: "Delivery" },
+    { n: 3, label: "Turnaround" },
+    { n: 4, label: pickup ? "Pickup" : "Address" },
+    { n: 5, label: "Review" },
   ];
   return (
     <div className="flex gap-2 flex-wrap mb-sp-5">

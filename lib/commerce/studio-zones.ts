@@ -43,6 +43,8 @@ export const STUDIO_ZONE_INCHES: Record<
 export const STUDIO_ZONE_FULL_WIDTH_RATIO = 0.65;
 /** Or this share of the print-area height. */
 export const STUDIO_ZONE_FULL_HEIGHT_RATIO = 0.7;
+/** Sleeve artwork this much taller than its square plate is a side panel. */
+export const STUDIO_SLEEVE_PANEL_HEIGHT_RATIO = 1.5;
 
 function formatInch(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -53,6 +55,34 @@ export function formatZoneInchLabel(zone: string): string {
   const inches = STUDIO_ZONE_INCHES[zone];
   if (!inches) return zone;
   return `${zone} · ${formatInch(inches.widthIn)}"W × ${formatInch(inches.heightIn)}"H`;
+}
+
+/**
+ * The full-plate zone that each side's printable box represents. The box drawn
+ * on the canvas is the whole plate for that view, so its size is the full-plate
+ * zone's size — not whichever zone the artwork currently happens to land in.
+ */
+const SIDE_PLATE_ZONE: Record<DesignSide, string> = {
+  front: "Full Front",
+  back: "Full Back",
+  left: "Left Sleeve",
+  right: "Right Sleeve",
+};
+
+/**
+ * e.g. `13" × 16"` — the printable box's own dimensions, drawn on the box
+ * itself (UAT row 47: "please include the box dimensions as seen on Coastal
+ * Reigns screenshot").
+ *
+ * Deliberately different from `formatZoneInchLabel`, which answers a different
+ * question: that one names where the artwork currently sits and how big that
+ * zone is, and changes as the shopper drags. This one is a constant property
+ * of the view — how much room there is to print in — so it stays put.
+ */
+export function formatPlateInchLabel(side: DesignSide): string {
+  const inches = STUDIO_ZONE_INCHES[SIDE_PLATE_ZONE[side]];
+  if (!inches) return "";
+  return `${formatInch(inches.widthIn)}" × ${formatInch(inches.heightIn)}"`;
 }
 
 export function detectPlacementZone(input: {
@@ -89,8 +119,12 @@ export function detectPlacementZone(input: {
     void ny;
     return "Upper Back";
   }
+  // Sleeves: the plate is the 3.5" square mark, so filling it is still a
+  // sleeve print. A side panel is the 4" x 12" vertical strip — artwork
+  // that runs well past the plate's height, not one that merely fills it.
+  const isPanel = heightRatio >= STUDIO_SLEEVE_PANEL_HEIGHT_RATIO;
   if (input.side === "left") {
-    return isFull ? "Left Side Panel" : "Left Sleeve";
+    return isPanel ? "Left Side Panel" : "Left Sleeve";
   }
-  return isFull ? "Right Side Panel" : "Right Sleeve";
+  return isPanel ? "Right Side Panel" : "Right Sleeve";
 }

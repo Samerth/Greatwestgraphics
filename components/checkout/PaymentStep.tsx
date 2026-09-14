@@ -8,7 +8,6 @@ import { Field, Textarea } from "./FormField";
 import { Button } from "@/components/shared/Button";
 import { cn } from "@/lib/utils/cn";
 import { useVisibleCartItems } from "@/lib/store/cart";
-import { DELIVERY_FEES, type DeliveryKey } from "@/lib/schemas/checkout";
 import { money } from "@/lib/utils/quote-pricing";
 
 /**
@@ -69,12 +68,10 @@ export function PaymentStep({
   onBack,
   onSubmit,
   error,
-  delivery = "priority",
 }: {
   onBack: () => void;
   onSubmit: (notes: string | undefined) => Promise<void>;
   error?: string;
-  delivery?: DeliveryKey;
 }) {
   const items = useVisibleCartItems();
   const [tab, setTab] = useState<PayTab>("card");
@@ -92,9 +89,12 @@ export function PaymentStep({
     () => items.reduce((sum, item) => sum + item.unit * item.qty, 0),
     [items],
   );
-  const deliveryFee = DELIVERY_FEES[delivery] ?? 0;
+  // No delivery fee is added here any more. Shipping is either free or not
+  // yet quoted, and a rush charge is confirmed by staff afterwards, so the
+  // estimate is goods plus tax and matches the summary alongside it exactly
+  // (UAT rows 49 and 50).
   const gst = subtotal * 0.05;
-  const estimated = subtotal + deliveryFee + gst;
+  const estimated = subtotal + gst;
   //const deposit = estimated * 0.5;
   //const depositNow = useWatch({ control, name: "depositNow" });
 
@@ -110,10 +110,14 @@ export function PaymentStep({
         submit for design review — no charge is captured yet.
       </p>
 
-      <div className="border border-accent bg-accent-tint rounded-md p-sp-3 mb-sp-4 text-sm">
-        <b>No payment is collected now.</b> Our team will review your design,
-        confirm availability, and send final pricing before payment becomes
-        available.
+      {/* Verbatim from the client (UAT row 49), replacing a longer notice
+          they found too technical. */}
+      <div
+        data-checkout="no-payment-notice"
+        className="border border-accent bg-accent-tint rounded-md p-sp-3 mb-sp-4 text-sm"
+      >
+        <b>No payment today</b> — submit your order for review and we&apos;ll
+        confirm all details before payment.
       </div>
 
       <div

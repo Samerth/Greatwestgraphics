@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { priceShopperQuote } from "@gwg/pricing";
+import {
+  STOREFRONT_ESTIMATE_ASSUMPTIONS,
+  customerUnitMinor,
+} from "@/lib/commerce/storefront-quote";
 import { OptionalImage } from "@/components/shared/OptionalImage";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/shared/Button";
@@ -126,10 +130,15 @@ export function QuoteBuilder({
   );
   const [optionKey, setOptionKey] = useState<string>("");
   const [showMore, setShowMore] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
   const [surchargesOpen, setSurchargesOpen] = useState(false);
   const [rush, setRush] = useState(false);
-  const [includePacking, setIncludePacking] = useState(true);
+  // Seeded from the shared storefront assumption rather than a literal, so
+  // this form opens quoting the same way the product page and the order do.
+  // It stays a control because this form is the one place a quote is built
+  // deliberately rather than estimated (CodSphere UAT V2 row 53).
+  const [includePacking, setIncludePacking] = useState<boolean>(
+    STOREFRONT_ESTIMATE_ASSUMPTIONS.includePacking,
+  );
   const [customInput, setCustomInput] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
@@ -166,7 +175,11 @@ export function QuoteBuilder({
         ? optionKey || defaultOptionKey(selectedMethod)
         : undefined,
       locations,
-      shareSetup: true,
+      // Was true — one setup fee shared across every placement, while the
+      // studio and the order both charge one per decoration. A quote and the
+      // order it turns into must not disagree, so this now follows the same
+      // shared assumption as every other surface.
+      shareSetup: STOREFRONT_ESTIMATE_ASSUMPTIONS.shareSetup,
       rush,
       includePacking,
       description: selectedCatalog?.label ?? product,
@@ -191,7 +204,9 @@ export function QuoteBuilder({
   );
 
   const breakdown = quoted.breakdown;
-  const perPieceMinor = quoted.perPieceMinor;
+  // Setup folded in, so this multiplies out to the order total the customer
+  // is also shown (UAT V2 row 48).
+  const perPieceMinor = customerUnitMinor(quoted.totalMinor, qty);
 
   /**
    * Prices the same order at the next quantity break using the engine itself,
@@ -206,18 +221,12 @@ export function QuoteBuilder({
       ...shopperInput,
       quantity: nextBreak,
     });
-    const saving = perPieceMinor - atNextBreak.perPieceMinor;
+    const saving =
+      perPieceMinor - customerUnitMinor(atNextBreak.totalMinor, nextBreak);
     if (saving <= 0) return null;
     return `Order ${nextBreak}+ and save ${moneyFromMinor(saving)} per piece.`;
   }, [selectedMethod, qty, pricingConfig, shopperInput, perPieceMinor]);
 
-  const oneTimeLines = breakdown.lines.filter((line) =>
-    ["setup", "thread", "design", "artworkMinimum"].includes(line.kind),
-  );
-  const oneTimeFeesMinor = oneTimeLines.reduce(
-    (sum, line) => sum + line.extendedAmountMinor,
-    0,
-  );
   // Surcharges (2XL+ upcharges, dark-garment underbase, etc.) are already
   // folded into the per-piece price above — this just makes them visible
   // instead of leaving the customer to wonder why the total is higher than
@@ -589,32 +598,10 @@ export function QuoteBuilder({
             </div>
           </div>
 
-          {oneTimeLines.length > 0 && (
-            <div className="border border-border rounded-sm bg-bg-raised overflow-hidden">
-              <button
-                type="button"
-                className="w-full flex justify-between items-center px-4 py-3 text-sm font-semibold hover:bg-fill-subtle-15 transition-colors"
-                onClick={() => setSetupOpen((v) => !v)}
-              >
-                <span>
-                  One-time setup: {moneyFromMinor(oneTimeFeesMinor)}
-                </span>
-                <span className="text-[12px]">{setupOpen ? "▲" : "▼"}</span>
-              </button>
-              {setupOpen && (
-                <ul className="px-4 pb-3 pt-2 text-[12px] text-text-secondary space-y-1.5 border-t border-border">
-                  {oneTimeLines.map((line) => (
-                    <li key={line.label} className="flex justify-between gap-3">
-                      <span>{line.label}</span>
-                      <span className="font-semibold text-text-primary">
-                        {moneyFromMinor(line.extendedAmountMinor)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          {/* A collapsible "One-time setup" disclosure sat here. Removed at
+              the client's request — setup is now inside the per-piece price
+              and is not shown as a charge of its own (UAT V2 row 48). Staff
+              still see the full split in the pricing admin. */}
 
           {surchargeLines.length > 0 && (
             <div className="border border-amber-300 bg-amber-50 rounded-sm overflow-hidden">

@@ -67,3 +67,42 @@ export function catalogCardImageUrl(input: {
   }
   return styleImage || colorFront;
 }
+
+/**
+ * The vendor CDNs product photos are hotlinked from — the same three hosts
+ * `next.config.ts` allows under `images.remotePatterns`. A test reads that
+ * file back to keep the two lists identical.
+ */
+export const VENDOR_IMAGE_HOSTS = [
+  "media.sanmarcanada.com",
+  "www.ssactivewear.com",
+  "cdn.ssactivewear.com",
+] as const;
+
+/**
+ * Whether a photo is served by a vendor CDN rather than by us.
+ *
+ * Why it matters (client call, 10 Sep — "garment and model images sometimes
+ * fail to appear while scrolling, but do appear once clicked"): every
+ * `next/image` request is, by default, routed through our own image
+ * optimiser, which downloads the original from the vendor, resizes and
+ * re-encodes it with `sharp`, and only then serves it. The web container runs
+ * on half a CPU. Scrolling a catalogue page asks for twenty-odd of those at
+ * once; they queue, some time out, and the browser is left with a blank
+ * tile. Opening the product then requests a single image at a different size
+ * with no contention, so it loads — exactly the symptom reported.
+ *
+ * Vendor CDNs already serve web-sized product photography and are built for
+ * this load. Marking their images `unoptimized` sends the browser straight to
+ * them, which takes our container out of the path entirely. Local assets
+ * under /images keep going through the optimiser as before.
+ */
+export function isVendorImageUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (VENDOR_IMAGE_HOSTS as readonly string[]).includes(host);
+  } catch {
+    return false;
+  }
+}

@@ -31,6 +31,20 @@ export const DESIGN_PLACEMENT_ZONES: Record<DesignSide, readonly string[]> = {
   right: ["Right Sleeve", "Right Side Panel"],
 };
 
+/**
+ * One decoration choice: method plus whichever pricing input that method
+ * needs. Declared here, above `PlacedArtwork`, because artwork now carries
+ * its own copy (CodSphere UAT V2 row 59) as well as the per-side map that
+ * predates it.
+ */
+export const DecorationChoiceSchema = z.object({
+  methodKey: z.string().min(1).max(60),
+  colours: z.number().finite().min(1).max(20).optional(),
+  stitchPreset: z.string().min(1).max(40).optional(),
+  optionKey: z.string().min(1).max(60).optional(),
+});
+export type DecorationChoice = z.infer<typeof DecorationChoiceSchema>;
+
 export const PlacedArtworkSchema = z.object({
   id: z.string().min(1).max(200),
   src: z.string().min(1).max(4_000),
@@ -42,6 +56,23 @@ export const PlacedArtworkSchema = z.object({
   outline: z.boolean().optional(),
   outlineColor: z.string().max(40).optional(),
   zIndex: z.number().finite().optional(),
+  /**
+   * This logo's own decoration. Optional on purpose: every design saved
+   * before row 59 has none, and reads fall back to the side's decoration, so
+   * no stored design needs migrating.
+   */
+  decoration: DecorationChoiceSchema.optional(),
+  /**
+   * Whether the shopper has actually looked at this logo's decoration and
+   * agreed to it, rather than leaving it on whatever the studio defaulted to
+   * (CodSphere UAT V2 row 46 — the decoration panel "seems a bit hidden and
+   * can be missed, and uploading art resulting in inaccurate pricing").
+   *
+   * Separate from `decoration` because agreeing with the default is a real
+   * answer: a shopper who opens the panel, reads "Screen Print / 1 Colour"
+   * and accepts it has confirmed something, but has changed nothing.
+   */
+  decorationConfirmed: z.boolean().optional(),
 });
 export type PlacedArtwork = z.infer<typeof PlacedArtworkSchema>;
 
@@ -92,13 +123,8 @@ export type PlacedText = z.infer<typeof PlacedTextSchema>;
  * size tier, transfer-size option) — only the one matching the method's
  * rate model is ever read.
  */
-export const SideDecorationSchema = z.object({
-  methodKey: z.string().min(1).max(60),
-  colours: z.number().finite().min(1).max(20).optional(),
-  stitchPreset: z.string().min(1).max(40).optional(),
-  optionKey: z.string().min(1).max(60).optional(),
-});
-export type SideDecoration = z.infer<typeof SideDecorationSchema>;
+export const SideDecorationSchema = DecorationChoiceSchema;
+export type SideDecoration = DecorationChoice;
 
 export const RosterDecorPartSchema = z.object({
   printMethod: TextPrintMethodSchema,

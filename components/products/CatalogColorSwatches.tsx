@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import { CatalogImage } from "@/components/shared/CatalogImage";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { studioColorwayFill } from "@/lib/commerce/studio-garments";
@@ -124,7 +124,7 @@ export function CatalogColorSwatches({
                 />
               ) : (
                 fill.imageUrl && (
-                  <Image
+                  <CatalogImage
                     src={fill.imageUrl}
                     alt={swatch.colorName}
                     fill

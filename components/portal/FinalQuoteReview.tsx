@@ -94,11 +94,17 @@ export function FinalQuoteReview({
   quotes: QuoteForReview[];
 }) {
   if (quotes.length === 0) {
+    // The client's own wording (UAT V2 row 55, point 6). "No final quote yet"
+    // read as an absence; this reads as work in progress, which is what is
+    // actually happening.
     return (
-      <p className="text-sm text-text-secondary m-0">
-        No final quote yet. We will post it here after reviewing design,
-        quantity and availability.
-      </p>
+      <div data-portal="quote-pending">
+        <p className="font-semibold m-0 mb-1">Final Pricing Under Review</p>
+        <p className="text-sm text-text-secondary m-0">
+          Our team is reviewing your artwork, quantities and availability. Final
+          pricing will appear here once confirmed.
+        </p>
+      </div>
     );
   }
 

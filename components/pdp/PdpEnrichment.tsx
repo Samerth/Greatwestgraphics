@@ -54,8 +54,13 @@ function DescriptionBlocks({ blocks }: { blocks: DescriptionBlock[] }) {
  * `PdpEnrichmentSections`. */
 const TRUST = [
   {
-    title: "Proof before print",
-    body: "Every order proofed, no surprises",
+    // Was "Proof before print". Renamed at the client's request (CodSphere
+    // UAT V2 row 58) — the proof still comes before the print, but the point
+    // worth making to a shopper is that nothing is charged until they have
+    // approved it. Checkout takes a payment preference only; the invoice
+    // follows proof approval, so the claim is literally true of every order.
+    title: "Pay after proof",
+    body: "Nothing is charged until you approve",
   },
   {
     title: "Reprint guarantee",
@@ -121,7 +126,7 @@ export function PdpFeatureBullets({ description }: { description?: string | null
 export function PdpTrustChecks() {
   return (
     <ul className="mt-sp-3 mb-0 space-y-1.5 text-sm text-text-secondary list-none p-0">
-      {["Proof before print", "Reprint guarantee", "Local Vancouver production"].map(
+      {["Pay after proof", "Reprint guarantee", "Local Vancouver production"].map(
         (label) => (
           <li key={label} className="flex items-start gap-2">
             <span className="text-accent font-bold" aria-hidden>
@@ -258,8 +263,12 @@ export function PdpSpecsPanel({
     value: "Screen print, DTF, embroidery, sublimation",
   });
   specs.push({
+    // Was "Standard 7–10 business days · 48-hour Quick Order available".
+    // Checkout says 5–7, and the client confirmed 5–7 on 13 September. Rush
+    // is now a request confirmed by our team rather than a fixed 48 hours
+    // sold up front (UAT row 50), so this no longer quotes one.
     label: "Turnaround",
-    value: "Standard 7–10 business days · 48-hour Quick Order available",
+    value: "Standard 5–7 business days · rush available on request",
   });
 
   return (
@@ -327,11 +336,10 @@ export function PdpEnrichmentSections() {
               </div>
             ))}
           </div>
-          <p className="mt-sp-4 mb-0">
-            <Link href="/design" className="text-sm font-bold text-accent hover:underline">
-              Open Design Studio →
-            </Link>
-          </p>
+          {/* An "Open Design Studio" link sat here, into the bare studio
+              with no garment chosen. The product page above already offers
+              "Start designing" on this product, which is the intended way
+              in (UAT V2 rows 57 and 64). */}
         </Container>
       </section>
     </>

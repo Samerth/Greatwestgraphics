@@ -5,7 +5,10 @@ import { Footer } from "@/components/layout/Footer";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { CodChatWidget } from "@/components/shared/CodChatWidget";
 import { headers } from "next/headers";
-import { loadStorefrontCategories } from "@/lib/commerce/catalog";
+import {
+  loadStorefrontBrandIndex,
+  loadStorefrontCategories,
+} from "@/lib/commerce/catalog";
 import { createCommerceClient } from "@/lib/commerce/client";
 import {
   isPendingStoreAllowedPath,
@@ -74,11 +77,14 @@ export default async function ShopLayout({
 }) {
   // Store resolution must never take down the whole shop shell — layout
   // errors bubble past (shop)/error.tsx into global-error.
-  const [categories, customerSession, store] = await Promise.all([
+  const [categories, brands, customerSession, store] = await Promise.all([
     // Nav must mirror the published taxonomy, not current synced inventory —
     // otherwise whole departments (Drinkware, Signs, Print) vanish from the
     // menu just because no supplier rows are attached yet.
     loadStorefrontCategories(false),
+    // Name, slug and logo per brand - the menu links to brand pages and the
+    // featured rail shows the vendor's mark (UAT V2 row 62, second pass).
+    loadStorefrontBrandIndex().then((result) => result.brands),
 
     getCustomerSession().catch(() => null),
     resolveStoreContext().catch(() => PUBLIC_STOREFRONT_FALLBACK),
@@ -177,6 +183,7 @@ export default async function ShopLayout({
       <TickBar />
       <Header
         categories={categories}
+        brands={brands}
         customerName={customerSession?.name || customerSession?.email || null}
         storeName={isBranded ? store.name : undefined}
         storeLogoUrl={store.logoUrl}

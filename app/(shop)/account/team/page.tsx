@@ -1,13 +1,18 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { teamMemberships } from "@/lib/commerce/membership";
+import { SHOW_TEAM_STORES } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountTeamPage() {
+  // This page exists only to create and administer branded stores,
+  // so it goes with them (row 51).
+  if (!SHOW_TEAM_STORES) notFound();
+
   const session = await getCustomerSession();
   if (!session) {
     redirect("/account?next=/account/team");

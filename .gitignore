@@ -31,3 +31,4 @@ infra/cloudshell/config.*.env
 # Playwright run artifacts (screenshots, videos, traces)
 test-results/
 playwright-report/
+sanmar-bulk-probe.json

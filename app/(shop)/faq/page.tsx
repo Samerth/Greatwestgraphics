@@ -78,8 +78,13 @@ const FAQ_CATEGORIES: Array<{
         a: "Anywhere in Canada and the United States.",
       },
       {
+        // 7–10 days here contradicted the 5–7 shown at checkout; the client
+        // confirmed 5–7 on 13 September. The rush wording follows UAT row 50:
+        // a rush is requested and then confirmed by our team, so promising a
+        // fixed 48 hours "for an added fee" is a commitment checkout does not
+        // make.
         q: "How fast is turnaround?",
-        a: "Standard turnaround is 7–10 business days. Quick Order 48-hour turnaround is available for an added fee.",
+        a: "Standard production is 5–7 business days. If you need an order sooner you can request rush production at checkout — tell us the date you need it by and a member of our team will confirm availability and any rush charge with you.",
       },
     ],
   },
