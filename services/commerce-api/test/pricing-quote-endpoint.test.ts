@@ -71,6 +71,23 @@ describe("StorefrontQuoteRequestSchema", () => {
     const result = StorefrontQuoteRequestSchema.safeParse(input);
     expect(result.success).toBe(false);
   });
+
+  it("accepts sku-only body for Cod Chat estimate mapper (cost resolved server-side)", () => {
+    const input = {
+      qty: 5,
+      sku: "A230",
+      decorations: [
+        { method: "screenPrint", location: "front", colours: 1 },
+      ],
+    };
+    const result = StorefrontQuoteRequestSchema.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sku).toBe("A230");
+      expect(result.data.product_id).toBeUndefined();
+      expect(result.data.garment_cost_minor).toBeUndefined();
+    }
+  });
 });
 
 describe("quote calculation for storefront endpoint", () => {
@@ -234,5 +251,98 @@ describe("StorefrontQuoteResponseSchema", () => {
     if (result.success) {
       expect(result.data.breakdown).toBeUndefined();
     }
+  });
+});
+
+describe("resolveGarmentCostMinor wiring", () => {
+  it("accepts sku-only request when catalog lookup returns cost", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalogWithA230 = {
+      listProducts: async () => [
+        {
+          id: "6adbf644-9a1a-4005-b24b-4772a39920a2",
+          styleName: "A230",
+          partNumber: "81053",
+          costMinor: 3150,
+        },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 3150 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "A230",
+      catalog: catalogWithA230,
+    });
+    expect(cost).toBe(3150);
+  });
+
+  it("returns undefined for sku with no catalog match", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const emptyCatalog = {
+      listProducts: async () => [],
+      getProductDetail: async () => ({ variants: [] }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "NONEXISTENT",
+      catalog: emptyCatalog,
+    });
+    expect(cost).toBeUndefined();
+  });
+
+  it("prefers explicit garment_cost_minor over sku lookup", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalogWithA230 = {
+      listProducts: async () => [
+        { id: "uuid", styleName: "A230", costMinor: 3150 },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 3150 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "A230",
+      garmentCostMinor: 5000,
+      catalog: catalogWithA230,
+    });
+    expect(cost).toBe(5000);
+  });
+
+  it("prefers product_id lookup over sku lookup", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalog = {
+      listProducts: async () => [
+        { id: "sku-uuid", styleName: "A230", costMinor: 3150 },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 4200 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      productId: "product-uuid",
+      sku: "A230",
+      catalog: catalog,
+    });
+    expect(cost).toBe(4200);
   });
 });
