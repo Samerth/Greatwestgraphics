@@ -253,3 +253,96 @@ describe("StorefrontQuoteResponseSchema", () => {
     }
   });
 });
+
+describe("resolveGarmentCostMinor wiring", () => {
+  it("accepts sku-only request when catalog lookup returns cost", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalogWithA230 = {
+      listProducts: async () => [
+        {
+          id: "6adbf644-9a1a-4005-b24b-4772a39920a2",
+          styleName: "A230",
+          partNumber: "81053",
+          costMinor: 3150,
+        },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 3150 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "A230",
+      catalog: catalogWithA230,
+    });
+    expect(cost).toBe(3150);
+  });
+
+  it("returns undefined for sku with no catalog match", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const emptyCatalog = {
+      listProducts: async () => [],
+      getProductDetail: async () => ({ variants: [] }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "NONEXISTENT",
+      catalog: emptyCatalog,
+    });
+    expect(cost).toBeUndefined();
+  });
+
+  it("prefers explicit garment_cost_minor over sku lookup", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalogWithA230 = {
+      listProducts: async () => [
+        { id: "uuid", styleName: "A230", costMinor: 3150 },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 3150 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      sku: "A230",
+      garmentCostMinor: 5000,
+      catalog: catalogWithA230,
+    });
+    expect(cost).toBe(5000);
+  });
+
+  it("prefers product_id lookup over sku lookup", async () => {
+    const { resolveGarmentCostMinor } = await import(
+      "../src/application/storefront-quote-garment-cost.js"
+    );
+
+    const catalog = {
+      listProducts: async () => [
+        { id: "sku-uuid", styleName: "A230", costMinor: 3150 },
+      ],
+      getProductDetail: async () => ({
+        variants: [{ customerPriceMinor: 4200 }],
+      }),
+    };
+
+    const cost = await resolveGarmentCostMinor({
+      tenantId: "tenant-1",
+      productId: "product-uuid",
+      sku: "A230",
+      catalog: catalog,
+    });
+    expect(cost).toBe(4200);
+  });
+});

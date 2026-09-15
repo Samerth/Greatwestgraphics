@@ -88,6 +88,10 @@ import {
 import { StoreService } from "./application/store-service.js";
 import { CodChatOrderLookupService } from "./application/codchat-order-lookup-service.js";
 import { PersonService } from "./application/person-service.js";
+import {
+  resolveGarmentCostMinor,
+  type CatalogSkuLookup,
+} from "./application/storefront-quote-garment-cost.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
 import {
   InviteService,
@@ -468,26 +472,48 @@ export function buildApp(input: {
         )
       : published.config;
 
-    let garmentCostMinor = body.garment_cost_minor;
+    const catalogAdapter: CatalogSkuLookup = {
+      listProducts: async (tenantId, query) => {
+        const products = await catalogService.listProducts(tenantId, {
+          search: query.search,
+          storeId: query.storeId,
+          limit: query.limit,
+        });
+        return products.map((p) => ({
+          id: p.id,
+          styleName: p.styleName,
+          partNumber: p.partNumber,
+          externalKey: p.externalKey,
+          costMinor: p.costMinor,
+        }));
+      },
+      getProductDetail: async (tenantId, productId, opts) => {
+        return catalogService.getProductDetail(tenantId, productId, {
+          storeId: opts.storeId,
+        });
+      },
+    };
 
-    if (garmentCostMinor === undefined && body.product_id) {
-      const detail = await catalogService.getProductDetail(
-        auth.tenantId,
-        body.product_id,
-        { storeId: auth.storeId },
-      );
-      const firstVariant = detail.variants[0];
-      if (firstVariant) {
-        garmentCostMinor = firstVariant.customerPriceMinor;
-      }
-    }
+    const garmentCostMinor = await resolveGarmentCostMinor({
+      tenantId: auth.tenantId,
+      storeId: auth.storeId,
+      productId: body.product_id,
+      sku: body.sku,
+      garmentCostMinor: body.garment_cost_minor,
+      catalog: catalogAdapter,
+    });
 
     if (garmentCostMinor === undefined) {
+      const identifier = body.sku ?? body.product_id ?? "unknown";
+      request.log.info(
+        { sku: body.sku, productId: body.product_id },
+        `MISSING_GARMENT_COST: could not resolve cost for ${identifier}`,
+      );
       return reply.code(400).send({
         error: {
           code: "MISSING_GARMENT_COST",
           message:
-            "Provide garment_cost_minor or a valid product_id to look up cost",
+            "Provide garment_cost_minor, a valid product_id, or a sku that matches a catalog item",
         },
       });
     }
