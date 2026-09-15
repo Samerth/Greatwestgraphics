@@ -85,7 +85,11 @@ new_uuid() { python3 -c 'import uuid; print(uuid.uuid4())'; }
 # new one. Adopting the single existing row matters -- an environment that was
 # seeded by hand has a store already, and creating a second one would leave two
 # plausible answers to "which store is this site".
-STORE_ID="" TENANT_ID="" ACCOUNT_ID=""
+# Do not use ACCOUNT_ID here. State already has ACCOUNT_ID as the AWS account
+# number (from 00-preflight). save_state sources the state file, which would
+# overwrite a local ACCOUNT_ID and then persist 297208880977 as the commerce
+# account UUID.
+STORE_ID="" TENANT_ID="" STORE_ACCOUNT_ID=""
 if [[ -n "${COMMERCE_DEFAULT_STORE_ID:-}" ]]; then
   ROW="$(psql_query "SELECT id||' '||tenant_id||' '||account_id||' '||slug||' '||name FROM stores WHERE id = $(sql_literal "$COMMERCE_DEFAULT_STORE_ID");")"
   [[ -n "$ROW" ]] || {
@@ -111,10 +115,10 @@ fi
 if [[ -n "${ROW:-}" ]]; then
   # Its own name and slug win over the configured ones. The pinned identity has
   # to describe the row that exists, not the row we would have created.
-  read -r STORE_ID TENANT_ID ACCOUNT_ID STORE_SLUG STORE_NAME <<<"$ROW"
+  read -r STORE_ID TENANT_ID STORE_ACCOUNT_ID STORE_SLUG STORE_NAME <<<"$ROW"
 else
   TENANT_ID="$(new_uuid)"
-  ACCOUNT_ID="$(new_uuid)"
+  STORE_ACCOUNT_ID="$(new_uuid)"
   STORE_ID="$(new_uuid)"
   echo "Creating tenant, account and store for $NAME_PREFIX."
   {
@@ -122,15 +126,21 @@ else
     printf 'INSERT INTO tenants (id, name) VALUES (%s, %s);\n' \
       "$(sql_literal "$TENANT_ID")" "$(sql_literal "$TENANT_NAME")"
     printf 'INSERT INTO accounts (id, tenant_id, name) VALUES (%s, %s, %s);\n' \
-      "$(sql_literal "$ACCOUNT_ID")" "$(sql_literal "$TENANT_ID")" "$(sql_literal "$ACCOUNT_NAME")"
+      "$(sql_literal "$STORE_ACCOUNT_ID")" "$(sql_literal "$TENANT_ID")" "$(sql_literal "$ACCOUNT_NAME")"
     printf 'INSERT INTO stores (id, tenant_id, account_id, name, slug) VALUES (%s, %s, %s, %s, %s);\n' \
-      "$(sql_literal "$STORE_ID")" "$(sql_literal "$TENANT_ID")" "$(sql_literal "$ACCOUNT_ID")" \
+      "$(sql_literal "$STORE_ID")" "$(sql_literal "$TENANT_ID")" "$(sql_literal "$STORE_ACCOUNT_ID")" \
       "$(sql_literal "$STORE_NAME")" "$(sql_literal "$STORE_SLUG")"
     echo "COMMIT;"
   } > "$WORK_DIR/create.sql"
   docker run --rm --env TARGET_DATABASE_URL -v "$WORK_DIR:/work:ro" postgres:16-alpine \
     sh -c 'psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f /work/create.sql' >/dev/null
 fi
+
+STORE_ACCOUNT_ID="$(psql_query "SELECT account_id FROM stores WHERE id = $(sql_literal "$STORE_ID");")"
+[[ "$STORE_ACCOUNT_ID" =~ ^[0-9a-f-]{36}$ ]] || {
+  echo "Store $STORE_ID has no UUID account_id (got ${STORE_ACCOUNT_ID:-empty})." >&2
+  exit 1
+}
 
 # custom_domain is unique across the whole table, so a host held by a different
 # store is a collision that has to be resolved by a person: silently moving it
@@ -150,7 +160,7 @@ else
 fi
 
 save_state COMMERCE_DEFAULT_TENANT_ID "$TENANT_ID"
-save_state COMMERCE_DEFAULT_ACCOUNT_ID "$ACCOUNT_ID"
+save_state COMMERCE_DEFAULT_ACCOUNT_ID "$STORE_ACCOUNT_ID"
 save_state COMMERCE_DEFAULT_STORE_ID "$STORE_ID"
 save_state COMMERCE_DEFAULT_STORE_SLUG "$STORE_SLUG"
 save_state COMMERCE_DEFAULT_STORE_NAME "$STORE_NAME"
@@ -159,7 +169,7 @@ cat <<EOF
 
 Store identity for $NAME_PREFIX:
   tenant   $TENANT_ID
-  account  $ACCOUNT_ID
+  account  $STORE_ACCOUNT_ID
   store    $STORE_ID  ($STORE_SLUG)
 
 These are now in the environment's state file, which 09-create-ecs.sh reads.
