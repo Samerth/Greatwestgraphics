@@ -71,6 +71,23 @@ describe("StorefrontQuoteRequestSchema", () => {
     const result = StorefrontQuoteRequestSchema.safeParse(input);
     expect(result.success).toBe(false);
   });
+
+  it("accepts sku-only body for Cod Chat estimate mapper (cost resolved server-side)", () => {
+    const input = {
+      qty: 5,
+      sku: "A230",
+      decorations: [
+        { method: "screenPrint", location: "front", colours: 1 },
+      ],
+    };
+    const result = StorefrontQuoteRequestSchema.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sku).toBe("A230");
+      expect(result.data.product_id).toBeUndefined();
+      expect(result.data.garment_cost_minor).toBeUndefined();
+    }
+  });
 });
 
 describe("quote calculation for storefront endpoint", () => {
