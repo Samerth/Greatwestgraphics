@@ -408,6 +408,7 @@ export function DesignStudio({
   mode = "customer",
   endpoints,
   pricingConfig = PRICING_MASTER_V2,
+  aiBackgroundRemoval = false,
 }: {
   garments?: DesignGarmentOption[];
   signedIn?: boolean;
@@ -419,6 +420,9 @@ export function DesignStudio({
   endpoints?: DesignStudioEndpoints;
   /** Published v2 config — same rates the quote builder and admin preview use. */
   pricingConfig?: PricingConfigV2;
+  /** UAT row 61: the background-remover is offered only when a paid image
+   * provider is configured (the page reads studioAiCanRemoveBackground()). */
+  aiBackgroundRemoval?: boolean;
 }) {
   const isStaff = mode === "staff";
   const router = useRouter();
@@ -1745,7 +1749,14 @@ export function DesignStudio({
         signal: AbortSignal.timeout(120_000),
       });
       if (!res.ok) {
-        throw new Error(`Generation failed (${res.status})`);
+        // The route says why - a refusal to rephrase, a rate limit, an
+        // outage - and that is what the customer should read, not a code.
+        const body = await res.json().catch(() => null);
+        const message =
+          typeof body?.error?.message === "string" ? body.error.message : null;
+        throw new Error(message ?? `Generation failed (${res.status})`, {
+          cause: message ? "explained" : undefined,
+        });
       }
       const blob = await res.blob();
       if (!isUsableStudioIdentityBlob(blob)) {
@@ -1774,12 +1785,62 @@ export function DesignStudio({
           behavior: "smooth",
         });
       });
-    } catch {
+    } catch (caught) {
       setAiError(
-        "The free generator missed or timed out. Try again, or upload your own art.",
+        caught instanceof Error && caught.cause === "explained"
+          ? caught.message
+          : "The generator missed or timed out. Try again, or upload your own art.",
       );
     } finally {
       setGenerating(false);
+    }
+  }
+
+  /**
+   * UAT row 61: strip the background from the selected uploaded logo. The
+   * artwork's current file is sent to the remover and the result replaces
+   * it in place, so the layer keeps its position and size; the previous
+   * file is one Undo away through the studio's history.
+   */
+  const [removingBackground, setRemovingBackground] = useState(false);
+  async function removeSelectedBackground() {
+    const target = selectedArtwork;
+    if (!target || removingBackground) return;
+    setRemovingBackground(true);
+    setUploadError(null);
+    try {
+      const source = await fetch(target.src).then((r) => r.blob());
+      const type = source.type || "image/png";
+      const form = new FormData();
+      form.append("file", new File([source], studioIdentityFilename("logo", type), { type }));
+      const res = await fetch("/api/studio/remove-background", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          typeof body?.error?.message === "string"
+            ? body.error.message
+            : `Background removal failed (${res.status})`,
+        );
+      }
+      const cleaned = await res.blob();
+      const side = activeSide;
+      const src = signedIn ? URL.createObjectURL(cleaned) : await artworkSrcForDraft(cleaned);
+      updateArtworks(side, (list) =>
+        list.map((a) => (a.id === target.id ? { ...a, src } : a)),
+      );
+      if (signedIn) {
+        await uploadArtwork(side, target.id, cleaned, "logo-no-background.png");
+      }
+    } catch (caught) {
+      setUploadError(
+        caught instanceof Error ? caught.message : "Background removal failed.",
+      );
+    } finally {
+      setRemovingBackground(false);
     }
   }
 
@@ -3260,6 +3321,12 @@ export function DesignStudio({
               }}
               onDuplicate={duplicateSelected}
               onDelete={removeSelected}
+              onRemoveBackground={
+                aiBackgroundRemoval && selectedArtwork && !isStaff
+                  ? removeSelectedBackground
+                  : undefined
+              }
+              removingBackground={removingBackground}
               onSliderCommit={endSliderHistory}
               moveTo={{
                 options: availableViews

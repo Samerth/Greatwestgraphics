@@ -95,6 +95,9 @@ export type StorefrontFilters = {
    * `/product/<slug>` lookup, and the quote builder colour list.
    */
   groupByStyle?: boolean;
+  /** "stock" = deepest vendor stock first; the default is brand and style,
+   * or relevance when there is a search. */
+  sort?: "stock" | "updated" | "style";
 };
 
 export async function loadStorefrontCatalog(options?: StorefrontFilters): Promise<{
@@ -174,6 +177,7 @@ export async function loadStorefrontCatalog(options?: StorefrontFilters): Promis
       priceMinMinor: options?.priceMinMinor,
       priceMaxMinor: options?.priceMaxMinor,
       groupByStyle: options?.groupByStyle,
+      sort: options?.sort,
     });
 
     if (filtered.length === 0 && total === 0) {

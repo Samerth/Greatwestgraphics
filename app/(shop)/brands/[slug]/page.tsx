@@ -48,10 +48,10 @@ export async function generateMetadata({
  * lands here rather than on the full catalogue with a checkbox ticked.
  *
  * Everything on the page is read from the catalogue: the departments and
- * their counts, the photos on the tiles, and the popular row - which is the
- * brand's styles that staff have put in Best Sellers, falling back to the
- * brand's listing order when none are. Nothing here is curated separately,
- * so a brand page cannot go stale.
+ * their counts, the photos on the tiles, and the product row - the brand's
+ * styles that staff have put in Best Sellers, or its most deeply stocked
+ * styles when none are. Nothing here is curated separately, so a brand
+ * page cannot go stale.
  */
 export default async function BrandPage({
   params,
@@ -75,10 +75,15 @@ export default async function BrandPage({
     (category) => category.slug === BEST_SELLERS_SLUG,
   );
 
+  // The row is the brand's Best Sellers when staff have ticked any - that is
+  // the one real signal of what sells. Without any, it falls back to the
+  // brand's most deeply stocked styles and says so; it used to fall back to
+  // plain style-number order under a "Popular" heading (15 Sep).
   const [popular, pricingConfig] = await Promise.all([
     loadStorefrontCatalog({
       brands: [brand.name],
       categorySlug: hasBestSellers ? BEST_SELLERS_SLUG : undefined,
+      sort: hasBestSellers ? undefined : "stock",
       limit: 12,
     }),
     loadPublishedPricingV2().catch(() => null),
@@ -156,7 +161,7 @@ export default async function BrandPage({
         <section className="pb-sp-7 lg:pb-sp-8">
           <Container>
             <ProductCarouselRow
-              heading={hasBestSellers ? `${brand.name} best sellers` : `Popular ${brand.name} styles`}
+              heading={hasBestSellers ? `${brand.name} best sellers` : `${brand.name} styles in stock`}
               scrollLabel={brand.name}
               viewAllHref={allHref}
               viewAllLabel={`View all ${brand.name}`}

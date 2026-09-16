@@ -152,6 +152,12 @@ describe("the pages are wired", () => {
   it("gives a brand its own page with tiles, a popular row and a view-all", () => {
     expect(brandPage).toContain("BrandDepartmentTiles");
     expect(brandPage).toContain("ProductCarouselRow");
+    // The row is curated Best Sellers when there are any; otherwise the
+    // deepest-stocked styles under a heading that says so - never style-
+    // number order called "Popular" (15 Sep).
+    expect(brandPage).toContain('sort: hasBestSellers ? undefined : "stock"');
+    expect(brandPage).toContain("`${brand.name} styles in stock`");
+    expect(brandPage).not.toMatch(/Popular \$\{brand\.name\}/);
     expect(brandPage).toContain("brandListingHref(brand)");
     expect(brandPage).toContain("notFound()");
     // An outage is not a missing brand.

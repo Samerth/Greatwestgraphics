@@ -840,17 +840,25 @@ export function buildApp(input: {
       priceMin?: string;
       priceMax?: string;
       groupByStyle?: string;
+      sort?: string;
     };
     const brands = query.brand
       ? Array.isArray(query.brand)
         ? query.brand
         : [query.brand]
       : undefined;
+    // Only the orderings the storefront has a use for; anything else keeps
+    // the default (relevance when searching, otherwise brand and style).
+    const sort: "stock" | "updated" | "style" | undefined =
+      query.sort === "stock" || query.sort === "updated" || query.sort === "style"
+        ? query.sort
+        : undefined;
     const filters = {
       search: query.search,
       categoryId: query.categoryId,
       storeId: auth.storeId,
       brands,
+      sort,
       priceMinMinor: query.priceMin ? Number(query.priceMin) : undefined,
       priceMaxMinor: query.priceMax ? Number(query.priceMax) : undefined,
       // Soft-hidden colorways are omitted from storefront PLP (not shown
