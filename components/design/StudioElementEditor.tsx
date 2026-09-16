@@ -122,6 +122,8 @@ export function StudioElementEditor({
   onBack,
   onDuplicate,
   onDelete,
+  onRemoveBackground,
+  removingBackground = false,
   onSliderCommit,
   moveTo,
   className,
@@ -156,6 +158,9 @@ export function StudioElementEditor({
   onBack: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** UAT row 61 - present only when a paid image provider is configured. */
+  onRemoveBackground?: () => void;
+  removingBackground?: boolean;
   onSliderCommit: () => void;
   /** The other sides this layer could move to, and the handler to do it.
    * Explicit and separate from clicking a side thumbnail to look at it —
@@ -306,6 +311,17 @@ export function StudioElementEditor({
         >
           Duplicate
         </EditorAction>
+        {onRemoveBackground && (
+          /* UAT row 61. Only offered when the paid image provider is on;
+             the studio passes nothing otherwise and the button does not
+             exist, rather than existing and failing. */
+          <EditorAction
+            onClick={onRemoveBackground}
+            title="Strip a flat background from this logo so only the artwork prints"
+          >
+            {removingBackground ? "Removing background…" : "Remove background"}
+          </EditorAction>
+        )}
         <EditorAction
           onClick={onDelete}
           danger

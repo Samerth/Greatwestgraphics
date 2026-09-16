@@ -7,6 +7,7 @@ import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
+import { studioAiCanRemoveBackground } from "@/lib/commerce/studio-ai-provider";
 
 // Session and ?loadDesignId= are per-visitor. Caching this page served one
 // customer's saved design (or an empty studio) to the next.
@@ -133,6 +134,7 @@ export default async function DesignPage({
             initialDesign={initialDesign}
             garmentIdOverride={garmentId ?? null}
             pricingConfig={pricingConfig}
+            aiBackgroundRemoval={studioAiCanRemoveBackground()}
           />
         </Container>
       </section>

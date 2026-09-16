@@ -32,3 +32,6 @@ infra/cloudshell/config.*.env
 test-results/
 playwright-report/
 sanmar-bulk-probe.json
+scripts/recraft-probe.json
+# Probe outputs: test images (some deliberately offensive) and reports. Any suffix.
+scripts/openai-probe*/
