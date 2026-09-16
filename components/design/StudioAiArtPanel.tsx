@@ -40,6 +40,8 @@ export type StudioAiArtPanelProps = {
   error: string | null;
   onGenerate: () => void;
   onClose: () => void;
+  /** True when a paid image provider is behind the panel (see studioAiProvider). */
+  paid?: boolean;
 };
 
 /**
@@ -80,6 +82,7 @@ export function StudioAiArtPanel({
   error,
   onGenerate,
   onClose,
+  paid = false,
 }: StudioAiArtPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -243,9 +246,14 @@ export function StudioAiArtPanel({
                 )}
               </button>
             </div>
+            {/* The free generator is a try-out; the paid one produces a
+                transparent PNG the team vectorises for the press. The line
+                has to say which, or the client reads "not print-ready" on a
+                service they are paying for (16 Sep). */}
             <p className="mt-sp-3 text-[11px] leading-4 text-text-tertiary text-center">
-              Free try-out — not print-ready. Keep it if it matches, or try
-              again with a different style.
+              {paid
+                ? "Comes back as a transparent PNG; our team prepares it for the press before printing. Keep it if it matches, or try again with a different style."
+                : "Free try-out — not print-ready. Keep it if it matches, or try again with a different style."}
             </p>
           </div>
         </div>

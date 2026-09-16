@@ -559,7 +559,12 @@ export function buildApp(input: {
     const decorationPerPiece =
       breakdown.garments[0]?.decorationPerPieceMinor ?? 0;
 
-    const standardTurnaroundDays = 10;
+    // Standard production is 5-7 business days (FAQ, checkout, confirmed by
+    // the client 13 Sep). This used to say 10, which is the "four different
+    // turnaround figures" finding from the 10 Sep CodChat test - the chat's
+    // pricing tool contradicted the site. The upper bound of the published
+    // range is what a quote should promise.
+    const standardTurnaroundDays = 7;
 
     return StorefrontQuoteResponseSchema.parse({
       unit_price: unitPrice / 100,

@@ -2626,6 +2626,7 @@ export function DesignStudio({
             error={aiError}
             onGenerate={() => void generateConcept()}
             onClose={() => setAiArtOpen(false)}
+            paid={aiBackgroundRemoval}
           />
         )}
 

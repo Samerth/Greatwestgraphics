@@ -204,6 +204,12 @@ describe("the studio is wired for it", () => {
     expect(editor).toContain("Remove background");
   });
 
+  it("stops calling the paid generator a free try-out", () => {
+    const panel = stripComments(read("components/design/StudioAiArtPanel.tsx"));
+    expect(panel).toMatch(/paid\s*\?\s*"Comes back as a transparent PNG/);
+    expect(studio).toContain("paid={aiBackgroundRemoval}");
+  });
+
   it("shows the route's own reason to the customer on a failed generation", () => {
     expect(studio).toContain('caught.cause === "explained"');
     expect(studio).not.toContain("The free generator missed or timed out");

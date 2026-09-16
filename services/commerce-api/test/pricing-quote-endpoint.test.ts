@@ -346,3 +346,16 @@ describe("resolveGarmentCostMinor wiring", () => {
     expect(cost).toBe(4200);
   });
 });
+
+describe("the turnaround a quote promises", () => {
+  it("is the published 5-7 business days, not the old 10", () => {
+    // The 10 Sep CodChat test found four different turnaround figures across
+    // the site; the chat's pricing tool was the one saying 10. The client
+    // confirmed 5-7 on 13 Sep, and the quote promises the upper bound.
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const app = readFileSync(resolve(process.cwd(), "src/app.ts"), "utf8");
+    expect(app).toContain("const standardTurnaroundDays = 7;");
+    expect(app).not.toContain("const standardTurnaroundDays = 10;");
+  });
+});
