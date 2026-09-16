@@ -16,7 +16,23 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   // The migration spec also requires the new build to stay closed to crawlers
   // until the WordPress cutover (SEO_ALLOW_INDEX=true).
   if (isBrandedStore || !allowSearchIndexing()) {
-    return { rules: { userAgent: "*", disallow: "/" } };
+    return {
+      rules: [
+        // The one crawler that is still welcome while the site is closed to
+        // search: CodChat's knowledge-base importer, which is how the
+        // assistant learns this site's own answers. Without this it reads the
+        // `*` group, refuses, and the only content it can be taught is the old
+        // WordPress site - which is exactly the fault the 15 Sep test found
+        // (drop shipping offered, published hours and shipping unknown).
+        //
+        // Their matcher takes the most specific user-agent group whose token
+        // the crawler string contains, so this group beats the `*` group for
+        // CodChatKnowledgeBot and for nobody else. Search engines still read
+        // the blanket Disallow below.
+        { userAgent: "CodChatKnowledgeBot", allow: "/" },
+        { userAgent: "*", disallow: "/" },
+      ],
+    };
   }
 
   return {
