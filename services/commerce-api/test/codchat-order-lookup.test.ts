@@ -39,7 +39,19 @@ describe("CodChatOrderLookupService.lookup", () => {
       orderRef: "GWG-1001",
       status: "In production",
       updatedAt: "2026-09-08T12:00:00.000Z",
+      order: "GWG-1001",
+      last_updated: "September 8, 2026",
+      next_step: "No action is needed. We will update you when it is ready.",
     });
+  });
+
+  it("dates the last update by Vancouver's calendar, not UTC's", async () => {
+    // 06:30 UTC on the 9th is still the evening of the 8th in Vancouver.
+    const service = new CodChatOrderLookupService(
+      stubDatabase([{ ...job, updatedAt: new Date("2026-09-09T06:30:00.000Z") }]),
+    );
+    const result = await service.lookup(TENANT_ID, "GWG-1001", "buyer@example.test");
+    expect(result?.last_updated).toBe("September 8, 2026");
   });
 
   it("matches regardless of email case or surrounding whitespace", async () => {
@@ -107,5 +119,6 @@ describe("CodChatOrderLookupService.lookup", () => {
       "buyer@example.test",
     );
     expect(result?.status).toBe("some_future_status");
+    expect(result?.next_step).toBe("Contact our team for the latest on this order.");
   });
 });

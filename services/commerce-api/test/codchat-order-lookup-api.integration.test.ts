@@ -137,6 +137,9 @@ integration("CodChat order-status lookup API", () => {
       orderRef,
       status: "In production",
       updatedAt: expect.any(String),
+      order: orderRef,
+      last_updated: expect.any(String),
+      next_step: "No action is needed. We will update you when it is ready.",
     });
   });
 

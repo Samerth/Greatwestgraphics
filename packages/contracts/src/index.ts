@@ -801,11 +801,20 @@ export type CheckoutSessionResponse = z.infer<
  * services/commerce-api/src/application/codchat-order-lookup-service.ts for
  * how `verifiedEmail` is checked against the order's actual owner before
  * this is ever built.
+ *
+ * CodChat renders every allowlisted field as "<name>: <value>", turning
+ * underscores into spaces and nothing else - so the customer-facing fields
+ * are named for how they read in the chat ("last updated: August 22, 2026",
+ * "next step: ..."), and carry values already worded for a customer. The
+ * original three stay for anything that reads them.
  */
 export const CodChatOrderStatusResponseSchema = z.object({
   orderRef: z.string().min(1).max(80),
   status: z.string().min(1).max(60),
   updatedAt: z.string().datetime(),
+  order: z.string().min(1).max(80),
+  last_updated: z.string().min(1).max(60),
+  next_step: z.string().min(1).max(200),
 });
 export type CodChatOrderStatusResponse = z.infer<
   typeof CodChatOrderStatusResponseSchema
