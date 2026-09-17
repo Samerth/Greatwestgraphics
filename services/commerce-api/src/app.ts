@@ -78,7 +78,7 @@ import {
   applyStorePricingAdjustmentV2,
   PricingConfigV2Service,
 } from "./application/pricing-config-v2-service.js";
-import { calculateQuoteV2 } from "@gwg/pricing";
+import { calculateQuoteV2, PricingValidationErrorV2 } from "@gwg/pricing";
 import { CatalogService } from "./application/catalog-service.js";
 import { databaseAuthMessage, schemaDriftMessage } from "./db/postgres-error.js";
 import {
@@ -90,8 +90,14 @@ import { CodChatOrderLookupService } from "./application/codchat-order-lookup-se
 import { PersonService } from "./application/person-service.js";
 import {
   resolveGarmentCostMinor,
-  type CatalogSkuLookup,
+  storefrontCatalogLookup,
 } from "./application/storefront-quote-garment-cost.js";
+import {
+  buildStorefrontDecorations,
+  normalizeStorefrontDecorations,
+  STOREFRONT_GARMENT_ID,
+  UnsupportedDecorationMethodError,
+} from "./application/storefront-quote-decorations.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
 import {
   InviteService,
@@ -460,6 +466,10 @@ export function buildApp(input: {
       ? await storefrontQuoteAuth.resolve(request)
       : await input.auth.resolve(request);
     const body = StorefrontQuoteRequestSchema.parse(request.body);
+    // A method the shop cannot price is refused here, before any database
+    // work - the answer would be the same afterwards (17 Sep: CodChat's
+    // estimate tool was reading these as server faults).
+    const requested = normalizeStorefrontDecorations(body.decorations);
 
     const published = await pricingV2Service.getPublished(auth.tenantId);
     const store = await storeService
@@ -472,27 +482,7 @@ export function buildApp(input: {
         )
       : published.config;
 
-    const catalogAdapter: CatalogSkuLookup = {
-      listProducts: async (tenantId, query) => {
-        const products = await catalogService.listProducts(tenantId, {
-          search: query.search,
-          storeId: query.storeId,
-          limit: query.limit,
-        });
-        return products.map((p) => ({
-          id: p.id,
-          styleName: p.styleName,
-          partNumber: p.partNumber,
-          externalKey: p.externalKey,
-          costMinor: p.costMinor,
-        }));
-      },
-      getProductDetail: async (tenantId, productId, opts) => {
-        return catalogService.getProductDetail(tenantId, productId, {
-          storeId: opts.storeId,
-        });
-      },
-    };
+    const catalogAdapter = storefrontCatalogLookup(catalogService);
 
     const garmentCostMinor = await resolveGarmentCostMinor({
       tenantId: auth.tenantId,
@@ -518,23 +508,15 @@ export function buildApp(input: {
       });
     }
 
-    const decorations = body.decorations.map((dec, idx) => ({
-      id: `d${idx}`,
-      garmentId: "g1",
-      methodKey: dec.method,
-      location: dec.location,
-      logoGroup: "",
-      colours: dec.colours,
-      variableValue: dec.stitch_count,
-      optionKey: dec.option_key,
-      isOversized: dec.is_oversized,
-      artwork: { isRepeat: false, verifiedByStaff: false },
-    }));
+    // Fields a chat cannot collect - colour count, stitch count, DTF size -
+    // are filled from the published storefront defaults, as the product
+    // page's estimate fills them. Stated values are kept as stated.
+    const decorations = buildStorefrontDecorations(requested, config.storefront);
 
     const quoteInput = {
       garments: [
         {
-          id: "g1",
+          id: STOREFRONT_GARMENT_ID,
           description: body.sku ?? body.product_id ?? "Quote item",
           unitCostMinor: garmentCostMinor,
           quantity: body.qty,
@@ -1984,6 +1966,17 @@ export function buildApp(input: {
       statusCode = 400;
       code = "VALIDATION_ERROR";
       message = error.issues.map((issue) => issue.message).join("; ");
+    } else if (
+      error instanceof PricingValidationErrorV2 ||
+      error instanceof UnsupportedDecorationMethodError
+    ) {
+      // Well-formed but unpriceable as asked - a method the shop does not
+      // offer, ten colours on a screen print, under the minimum order. The
+      // caller's to fix, not a server fault; CodChat's estimate tool was
+      // reading these as 500s (17 Sep).
+      statusCode = 400;
+      code = error.code;
+      message = error.message;
     } else if (
       error instanceof ScopeMismatchError ||
       error instanceof NotAStoreMemberError
