@@ -6,6 +6,12 @@ export type CodChatOrderStatus = {
   orderRef: string;
   status: string;
   updatedAt: string;
+  /** The reference again, under the name CodChat prints: "order: GWG-1008". */
+  order: string;
+  /** "August 22, 2026" in Vancouver time - CodChat prints it as "last updated: ...". */
+  last_updated: string;
+  /** What happens next at this status, in the portal's words - "next step: ...". */
+  next_step: string;
 };
 
 /**
@@ -35,6 +41,40 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
 };
+
+/**
+ * The portal's next-action line for each status (lib/commerce/status.ts,
+ * `nextAction`), copied for the same reason as the labels above. The chat
+ * and the portal page must tell a customer the same thing to do next.
+ */
+const STATUS_NEXT_STEPS: Record<string, string> = {
+  draft: "Finish and submit this request.",
+  submitted: "Our team will begin the design and pricing review.",
+  under_review: "No action is needed while our team reviews the job.",
+  changes_requested: "Reply with the revision so we can continue the review.",
+  rejected: "Contact our team to discuss alternatives.",
+  approved: "Review and accept the final quote when it is posted.",
+  awaiting_payment: "Request an invoice. We will send payment instructions.",
+  payment_pending: "Wait for payment confirmation.",
+  payment_failed: "Request the invoice again or contact the studio.",
+  paid: "Our team will release the approved job to production.",
+  ready_for_production: "Production will start once the studio releases the job.",
+  in_production: "No action is needed. We will update you when it is ready.",
+  ready_for_pickup: "Your order is ready at our Vancouver studio.",
+  shipped: "Your order is on the way.",
+  completed: "This order is complete.",
+  cancelled: "This request was cancelled. Contact us if you need a new one.",
+};
+
+const FALLBACK_NEXT_STEP = "Contact our team for the latest on this order.";
+
+/** "August 22, 2026" - the day the order last changed, as Vancouver sees it. */
+const lastUpdatedFormat = new Intl.DateTimeFormat("en-CA", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "America/Vancouver",
+});
 
 export class CodChatOrderLookupService {
   constructor(private readonly db: CommerceDatabase) {}
@@ -90,6 +130,9 @@ export class CodChatOrderLookupService {
       orderRef,
       status: STATUS_LABELS[row.status] ?? row.status,
       updatedAt: row.updatedAt.toISOString(),
+      order: orderRef,
+      last_updated: lastUpdatedFormat.format(row.updatedAt),
+      next_step: STATUS_NEXT_STEPS[row.status] ?? FALLBACK_NEXT_STEP,
     };
   }
 }
