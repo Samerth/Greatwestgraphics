@@ -1273,19 +1273,30 @@ export class CatalogService {
     // "Best Seller" badge backed by the same category assignment admins
     // already manage on the product edit page, instead of guessing from
     // list position (CodSphere UAT V2: Best Sellers nav item).
+    //
+    // Resolved per *style*, not per colourway. Staff tick the category on one
+    // colourway of a garment, but a grouped storefront row is whichever
+    // colourway best represents the style (in stock, has an image, matches
+    // the search) — rarely the exact one that was ticked. Keyed on the
+    // colourway id, a ticked style therefore showed no badge on the listing
+    // and was invisible to the chat quote's best-seller tie-break, while its
+    // own Best Sellers page listed it correctly (17 Sep: every grouped search
+    // came back isBestSeller false although four garments were ticked).
+    const styleUuids = [...new Set(rows.map((row) => row.product.styleUuid))];
     const bestSellerRows = await this.db
-      .select({ productUuid: ssProductCategories.productUuid })
+      .select({ styleUuid: ssProducts.styleUuid })
       .from(ssProductCategories)
       .innerJoin(categories, eq(ssProductCategories.categoryId, categories.id))
+      .innerJoin(ssProducts, eq(ssProducts.id, ssProductCategories.productUuid))
       .where(
         and(
           eq(categories.tenantId, tenantId),
           eq(categories.slug, "best-sellers"),
-          inArray(ssProductCategories.productUuid, productIds),
+          inArray(ssProducts.styleUuid, styleUuids),
         ),
       );
-    const bestSellerProductIds = new Set(
-      bestSellerRows.map((r) => r.productUuid),
+    const bestSellerStyleUuids = new Set(
+      bestSellerRows.map((r) => r.styleUuid),
     );
 
     // Hat flag — catalog card pricing defaults to a 1-colour screen print
@@ -1370,7 +1381,7 @@ export class CatalogService {
         colorSwatches:
           grouped?.swatchesByStyle.get(row.product.styleUuid) ?? [],
         sizeRange: sizeRangeByProduct.get(row.product.id) ?? null,
-        isBestSeller: bestSellerProductIds.has(row.product.id),
+        isBestSeller: bestSellerStyleUuids.has(row.product.styleUuid),
         isHat: hatProductIds.has(row.product.id),
         categorySlugs: categorySlugsByProduct.get(row.product.id) ?? [],
       };
