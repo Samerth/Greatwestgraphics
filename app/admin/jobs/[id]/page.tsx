@@ -1,43 +1,22 @@
 import Link from "next/link";
-import {
-  createFinalQuoteAction,
-  decideProofAction,
-  issueInvoiceAction,
-  recordPaymentAction,
-} from "@/app/admin/actions";
-import { ProofUploadForm } from "@/components/admin/ProofUploadForm";
-import {
-  formatSizeBreakdown,
-  groupAdminJobLines,
-  placementKey,
-  productKeyFromStorefrontId,
-  withoutSizeSegment,
-} from "@/lib/admin/job-lines";
-import { JobTransitionForm } from "@/components/admin/JobTransitionForm";
+import { issueInvoiceAction, recordPaymentAction } from "@/app/admin/actions";
 import { adminClient, requireAdminToken } from "@/lib/admin/api";
-import { jobStatusPresentation } from "@/lib/commerce/status";
-import { validNextStatuses, type JobRequestStatus } from "@gwg/contracts";
-import { getAuthoritativeLineTotalMinor, moneyFromMinor } from "@/lib/utils/quote-pricing";
-import {
-  RUSH_FEE_LABEL,
-  RUSH_FLAG_LABEL,
-  formatRequestedDate,
-} from "@/lib/schemas/checkout";
-import { portalDecorations } from "@/lib/commerce/portal-progress";
+import { buildJobView } from "@/lib/admin/job-view";
+import { SectionCard } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { OrderSummaryCard } from "./_components/OrderSummaryCard";
+import { RushBanner } from "./_components/RushBanner";
+import { OrderStatusCard } from "./_components/OrderStatusCard";
+import { ProductLineCard } from "./_components/ProductLineCard";
+import { InventorySummary } from "./_components/InventorySummary";
+import { ArtworkAndProofs } from "./_components/ArtworkAndProofs";
+import { CustomerCard } from "./_components/CustomerCard";
+import { FulfillmentCard } from "./_components/FulfillmentCard";
+import { OrderTotalCard } from "./_components/OrderTotalCard";
+import { NotesSection } from "./_components/NotesSection";
+import { JobTimeline } from "./_components/JobTimeline";
 
 export const dynamic = "force-dynamic";
-
-function safeProofUrl(storageKey: string): string | null {
-  if (storageKey.startsWith("/")) return storageKey;
-  try {
-    const url = new URL(storageKey);
-    return url.protocol === "https:" || url.protocol === "http:"
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 export default async function AdminJobDetailPage({
   params,
@@ -47,10 +26,10 @@ export default async function AdminJobDetailPage({
   const { id } = await params;
   let error: string | undefined;
   let detail: Awaited<
-    ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequest"]>
+    ReturnType<Awaited<ReturnType<typeof adminClient>>["getJobRequestAsStaff"]>
   > | null = null;
-
   let storeName: string | null = null;
+
   try {
     const client = await adminClient();
     const token = requireAdminToken();
@@ -60,8 +39,9 @@ export default async function AdminJobDetailPage({
     ]);
     detail = d;
     storeName =
-      (stores.find((s) => String(s.id) === String(d.context.storeId))
-        ?.name as string | undefined) ?? null;
+      (stores.find((s) => String(s.id) === String(d.context.storeId))?.name as
+        | string
+        | undefined) ?? null;
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Job unavailable";
   }
@@ -79,158 +59,48 @@ export default async function AdminJobDetailPage({
     );
   }
 
-  // What the engine says this job is worth. Staff can still override, but the
-  // form now starts here instead of blank, and the action refuses a wild
-  // mismatch unless it's explicitly confirmed.
-  const computedTotalMinor = detail.lines.reduce((sum, line) => {
-    const lineTotal = getAuthoritativeLineTotalMinor(line.snapshot);
-    return sum + (lineTotal ?? 0);
-  }, 0);
-
-  const presentation = jobStatusPresentation[detail.status];
-
-  const nextStatuses = suggestedNextStatuses(
-    detail.status,
-    detail.fulfillment?.method,
-  );
-  const canTakePayment =
-    detail.status === "awaiting_payment" ||
-    detail.status === "payment_pending" ||
-    detail.status === "payment_failed";
-
-  // One row per product rather than one per size (client feedback, 10 Sep).
-  const linesById = new Map(detail.lines.map((line) => [line.id, line]));
-  const lineGroups = groupAdminJobLines(
-    detail.lines.map((line) => {
-      const config = (line.snapshot.configuration ?? {}) as {
-        color?: string;
-        size?: string;
-        storefrontProductId?: string;
-        productMetadata?: string;
-        designProjectId?: string;
-        artworkProofUrl?: string;
-        pricing?: unknown;
-      };
-      return {
-        id: line.id,
-        description: line.snapshot.description,
-        quantity: line.snapshot.quantity,
-        color: config.color ?? null,
-        size: config.size ?? null,
-        // Product only - the storefront id carries the size variant too, and
-        // the meta line names the size, so both kept a size run apart (15 Sep).
-        productKey: productKeyFromStorefrontId(config.storefrontProductId),
-        placement: placementKey(config),
-        unitPriceEstimateMinor: line.snapshot.unitPriceEstimateMinor ?? null,
-        totalMinor: getAuthoritativeLineTotalMinor(line.snapshot) ?? null,
-      };
-    }),
-  );
-  const orderQuantity = lineGroups.reduce((sum, g) => sum + g.quantity, 0);
-  const orderTotalMinor = lineGroups.reduce(
-    (sum, g) => sum + (g.totalMinor ?? 0),
-    0,
-  );
-  // submittedAt is when the customer placed it; createdAt covers a draft that
-  // was never formally submitted, so the date is never blank.
-  const orderedAt = detail.submittedAt ?? detail.createdAt;
+  // Everything below reads only `view` — see lib/admin/job-view.ts, which is
+  // the one place this response gets pulled apart. That's deliberate: a
+  // section component only ever sees its own narrow slice, so there is
+  // nothing in scope here for this file to grow back into.
+  const view = buildJobView(detail, storeName);
 
   return (
-    <div className="space-y-sp-4 max-w-4xl">
+    <div className="space-y-sp-4 max-w-6xl">
       <Link href="/admin/jobs" className="text-sm font-bold text-accent">
         ← Jobs
       </Link>
       <div className="flex flex-wrap justify-between gap-3">
         <div>
-          <h1 className="font-display font-bold text-3xl m-0">
-            {detail.displayId}
-          </h1>
+          <h1 className="font-display font-bold text-3xl m-0">{view.header.displayId}</h1>
           <p className="text-sm text-text-tertiary mt-1 mb-0">
-            Ordered from <b>{storeName ?? "Main store"}</b>
+            Ordered from <b>{view.header.storeName}</b>
           </p>
         </div>
-        <span className="text-sm font-bold bg-accent-tint text-accent px-3 py-1 rounded-full h-fit">
-          {presentation.label}
-        </span>
+        <Badge tone={view.header.tone}>{view.header.statusLabel}</Badge>
       </div>
 
-      {/* Order date, size and value at a glance. The date was previously only
-          readable at the bottom of the timeline, so answering "when did this
-          come in?" meant scrolling past everything (client feedback, 10 Sep:
-          "make order date more visible"). A rush flag belongs here too, but
-          nothing captures rush yet - that arrives with the checkout
-          turnaround step, UAT row 50. */}
-      <div className="flex flex-wrap items-center gap-x-sp-4 gap-y-1 border border-border rounded-md bg-bg-raised px-sp-3 py-sp-2">
-        <span className="text-sm">
-          <span className="text-text-tertiary">Order date </span>
-          <b className="tabular-nums">
-            {new Date(orderedAt).toLocaleDateString("en-CA", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
-          </b>
-        </span>
-        <span className="text-sm">
-          <span className="text-text-tertiary">Quantity </span>
-          <b className="tabular-nums">
-            {orderQuantity.toLocaleString("en-CA")}
-          </b>
-        </span>
-        {orderTotalMinor > 0 && (
-          <span className="text-sm">
-            <span className="text-text-tertiary">Order total </span>
-            <b className="tabular-nums">{moneyFromMinor(orderTotalMinor)}</b>
-          </span>
-        )}
-      </div>
+      <OrderSummaryCard view={view} />
 
-      {/* A rush request is the one thing on a job that is time-critical for
-          staff, so it sits at the top in its own colour rather than in the
-          fulfilment card further down. The customer has asked for a date and
-          been told we will call to confirm it and any charge (UAT row 50) —
-          this is what makes sure somebody actually does. */}
-      {detail.fulfillment?.turnaround?.kind === "rush" ? (
-        <div
-          data-admin="rush-request"
-          className="border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/30 rounded-md px-sp-3 py-sp-2"
-        >
-          <p className="m-0 font-display font-bold text-amber-900 dark:text-amber-200 tracking-[0.06em]">
-            {RUSH_FLAG_LABEL}
-          </p>
-          <p className="m-0 mt-0.5 text-sm text-amber-900/90 dark:text-amber-200/90">
-            Requested date:{" "}
-            <b className="tabular-nums">
-              {detail.fulfillment.turnaround.requestedDate
-                ? formatRequestedDate(
-                    detail.fulfillment.turnaround.requestedDate,
-                  )
-                : "not supplied"}
-            </b>{" "}
-            · Rush fee: {RUSH_FEE_LABEL} · Contact the customer to confirm the
-            date and any charge.
-          </p>
-        </div>
-      ) : null}
+      <RushBanner view={view} />
 
-      {detail.invoiceRequestedAt ? (
+      {view.invoiceRequestedAt && (
         <p className="border border-accent bg-accent-tint rounded-md px-sp-3 py-sp-2 text-sm m-0">
           Customer requested a manual invoice on{" "}
-          {new Date(detail.invoiceRequestedAt).toLocaleString("en-CA")}.
+          {new Date(view.invoiceRequestedAt).toLocaleString("en-CA")}.
         </p>
-      ) : null}
+      )}
 
-      {canTakePayment ? (
+      {view.canTakePayment && (
         <section className="grid gap-sp-3 md:grid-cols-2">
           <form
             action={issueInvoiceAction}
             className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-2"
           >
-            <input type="hidden" name="jobId" value={detail.id} />
+            <input type="hidden" name="jobId" value={view.id} />
             <h2 className="font-display font-bold text-lg m-0">Issue invoice</h2>
             <p className="text-sm text-text-secondary m-0">
-              Record that you sent payment instructions. The customer gets an
-              email.
+              Record that you sent payment instructions. The customer gets an email.
             </p>
             <label className="block text-sm font-semibold">
               Note
@@ -240,10 +110,7 @@ export default async function AdminJobDetailPage({
                 className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
               />
             </label>
-            <button
-              type="submit"
-              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-            >
+            <button type="submit" className="bg-accent text-white font-bold px-4 py-2 rounded-sm">
               Mark invoice sent
             </button>
           </form>
@@ -251,7 +118,7 @@ export default async function AdminJobDetailPage({
             action={recordPaymentAction}
             className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-2"
           >
-            <input type="hidden" name="jobId" value={detail.id} />
+            <input type="hidden" name="jobId" value={view.id} />
             <h2 className="font-display font-bold text-lg m-0">Record payment</h2>
             <p className="text-sm text-text-secondary m-0">
               Use this when e-transfer, cheque, or a card over the phone lands.
@@ -265,523 +132,72 @@ export default async function AdminJobDetailPage({
                 className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
               />
             </label>
-            <button
-              type="submit"
-              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-            >
+            <button type="submit" className="bg-accent text-white font-bold px-4 py-2 rounded-sm">
               Mark paid
             </button>
           </form>
         </section>
-      ) : null}
-
-      {detail.inventory && detail.inventory.lines.length > 0 ? (
-        <section className="border border-border rounded-md p-sp-3 bg-bg-raised">
-          <h2 className="font-display font-bold text-xl m-0 mb-2">
-            Inventory check
-          </h2>
-          <ul className="m-0 p-0 list-none space-y-2">
-            {detail.inventory.lines.map((line) => {
-              const short =
-                line.available != null && line.available < line.requested;
-              const unknown = line.available == null;
-              return (
-                <li
-                  key={line.lineId}
-                  className={`text-sm ${short ? "text-amber-800" : "text-text-secondary"}`}
-                >
-                  <span className="font-semibold text-text-primary">
-                    {line.description}
-                  </span>
-                  {line.sku ? ` · ${line.sku}` : ""}
-                  {" — "}
-                  {unknown
-                    ? `requested ${line.requested}; no catalog qty on file`
-                    : `${line.requested} requested, ${line.available} in stock`}
-                  {short ? " · short" : ""}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      {nextStatuses.length > 0 ? (
-        <JobTransitionForm jobId={detail.id} nextStatuses={nextStatuses} />
-      ) : (
-        <p className="border border-border rounded-md p-sp-3 text-sm text-text-secondary m-0">
-          This job is in a terminal status. No further staff transitions are available.
-        </p>
       )}
 
-      <section className="grid gap-sp-3 md:grid-cols-2">
-        <div className="border border-border rounded-md p-sp-3 bg-bg-raised">
-          <h2 className="font-display font-bold text-xl m-0 mb-2">
-            Customer contact
-          </h2>
-          {detail.contact ? (
-            <address className="not-italic text-sm space-y-1">
-              <p className="font-semibold m-0">{detail.contact.fullName}</p>
-              {detail.contact.company && (
-                <p className="text-text-secondary m-0">
-                  {detail.contact.company}
-                </p>
-              )}
-              <p className="m-0">
-                <a className="text-accent underline" href={`mailto:${detail.contact.email}`}>
-                  {detail.contact.email}
-                </a>
-              </p>
-              <p className="m-0">
-                <a className="text-accent underline" href={`tel:${detail.contact.phone}`}>
-                  {detail.contact.phone}
-                </a>
-              </p>
-            </address>
-          ) : (
-            <p className="text-sm text-text-secondary m-0">
-              Contact details are unavailable for this legacy job.
-            </p>
-          )}
-        </div>
+      <SectionCard title="Order status">
+        <OrderStatusCard view={view} />
+      </SectionCard>
 
-        <div className="border border-border rounded-md p-sp-3 bg-bg-raised">
-          <h2 className="font-display font-bold text-xl m-0 mb-2">
-            Fulfilment
-          </h2>
-          {detail.fulfillment ? (
-            <div className="text-sm">
-              <p className="font-semibold capitalize mt-0 mb-1">
-                {detail.fulfillment.method.replace("_", " ")}
-              </p>
-              {detail.fulfillment.method === "pickup" &&
-              !detail.fulfillment.address ? (
-                <p className="text-text-secondary m-0">
-                  Hold at the Vancouver studio. No shipping address on file.
-                </p>
-              ) : detail.fulfillment.address ? (
-                <address className="not-italic text-text-secondary">
-                  {detail.fulfillment.address.address1}
-                  <br />
-                  {detail.fulfillment.address.address2 && (
-                    <>
-                      {detail.fulfillment.address.address2}
-                      <br />
-                    </>
-                  )}
-                  {detail.fulfillment.address.city},{" "}
-                  {detail.fulfillment.address.region}{" "}
-                  {detail.fulfillment.address.postalCode}
-                  <br />
-                  {detail.fulfillment.address.country}
-                </address>
-              ) : null}
-              {detail.fulfillment.turnaround && (
-                <p className="border-t border-fill-subtle mt-2 pt-2 mb-0">
-                  Turnaround:{" "}
-                  <b>
-                    {detail.fulfillment.turnaround.kind === "rush"
-                      ? `Rush requested${
-                          detail.fulfillment.turnaround.requestedDate
-                            ? ` — ${formatRequestedDate(detail.fulfillment.turnaround.requestedDate)}`
-                            : ""
-                        }`
-                      : "Standard production, 5–7 business days"}
-                  </b>
-                </p>
-              )}
-              {detail.fulfillment.deliveryNotes && (
-                <p className="border-t border-fill-subtle mt-2 pt-2 mb-0 whitespace-pre-wrap">
-                  Delivery note: {detail.fulfillment.deliveryNotes}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-text-secondary m-0">
-              Fulfilment details are unavailable for this legacy job.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Checkout tells the customer their notes and payment preference reach
-          the studio. The note was stored on the job row and then dropped from
-          every read, so nobody working the job here could see it. */}
-      {detail.customerNote ? (
-        <section className="border border-border rounded-md p-sp-3 bg-bg-raised">
-          <h2 className="font-display font-bold text-xl m-0 mb-2">
-            Customer note
-          </h2>
-          <p className="text-sm whitespace-pre-wrap m-0">
-            {detail.customerNote}
-          </p>
-        </section>
-      ) : null}
-
-      <section className="space-y-sp-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display font-bold text-xl m-0">Products</h2>
-          <span className="text-sm text-text-tertiary">
-            {orderQuantity.toLocaleString("en-CA")}{" "}
-            {orderQuantity === 1 ? "piece" : "pieces"} across{" "}
-            {lineGroups.length} {lineGroups.length === 1 ? "product" : "products"}
-          </span>
-        </div>
-        {lineGroups.map((group) => {
-          // Anything not size-specific - artwork, roster, warnings - belongs
-          // to the group, so it is read off the first line folded into it.
-          const first = linesById.get(group.ids[0]!);
-          const configuration = (first?.snapshot.configuration ?? {}) as {
-            artworkProofUrl?: string;
-            designProjectId?: string;
-            roster?: { size: string; name: string; number?: string }[];
-            storefrontProductId?: string;
-            productMetadata?: string;
-            pricingUnverified?: boolean;
-            pricing?: unknown;
-          };
-          const artworkProofUrl = configuration?.artworkProofUrl;
-          const designProjectId = configuration?.designProjectId;
-          const roster = configuration?.roster;
-          const catalogHint =
-            configuration?.productMetadata ||
-            configuration?.storefrontProductId ||
-            null;
-          // The meta line's size belongs to one folded line, not the group;
-          // the breakdown above already lists every size.
-          const placementNote = withoutSizeSegment(configuration?.productMetadata);
-          return (
-            <article
-              key={group.key}
-              className="border border-border rounded-md p-sp-3"
-            >
-              <p className="font-semibold m-0">{group.description}</p>
-              <p className="text-sm text-text-secondary mt-1 mb-0">
-                {group.color ? `${group.color} · ` : ""}
-                Qty {group.quantity.toLocaleString("en-CA")}
-                {group.unitPriceEstimateMinor != null
-                  ? ` · est. ${moneyFromMinor(group.unitPriceEstimateMinor)} / unit`
-                  : ""}
-                {group.totalMinor != null
-                  ? ` · total ${moneyFromMinor(group.totalMinor)}`
-                  : ""}
-              </p>
-              {group.sizes.length > 0 && (
-                <p className="text-sm font-semibold text-text-primary mt-1 mb-0 tabular-nums">
-                  {formatSizeBreakdown(group.sizes)}
-                </p>
-              )}
-              {configuration?.pricingUnverified && (
-                <p className="text-xs font-semibold text-amber-700 mt-1 mb-0">
-                  Customer-side estimate — not re-priced by the pricing engine.
-                  Confirm this line before quoting.
-                </p>
-              )}
-
-              {/* One line per decoration method and location, read from the
-                  order's own pricing snapshot — "Front: Screen Print · 2
-                  colours", "Back: DTF" — so staff read the garment the way a
-                  work order is written rather than reconstructing it from the
-                  placement string (UAT V2 row 69). Same reader the customer
-                  portal uses, so the two never disagree about an order. */}
-              {(() => {
-                const decorations = portalDecorations(configuration?.pricing);
-                return decorations.length > 0 ? (
-                  <ul
-                    data-admin="decoration-lines"
-                    className="m-0 mt-2 list-none p-0 space-y-0.5 text-sm"
-                  >
-                    {decorations.map((decoration) => (
-                      <li key={`${decoration.location}-${decoration.method}`}>
-                        <span className="font-bold">{decoration.location}: </span>
-                        {decoration.method}
-                        {decoration.detail ? ` · ${decoration.detail}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null;
-              })()}
-              {placementNote && (
-                <p className="text-sm text-text-primary mt-2 mb-0">
-                  <span className="font-bold">Print placement. </span>
-                  {placementNote}
-                </p>
-              )}
-              {catalogHint && catalogHint !== configuration?.productMetadata && (
-                <p className="text-xs text-text-tertiary mt-1 mb-0">
-                  {catalogHint}
-                </p>
-              )}
-              {(artworkProofUrl || designProjectId) && (
-                <div className="flex flex-wrap items-start gap-3 mt-3">
-                  {artworkProofUrl && (
-                    <a href={artworkProofUrl} target="_blank" rel="noreferrer">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={artworkProofUrl}
-                        alt={`Artwork proof for ${group.description}`}
-                        className="h-24 w-auto border border-border rounded-sm bg-white"
-                      />
-                    </a>
-                  )}
-                  {designProjectId && (
-                    <Link
-                      href={`/admin/designs/${designProjectId}/edit`}
-                      className="text-sm underline"
-                    >
-                      Open this design in the studio
-                    </Link>
-                  )}
-                </div>
-              )}
-              {roster && roster.length > 0 && (
-                <details className="mt-3">
-                  <summary className="text-sm cursor-pointer">
-                    Roster · {roster.length} name
-                    {roster.length === 1 ? "" : "s"}
-                  </summary>
-                  <ul className="text-sm text-text-secondary mt-2 mb-0 pl-4">
-                    {roster.map((entry, index) => (
-                      <li key={`${entry.name}-${index}`}>
-                        {entry.size} · {entry.name}
-                        {entry.number ? ` · #${entry.number}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="grid gap-sp-3 md:grid-cols-2">
-        <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
-          <h2 className="font-display font-bold text-xl m-0">Final quote</h2>
-          {(detail.finalQuotes ?? []).length > 0 ? (
-            <ul className="m-0 p-0 list-none space-y-1 text-sm">
-              {(detail.finalQuotes ?? []).map((quote) => (
-                <li key={quote.id}>
-                  v{quote.version}: {moneyFromMinor(quote.amountMinor)}{" "}
-                  {quote.currency}
-                  {quote.acceptedAt
-                    ? ` · accepted ${new Date(quote.acceptedAt).toLocaleString("en-CA")}`
-                    : " · awaiting customer acceptance"}
-                  {quote.note && (
-                    <span className="block text-text-secondary">
-                      {quote.note}
-                    </span>
-                  )}
-                </li>
+      <div className="grid gap-sp-4 xl:grid-cols-3 items-start">
+        <div className="xl:col-span-2 space-y-sp-4">
+          <SectionCard
+            title="Products & Decoration"
+            aside={
+              <span className="text-sm text-text-tertiary">
+                {view.summary.quantity.toLocaleString("en-CA")}{" "}
+                {view.summary.quantity === 1 ? "piece" : "pieces"} across {view.products.length}{" "}
+                {view.products.length === 1 ? "product" : "products"}
+              </span>
+            }
+          >
+            <div className="space-y-sp-3">
+              {view.products.map((product) => (
+                <ProductLineCard key={product.key} product={product} />
               ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-text-secondary m-0">No final quote yet.</p>
-          )}
-          <form action={createFinalQuoteAction} className="space-y-2">
-            <input type="hidden" name="jobId" value={detail.id} />
-            <input
-              type="hidden"
-              name="computedTotalMinor"
-              value={computedTotalMinor}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Artwork & Proofs">
+            <ArtworkAndProofs
+              jobId={view.id}
+              customerPersonId={view.customerPersonId}
+              proofs={view.proofs.versions}
+              files={view.files}
             />
-            <label className="block text-sm font-semibold">
-              Amount (CAD)
-              <input
-                name="amountDollars"
-                type="number"
-                min="0.01"
-                step="0.01"
-                required
-                defaultValue={
-                  computedTotalMinor > 0
-                    ? (computedTotalMinor / 100).toFixed(2)
-                    : undefined
-                }
-                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
-              />
-            </label>
-            {computedTotalMinor > 0 && (
-              <p className="text-xs text-text-secondary m-0">
-                Line items total {moneyFromMinor(computedTotalMinor)}. Change the
-                amount if you&apos;re adjusting — anything more than 10% away needs
-                the override box below.
-              </p>
-            )}
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="confirmOverride" value="1" />
-              I&apos;m deliberately quoting a different amount than the line total
-            </label>
+          </SectionCard>
 
-            <label className="block text-sm font-semibold">
-              Note
-              <input
-                name="note"
-                className="block mt-1 w-full border border-border rounded-sm px-2 py-1"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm font-semibold">
-              <input type="checkbox" name="markAwaitingPayment" value="1" />
-              Approve job and open quote for customer acceptance
-            </label>
-            <button
-              type="submit"
-              className="bg-accent text-white font-bold px-4 py-2 rounded-sm"
-            >
-              Issue final quote
-            </button>
-          </form>
+          <SectionCard title="Inventory">
+            <InventorySummary stock={view.stock} />
+          </SectionCard>
+
+          <SectionCard title="Order timeline">
+            <JobTimeline timeline={view.timeline} />
+          </SectionCard>
         </div>
 
-        <div className="border border-border rounded-md p-sp-3 bg-bg-raised space-y-3">
-          <h2 className="font-display font-bold text-xl m-0">Proofs</h2>
-          {(detail.proofs ?? []).length > 0 ? (
-            <ul className="m-0 p-0 list-none space-y-3 text-sm">
-              {[...(detail.proofs ?? [])]
-                .sort((a, b) => b.version - a.version)
-                .map((proof) => {
-                  const undecided =
-                    !proof.decision || proof.decision === "pending";
-                  const oursToDecide =
-                    undecided && proof.awaitingDecisionFrom === "staff";
-                  const proofUrl = safeProofUrl(proof.storageKey);
-                  const imageLike =
-                    Boolean(proofUrl) &&
-                    (/\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(
-                      proofUrl!,
-                    ) ||
-                      proofUrl!.includes("/api/uploads/"));
-                  return (
-                    <li
-                      key={proof.id}
-                      className="border border-border rounded-sm p-2"
-                    >
-                      <div className="flex flex-wrap justify-between gap-2">
-                        <b>v{proof.version}</b>
-                        <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">
-                          {undecided
-                            ? oursToDecide
-                              ? "Needs your review"
-                              : "With the customer"
-                            : proof.decision === "approved"
-                              ? "Approved"
-                              : "Changes requested"}
-                        </span>
-                      </div>
-                      {proofUrl ? (
-                        <a
-                          href={proofUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-block mt-2 text-xs font-bold text-accent"
-                        >
-                          {imageLike && (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={proofUrl}
-                              alt={`Proof version ${proof.version}`}
-                              className="max-h-56 max-w-full object-contain border border-border rounded-sm bg-white mb-1"
-                            />
-                          )}
-                          Open proof file ↗
-                        </a>
-                      ) : (
-                        <p role="alert" className="text-xs text-error mt-1 mb-0">
-                          Proof file is unavailable; upload a replacement.
-                        </p>
-                      )}
-                      {proof.note && (
-                        <p className="text-xs text-text-secondary mt-1 mb-0">
-                          Note: {proof.note}
-                        </p>
-                      )}
-                      {proof.decisionNote && (
-                        <p className="text-xs text-text-secondary mt-1 mb-0">
-                          Response: “{proof.decisionNote}”
-                        </p>
-                      )}
-                      {oursToDecide && (
-                        <form
-                          action={decideProofAction}
-                          className="mt-2 space-y-2"
-                        >
-                          <input type="hidden" name="jobId" value={detail.id} />
-                          <input
-                            type="hidden"
-                            name="proofId"
-                            value={proof.id}
-                          />
-                          <input
-                            name="note"
-                            placeholder="Note (required to request changes)"
-                            className="block w-full border border-border rounded-sm px-2 py-1"
-                          />
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="submit"
-                              name="decision"
-                              value="approved"
-                              className="bg-accent text-white font-bold px-3 py-1 rounded-sm"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="submit"
-                              name="decision"
-                              value="changes_requested"
-                              className="border border-border font-bold px-3 py-1 rounded-sm"
-                            >
-                              Request changes
-                            </button>
-                          </div>
-                        </form>
-                      )}
-                    </li>
-                  );
-                })}
-            </ul>
-          ) : (
-            <p className="text-sm text-text-secondary m-0">No proofs yet.</p>
-          )}
-          <ProofUploadForm jobId={detail.id} customerPersonId={detail.customerPersonId} />
-        </div>
-      </section>
+        <div className="space-y-sp-4">
+          <SectionCard title="Customer">
+            <CustomerCard contact={view.contact} />
+          </SectionCard>
 
-      <section>
-        <h2 className="font-display font-bold text-xl m-0 mb-2">Timeline</h2>
-        <ul className="space-y-2 m-0 p-0 list-none">
-          {detail.timeline.map((entry) => (
-            <li
-              key={entry.id}
-              className="text-sm border-l-2 border-border pl-3"
-            >
-              <span className="font-semibold">
-                {jobStatusPresentation[entry.toStatus].label}
-              </span>
-              {entry.reason ? ` — ${entry.reason}` : ""}
-              <span className="text-text-tertiary">
-                {" "}
-                · {new Date(entry.occurredAt).toLocaleString("en-CA")}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+          <SectionCard title="Fulfilment">
+            <FulfillmentCard fulfillment={view.fulfillment} />
+          </SectionCard>
+
+          <SectionCard title="Quote / Order total">
+            <OrderTotalCard jobId={view.id} money={view.money} />
+          </SectionCard>
+
+          <SectionCard title="Notes">
+            <NotesSection view={view} />
+          </SectionCard>
+        </div>
+      </div>
     </div>
   );
-}
-
-function suggestedNextStatuses(
-  status: JobRequestStatus,
-  method?: string,
-): readonly JobRequestStatus[] {
-  const next = validNextStatuses(status);
-  if (status !== "in_production") return next;
-  if (method === "pickup") {
-    return next.filter((value) => value !== "shipped");
-  }
-  if (method && method !== "pickup") {
-    return next.filter((value) => value !== "ready_for_pickup");
-  }
-  return next;
 }

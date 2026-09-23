@@ -29,19 +29,22 @@ export function JobTransitionForm({
   compact?: boolean;
 }) {
   const [toStatus, setToStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const showNotifyToggle = NOTIFIABLE_STATUSES.has(toStatus);
+  const cancelling = toStatus === "cancelled";
 
   return (
     <form
       action={(formData: FormData) => {
         startTransition(async () => {
-          await transitionJobAction(
+          const result = await transitionJobAction(
             jobId,
             String(formData.get("toStatus") || ""),
             String(formData.get("reason") || "") || undefined,
             showNotifyToggle ? formData.get("notify") === "on" : true,
           );
+          setError(result.error ?? null);
         });
       }}
       className={
@@ -74,9 +77,12 @@ export function JobTransitionForm({
         </select>
       </label>
       <label className={compact ? "text-sm" : "text-sm font-semibold"}>
-        {!compact && <span className="block">Reason</span>}
+        {!compact && (
+          <span className="block">Reason{cancelling ? " (required)" : ""}</span>
+        )}
         <input
           name="reason"
+          required={cancelling}
           placeholder={compact ? "Reason (required to cancel)" : "Required to cancel"}
           className={
             compact
@@ -108,6 +114,18 @@ export function JobTransitionForm({
       >
         {pending ? "Applying…" : "Apply"}
       </button>
+      {error && (
+        <p
+          role="alert"
+          className={
+            compact
+              ? "w-full text-xs text-red-800 m-0"
+              : "text-sm text-red-800 bg-red-50 border border-red-200 rounded-sm px-3 py-2 m-0"
+          }
+        >
+          {error}
+        </p>
+      )}
     </form>
   );
 }

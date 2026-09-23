@@ -29,6 +29,7 @@ const PERSON_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function issueInvoiceAction(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const note = String(formData.get("note") || "") || undefined;
   if (!jobId) throw new Error("Job is required");
@@ -39,6 +40,7 @@ export async function issueInvoiceAction(formData: FormData) {
 }
 
 export async function recordPaymentAction(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const note = String(formData.get("note") || "").trim();
   if (!jobId) throw new Error("Job is required");
@@ -49,25 +51,112 @@ export async function recordPaymentAction(formData: FormData) {
   revalidatePath(`/admin/jobs/${jobId}`);
 }
 
+export interface InternalNoteState {
+  error?: string;
+  savedAt?: number;
+}
+
+// A shared scratchpad, one per job, never shown to the customer (the
+// commerce-api service redacts it on every read except the staff route
+// itself). `savedAt: Date.now()` rather than a boolean success flag, so
+// saving the same text twice in a row still re-triggers the confirmation —
+// see createCategoryAction's own comment for why a silent-looking repeat
+// success is the failure this pattern exists to avoid.
+export async function saveInternalNoteAction(
+  _previous: InternalNoteState,
+  formData: FormData,
+): Promise<InternalNoteState> {
+  await requireStaff();
+  const jobId = String(formData.get("jobId") || "");
+  const note = String(formData.get("note") || "");
+  if (!jobId) return { error: "Job is required" };
+  try {
+    const client = await adminClient();
+    await client.setJobInternalNote(jobId, note, requireAdminToken());
+  } catch (caught) {
+    return {
+      error: caught instanceof Error ? caught.message : "Could not save the note",
+    };
+  }
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { savedAt: Date.now() };
+}
+
+export interface RushConfirmationState {
+  error?: string;
+  savedAt?: number;
+  confirmed?: boolean;
+}
+
+export async function confirmRushRequestAction(
+  _previous: RushConfirmationState,
+  formData: FormData,
+): Promise<RushConfirmationState> {
+  await requireStaff();
+  const jobId = String(formData.get("jobId") || "");
+  const confirmed = formData.get("confirmed") === "true";
+  const promisedDate = String(formData.get("promisedDate") || "").trim() || null;
+  if (!jobId) return { error: "Job is required" };
+  if (confirmed && !promisedDate) {
+    return { error: "Enter the date you're actually promising the customer" };
+  }
+  try {
+    const client = await adminClient();
+    await client.confirmRushRequest(
+      jobId,
+      { confirmed, promisedDate: confirmed ? promisedDate : null },
+      requireAdminToken(),
+    );
+  } catch (caught) {
+    return {
+      error: caught instanceof Error ? caught.message : "Could not update the rush request",
+    };
+  }
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { savedAt: Date.now(), confirmed };
+}
+
+export interface TransitionJobState {
+  error?: string;
+}
+
+// Returns an error instead of throwing: cancelling with no reason is refused
+// server-side (job-request-service.ts, "A reason is required to cancel a
+// job.") and used to hit app/admin/error.tsx uncaught, because a bare
+// `<form action={...}>` around a throw has nowhere to put the message. Every
+// other admin form that can fail this way (createCategoryAction and its
+// siblings) already returns `{ error? }` instead — this brings the one
+// remaining exception in line.
 export async function transitionJobAction(
   jobId: string,
   toStatus: string,
   reason?: string,
   notifyCustomer = true,
-) {
-  const client = await adminClient();
-  await client.transitionJobRequest(
-    jobId,
-    toStatus,
-    requireAdminToken(),
-    reason,
-    notifyCustomer,
-  );
+): Promise<TransitionJobState> {
+  await requireStaff();
+  try {
+    const client = await adminClient();
+    await client.transitionJobRequest(
+      jobId,
+      toStatus,
+      requireAdminToken(),
+      reason,
+      notifyCustomer,
+    );
+  } catch (caught) {
+    return {
+      error: caught instanceof Error ? caught.message : "Could not update the status",
+    };
+  }
   revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
+  return {};
 }
 
 export async function createFinalQuoteAction(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const dollars = Number(formData.get("amountDollars") || "0");
   const note = String(formData.get("note") || "") || undefined;
@@ -179,6 +268,7 @@ export async function createProofAction(
  * customer submitted. The API refuses a decision aimed at the other party, so
  * this cannot be used to approve a proof that is sitting with the customer. */
 export async function decideProofAction(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const proofId = String(formData.get("proofId") || "");
   const decision = String(formData.get("decision") || "");
@@ -251,6 +341,7 @@ export async function runCsvImportAction(
   _previous: CsvImportState,
   formData: FormData,
 ): Promise<CsvImportState> {
+  await requireStaff();
   const vendor = String(formData.get("vendor") || "csv");
   const vendorKey = String(formData.get("vendorKey") || "").trim() || undefined;
   const csvContent = String(formData.get("csvContent") || "");
@@ -297,6 +388,7 @@ export async function runCsvImportAction(
 }
 
 export async function saveSettingsAction(formData: FormData) {
+  await requireStaff();
   const retailMarkup = String(formData.get("retailMarkup") || "2.0");
   const allowlistRaw = String(formData.get("brandAllowlist") || "");
   const brandAllowlist = allowlistRaw
@@ -333,6 +425,7 @@ export async function createCategoryAction(
   _previous: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
+  await requireStaff();
   const name = String(formData.get("name") || "").trim();
   const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
   const parentId = String(formData.get("parentId") || "").trim() || null;
@@ -368,6 +461,7 @@ export async function updateCategoryAction(
   _previous: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
+  await requireStaff();
   const name = String(formData.get("name") || "").trim();
   const slug = categorySlugFrom(String(formData.get("slug") || ""), name);
   const parentId = String(formData.get("parentId") || "").trim() || null;
@@ -417,6 +511,7 @@ export async function updateCategoryAction(
  *  redirect back to exactly where the admin was, with the reason attached,
  *  instead of dropping them on the generic error page mid-list. */
 export async function deleteCategoryAction(categoryId: string) {
+  await requireStaff();
   const client = await adminClient();
   await client.deleteCategory(categoryId, requireAdminToken());
   revalidatePath("/admin/categories");
@@ -424,6 +519,7 @@ export async function deleteCategoryAction(categoryId: string) {
 }
 
 export async function reorderCategoryAction(orderedIds: string[]) {
+  await requireStaff();
   const client = await adminClient();
   await client.reorderCategories(orderedIds, requireAdminToken());
   revalidatePath("/admin/categories");
@@ -434,6 +530,7 @@ export async function moveCategoryAction(
   categoryId: string,
   direction: "up" | "down",
 ) {
+  await requireStaff();
   const client = await adminClient();
   const token = requireAdminToken();
   const categories = await client.listCategories(token);
@@ -452,6 +549,7 @@ export async function moveCategoryAction(
 }
 
 export async function saveMappingAction(formData: FormData) {
+  await requireStaff();
   const ssCategoryKey = String(formData.get("ssCategoryKey") || "");
   const ssCategoryLabel = String(formData.get("ssCategoryLabel") || "");
   const categoryIds = formData.getAll("categoryIds").map(String);
@@ -494,6 +592,7 @@ export async function patchProductAction(
   _previous: PatchProductState,
   formData: FormData,
 ): Promise<PatchProductState> {
+  await requireStaff();
   const storefrontVisible = formData.has("storefrontVisible");
   const isDark = formData.has("isDark");
   const touchActive = formData.has("touchActive");
@@ -526,6 +625,7 @@ export async function patchProductAction(
 }
 
 export async function bulkCatalogVisibilityAction(formData: FormData) {
+  await requireStaff();
   const storefrontVisible = String(formData.get("storefrontVisible")) === "true";
   const productIds = formData
     .getAll("productIds")
@@ -549,6 +649,7 @@ export async function bulkCatalogVisibilityAction(formData: FormData) {
  * crashing to the generic error page as it did before this fix.
  */
 export async function refreshCatalogProductAction(productId: string) {
+  await requireStaff();
   try {
     const client = await adminClient();
     await client.refreshCatalogProduct(productId, requireAdminToken());
@@ -570,6 +671,7 @@ export async function setStoreStatusAction(
   storeId: string,
   status: "active" | "suspended",
 ) {
+  await requireStaff();
   let mailed = "0";
   let slug = "";
   try {
@@ -624,6 +726,7 @@ export async function setStoreCategoryVisibilityAction(
   storeId: string,
   formData: FormData,
 ) {
+  await requireStaff();
   const categoryIds = formData.getAll("categoryIds").map(String);
   try {
     const client = await adminClient();
@@ -654,6 +757,7 @@ export async function setStorePricingAdjustmentAction(
   _previous: PricingAdjustmentState,
   formData: FormData,
 ): Promise<PricingAdjustmentState> {
+  await requireStaff();
   const raw = String(formData.get("percent") ?? "").trim();
   const enteredPercent = raw === "" ? null : Number(raw);
   if (enteredPercent != null && !Number.isFinite(enteredPercent)) {

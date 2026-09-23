@@ -8,6 +8,7 @@ import {
   withoutSizeSegment,
   type AdminLineInput,
 } from "./job-lines";
+import { readJobDetailRouteSource } from "./job-detail-source";
 
 const line = (over: Partial<AdminLineInput> & { id: string }): AdminLineInput => ({
   description: "ATC Everyday Cotton Tee",
@@ -137,14 +138,14 @@ describe("size ordering", () => {
  * reads like a production work order.
  */
 describe("row 69 — the job page reads like a work order", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
-  const { resolve } = require("node:path") as typeof import("node:path");
-  const page = readFileSync(
-    resolve(process.cwd(), "app/admin/jobs/[id]/page.tsx"),
-    "utf8",
-  )
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  // Reads the whole route — page.tsx, its section components, and the view
+  // model that feeds them — not just page.tsx alone. The admin job page
+  // rebuild (11-point client note) split what used to be one 876-line file
+  // into `lib/admin/job-view.ts` plus eleven section components, so the
+  // strings this test pins moved out of page.tsx itself. See
+  // job-detail-source.ts for why widening the reader is the right fix here,
+  // not loosening what's asserted.
+  const page = readJobDetailRouteSource();
 
   it("lists each decoration as location: method, under the garment", () => {
     expect(page).toContain('data-admin="decoration-lines"');
@@ -253,11 +254,8 @@ describe("a size run is one block, however the size leaks in", () => {
   });
 
   it("is wired that way on the page", () => {
-    const { readFileSync } = require("node:fs") as typeof import("node:fs");
-    const { resolve } = require("node:path") as typeof import("node:path");
-    const page = readFileSync(resolve(process.cwd(), "app/admin/jobs/[id]/page.tsx"), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // See the comment on "row 69" above — same widened reader, same reason.
+    const page = readJobDetailRouteSource();
     expect(page).toContain("productKey: productKeyFromStorefrontId(config.storefrontProductId)");
     expect(page).toContain("placement: placementKey(config)");
     expect(page).toContain("withoutSizeSegment(configuration?.productMetadata)");
