@@ -646,8 +646,15 @@ export function Header({
                 from Account → My Designs, or from the quote CTA. */}
           </nav>
 
+          {/* Best Sellers, not /quote. This CTA and its mobile twin below
+              were the two shopper-facing links the
+              SHOW_PUBLIC_QUOTE_CALCULATOR switch never caught, and unlike the
+              homepage hero they sit on *every* page — so the hidden
+              calculator (noindex, disallowed in robots.txt, adds to cart with
+              no artwork) stayed one click away site-wide. Best Sellers
+              carries the cheapest-match finder, so the label still pays off. */}
           <Link
-            href="/quote"
+            href="/best-sellers"
             className="group inline-flex items-center gap-1.5 whitespace-nowrap font-bold text-sm text-accent shrink-0"
           >
             Get an instant quote
@@ -1011,7 +1018,7 @@ export function Header({
             {/* Mirrors the desktop nav row's CTA — that row is hidden below
                 lg, so mobile needs its own way to reach it. */}
             <Link
-              href="/quote"
+              href="/best-sellers"
               onClick={() => setMobileOpen(false)}
               className="text-sm font-bold px-3 py-2 text-accent"
             >

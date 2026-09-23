@@ -115,8 +115,20 @@ export function Hero() {
                 secondary a solid white one (mockup treats its second CTA the
                 same way — filled, not ghosted), rather than the previous
                 ghost-on-dark outline. */}
+            {/* Goes to Best Sellers, as the UAT row asks in as many words:
+                "Change 'Start Designing' to 'Get an Instant Quote' and
+                clicking it takes you to the best sellers page."
+
+                It used to point at /quote. That was the one shopper-facing
+                link the SHOW_PUBLIC_QUOTE_CALCULATOR switch never caught, so
+                the site's biggest button led to a page that robots.txt
+                disallows and that renders noindex — and whose calculator adds
+                straight to cart with no artwork, bypassing the Design Studio
+                the rest of the site is built around. Best Sellers carries the
+                cheapest-match finder, so the label is honest: a customer who
+                doesn't know which garment they want still gets a price. */}
             <ButtonLink
-              href="/quote"
+              href="/best-sellers"
               variant={SHOW_PUBLIC_QUOTE_CALCULATOR ? "secondary" : "primary"}
               className="shadow-[0_2px_14px_rgba(0,0,0,0.35)]"
             >
