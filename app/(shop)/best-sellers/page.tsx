@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { BestSellersSections } from "@/components/products/BestSellersSections";
 import { BrowsingQuantityControl } from "@/components/products/BrowsingQuantityControl";
+import { CheapestMatchFinder } from "@/components/quote-builder/CheapestMatchFinder";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import {
@@ -31,12 +32,40 @@ export const metadata: Metadata = {
  * it to fall out of step.
  */
 export default async function BestSellersPage() {
-  const [{ products, categories, source }, pricingConfig] = await Promise.all([
-    loadStorefrontCatalog({ categorySlug: BEST_SELLERS_SLUG, limit: 200 }),
-    loadPublishedPricingV2().catch(() => null),
-  ]);
+  const [{ products, categories, source }, pricingConfig, wholeCatalog] =
+    await Promise.all([
+      loadStorefrontCatalog({ categorySlug: BEST_SELLERS_SLUG, limit: 200 }),
+      loadPublishedPricingV2().catch(() => null),
+      // The cheapest-match finder below has to search the *whole* catalogue,
+      // not the best-seller slice this page renders — "give results based on
+      // cheapest price product" (Pavin, 15 September) means cheapest overall.
+      // Ungrouped so every colourway is its own candidate, since colour is
+      // what decides the dark-garment underbase surcharge.
+      loadStorefrontCatalog({ limit: 150, groupByStyle: false }).catch(() => null),
+    ]);
 
   const sections = groupBestSellersByCategory(products, categories);
+
+  const finderCandidates =
+    wholeCatalog?.products.map((p) => ({
+      id: p.id,
+      label: `${p.brandName} ${p.styleName} · ${p.colorName}`.trim(),
+      brandName: p.brandName,
+      styleName: p.styleName,
+      title: p.title,
+      colorName: p.colorName,
+      unitCostMinor: p.costMinor,
+      isDark: p.isDark,
+      available: p.available,
+      slug: p.slug,
+      categorySlugs: p.categorySlugs,
+    })) ?? [];
+  // Top-level only ("T-Shirts", "Hoodies", "Headwear"), not every
+  // subcategory, so the garment-type buttons stay a handful, not a wall.
+  const garmentTypes =
+    wholeCatalog?.categories
+      .filter((c) => c.parentId === null)
+      .map((c) => ({ slug: c.slug, name: c.name })) ?? [];
 
   return (
     <section className="py-sp-6">
@@ -55,6 +84,23 @@ export default async function BestSellersPage() {
               the site, which is the point of row 17. */}
           <BrowsingQuantityControl className="shrink-0" />
         </div>
+
+        {/* "Get an Instant Quote" in the hero lands here, so the page has to
+            be able to answer that for a customer who doesn't yet know which
+            garment they want — which is exactly what Pavin asked for on
+            15 September: a small form, preset buttons, priced on the cheapest
+            matching product, linking out to that product's page. It sits
+            above the grid because it is the reason this page gets opened
+            from the homepage. */}
+        {pricingConfig && garmentTypes.length > 0 && finderCandidates.length > 0 && (
+          <div className="mb-sp-6">
+            <CheapestMatchFinder
+              pricingConfig={pricingConfig}
+              garmentTypes={garmentTypes}
+              candidates={finderCandidates}
+            />
+          </div>
+        )}
 
         {source === "error" ? (
           <p role="alert" className="text-text-secondary">

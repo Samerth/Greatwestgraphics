@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
-import { CheapestMatchFinder } from "@/components/quote-builder/CheapestMatchFinder";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
 import { loadPublishedPricingV2 } from "@/lib/commerce/published-pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
@@ -79,16 +78,7 @@ export default async function QuotePage({
     unitCostMinor: p.costMinor,
     isDark: p.isDark,
     available: p.available,
-    slug: p.slug,
-    categorySlugs: p.categorySlugs,
   }));
-  // Top-level only ("T-Shirts", "Hoodies", "Headwear"), not every
-  // subcategory — the cheapest-match finder's garment-type buttons stay a
-  // handful, not a wall, the same reasoning the plan gave for keeping every
-  // question in that form a small preset row.
-  const garmentTypes = catalog.categories
-    .filter((c) => c.parentId === null)
-    .map((c) => ({ slug: c.slug, name: c.name }));
 
   const initialMethod = parseMethod(params.method, pricingConfig);
   // A "?method=" the published config has no rates for used to be dropped in
@@ -132,18 +122,6 @@ export default async function QuotePage({
           )}
         </Container>
       </section>
-
-      {garmentTypes.length > 0 && catalogProducts.length > 0 && (
-        <section className="pb-sp-8">
-          <Container>
-            <CheapestMatchFinder
-              pricingConfig={pricingConfig}
-              garmentTypes={garmentTypes}
-              candidates={catalogProducts}
-            />
-          </Container>
-        </section>
-      )}
 
       <section className="py-sp-8">
         <Container>
