@@ -3,6 +3,7 @@
 import type { TextAlign, TextPrintMethod } from "@gwg/contracts";
 import { StudioColorSwatches } from "@/components/design/StudioColorSwatches";
 import { StudioFontPicker } from "@/components/design/StudioFontPicker";
+import { STUDIO_CONCEPT_NOTICE } from "@/lib/commerce/studio-concept-notice";
 import { cn } from "@/lib/utils/cn";
 
 const ALIGNS: { value: TextAlign; label: string }[] = [
@@ -43,6 +44,9 @@ export function StudioTextPanel({
 }) {
   return (
     <div className="flex flex-col gap-2.5 min-w-0">
+      <p className="text-[12px] leading-5 text-text-tertiary border border-border rounded-md bg-bg p-sp-3">
+        {STUDIO_CONCEPT_NOTICE}
+      </p>
       <label className="block text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary">
         Add text
         <textarea

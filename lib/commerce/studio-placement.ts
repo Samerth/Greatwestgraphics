@@ -198,6 +198,60 @@ export function frontChestZoneForAlign(alignX: PlacementAlignX): FrontChestZone 
   return "Center Chest";
 }
 
+/**
+ * The back and the sleeves have no left/right split the way the front chest
+ * does — `detectPlacementZone` never distinguishes a left-of-centre back
+ * mark from a right-of-centre one, and `placementIntent` centers both of
+ * them (`Upper Back`, `{side} Sleeve`) unconditionally. What they *do* have
+ * is a real choice of size: a small centred mark, or filling the whole
+ * plate (`Full Back`, `{side} Side Panel`). This is the equivalent of
+ * `frontChestZoneForAlign` for those three sides, named after the choice
+ * that actually exists there instead of a left/right one that doesn't
+ * (Pavin, client meeting: "Back view doesn't have the position options" —
+ * the zone names below are what "position" means once you're off the
+ * front).
+ */
+export function zoneForSizeChoice(
+  side: "back" | "left" | "right",
+  extent: PlacementExtent,
+): string {
+  if (side === "back") return extent === "full" ? "Full Back" : "Upper Back";
+  const label = side === "left" ? "Left" : "Right";
+  return extent === "full" ? `${label} Side Panel` : `${label} Sleeve`;
+}
+
+/** How close, in canvas pixels, a dragged layer's own centre has to land to
+ *  the print area's centre line before it snaps onto it exactly (Pavin,
+ *  client meeting: "Center line on drag and drop"). */
+export const STUDIO_CENTER_SNAP_PX = 8;
+
+/**
+ * Whether a layer sitting at `x` (canvas pixels, logical space — the same
+ * space `x`/`y` are stored in) is close enough to the print area's own
+ * horizontal centre to snap onto it, and the x it should actually land at.
+ *
+ * Deliberately computed in this logical space, the same one
+ * `realignArtworkToZone` already works in, rather than the screen's raw
+ * pixels — those move with zoom and the current viewport size, so a "snap
+ * within 8px" measured there would mean a different real distance at every
+ * zoom level. This runs once, on release, against the position already
+ * reported through the ordinary drag-move handler — not inside Konva's own
+ * drag loop — so it needs no new coordinate math beyond what item 8 and 9
+ * already use.
+ */
+export function centerSnapResult(
+  x: number,
+  displayWidth: number,
+  side: DesignSide,
+  canvasSize: number,
+): { x: number; snapped: boolean } {
+  const area = printAreaPixels(side, canvasSize);
+  const centerX = area.x + area.width / 2;
+  const midX = x + displayWidth / 2;
+  const snapped = Math.abs(midX - centerX) <= STUDIO_CENTER_SNAP_PX;
+  return { x: snapped ? centerX - displayWidth / 2 : x, snapped };
+}
+
 /** Pixel plate, or the matching 5×5 chest box on the front. */
 export function placementAreaPixels(
   side: DesignSide,
@@ -257,6 +311,58 @@ export function artworkOriginInPrintArea({
   return { x, y };
 }
 
+/**
+ * The largest scale an image of this size can sit at inside this zone
+ * without overflowing it. This is what a brand-new piece of artwork is sized
+ * to by default (`placeArtworkInZone` below) — and also the ceiling a piece
+ * of artwork that already has a size must never be grown past when it only
+ * *moves* to a different zone (`realignArtworkToZone` below): the chest
+ * boxes are smaller than the full plate, so a mark placed at Full Front size
+ * and then re-aligned to Left Chest has to shrink to fit, never the reverse.
+ */
+function maxScaleForZone(
+  side: DesignSide,
+  zone: string,
+  imageWidth: number,
+  imageHeight: number,
+  canvasSize: number,
+  options: { constrainToBox?: boolean } = {},
+): number {
+  const intent = placementIntent(side, zone);
+  const plate = printAreaPixels(side, canvasSize);
+  const area = placementAreaPixels(side, zone, canvasSize);
+  const inChestBox = side === "front" && isFrontChestZone(zone);
+  const plateScale = scaleForPrintArea(
+    imageWidth,
+    imageHeight,
+    plate.width,
+    plate.height,
+    intent.extent,
+  );
+  if (!inChestBox) return plateScale;
+  // `constrainToBox: false` is the loose cap `realignArtworkToZone` asks
+  // for below. This must NOT reuse `plateScale` above — a chest zone's own
+  // `intent.extent` is "mark" (~32% of whatever area it's given, the
+  // sensible starting size to invent for a *brand-new* chest logo), not
+  // the true edge-to-edge fit. An already-sized logo that a customer is
+  // just moving needs to be judged against how big the print plate can
+  // physically hold it, full stop — the same "full" ceiling a Full Front
+  // logo gets — or a moderately large logo would still get quietly capped
+  // down to "mark" size on every click, which is the same complaint this
+  // whole fix exists to solve, just with a bigger box.
+  if (options.constrainToBox === false) {
+    return scaleForPrintArea(imageWidth, imageHeight, plate.width, plate.height, "full");
+  }
+  const boxScale = scaleForPrintArea(
+    imageWidth,
+    imageHeight,
+    area.width,
+    area.height,
+    "full",
+  );
+  return Math.min(plateScale, boxScale);
+}
+
 /** Default transform for a new layer inside the print-area plate. */
 export function placeArtworkInZone({
   side,
@@ -272,26 +378,9 @@ export function placeArtworkInZone({
   canvasSize: number;
 }): { x: number; y: number; scaleX: number; scaleY: number } {
   const intent = placementIntent(side, zone);
-  const plate = printAreaPixels(side, canvasSize);
   const area = placementAreaPixels(side, zone, canvasSize);
   const inChestBox = side === "front" && isFrontChestZone(zone);
-  const plateScale = scaleForPrintArea(
-    imageWidth,
-    imageHeight,
-    plate.width,
-    plate.height,
-    intent.extent,
-  );
-  const boxScale = inChestBox
-    ? scaleForPrintArea(
-        imageWidth,
-        imageHeight,
-        area.width,
-        area.height,
-        "full",
-      )
-    : plateScale;
-  const scale = inChestBox ? Math.min(plateScale, boxScale) : plateScale;
+  const scale = maxScaleForZone(side, zone, imageWidth, imageHeight, canvasSize);
   const origin = artworkOriginInPrintArea({
     area,
     displayWidth: imageWidth * scale,
@@ -300,4 +389,86 @@ export function placeArtworkInZone({
     alignY: inChestBox ? "center" : intent.alignY,
   });
   return { x: origin.x, y: origin.y, scaleX: scale, scaleY: scale };
+}
+
+/**
+ * Moves a piece of artwork that is already on the canvas into a different
+ * zone on the same side — the Left / Center / Right chest buttons — keeping
+ * the size the customer set. A move is not a resize: `placeArtworkInZone`
+ * above answers "how big should brand-new artwork be in this zone?", which
+ * is the wrong question here, since the artwork already has an answer to
+ * that.
+ *
+ * The ceiling this clamps against is deliberately the whole print plate,
+ * not the small chest box `placeArtworkInZone` sizes a *new* chest logo
+ * into. The client's note was "size reverts when position is changed," with
+ * no mention of a box — clamping a moved logo down to chest-box size on
+ * every Left/Center/Right click would reproduce that exact complaint for
+ * anyone whose logo is bigger than a conventional chest mark. So a
+ * moderately large logo keeps its size across all three chest positions;
+ * only something that would spill off the print plate entirely still gets
+ * shrunk, and never grows back once it has been.
+ *
+ * A negative scale (the customer flipped the artwork) keeps its sign; only
+ * the magnitude changes.
+ */
+export function realignArtworkToZone({
+  side,
+  zone,
+  imageWidth,
+  imageHeight,
+  canvasSize,
+  currentScaleX,
+  currentScaleY,
+  currentX,
+  currentY,
+}: {
+  side: DesignSide;
+  zone: string;
+  imageWidth: number;
+  imageHeight: number;
+  canvasSize: number;
+  currentScaleX: number;
+  currentScaleY: number;
+  currentX: number;
+  currentY: number;
+}): { x: number; y: number; scaleX: number; scaleY: number } {
+  const intent = placementIntent(side, zone);
+  const area = placementAreaPixels(side, zone, canvasSize);
+  const inChestBox = side === "front" && isFrontChestZone(zone);
+  const fitScale = maxScaleForZone(side, zone, imageWidth, imageHeight, canvasSize, {
+    constrainToBox: false,
+  });
+  const signX = currentScaleX < 0 ? -1 : 1;
+  const signY = currentScaleY < 0 ? -1 : 1;
+  const magnitude = Math.min(
+    Math.abs(currentScaleX),
+    Math.abs(currentScaleY),
+    fitScale,
+  );
+  const scaleX = magnitude * signX;
+  const scaleY = magnitude * signY;
+
+  if (inChestBox) {
+    // Left/Center/Right changes which third of the chest the logo sits
+    // over — nothing else. How high or low it sits is exactly as
+    // deliberate a choice as its size, and a position click must not
+    // silently discard that any more than it discards size (Pavin, client
+    // meeting: "Positions and size reverts when position is changed" — the
+    // vertical half of the same complaint size-preservation alone didn't
+    // cover). Horizontal still centers the mark within this zone's own
+    // box, exactly as before; vertical is simply left alone.
+    const displayWidth = imageWidth * magnitude;
+    const x = area.x + (area.width - displayWidth) / 2;
+    return { x, y: currentY, scaleX, scaleY };
+  }
+
+  const origin = artworkOriginInPrintArea({
+    area,
+    displayWidth: imageWidth * magnitude,
+    displayHeight: imageHeight * magnitude,
+    alignX: intent.alignX,
+    alignY: intent.alignY,
+  });
+  return { x: origin.x, y: origin.y, scaleX, scaleY };
 }

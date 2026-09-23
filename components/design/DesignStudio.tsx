@@ -20,6 +20,7 @@ import {
   emptyTextsBySide,
   ephemeralArtworkSides,
   isDurableArtworkSrc,
+  isSvgArtworkSrc,
   normalizeDesignDocument,
   type DesignDocument,
   type DesignSide,
@@ -97,15 +98,19 @@ import {
   framedBackdropStyles,
   garmentBackdrops,
   isStudioSideRepresentation,
+  sleeveGuideRect,
   studioBackdropFallbackUrl,
   studioCanvasImageUrl,
 } from "@/lib/commerce/garment-backdrop";
 import {
   STUDIO_PRINT_AREAS,
   cartPrintMetaLabel,
+  centerSnapResult,
   decoratedDesignSides,
   frontChestZoneForAlign,
   placeArtworkInZone,
+  realignArtworkToZone,
+  zoneForSizeChoice,
 } from "@/lib/commerce/studio-placement";
 import { STUDIO_DEFAULT_FONT_ID } from "@/lib/commerce/studio-fonts";
 import {
@@ -140,6 +145,7 @@ import {
   studioFinishMode,
   withDefaultRosterSizes,
 } from "@/lib/commerce/studio-cart-roster";
+import { rosterMissingNameError } from "@/lib/commerce/roster-validation";
 import { StudioSelect } from "@/components/design/StudioSelect";
 import { StudioArticlePicker } from "@/components/design/StudioArticlePicker";
 import { StudioColorSwitcher } from "@/components/design/StudioColorSwitcher";
@@ -147,8 +153,10 @@ import { GarmentBackdropImage } from "@/components/design/GarmentBackdropImage";
 import { StudioFontLoader } from "@/components/design/StudioFontLoader";
 import { StudioTextPanel } from "@/components/design/StudioTextPanel";
 import {
+  StudioBackSizeToggle,
   StudioChestAlign,
   StudioElementEditor,
+  StudioSleeveCenter,
 } from "@/components/design/StudioElementEditor";
 import { StudioTeamOrderPanel } from "@/components/design/StudioTeamOrderPanel";
 import { StudioNotesTab } from "@/components/design/StudioNotesTab";
@@ -516,6 +524,12 @@ export function DesignStudio({
   const [textFontId, setTextFontId] = useState(STUDIO_DEFAULT_FONT_ID);
   const [zoom, setZoom] = useState(1);
   const [liveZone, setLiveZone] = useState<string | null>(null);
+  // Whether the layer being dragged right now is close enough to the print
+  // area's centre to catch — the centre-line guide highlights while this is
+  // true, and it also decides whether commitArtworkChange/commitTextChange
+  // actually snap the drop onto it (Pavin, client meeting: "Center line on
+  // drag and drop").
+  const [liveCentered, setLiveCentered] = useState(false);
   const [historyFlags, setHistoryFlags] = useState({
     canUndo: false,
     canRedo: false,
@@ -660,8 +674,8 @@ export function DesignStudio({
     if (initialDesign || isStaff) return;
 
     const applyStored = () => {
-      if (hasActiveArtwork(design)) return;
       const stored = useActiveDesignStore.getState();
+      if (hasActiveArtwork(design)) return;
       if (hasActiveArtwork(stored.design)) {
         const restored = normalizeDesignDocument(stored.design);
         setDesign(restored);
@@ -1220,7 +1234,32 @@ export function DesignStudio({
   const mirrorPhoto = backdrop.mirror;
   const isLoadingGarment = Boolean(selectedGarmentId) && !productDetail;
   const canvasGarmentImageUrl = studioCanvasImageUrl(backdrop);
-  const framedBackdrop = framedBackdropStyles(backdrop);
+  // `framedBackdropStyles` needs the photo's real aspect ratio to letterbox
+  // it correctly inside the sleeve plate — only `plate` backdrops (the
+  // sleeve views) actually use this; front/back fill the canvas outright
+  // and never read it. Real vendor photos are portrait (measured at
+  // 1500×1710, not the square the default assumed), which is what threw
+  // the sleeve guide box off even before the box's own calibration did.
+  const [measuredBackdropAspect, setMeasuredBackdropAspect] = useState<number | null>(null);
+  useEffect(() => {
+    if (!backdrop.plate) {
+      setMeasuredBackdropAspect(null);
+      return;
+    }
+    let cancelled = false;
+    measureArtworkSize(canvasGarmentImageUrl).then(
+      (size) => {
+        if (!cancelled) setMeasuredBackdropAspect(size.width / size.height);
+      },
+      () => {
+        if (!cancelled) setMeasuredBackdropAspect(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [backdrop.plate, canvasGarmentImageUrl]);
+  const framedBackdrop = framedBackdropStyles(backdrop, measuredBackdropAspect ?? undefined);
 
   // All four views are offered by default — a sleeve print is a real thing
   // a customer orders whether or not the vendor photographed that angle,
@@ -1298,6 +1337,7 @@ export function DesignStudio({
       canRedo: historyRef.current.canRedo,
     });
     setLiveZone(null);
+    setLiveCentered(false);
   }
 
   function redoStudio() {
@@ -1312,6 +1352,7 @@ export function DesignStudio({
       canRedo: historyRef.current.canRedo,
     });
     setLiveZone(null);
+    setLiveCentered(false);
   }
 
   function setActiveArtworks(
@@ -1553,9 +1594,18 @@ export function DesignStudio({
     setTextDraft("");
   }
 
-  function commitArtworkChange(next: PlacedArtwork) {
-    const width = 80 * Math.abs(next.scaleX);
-    const height = 80 * Math.abs(next.scaleY);
+  function commitArtworkChange(rawNext: PlacedArtwork) {
+    const width = 80 * Math.abs(rawNext.scaleX);
+    const height = 80 * Math.abs(rawNext.scaleY);
+    // Only a drag-end should snap — a resize or rotation also lands here
+    // (onTransformEnd), and liveZone is only ever set by the drag-move
+    // handler, so it is still whatever the drag last reported at the moment
+    // this runs for a drag, and null for anything else.
+    const wasDragging = liveZone !== null;
+    const snap = wasDragging
+      ? centerSnapResult(rawNext.x, width, activeSide, CANVAS_SIZE)
+      : { x: rawNext.x, snapped: false };
+    const next = snap.snapped ? { ...rawNext, x: snap.x } : rawNext;
     const zone = detectPlacementZone({
       side: activeSide,
       x: next.x,
@@ -1575,19 +1625,26 @@ export function DesignStudio({
       placementBySide: { ...prev.placementBySide, [activeSide]: zone },
     }));
     setLiveZone(null);
+    setLiveCentered(false);
   }
 
-  function commitTextChange(next: PlacedText) {
+  function commitTextChange(rawNext: PlacedText) {
     const display = estimateTextDisplaySize(
-      next.text,
-      next.fontSize,
-      next.letterSpacing,
+      rawNext.text,
+      rawNext.fontSize,
+      rawNext.letterSpacing,
     );
+    const width = display.width * Math.abs(rawNext.scaleX);
+    const wasDragging = liveZone !== null;
+    const snap = wasDragging
+      ? centerSnapResult(rawNext.x, width, activeSide, CANVAS_SIZE)
+      : { x: rawNext.x, snapped: false };
+    const next = snap.snapped ? { ...rawNext, x: snap.x } : rawNext;
     const zone = detectPlacementZone({
       side: activeSide,
       x: next.x,
       y: next.y,
-      width: display.width * Math.abs(next.scaleX),
+      width,
       height: display.height * Math.abs(next.scaleY),
       canvasSize: CANVAS_SIZE,
     });
@@ -1602,6 +1659,7 @@ export function DesignStudio({
       placementBySide: { ...prev.placementBySide, [activeSide]: zone },
     }));
     setLiveZone(null);
+    setLiveCentered(false);
   }
 
   function handleLayerDragMove(info: {
@@ -1621,6 +1679,9 @@ export function DesignStudio({
         canvasSize: CANVAS_SIZE,
       }),
     );
+    setLiveCentered(
+      centerSnapResult(info.x, info.width, activeSide, CANVAS_SIZE).snapped,
+    );
   }
 
   function moveSelectedToSide(side: DesignSide) {
@@ -1629,6 +1690,7 @@ export function DesignStudio({
     setActiveSide(side);
     setSelectedBySide((prev) => ({ ...prev, [side]: selectedId }));
     setLiveZone(null);
+    setLiveCentered(false);
   }
 
   function duplicateSelected() {
@@ -2070,6 +2132,20 @@ export function DesignStudio({
    * from, so this degrades rather than dead-ends.
    */
   async function continueToQuantity() {
+    // Roster rows never had a real check here — a person could be started
+    // (a number typed with no name, say) and travel all the way to the
+    // order with nothing printed for them to wear it. The product page's
+    // own team-order flow already refuses this; the studio's roster
+    // reaches the same order and deserves the same rule, checked at the
+    // same point the product page checks it — the moment the roster is
+    // about to leave for good (UAT audit: "Team rosters are never
+    // validated").
+    const rosterIssue = rosterMissingNameError(roster);
+    if (rosterIssue) {
+      setRosterError(rosterIssue);
+      setStudioTab("team");
+      return;
+    }
     setContinuing(true);
     try {
       // The mockup - garment with the artwork on it. A first attempt can
@@ -2199,24 +2275,37 @@ export function DesignStudio({
   }
 
   /**
-   * Discard the in-progress design and open a clean studio.
+   * Discard the in-progress design, but stay on the same garment and
+   * colourway — only the artwork, text, decoration choices and roster are
+   * the "design"; the garment underneath it is a separate choice the
+   * customer already made and "start over" should not also throw away
+   * (Pavin, client meeting: start-over should keep the garment).
    *
    * Clears the persisted store, then reloads rather than resetting the two
    * dozen pieces of local state this component holds — artwork and text per
-   * side, the selected garment and colourway, decoration per side, the roster
-   * and its placement, the save name and id. Resetting those by hand is where
-   * a "start over" silently leaves something behind; a reload cannot.
+   * side, decoration per side, the roster and its placement, the save name
+   * and id. Resetting those by hand is where a "start over" silently leaves
+   * something behind; a reload cannot. The garment survives this only
+   * because it travels through the URL, not the store: `?garmentId=` is the
+   * same "Preview my design on this" mechanism used elsewhere on the site
+   * (see the `garmentIdOverride` handling above), and a fresh mount with an
+   * empty store plus that param restores the garment and colourway with
+   * nothing else attached to it.
    *
    * A full document load is the point, so `router.push` is deliberately not
    * used: it keeps this component mounted, which would leave the cleared
-   * design still sitting on the canvas. Going to the bare path also drops any
-   * `?loadDesignId` / `?garmentId` that would otherwise re-open what we just
+   * design still sitting on the canvas. Going to the bare path would also
+   * drop any `?loadDesignId` that would otherwise re-open what we just
    * discarded.
    */
   function startNewDesign() {
     useActiveDesignStore.getState().clear();
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a client-side navigation would not remount the studio, so the discarded design would stay on the canvas
-    window.location.href = "/design";
+    const target = selectedGarmentId
+      ? `/design?garmentId=${encodeURIComponent(selectedGarmentId)}`
+      : "/design";
+    // A client-side navigation (router.push) would not remount the studio,
+    // so the discarded design would stay sitting on the canvas.
+    window.location.href = target;
   }
 
   async function handleSaveDesign() {
@@ -2245,6 +2334,20 @@ export function DesignStudio({
   const canRedo = historyFlags.canRedo;
   const chestGuides = frontChestGuideRects();
   const draggingOnFront = liveZone !== null && activeSide === "front";
+  // The centre-line guide shows on every side while dragging, not only the
+  // front — the front's three chest boxes are drawn on top of it there
+  // (Pavin, client meeting: "Center line on drag and drop").
+  const isDraggingAnySide = liveZone !== null;
+  // A sleeve's guide box depends on which backdrop is actually showing —
+  // the two static fallback illustrations each have their own calibrated
+  // box, and a real vendor photo (no per-photo data to calibrate against)
+  // gets a wider, forgiving one instead. Front/back keep the plain fixed
+  // rect, unaffected by any of this.
+  const activeSideArea =
+    activeSide === "left" || activeSide === "right"
+      ? sleeveGuideRect(backdrop, activeSide)
+      : STUDIO_PRINT_AREAS[activeSide];
+  const centerLineXFraction = activeSideArea.x + activeSideArea.width / 2;
   const frontAlign =
     activeSide === "front"
       ? placementBySide.front === "Left Chest"
@@ -2254,6 +2357,12 @@ export function DesignStudio({
           : placementBySide.front === "Center Chest"
             ? "center"
             : null
+      : null;
+  const backSizeChoice =
+    activeSide === "back"
+      ? placementBySide.back === "Full Back"
+        ? "full"
+        : "mark"
       : null;
 
   function applyAlign(alignX: "left" | "center" | "right") {
@@ -2267,6 +2376,12 @@ export function DesignStudio({
           : null);
 
     if (activeSide === "front" && artworkToSnap) {
+      // A chest-alignment click moves artwork that is already on the
+      // canvas — realignArtworkToZone keeps the size the customer set,
+      // only shrinking it if the new box is too small to hold it, unlike
+      // placeArtworkInZone below (which is for a piece of artwork that has
+      // no size yet, and used to be called here too — Pavin, client
+      // meeting: "positions and size reverts when position is changed").
       void (async () => {
         let imageWidth = 80;
         let imageHeight = 80;
@@ -2277,12 +2392,16 @@ export function DesignStudio({
         } catch {
           // Assumed square still lands the mark inside the 5×5 box.
         }
-        const placed = placeArtworkInZone({
+        const placed = realignArtworkToZone({
           side: "front",
           zone,
           imageWidth,
           imageHeight,
           canvasSize: CANVAS_SIZE,
+          currentScaleX: artworkToSnap.scaleX,
+          currentScaleY: artworkToSnap.scaleY,
+          currentX: artworkToSnap.x,
+          currentY: artworkToSnap.y,
         });
         commitDesign((prev) => ({
           ...patchStudioArtwork(prev, artworkToSnap.id, placed),
@@ -2325,6 +2444,85 @@ export function DesignStudio({
         },
       }));
     }
+  }
+
+  /**
+   * The back's Mark/Full toggle and the sleeve's Center button — the
+   * counterpart to applyAlign above for the three sides that have no
+   * left/right chest zones (Pavin, client meeting: "Back view doesn't have
+   * the position options"). `zone` is a real zone name from
+   * zoneForSizeChoice, or the side's own current zone when this is only
+   * re-centering rather than choosing a new one.
+   */
+  function applyPlacementZone(zone: string) {
+    const artworkToSnap =
+      selectedArtwork ??
+      (selectedText ? null : artworks.length === 1 ? artworks[0] : null);
+
+    if (artworkToSnap) {
+      void (async () => {
+        let imageWidth = 80;
+        let imageHeight = 80;
+        try {
+          const size = await measureArtworkSize(artworkToSnap.src);
+          imageWidth = size.width;
+          imageHeight = size.height;
+        } catch {
+          // Assumed square still lands the mark inside the print area.
+        }
+        const placed = realignArtworkToZone({
+          side: activeSide,
+          zone,
+          imageWidth,
+          imageHeight,
+          canvasSize: CANVAS_SIZE,
+          currentScaleX: artworkToSnap.scaleX,
+          currentScaleY: artworkToSnap.scaleY,
+          currentX: artworkToSnap.x,
+          currentY: artworkToSnap.y,
+        });
+        commitDesign((prev) => ({
+          ...patchStudioArtwork(prev, artworkToSnap.id, placed),
+          placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+        }));
+      })();
+      return;
+    }
+
+    if (selectedId) {
+      // Text has its own Size slider — it has no mark/full concept — so
+      // this only re-centers it, but the side's stored zone still moves to
+      // what was actually clicked, since that also drives the "print
+      // location" label under the canvas and what a *future* piece of
+      // artwork on this side would default to.
+      const display = selectedText
+        ? estimateTextDisplaySize(
+            selectedText.text,
+            selectedText.fontSize,
+            selectedText.letterSpacing,
+          )
+        : {
+            width: 80 * Math.abs(selectedArtwork?.scaleX ?? 1),
+            height: 80 * Math.abs(selectedArtwork?.scaleY ?? 1),
+          };
+      commitDesign((prev) => ({
+        ...alignStudioLayer(
+          prev,
+          selectedId,
+          "center",
+          CANVAS_SIZE,
+          display.width,
+          display.height,
+        ),
+        placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+      }));
+      return;
+    }
+
+    commitDesign((prev) => ({
+      ...prev,
+      placementBySide: { ...prev.placementBySide, [activeSide]: zone },
+    }));
   }
   const selectedPrintLabel = selectedText
     ? selectedText.printMethod === "embroidery"
@@ -2454,12 +2652,6 @@ export function DesignStudio({
             )}
           </div>
         )}
-
-        <ul className="m-0 mb-sp-2 pl-4 text-sm text-text-secondary space-y-1">
-          <li>Made from 100% combed ring-spun cotton</li>
-          <li>Weighs 6.5oz, reinforced seams</li>
-          <li>Classic fit, true to size</li>
-        </ul>
 
         <input
           ref={artworkInputRef}
@@ -2675,164 +2867,13 @@ export function DesignStudio({
           </div>
         )}
 
-        {/* Decoration method + pricing input for this side (CodSphere UAT
-            V2, "Decoration Method, Location & Pricing Inputs"). Appears
-            once artwork exists on the side — location is already the side
-            the customer is looking at, so this is "method, then the
-            pricing input that method needs," picked independently per
-            side rather than once for the whole design. */}
-        {artworks.length > 0 && (
-          <div
-            data-studio="decoration-panel"
-            data-confirmed={activeDecorationConfirmed ? "yes" : "no"}
-            className={cn(
-              "mt-sp-3 pt-sp-3 border-t border-border",
-              // Row 46: an unreviewed logo is the thing that mis-prices the
-              // order, so the panel stops being a quiet sidebar block and
-              // announces itself until it has been dealt with.
-              !activeDecorationConfirmed &&
-                "-mx-sp-3 -mb-sp-3 mt-sp-3 rounded-md border border-amber-400 bg-amber-50 px-sp-3 pb-sp-3 dark:bg-amber-950/30",
-            )}
-          >
-            {!activeDecorationConfirmed && (
-              <p className="m-0 mb-2 text-[12px] font-semibold leading-snug text-amber-900 dark:text-amber-200">
-                Choose how this logo is printed — this sets the price.
-              </p>
-            )}
-            <span className="block text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary mb-2">
-              Decoration — {DESIGN_SIDE_LABELS[activeSide]}
-              {artworks.length > 1 && decorationArtworkId ? (
-                /* With more than one logo on a side these settings apply to
-                   the selected one only, so the panel has to say which.
-                   Otherwise a customer changes a colour count and cannot
-                   tell which logo it landed on (UAT V2 row 59). */
-                <span className="ml-1 normal-case tracking-normal text-accent">
-                  · logo{" "}
-                  {artworks.findIndex(
-                    (artwork) => artwork.id === decorationArtworkId,
-                  ) + 1}{" "}
-                  of {artworks.length}
-                </span>
-              ) : null}
-            </span>
-            <select
-              value={activeDecoration.methodKey}
-              onChange={(e) => {
-                const nextMethod = quoteMethods.find((m) => m.key === e.target.value);
-                updateActiveSideDecoration({
-                  methodKey: e.target.value,
-                  optionKey: defaultOptionKey(nextMethod),
-                });
-              }}
-              className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors mb-2"
-            >
-              {quoteMethods.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-
-            {activeDecorationFields.colours && (
-              <select
-                value={activeDecoration.colours ?? colourOptions(activeDecorationMethod)[0] ?? 1}
-                onChange={(e) =>
-                  updateActiveSideDecoration({ colours: Number(e.target.value) })
-                }
-                className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
-              >
-                {colourOptions(activeDecorationMethod).map((c) => (
-                  <option key={c} value={c}>
-                    {c} {c === 1 ? "Colour" : "Colours"}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {activeDecorationFields.stitches && (
-              <>
-                <span className="relative flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
-                  Size
-                  <button
-                    type="button"
-                    aria-label="Size Guide"
-                    aria-expanded={showDecorationSizeGuide}
-                    onClick={() => setShowDecorationSizeGuide((v) => !v)}
-                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] font-bold normal-case"
-                  >
-                    i
-                  </button>
-                  {showDecorationSizeGuide && (
-                    <div
-                      role="dialog"
-                      aria-label="Decoration size guide"
-                      className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-bg p-sp-3 shadow-lg normal-case"
-                    >
-                      <p className="mb-2 text-xs font-bold uppercase tracking-wide">Size Guide</p>
-                      <ul className="space-y-1 text-sm">
-                        <li>Small: up to 4&quot;</li>
-                        <li>Medium: over 4&quot; to 8&quot;</li>
-                        <li>Large: over 8&quot; to 12&quot;</li>
-                        <li>Oversized: over 12&quot;</li>
-                      </ul>
-                    </div>
-                  )}
-                </span>
-                <select
-                  value={activeDecoration.stitchPreset ?? "medium"}
-                  onChange={(e) =>
-                    updateActiveSideDecoration({ stitchPreset: e.target.value })
-                  }
-                  className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
-                >
-                  {STITCH_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {STITCH_LABELS[preset.id]}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-[11px] leading-snug text-text-tertiary">
-                  {STITCH_PRESET_DISCLAIMER}
-                </p>
-              </>
-            )}
-
-            {activeDecorationFields.option &&
-              activeDecorationMethod?.rateModel.kind === "matrixByOption" && (
-              <select
-                value={activeDecoration.optionKey || defaultOptionKey(activeDecorationMethod)}
-                onChange={(e) => updateActiveSideDecoration({ optionKey: e.target.value })}
-                className="w-full border border-border rounded-md bg-bg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
-              >
-                {activeDecorationMethod.rateModel.options.map((opt) => (
-                  <option key={opt.key} value={opt.key}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {/* Agreeing with what the studio suggested is a decision, and
-                needs somewhere to be recorded — changing a dropdown already
-                counts, but a customer who reads "Screen Print / 1 Colour"
-                and is happy with it would otherwise have no way to say so
-                and would stay blocked (row 46). */}
-            {activeDecorationConfirmed ? (
-              <p className="mt-2 mb-0 flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-400">
-                <span aria-hidden>✓</span> Decoration confirmed for this logo
-              </p>
-            ) : (
-              <button
-                type="button"
-                data-studio="confirm-decoration"
-                onClick={confirmActiveDecoration}
-                className="mt-2 w-full rounded-md bg-accent px-3 py-2 text-sm font-bold text-white transition-colors hover:opacity-90"
-              >
-                Confirm decoration
-              </button>
-            )}
-          </div>
-        )}
+        {/* The decoration method picker used to live here — moved to sit
+            directly above the canvas instead (see the canvas header block
+            below), so it's visible the moment artwork exists rather than
+            buried below Upload/AI Art in this scrolling panel (client
+            feedback: the print-method choice should sit beside the
+            garment, the way Coastal Reign shows it, not below other
+            content). */}
 
         {(studioTab === "images" || studioTab === "text") &&
           (artworks.length > 0 || texts.length > 0) && (
@@ -2912,7 +2953,22 @@ export function DesignStudio({
               value={frontAlign}
               onChange={applyAlign}
             />
-          ) : null}
+          ) : activeSide === "back" ? (
+            <StudioBackSizeToggle
+              tone="panel"
+              compact
+              value={backSizeChoice}
+              onChange={(choice) =>
+                applyPlacementZone(zoneForSizeChoice("back", choice))
+              }
+            />
+          ) : (
+            <StudioSleeveCenter
+              tone="panel"
+              compact
+              onCenter={() => applyPlacementZone(placementBySide[activeSide])}
+            />
+          )}
           <div className="flex flex-wrap items-center gap-1.5">
             <div className="flex items-center gap-1" aria-label="Zoom">
               <button
@@ -2941,6 +2997,169 @@ export function DesignStudio({
             </div>
           </div>
         </div>
+
+        {/* Decoration method + pricing input for the active logo (CodSphere
+            UAT V2, "Decoration Method, Location & Pricing Inputs"; row 46;
+            row 59 for multiple logos on one side). Sits directly above the
+            canvas — the same persistent strip the header just above already
+            occupies — rather than down in the scrolling sidebar, so it's
+            visible the instant artwork exists, matching how the Coastal
+            Reign benchmark keeps its print-method choice beside the
+            garment instead of below other panel content. */}
+        {artworks.length > 0 && (
+          <div
+            data-studio="decoration-panel"
+            data-confirmed={activeDecorationConfirmed ? "yes" : "no"}
+            className={cn(
+              "px-sp-4 py-sp-3 border-b border-border",
+              !activeDecorationConfirmed &&
+                "border-amber-400 bg-amber-50 dark:bg-amber-950/30",
+            )}
+          >
+            {!activeDecorationConfirmed && (
+              <p className="m-0 mb-2 text-[12px] font-semibold leading-snug text-amber-900 dark:text-amber-200">
+                Choose how this logo is printed — this sets the price.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-text-tertiary shrink-0">
+                Decoration — {DESIGN_SIDE_LABELS[activeSide]}
+                {artworks.length > 1 && decorationArtworkId ? (
+                  /* With more than one logo on a side these settings apply
+                     to the selected one only, so the bar has to say which.
+                     Otherwise a customer changes a colour count and cannot
+                     tell which logo it landed on (UAT V2 row 59). */
+                  <span className="ml-1 normal-case tracking-normal text-accent">
+                    · logo{" "}
+                    {artworks.findIndex(
+                      (artwork) => artwork.id === decorationArtworkId,
+                    ) + 1}{" "}
+                    of {artworks.length}
+                  </span>
+                ) : null}
+              </span>
+
+              <select
+                value={activeDecoration.methodKey}
+                onChange={(e) => {
+                  const nextMethod = quoteMethods.find((m) => m.key === e.target.value);
+                  updateActiveSideDecoration({
+                    methodKey: e.target.value,
+                    optionKey: defaultOptionKey(nextMethod),
+                  });
+                }}
+                className="border border-border rounded-md bg-bg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              >
+                {quoteMethods.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+
+              {activeDecorationFields.colours && (
+                <select
+                  value={activeDecoration.colours ?? colourOptions(activeDecorationMethod)[0] ?? 1}
+                  onChange={(e) =>
+                    updateActiveSideDecoration({ colours: Number(e.target.value) })
+                  }
+                  className="border border-border rounded-md bg-bg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                >
+                  {colourOptions(activeDecorationMethod).map((c) => (
+                    <option key={c} value={c}>
+                      {c} {c === 1 ? "Colour" : "Colours"}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {activeDecorationFields.stitches && (
+                <>
+                  <span className="relative flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-text-tertiary">
+                    Size
+                    <button
+                      type="button"
+                      aria-label="Size Guide"
+                      aria-expanded={showDecorationSizeGuide}
+                      onClick={() => setShowDecorationSizeGuide((v) => !v)}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] font-bold normal-case"
+                    >
+                      i
+                    </button>
+                    {showDecorationSizeGuide && (
+                      <div
+                        role="dialog"
+                        aria-label="Decoration size guide"
+                        className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-bg p-sp-3 shadow-lg normal-case"
+                      >
+                        <p className="mb-2 text-xs font-bold uppercase tracking-wide">Size Guide</p>
+                        <ul className="space-y-1 text-sm">
+                          <li>Small: up to 4&quot;</li>
+                          <li>Medium: over 4&quot; to 8&quot;</li>
+                          <li>Large: over 8&quot; to 12&quot;</li>
+                          <li>Oversized: over 12&quot;</li>
+                        </ul>
+                      </div>
+                    )}
+                  </span>
+                  <select
+                    value={activeDecoration.stitchPreset ?? "medium"}
+                    onChange={(e) =>
+                      updateActiveSideDecoration({ stitchPreset: e.target.value })
+                    }
+                    className="border border-border rounded-md bg-bg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                  >
+                    {STITCH_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {STITCH_LABELS[preset.id]}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+
+              {activeDecorationFields.option &&
+                activeDecorationMethod?.rateModel.kind === "matrixByOption" && (
+                <select
+                  value={activeDecoration.optionKey || defaultOptionKey(activeDecorationMethod)}
+                  onChange={(e) => updateActiveSideDecoration({ optionKey: e.target.value })}
+                  className="border border-border rounded-md bg-bg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                >
+                  {activeDecorationMethod.rateModel.options.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Agreeing with what the studio suggested is a decision, and
+                  needs somewhere to be recorded — changing a dropdown
+                  already counts, but a customer who reads "Screen Print /
+                  1 Colour" and is happy with it would otherwise have no way
+                  to say so and would stay blocked (row 46). */}
+              {activeDecorationConfirmed ? (
+                <p className="m-0 flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  <span aria-hidden>✓</span> Confirmed
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  data-studio="confirm-decoration"
+                  onClick={confirmActiveDecoration}
+                  className="rounded-md bg-accent px-3 py-1.5 text-sm font-bold text-white transition-colors hover:opacity-90"
+                >
+                  Confirm decoration
+                </button>
+              )}
+            </div>
+            {activeDecorationFields.stitches && (
+              <p className="mt-1.5 mb-0 text-[11px] leading-snug text-text-tertiary">
+                {STITCH_PRESET_DISCLAIMER}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col lg:flex-row lg:items-start min-w-0">
         <div className="p-sp-3 min-h-[280px] sm:min-h-[360px] lg:min-h-[520px] overflow-x-auto flex-1 min-w-0">
@@ -3092,10 +3311,10 @@ export function DesignStudio({
                   aria-hidden
                   className="pointer-events-none absolute z-[2] rounded-[2px] border border-dashed border-white/40 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
                   style={{
-                    left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
-                    top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
-                    width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
-                    height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
+                    left: `${activeSideArea.x * 100}%`,
+                    top: `${activeSideArea.y * 100}%`,
+                    width: `${activeSideArea.width * 100}%`,
+                    height: `${activeSideArea.height * 100}%`,
                   }}
                 >
                   {/* The plate's own size, on the plate (UAT row 47). Sits
@@ -3111,6 +3330,58 @@ export function DesignStudio({
                   </span>
                 </div>
                 )}
+                {/* Centre guide line — every side, not just front, so it also
+                    appears while dragging on the back and sleeves (Pavin,
+                    client meeting: "Center line on drag and drop"). Drawn on
+                    top of the front chest boxes, since it is the more useful
+                    guide once a shopper is actively dragging. It highlights
+                    the moment the layer's *reported* drag position would
+                    snap to centre on release — see `centerSnapResult` in
+                    lib/commerce/studio-placement.ts for why the snap itself
+                    only ever happens on drag-end, not live. */}
+                {isDraggingAnySide ? (
+                  <div
+                    aria-hidden
+                    data-studio="center-guide"
+                    className={cn(
+                      "pointer-events-none absolute z-[5] w-px -translate-x-1/2",
+                      liveCentered ? "bg-accent" : "bg-white/50",
+                    )}
+                    style={{
+                      left: `${centerLineXFraction * 100}%`,
+                      top: `${activeSideArea.y * 100}%`,
+                      height: `${activeSideArea.height * 100}%`,
+                    }}
+                  />
+                ) : null}
+                {/* AI generation placeholder — the AI Art modal's "Building
+                    your design…" state previously only changed the modal's
+                    own button; the canvas behind it (dimmed but visible
+                    through the modal's backdrop) sat static for up to a
+                    minute with no sign anything was happening there (Pavin,
+                    client meeting: request for AI progress shown on the
+                    canvas). This box marks the exact print area the result
+                    will land in — `addArtworkFromBlob` always places a new
+                    AI result on `activeSide`, so this reads the same
+                    STUDIO_PRINT_AREAS rect that placement itself uses. */}
+                {generating && (
+                  <div
+                    aria-hidden
+                    data-studio="ai-generating"
+                    className="pointer-events-none absolute z-[6] flex flex-col items-center justify-center gap-2 rounded-[2px] border-2 border-dashed border-accent bg-fill-subtle-15 animate-pulse"
+                    style={{
+                      left: `${activeSideArea.x * 100}%`,
+                      top: `${activeSideArea.y * 100}%`,
+                      width: `${activeSideArea.width * 100}%`,
+                      height: `${activeSideArea.height * 100}%`,
+                    }}
+                  >
+                    <Sparkles size={22} strokeWidth={2} className="text-accent" aria-hidden />
+                    <span className="rounded-[2px] bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-[0.02em] text-white">
+                      Building your design…
+                    </span>
+                  </div>
+                )}
                 {/* The only interactive thing inside the guides overlay, so it
                     opts pointer events back in — the wrapper turns them off
                     for everything else so drags reach the canvas. */}
@@ -3118,10 +3389,10 @@ export function DesignStudio({
                   <div
                     className="pointer-events-auto absolute z-[3] flex flex-col items-center justify-center gap-2"
                     style={{
-                      left: `${STUDIO_PRINT_AREAS[activeSide].x * 100}%`,
-                      top: `${STUDIO_PRINT_AREAS[activeSide].y * 100}%`,
-                      width: `${STUDIO_PRINT_AREAS[activeSide].width * 100}%`,
-                      height: `${STUDIO_PRINT_AREAS[activeSide].height * 100}%`,
+                      left: `${activeSideArea.x * 100}%`,
+                      top: `${activeSideArea.y * 100}%`,
+                      width: `${activeSideArea.width * 100}%`,
+                      height: `${activeSideArea.height * 100}%`,
                     }}
                   >
                     <button
@@ -3323,11 +3594,20 @@ export function DesignStudio({
               onDuplicate={duplicateSelected}
               onDelete={removeSelected}
               onRemoveBackground={
-                aiBackgroundRemoval && selectedArtwork && !isStaff
+                aiBackgroundRemoval &&
+                selectedArtwork &&
+                !isStaff &&
+                !isSvgArtworkSrc(selectedArtwork.src)
                   ? removeSelectedBackground
                   : undefined
               }
               removingBackground={removingBackground}
+              removeBackgroundSvgNote={Boolean(
+                aiBackgroundRemoval &&
+                  selectedArtwork &&
+                  !isStaff &&
+                  isSvgArtworkSrc(selectedArtwork.src),
+              )}
               onSliderCommit={endSliderHistory}
               moveTo={{
                 options: availableViews
@@ -3413,9 +3693,6 @@ export function DesignStudio({
                   Uploading artwork so it survives a reload…
                 </p>
               )}
-              {uploadError && (
-                <p className="text-[12px] text-red-600 mt-1.5 mb-0">{uploadError}</p>
-              )}
               {saveMessage && (
                 <p className="text-[12px] text-green-700 mt-1.5 mb-0">{saveMessage}</p>
               )}
@@ -3432,6 +3709,17 @@ export function DesignStudio({
               canvas when you come back — then we upload it so staff can open
               the same file.
             </p>
+          )}
+
+          {/* Was rendered only inside the signed-in card above, so a
+              signed-out visitor whose upload or background removal failed
+              (both work while signed out — see addArtworkFromBlob and
+              removeSelectedBackground) saw the spinner just stop with no
+              explanation anywhere on the page (Pavin, client meeting:
+              guests need to see upload errors too). Lives here, outside
+              either branch, so both a guest and a signed-in shopper see it. */}
+          {uploadError && (
+            <p className="text-[12px] text-red-600 mt-0 mb-0">{uploadError}</p>
           )}
 
           <Button

@@ -18,6 +18,7 @@ import {
   STUDIO_AI_SUBJECTS_MAX,
   type StudioAiStyleId,
 } from "@/lib/commerce/studio-ai-identity";
+import { STUDIO_CONCEPT_NOTICE } from "@/lib/commerce/studio-concept-notice";
 import { cn } from "@/lib/utils/cn";
 
 const STYLE_ICONS: Record<StudioAiStyleId, typeof Sparkles> = {
@@ -143,6 +144,9 @@ export function StudioAiArtPanel({
           </div>
 
           <div className="p-sp-5">
+            <p className="mb-sp-4 text-[12.5px] leading-5 text-text-tertiary border border-border rounded-md bg-bg p-sp-3">
+              {STUDIO_CONCEPT_NOTICE}
+            </p>
             <div className="mb-sp-4">
               <label
                 htmlFor="ai-art-purpose"

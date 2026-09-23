@@ -1,4 +1,5 @@
 import type { DesignSide } from "@gwg/contracts";
+import { STUDIO_PRINT_AREAS, type NormalizedRect } from "./studio-placement";
 
 export type GarmentPhotoSet = {
   colorFrontImageUrl?: string | null;
@@ -208,6 +209,70 @@ export function garmentBackdropForSide(
     return { url: sidePhoto, source: "photo", mirror: true, plate: true };
   }
   return sleeveSideView(photos, true);
+}
+
+/**
+ * A real vendor side photo's actual sleeve position varies by garment
+ * silhouette — a short-sleeve tee, a long-sleeve hoodie cuff, and a woven
+ * shirt's cap sleeve all sit in genuinely different places in the frame,
+ * and nothing in the data this site has (not the vendor's, not our own)
+ * records where any specific photo's sleeve actually is. One fixed
+ * rectangle, hand-drawn against a single reference photo, cannot be
+ * "exactly at the sleeve" for every garment (client note, twice: 15 Sep
+ * and again this cycle). What *is* fixed and known is the two static
+ * illustrated plates this studio falls back to when a garment has no real
+ * side photo — `side-tee.png` and `side-hoodie.png` never change, so each
+ * gets its own box, actually calibrated against that one image, instead of
+ * reusing a box drawn for an unrelated vendor photo.
+ */
+const SLEEVE_TEMPLATE_GUIDE_LEFT: Record<"tee" | "hoodie", NormalizedRect> = {
+  // Short sleeve, 3/4 view: the sleeve cap sits on the upper-right of the
+  // frame, below the shoulder seam and above the sleeve hem.
+  tee: { x: 0.595, y: 0.21, width: 0.14, height: 0.16 },
+  // Long sleeve running diagonally down to the cuff — centred lower and
+  // further down the frame than the tee's short cap sleeve.
+  hoodie: { x: 0.56, y: 0.375, width: 0.12, height: 0.17 },
+};
+
+function mirrorRectX(rect: NormalizedRect): NormalizedRect {
+  return { ...rect, x: 1 - rect.x - rect.width };
+}
+
+/** A generous, forgiving box for a *real* vendor side photo — there is no
+ *  per-photo data to calibrate a tight one against, so this widens around
+ *  the same centre the old tight box used rather than pretending to be
+ *  precise (client decision: "widen the box… instead of forcing it down to
+ *  chest-box size" — the same reasoning applied here to sleeves). */
+function widenedRealPhotoGuide(side: "left" | "right"): NormalizedRect {
+  const base = STUDIO_PRINT_AREAS[side];
+  const centerX = base.x + base.width / 2;
+  const centerY = base.y + base.height / 2;
+  const width = 0.3;
+  const height = 0.34;
+  return {
+    x: Math.max(0, centerX - width / 2),
+    y: Math.max(0, centerY - height / 2),
+    width,
+    height,
+  };
+}
+
+/**
+ * The print-area guide box to actually draw for a sleeve view — branches
+ * on what `garmentBackdropForSide` returned, since a real vendor photo and
+ * the two static fallback illustrations need entirely different treatment
+ * (see the comment above `SLEEVE_TEMPLATE_GUIDE_LEFT`).
+ */
+export function sleeveGuideRect(
+  backdrop: Pick<GarmentBackdrop, "url" | "source">,
+  side: "left" | "right",
+): NormalizedRect {
+  if (backdrop.source === "side-view") {
+    const template = backdrop.url === STUDIO_SIDE_HOODIE ? "hoodie" : "tee";
+    const rect = SLEEVE_TEMPLATE_GUIDE_LEFT[template];
+    return side === "left" ? rect : mirrorRectX(rect);
+  }
+  return widenedRealPhotoGuide(side);
 }
 
 /** When a vendor photo 403s in the browser, fall back to a local plate. */

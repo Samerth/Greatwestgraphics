@@ -199,9 +199,24 @@ describe("the studio is wired for it", () => {
   it("only exposes the background remover when the provider allows it", () => {
     expect(remover).toContain("if (!studioAiCanRemoveBackground())");
     expect(page).toContain("aiBackgroundRemoval={studioAiCanRemoveBackground()}");
-    expect(studio).toMatch(/aiBackgroundRemoval && selectedArtwork && !isStaff/);
+    expect(studio).toMatch(
+      /aiBackgroundRemoval &&\s*selectedArtwork &&\s*!isStaff/,
+    );
     expect(editor).toContain("{onRemoveBackground && (");
     expect(editor).toContain("Remove background");
+  });
+
+  it("hides the remover for SVG artwork instead of letting it fail, and says why", () => {
+    // SVG is vector markup, not pixels — the remover is a pixel operation
+    // and cannot take one as input, so it is withheld the same way staff
+    // and an unconfigured provider already withhold it, with an explanatory
+    // note taking the button's place instead of silence.
+    expect(studio).toMatch(
+      /!isStaff &&\s*!isSvgArtworkSrc\(selectedArtwork\.src\)/,
+    );
+    expect(studio).toContain("removeBackgroundSvgNote={Boolean(");
+    expect(editor).toContain("removeBackgroundSvgNote &&");
+    expect(editor).toContain("don&rsquo;t need background removal");
   });
 
   it("stops calling the paid generator a free try-out", () => {

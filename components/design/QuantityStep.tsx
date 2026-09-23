@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { PricingConfigV2, SideDecoration } from "@gwg/contracts";
+import type { DesignDocument, PricingConfigV2, SideDecoration } from "@gwg/contracts";
 import {
   DESIGN_SIDE_LABELS,
   defaultRosterDecor,
   designDocumentHasArtwork,
+  ephemeralArtworkSides,
   type DesignSide,
 } from "@gwg/contracts";
 import { priceShopperQuoteMulti } from "@gwg/pricing";
@@ -22,7 +23,7 @@ import {
   hasExtendedSizes,
 } from "@/lib/commerce/storefront-quote";
 import { useDesignOrderStore } from "@/lib/store/design-order";
-import { useCartStore } from "@/lib/store/cart";
+import { useCartStore, PRICE_TO_BE_CONFIRMED_LABEL } from "@/lib/store/cart";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import {
   matrixIsEmpty,
@@ -39,6 +40,7 @@ import { DesignPreviewViewer } from "@/components/design/DesignPreviewViewer";
 import { DesignStepBar } from "@/components/design/DesignStepBar";
 import { cn } from "@/lib/utils/cn";
 import { garmentBackdropForSide, type GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
+import { designSnapshotIsUsable } from "@/lib/commerce/design-line-snapshot";
 import { storefrontProductName } from "@/lib/commerce/product-name";
 
 type Variant = {
@@ -121,6 +123,19 @@ function detailImageUrl(detail: Detail): string | null {
   return detail.product.colorFrontImageUrl || detail.style.styleImageUrl || null;
 }
 
+/** This colourway's full photo set, for redrawing the design snapshot on
+ *  its own garment rather than the one the Studio happened to have open. */
+function garmentPhotosFromDetail(detail: Detail): GarmentPhotoSet {
+  return {
+    colorFrontImageUrl: detail.product.colorFrontImageUrl,
+    colorBackImageUrl: detail.product.colorBackImageUrl,
+    colorSideImageUrl: detail.product.colorSideImageUrl,
+    styleImageUrl: detail.style.styleImageUrl,
+    styleName: detail.style.styleName,
+    styleTitle: detail.style.title,
+  };
+}
+
 function blockFromDetail(detail: Detail): ColourMatrixBlock {
   return {
     productId: detail.product.id,
@@ -157,6 +172,8 @@ export function QuantityStep({
   const names = useDesignOrderStore((s) => s.names);
   const proofUrl = useDesignOrderStore((s) => s.proofUrl);
   const designProjectId = useDesignOrderStore((s) => s.designProjectId);
+  const setColourQuantities = useDesignOrderStore((s) => s.setColourQuantities);
+  const setRosterAssignments = useDesignOrderStore((s) => s.setRosterAssignments);
   const addItem = useCartStore((s) => s.addItem);
   const router = useRouter();
 
@@ -181,6 +198,12 @@ export function QuantityStep({
 
   const hasDesign = mounted && designDocumentHasArtwork(design);
 
+  // Restores whatever colours/quantities were already on this page, so
+  // leaving (checkout, or anywhere else) and coming back — via the browser's
+  // Back button or the "Edit design" link — shows what the customer actually
+  // typed instead of a blank page reset to the one starting colour. Without
+  // this, `blocks` lived only in this component's memory and vanished the
+  // instant the component unmounted (round-1 ledger, repro item 1 follow-up).
   useEffect(() => {
     if (!mounted || !garmentProductId) {
       setLoading(false);
@@ -188,17 +211,60 @@ export function QuantityStep({
     }
     let cancelled = false;
     setLoading(true);
-    fetchDetail(garmentProductId).then((d) => {
+    const savedQuantities = useDesignOrderStore.getState().colourQuantities;
+    const savedAssignments = useDesignOrderStore.getState().rosterAssignments;
+    const productIds = [
+      garmentProductId,
+      ...savedQuantities.map((q) => q.productId),
+      ...savedAssignments.map((a) => a.productId),
+    ].filter((id, i, arr) => id && arr.indexOf(id) === i);
+    Promise.all(productIds.map((id) => fetchDetail(id))).then((results) => {
       if (cancelled) return;
-      setDetail(d);
-      setBlocks(d ? [blockFromDetail(d)] : []);
-      if (d) setDetailsById((prev) => ({ ...prev, [d.product.id]: d }));
+      const found = results.filter((d): d is Detail => d !== null);
+      const primary = found.find((d) => d.product.id === garmentProductId) ?? null;
+      setDetail(primary);
+      setDetailsById((prev) => {
+        const next = { ...prev };
+        for (const d of found) next[d.product.id] = d;
+        return next;
+      });
+      const rebuilt = found
+        .filter((d) => savedQuantities.some((q) => q.productId === d.product.id) || d === primary)
+        .sort((a, b) =>
+          a.product.id === garmentProductId ? -1 : b.product.id === garmentProductId ? 1 : 0,
+        )
+        .map((d) => {
+          const block = blockFromDetail(d);
+          const saved = savedQuantities.find((q) => q.productId === d.product.id);
+          if (saved) {
+            for (const size of block.sizes) {
+              const match = saved.sizes.find((s) => s.variantId === size.variantId);
+              if (match) size.quantity = match.quantity;
+            }
+          }
+          return block;
+        });
+      setBlocks(primary ? rebuilt : []);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
   }, [mounted, garmentProductId]);
+
+  // Mirrors `blocks` into the persisted store as the customer edits it. Runs
+  // only after the restore above has finished (`!loading`) so this does not
+  // fire once with the still-empty starting `blocks` and clobber the very
+  // data the effect above is about to restore.
+  useEffect(() => {
+    if (!mounted || loading) return;
+    setColourQuantities(
+      blocks.map((b) => ({
+        productId: b.productId,
+        sizes: b.sizes.map((s) => ({ variantId: s.variantId, quantity: s.quantity })),
+      })),
+    );
+  }, [mounted, loading, blocks, setColourQuantities]);
 
   useEffect(() => {
     if (hasDesign) setReachedQuantity(true);
@@ -221,18 +287,27 @@ export function QuantityStep({
     [design, names],
   );
 
-  // Seed one assignment per named person once the garment is known. Keyed
-  // off length so re-renders do not wipe choices already made.
+  // Seed one assignment per named person once the garment is known, from
+  // whatever was already chosen (restored from the store below) or, failing
+  // that, the default colour. Keyed off length so re-renders do not wipe
+  // choices already made.
   useEffect(() => {
     if (!garmentProductId || names.length === 0) return;
-    setAssignments((prev) =>
-      prev.length === names.length
-        ? prev
-        : names.map(
-            (_, i) => prev[i] ?? { productId: garmentProductId, sizeName: "" },
-          ),
-    );
+    setAssignments((prev) => {
+      if (prev.length === names.length) return prev;
+      const saved = useDesignOrderStore.getState().rosterAssignments;
+      return names.map(
+        (_, i) => prev[i] ?? saved[i] ?? { productId: garmentProductId, sizeName: "" },
+      );
+    });
   }, [names, garmentProductId]);
+
+  // Mirrors `assignments` into the persisted store, same reasoning as the
+  // colourQuantities mirror above.
+  useEffect(() => {
+    if (!mounted || loading) return;
+    setRosterAssignments(assignments);
+  }, [mounted, loading, assignments, setRosterAssignments]);
 
   const rosterMode = names.length > 0;
 
@@ -409,7 +484,21 @@ export function QuantityStep({
    * order would silently checkout at 12-piece rates.
    */
   function addToCart() {
-    if (!quote || matrixIsEmpty(activeBlocks)) return;
+    if (matrixIsEmpty(activeBlocks)) return;
+    // Frozen once per call, not per line — every line below shares the same
+    // design, only the colour photo underneath it changes.
+    const designSnapshot: DesignDocument | undefined = designSnapshotIsUsable(design)
+      ? design
+      : undefined;
+    // `quote` is null for a combination the engine could not price (a
+    // missing cost on file, or a refused combination) rather than for an
+    // empty one — matrixIsEmpty above already covers "nothing entered". The
+    // site never fakes a price, so these lines carry unit 0 and
+    // priceUnavailable: true instead, and every screen that shows money for
+    // a line checks that flag first.
+    const priceUnavailable = !quote;
+    const unit = quote?.cartUnit ?? 0;
+    const pricingSnapshot = quote?.snapshot;
     if (rosterMode && unsizedCount > 0 && namedQty > 0) {
       setCartError(
         `Choose a size for ${unsizedCount} more ${unsizedCount === 1 ? "person" : "people"} before continuing.`,
@@ -455,11 +544,14 @@ export function QuantityStep({
             meta: `Custom design · Team order · ${rows.length} piece${rows.length === 1 ? "" : "s"}, named · ${methodLabel}`,
             color: d?.product.colorName ?? "",
             qty: rows.length,
-            unit: quote.cartUnit,
+            unit,
             image: proofUrl || (d ? detailImageUrl(d) : null) || "",
             artworkProofUrl: proofUrl ?? undefined,
+            designSnapshot,
+            garmentPhotos: d ? garmentPhotosFromDetail(d) : undefined,
             designProjectId: designProjectId ?? undefined,
-            pricingSnapshot: quote.snapshot,
+            pricingSnapshot,
+            priceUnavailable,
             designNotes: (design.notes ?? "").trim() || undefined,
             roster: rows,
           });
@@ -468,13 +560,15 @@ export function QuantityStep({
             productId,
             name: productName,
             qty: rows.length,
-            unit: quote.cartUnit,
+            unit,
           });
         }
         // Spares carry on into the plain per-size lines below rather than
         // returning here, so a mixed order arrives as named rows *and* the
         // extra blanks.
         if (spareQty === 0) {
+          setColourQuantities([]);
+          setRosterAssignments([]);
           router.push("/cart");
           return;
         }
@@ -494,11 +588,14 @@ export function QuantityStep({
           color: block.colorName,
           size: size.sizeName,
           qty: size.quantity,
-          unit: quote.cartUnit,
+          unit,
           image: proofUrl || block.imageUrl || "",
           artworkProofUrl: proofUrl ?? undefined,
+          designSnapshot,
+          garmentPhotos: d ? garmentPhotosFromDetail(d) : undefined,
           designProjectId: designProjectId ?? undefined,
-          pricingSnapshot: quote.snapshot,
+          pricingSnapshot,
+          priceUnavailable,
           designNotes: (design.notes ?? "").trim() || undefined,
         });
         trackCartItemAdded({
@@ -506,9 +603,11 @@ export function QuantityStep({
           productId: block.productId,
           name: productName,
           qty: size.quantity,
-          unit: quote.cartUnit,
+          unit,
         });
       }
+      setColourQuantities([]);
+      setRosterAssignments([]);
       router.push("/cart");
     } finally {
       setAdding(false);
@@ -983,9 +1082,15 @@ export function QuantityStep({
                 </p>
               </>
             ) : (
+              // This used to sit under a disabled button — "Continue" was a
+              // promise the page could not keep. The button below is enabled
+              // for this case now, so the copy has to describe what actually
+              // happens: the line goes to the cart marked "price to be
+              // confirmed" and the team prices it from there.
               <p className="m-0 text-[13px] text-text-tertiary">
-                We could not price this automatically. Continue and our team
-                will confirm your quote.
+                We could not price this automatically. It will go to your
+                cart marked &ldquo;{PRICE_TO_BE_CONFIRMED_LABEL.toLowerCase()}
+                &rdquo; and our team will confirm it before you pay.
               </p>
             )}
 
@@ -996,7 +1101,7 @@ export function QuantityStep({
             )}
             <button
               type="button"
-              disabled={matrixIsEmpty(activeBlocks) || adding || !quote}
+              disabled={matrixIsEmpty(activeBlocks) || adding}
               onClick={addToCart}
               className="mt-sp-4 w-full min-h-12 rounded-sm bg-accent px-5 font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
             >
