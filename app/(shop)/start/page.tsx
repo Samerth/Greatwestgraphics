@@ -6,8 +6,12 @@ import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { existingTeamStorePath } from "@/lib/commerce/membership";
 import { SHOW_TEAM_STORES } from "@/lib/features";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+// Was untitled (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "Start a Team Store" };
 
 export default async function StartPage() {
   // Nobody should be able to create a branded store while the feature

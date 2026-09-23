@@ -18,6 +18,16 @@ type PdpLiveEstimateState = {
    */
   current: PdpQuantityBreak | null;
   /**
+   * One plain sentence naming what decoration the current price assumes —
+   * "Includes a 1-colour screen print on the front." Travels with the price
+   * because it has to stay true to it: the headline is live, so a fixed
+   * "includes a 1-colour screen print" line would start lying the moment the
+   * customer switched to embroidery or added a location (Pavin's note,
+   * "Quote price include 1 color screen print"). Built by
+   * `decorationSummary`; `null` when there is nothing meaningful to say.
+   */
+  summary: string | null;
+  /**
    * The Live Estimate Calculator (PdpDetailedQuote) publishes its current
    * quantity-break pricing here on every recompute, so any other widget on
    * the same product page — today, just the "Estimated from" headline near
@@ -33,6 +43,7 @@ type PdpLiveEstimateState = {
     productId: string,
     quantityBreaks: PdpQuantityBreak[],
     current: PdpQuantityBreak | null,
+    summary: string | null,
   ) => void;
 };
 
@@ -40,6 +51,7 @@ export const usePdpLiveEstimate = create<PdpLiveEstimateState>((set) => ({
   productId: null,
   quantityBreaks: [],
   current: null,
-  publish: (productId, quantityBreaks, current) =>
-    set({ productId, quantityBreaks, current }),
+  summary: null,
+  publish: (productId, quantityBreaks, current, summary) =>
+    set({ productId, quantityBreaks, current, summary }),
 }));

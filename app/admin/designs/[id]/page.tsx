@@ -7,6 +7,7 @@ import {
 } from "@gwg/contracts";
 import { DesignSidePreview } from "@/components/design/DesignSidePreview";
 import { ProofImageOrNote } from "@/components/admin/ProofImageOrNote";
+import { ArtworkFileSize } from "@/components/admin/ArtworkFileSize";
 import {
   garmentBackdrops,
   type GarmentBackdrop,
@@ -91,6 +92,18 @@ export default async function AdminDesignDetailPage({
 
   const design = loaded;
   const garmentBackdropsBySide = await loadGarmentBackdrops(design.garmentProductId);
+  // The customer's original uploads, separate from the flattened proof
+  // below — the review screen showed the artwork but gave staff no way to
+  // get the actual file to send to press (UAT: "Uploaded designs need to be
+  // an independent layer and downloadable from the image download when
+  // reviewing").
+  const artworkLayers = DesignSides.flatMap((side) =>
+    design.design.artworksBySide[side].map((artwork, index) => ({
+      side,
+      index,
+      artwork,
+    })),
+  );
 
   return (
     <div className="space-y-sp-4 max-w-5xl">
@@ -215,6 +228,43 @@ export default async function AdminDesignDetailPage({
           })}
         </div>
       </section>
+
+      {artworkLayers.length > 0 && (
+        <section className="space-y-sp-3">
+          <h2 className="font-display font-bold text-lg m-0">Original artwork files</h2>
+          <p className="text-sm text-text-tertiary m-0">
+            The customer&rsquo;s uploaded files, exactly as sent — not the
+            flattened proof below, which is a picture of the whole garment
+            for reference, not something to print from.
+          </p>
+          <ul className="m-0 p-0 list-none border border-border rounded-md bg-bg-raised divide-y divide-border">
+            {artworkLayers.map(({ side, index, artwork }) => (
+              <li
+                key={artwork.id}
+                className="flex flex-wrap items-center justify-between gap-3 p-sp-3"
+              >
+                <div>
+                  <p className="font-bold text-sm m-0">
+                    {DESIGN_SIDE_LABELS[side]} · {design.design.placementBySide[side]}
+                  </p>
+                  <p className="text-xs text-text-tertiary m-0 mt-1">
+                    <ArtworkFileSize src={artwork.src} />
+                  </p>
+                </div>
+                <a
+                  href={artwork.src}
+                  download={`${side}-artwork-${index + 1}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-bold text-accent"
+                >
+                  Download original
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {design.proofImageUrl && (
         <section className="space-y-sp-3">

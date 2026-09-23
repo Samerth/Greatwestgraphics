@@ -28,7 +28,7 @@ const FAQ_CATEGORIES: Array<{
       },
       {
         q: "What are my payment options?",
-        a: "Credit card, e-transfer, or Net-30 terms for approved accounts. A 50% deposit is required on custom orders.",
+        a: "Credit card or e-transfer. No deposit is required — nothing is charged until you approve your proof and accept the final quote.",
       },
     ],
   },

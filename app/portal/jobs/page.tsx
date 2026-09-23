@@ -8,8 +8,12 @@ import { jobStatusPresentation } from "@/lib/commerce/status";
 import { getCustomerSession } from "@/lib/auth/session";
 import type { JobRequestListResponse } from "@gwg/contracts";
 import { publicQuoteOrFallback, SHOW_TEAM_STORES } from "@/lib/features";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+// Was untitled (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "My Jobs" };
 
 export default async function JobsPage() {
   const session = await getCustomerSession();

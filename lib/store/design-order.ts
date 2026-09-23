@@ -30,6 +30,19 @@ export interface DesignDecoration {
   colours: number | null;
 }
 
+/** One colour's entered quantities, keyed by variant, as the customer left
+ *  them on the Input Quantity page. */
+export interface DesignOrderColourQuantity {
+  productId: string;
+  sizes: { variantId: string; quantity: number }[];
+}
+
+/** One named person's chosen colour and size, in the same order as `names`. */
+export interface DesignOrderRosterAssignment {
+  productId: string;
+  sizeName: string;
+}
+
 interface DesignOrderState {
   /** Which garment/colourway the design was built on, so step 2 can load
    *  the same product without a query param that could disagree with the
@@ -49,6 +62,16 @@ interface DesignOrderState {
   /** The saved design row, when the customer is signed in, so staff can
    *  reopen the editable design rather than only the flat proof. */
   designProjectId: string | null;
+  /** Every colour and size the customer has entered on the Input Quantity
+   *  page, so navigating away (checkout, then Back) and returning shows what
+   *  was actually typed instead of a blank page. Cleared once those
+   *  quantities are actually added to the cart, so a later, unrelated design
+   *  does not inherit someone else's leftover numbers. */
+  colourQuantities: DesignOrderColourQuantity[];
+  /** Each named person's chosen colour/size on the Input Quantity page — the
+   *  ordering half of a roster, kept separately from `names` (the design
+   *  half) for the same reason as `colourQuantities` above. */
+  rosterAssignments: DesignOrderRosterAssignment[];
   setGarment: (garmentProductId: string | null) => void;
   setDecoration: (patch: Partial<DesignDecoration>) => void;
   setNames: (names: DesignRosterName[]) => void;
@@ -57,6 +80,8 @@ interface DesignOrderState {
     proofUrl: string | null;
     designProjectId: string | null;
   }) => void;
+  setColourQuantities: (quantities: DesignOrderColourQuantity[]) => void;
+  setRosterAssignments: (assignments: DesignOrderRosterAssignment[]) => void;
   clear: () => void;
 }
 
@@ -87,6 +112,8 @@ export const useDesignOrderStore = create<DesignOrderState>()(
       reachedQuantity: false,
       proofUrl: null,
       designProjectId: null,
+      colourQuantities: [],
+      rosterAssignments: [],
       setGarment: (garmentProductId) => set({ garmentProductId }),
       setDecoration: (patch) =>
         set((prev) => ({ decoration: { ...prev.decoration, ...patch } })),
@@ -94,6 +121,8 @@ export const useDesignOrderStore = create<DesignOrderState>()(
       setReachedQuantity: (reachedQuantity) => set({ reachedQuantity }),
       setProof: ({ proofUrl, designProjectId }) =>
         set({ proofUrl, designProjectId }),
+      setColourQuantities: (colourQuantities) => set({ colourQuantities }),
+      setRosterAssignments: (rosterAssignments) => set({ rosterAssignments }),
       clear: () =>
         set({
           garmentProductId: null,
@@ -102,6 +131,8 @@ export const useDesignOrderStore = create<DesignOrderState>()(
           reachedQuantity: false,
           proofUrl: null,
           designProjectId: null,
+          colourQuantities: [],
+          rosterAssignments: [],
         }),
     }),
     {

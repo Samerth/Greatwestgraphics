@@ -4,10 +4,12 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
+  DesignDocument,
   LinePricingSnapshot,
   LinePricingSnapshotV2,
   RosterDecor,
 } from "@gwg/contracts";
+import type { GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
 
 export interface CartItem {
   id: string;
@@ -34,6 +36,22 @@ export interface CartItem {
    * would carry the whole image inline.
    */
   artworkProofUrl?: string;
+  /**
+   * The design's own layout — where every logo and text box sits, and which
+   * files to draw — frozen at the moment this line was added. Positions and
+   * file links, not pixels, so this is typically only a few KB even though
+   * `artworkProofUrl` above is a single flattened picture of just one
+   * colour. Paired with `garmentPhotos` below, this lets the cart, admin and
+   * portal each redraw the same design on THIS line's own colour instead of
+   * showing every colour the same picture (Pavin, client meeting: "try to
+   * show same design on different colour"). Omitted when the design still
+   * has artwork that has not finished uploading — see
+   * `ephemeralArtworkSides` — since a file link that would not survive a
+   * reload is exactly the bug `isDurableArtworkSrc` exists to catch.
+   */
+  designSnapshot?: DesignDocument;
+  /** This line's own colourway photos, read alongside `designSnapshot`. */
+  garmentPhotos?: GarmentPhotoSet;
   /** The saved design this line was built from, so staff can open and edit it. */
   designProjectId?: string;
   /** Team/group order: one row per piece with its own size, name and number. When present, `qty` equals `roster.length`. */
@@ -54,7 +72,23 @@ export interface CartItem {
    * against whichever cookie is current.
    */
   storeSlug?: string;
+  /**
+   * The Input Quantity step could not price this configuration automatically
+   * (a combination the engine refused, or a cost missing from the catalog),
+   * but let the customer submit it rather than dead-ending them — the site
+   * never fakes a price, so `unit` is 0 here and every screen that shows
+   * money for a line must check this flag first and say "Price to be
+   * confirmed" instead. The API already reads a line with no pricing
+   * snapshot as unverified and flags it for staff
+   * (job-request-service.ts `repriceLine`) — this is that case, reached
+   * deliberately instead of by accident.
+   */
+  priceUnavailable?: boolean;
 }
+
+/** What a `priceUnavailable` line shows in place of a dollar figure, on the
+ *  cart page and in the checkout summary — never a blank, never "$0.00". */
+export const PRICE_TO_BE_CONFIRMED_LABEL = "Price to be confirmed";
 
 export type ActiveCartStore = { slug: string; isPublic: boolean };
 
@@ -153,7 +187,23 @@ export function computeCartTotals(items: CartItem[], deliveryFee = 0) {
   const gst = netSubtotal * 0.05;
   const total = netSubtotal + gst + deliveryFee;
   const deposit = total * 0.5;
-  return { pieces, subtotal, discountRate, discount, netSubtotal, gst, deliveryFee, total, deposit };
+  // A priceUnavailable line contributes 0 above, on purpose (never a faked
+  // price) — which means every total here is real but incomplete while one
+  // is in the cart. Screens that show these totals must say so rather than
+  // let a customer read the number as final.
+  const hasUnpricedItems = items.some((i) => i.priceUnavailable);
+  return {
+    pieces,
+    subtotal,
+    discountRate,
+    discount,
+    netSubtotal,
+    gst,
+    deliveryFee,
+    total,
+    deposit,
+    hasUnpricedItems,
+  };
 }
 
 export const useCartStore = create<CartState>()(

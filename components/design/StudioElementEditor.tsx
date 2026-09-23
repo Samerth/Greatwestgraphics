@@ -108,6 +108,127 @@ export function StudioChestAlign({
   );
 }
 
+/**
+ * The back's equivalent of StudioChestAlign. The back has no left/right
+ * zones to choose between — detectPlacementZone never splits a back mark by
+ * horizontal position — but it does have a real size choice: a small
+ * centred mark, or filling the whole plate (Pavin, client meeting: "Back
+ * view doesn't have the position options").
+ */
+export function StudioBackSizeToggle({
+  value,
+  onChange,
+  tone = "panel",
+  compact,
+}: {
+  value: "mark" | "full" | null;
+  onChange: (choice: "mark" | "full") => void;
+  tone?: "panel" | "canvas";
+  compact?: boolean;
+}) {
+  const canvas = tone === "canvas";
+  const OPTIONS = [
+    { key: "mark" as const, label: "Mark" },
+    { key: "full" as const, label: "Full Back" },
+  ];
+  return (
+    <div
+      className={cn(
+        compact
+          ? "flex items-center gap-2 min-w-[13.5rem] max-w-[18rem] flex-1"
+          : "min-w-0",
+      )}
+    >
+      <span
+        className={cn(
+          "font-bold uppercase tracking-[0.12em]",
+          compact ? "text-[10px] shrink-0" : "block text-[10px] mb-1.5",
+          canvas ? "text-white/45" : "text-text-tertiary",
+        )}
+      >
+        Size
+      </span>
+      <div
+        className="flex gap-1 min-w-0 flex-1"
+        role="group"
+        aria-label="Back placement size"
+      >
+        {OPTIONS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            aria-label={option.label}
+            aria-pressed={value === option.key}
+            onClick={() => onChange(option.key)}
+            className={cn(
+              "flex-1 h-8 rounded-sm border text-[12px] font-bold transition-colors",
+              value === option.key
+                ? canvas
+                  ? "bg-white text-text-primary border-white"
+                  : "bg-accent text-white border-accent"
+                : canvas
+                  ? "border-white/20 text-white/80 hover:border-white/50"
+                  : "border-border hover:border-text-tertiary",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The sleeve's equivalent of StudioChestAlign. A sleeve print area is a
+ * single small box with no left/right or size choice inside it — "Sleeve"
+ * and "Side Panel" are the same box and the same fit, so a toggle between
+ * them would be two buttons that do the same thing. What genuinely helps is
+ * putting the mark back in the middle after it's been dragged off-centre.
+ */
+export function StudioSleeveCenter({
+  onCenter,
+  tone = "panel",
+  compact,
+}: {
+  onCenter: () => void;
+  tone?: "panel" | "canvas";
+  compact?: boolean;
+}) {
+  const canvas = tone === "canvas";
+  return (
+    <div
+      className={cn(
+        compact
+          ? "flex items-center gap-2 min-w-[13.5rem] max-w-[18rem] flex-1"
+          : "min-w-0",
+      )}
+    >
+      <span
+        className={cn(
+          "font-bold uppercase tracking-[0.12em]",
+          compact ? "text-[10px] shrink-0" : "block text-[10px] mb-1.5",
+          canvas ? "text-white/45" : "text-text-tertiary",
+        )}
+      >
+        Position
+      </span>
+      <button
+        type="button"
+        onClick={onCenter}
+        className={cn(
+          "h-8 rounded-sm border px-3 text-[12px] font-bold transition-colors",
+          canvas
+            ? "border-white/20 text-white/80 hover:border-white/50"
+            : "border-border hover:border-text-tertiary",
+        )}
+      >
+        Center
+      </button>
+    </div>
+  );
+}
+
 export function StudioElementEditor({
   kind,
   text,
@@ -124,6 +245,7 @@ export function StudioElementEditor({
   onDelete,
   onRemoveBackground,
   removingBackground = false,
+  removeBackgroundSvgNote = false,
   onSliderCommit,
   moveTo,
   className,
@@ -161,6 +283,12 @@ export function StudioElementEditor({
   /** UAT row 61 - present only when a paid image provider is configured. */
   onRemoveBackground?: () => void;
   removingBackground?: boolean;
+  /** True when this layer is an SVG and background removal is otherwise
+   * available — shows an explanatory note in place of the button, rather
+   * than the button existing and failing on the one file type it can't
+   * process (Pavin, client meeting: SVG uploads hit "Use a PNG, JPG or
+   * WEBP" from the remover after already being accepted by the uploader). */
+  removeBackgroundSvgNote?: boolean;
   onSliderCommit: () => void;
   /** The other sides this layer could move to, and the handler to do it.
    * Explicit and separate from clicking a side thumbnail to look at it —
@@ -330,6 +458,13 @@ export function StudioElementEditor({
           Delete
         </EditorAction>
       </div>
+      {removeBackgroundSvgNote && (
+        <p className="m-0 text-[11px] leading-4 text-text-tertiary">
+          Vector files (SVG) don&rsquo;t need background removal — they&rsquo;re
+          already just the shapes you see, with no background pixels to strip
+          out. Works on PNG, JPG and WEBP.
+        </p>
+      )}
     </div>
   );
 }

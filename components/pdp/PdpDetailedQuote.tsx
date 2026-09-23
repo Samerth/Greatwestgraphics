@@ -23,6 +23,7 @@ import {
   type StitchPresetId,
 } from "@/lib/utils/shop-quote";
 import { filterAllowedMethods } from "@/lib/commerce/studio-decoration";
+import { decorationSummary } from "@/lib/commerce/decoration-summary";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 import { usePdpLiveEstimate } from "@/lib/store/pdp-live-estimate";
 import { useBrowsingQuantity } from "@/lib/store/browsing-quantity";
@@ -85,6 +86,7 @@ export function PdpDetailedQuote({
   variants,
   pricingConfig,
   decorationRules,
+  isHat = false,
 }: {
   productId: string;
   name: string;
@@ -95,6 +97,9 @@ export function PdpDetailedQuote({
    * UAT — "Product-Specific Decoration Methods & Print Locations"). `null`
    * for either means unrestricted. */
   decorationRules?: { methods: string[] | null; locations: string[] | null };
+  /** Headwear defaults to embroidery instead of the site's configured
+   *  screen-print default — see catalog-card.ts, which this mirrors. */
+  isHat?: boolean;
 }) {
   const router = useRouter();
   const saveHandoff = usePdpStudioHandoff((s) => s.save);
@@ -119,6 +124,7 @@ export function PdpDetailedQuote({
     [decorationRules],
   );
   const defaultMethodKey =
+    (isHat ? methods.find((m) => m.key === "embroidery")?.key : undefined) ??
     methods.find((m) => m.key === pricingConfig?.storefront?.defaultMethodKey)
       ?.key ??
     methods[0]?.key ??
@@ -288,13 +294,28 @@ export function PdpDetailedQuote({
   const liveUnitMinor = breakdown
     ? Math.round(breakdown.totals.totalMinor / Math.max(1, qty))
     : null;
+  // Sent alongside the price so the headline can say what that price assumes
+  // and stay right when the customer changes it (Pavin: "Quote price include
+  // 1 color screen print").
+  const liveSummary = useMemo(
+    () => decorationSummary(rows, methods),
+    [rows, methods],
+  );
   useEffect(() => {
     publishLiveEstimate(
       productId,
       quantityBreaks,
       liveUnitMinor == null ? null : { qty, unitMinor: liveUnitMinor },
+      liveSummary,
     );
-  }, [productId, quantityBreaks, qty, liveUnitMinor, publishLiveEstimate]);
+  }, [
+    productId,
+    quantityBreaks,
+    qty,
+    liveUnitMinor,
+    liveSummary,
+    publishLiveEstimate,
+  ]);
 
   function handleStartDesigning() {
     const primary = rows[0];
@@ -626,9 +647,18 @@ export function PdpDetailedQuote({
               </p>
             </>
           ) : (
+            // The only way to reach this branch while the component renders
+            // at all is `quoteRequest` returning null because the selected
+            // variant has no costMinor — every other early return (no
+            // pricing config, no methods, unavailable colourway) bails out
+            // of the component before this card exists. Size selection was
+            // removed from the PDP entirely (CodSphere UAT), so the old
+            // "pick a size above" copy pointed at a control that is not on
+            // the page.
             !result?.error && (
               <p className="text-sm text-text-secondary italic">
-                Pick a size above to see decorated pricing.
+                Pricing isn&rsquo;t available for this colour yet — try a
+                different colour, or contact us for a quote.
               </p>
             )
           )}

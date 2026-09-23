@@ -12,12 +12,14 @@ import {
   namedVendorView,
   plateContainRect,
   proxyExternalImageUrl,
+  sleeveGuideRect,
   studioBackdropFallbackUrl,
   studioCanvasImageUrl,
   studioSideViewTemplate,
   usableSidePhoto,
   type PhotoCrop,
 } from "./garment-backdrop";
+import { STUDIO_PRINT_AREAS } from "./studio-placement";
 
 const SAMPLE_CROP: PhotoCrop = {
   x: 0.46,
@@ -365,5 +367,61 @@ describe("proxyExternalImageUrl", () => {
   it("returns null for null/undefined input", () => {
     expect(proxyExternalImageUrl(null)).toBeNull();
     expect(proxyExternalImageUrl(undefined)).toBeNull();
+  });
+});
+
+describe("sleeveGuideRect", () => {
+  it("gives the tee and hoodie templates their own, different boxes", () => {
+    const tee = sleeveGuideRect({ url: STUDIO_SIDE_TEE, source: "side-view" }, "left");
+    const hoodie = sleeveGuideRect({ url: STUDIO_SIDE_HOODIE, source: "side-view" }, "left");
+    // The client's own point: a short-sleeve tee and a long-sleeve hoodie
+    // do not have their sleeve in the same place — one shared box was
+    // never going to be right for both.
+    expect(tee).not.toEqual(hoodie);
+    // Both boxes must be real, sane rectangles — comfortably inside the
+    // canvas, not a rounding accident that happens to pass every other
+    // assertion.
+    for (const rect of [tee, hoodie]) {
+      expect(rect.x).toBeGreaterThan(0);
+      expect(rect.y).toBeGreaterThan(0);
+      expect(rect.x + rect.width).toBeLessThan(1);
+      expect(rect.y + rect.height).toBeLessThan(1);
+    }
+  });
+
+  it("mirrors the template box horizontally for the right sleeve", () => {
+    const left = sleeveGuideRect({ url: STUDIO_SIDE_TEE, source: "side-view" }, "left");
+    const right = sleeveGuideRect({ url: STUDIO_SIDE_TEE, source: "side-view" }, "right");
+    expect(right.width).toBe(left.width);
+    expect(right.height).toBe(left.height);
+    expect(right.y).toBe(left.y);
+    // Same distance from its own edge of the canvas as the left box is
+    // from its edge — a true mirror around the centre line, not just "a
+    // different number."
+    expect(right.x).toBeCloseTo(1 - left.x - left.width, 10);
+  });
+
+  it("falls back to the tee box for an unrecognised template URL", () => {
+    const unknown = sleeveGuideRect({ url: "/images/studio/side-unknown.png", source: "side-view" }, "left");
+    const tee = sleeveGuideRect({ url: STUDIO_SIDE_TEE, source: "side-view" }, "left");
+    expect(unknown).toEqual(tee);
+  });
+
+  it("widens the box for a real vendor photo instead of using the tight template box", () => {
+    // There is no per-photo data to calibrate a tight box against a real
+    // vendor photo, so this is deliberately generous rather than
+    // confidently precise (client decision, same reasoning as the chest
+    // position fix: widen rather than force a small fixed size).
+    const real = sleeveGuideRect({ url: "https://cdn.example.com/side.jpg", source: "photo" }, "left");
+    const oldTightBox = STUDIO_PRINT_AREAS.left;
+    expect(real.width).toBeGreaterThan(oldTightBox.width);
+    expect(real.height).toBeGreaterThan(oldTightBox.height);
+  });
+
+  it("mirrors the widened real-photo box for the right sleeve too", () => {
+    const left = sleeveGuideRect({ url: "https://cdn.example.com/side.jpg", source: "photo" }, "left");
+    const right = sleeveGuideRect({ url: "https://cdn.example.com/side.jpg", source: "photo" }, "right");
+    expect(right.width).toBe(left.width);
+    expect(right.height).toBe(left.height);
   });
 });

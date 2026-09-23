@@ -2,6 +2,17 @@
 
 export type RosterRow = { size: string; name: string; number: string };
 
+// Matches DesignRosterRowSchema (packages/contracts/src/design-document.ts)
+// exactly, so a name or number that fits here is guaranteed to still be
+// there once the design is saved. Before this, nothing stopped a person
+// from typing past that schema's limit — the row was accepted here, then
+// silently dropped from the roster on save the moment it reached that
+// schema (a failed row is discarded, not rejected with an error), so a
+// name that was too long simply vanished with no explanation. Capping the
+// input here means that can no longer happen.
+const ROSTER_NAME_MAX = 80;
+const ROSTER_NUMBER_MAX = 20;
+
 function wideRosterCountLabel(rows: RosterRow[]): string {
   const started = rows.filter(
     (row) => row.name.trim() || row.number.trim(),
@@ -91,12 +102,14 @@ export function RosterEditor({
               value={row.name}
               onChange={(e) => updateRow(i, { name: e.target.value })}
               placeholder={layout === "wide" ? "e.g. Alex" : "Name"}
+              maxLength={ROSTER_NAME_MAX}
               className="border border-border rounded-sm bg-bg-raised px-2.5 py-2 text-sm min-w-0"
             />
             <input
               value={row.number}
               onChange={(e) => updateRow(i, { number: e.target.value })}
               placeholder={layout === "wide" ? "e.g. 07" : "#"}
+              maxLength={ROSTER_NUMBER_MAX}
               className="border border-border rounded-sm bg-bg-raised px-2 py-2 text-sm min-w-0"
             />
             <button

@@ -1,5 +1,5 @@
 import type { CartItem } from "@/lib/store/cart";
-import { computeCartTotals } from "@/lib/store/cart";
+import { computeCartTotals, PRICE_TO_BE_CONFIRMED_LABEL } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import type { DeliveryKey } from "@/lib/schemas/checkout";
 import {
@@ -45,7 +45,11 @@ export function CheckoutSummary({
                   ×{item.qty} pieces{item.roster ? " · team order" : ""}
                 </span>
               </span>
-              <b>{money(item.qty * item.unit)}</b>
+              <b className={item.priceUnavailable ? "font-normal text-text-tertiary" : undefined}>
+                {item.priceUnavailable
+                  ? PRICE_TO_BE_CONFIRMED_LABEL
+                  : money(item.qty * item.unit)}
+              </b>
             </div>
             {/* Always visible, not tucked behind a click: this is who each
                 shirt in the order actually goes to, confirmed here right
@@ -102,6 +106,16 @@ export function CheckoutSummary({
         >
           Shipping is not included in this estimate. We will confirm it with
           you after reviewing your order.
+        </p>
+      )}
+      {t.hasUnpricedItems && (
+        <p
+          data-checkout="unpriced-items-note"
+          className="text-[12.5px] text-text-tertiary mt-2 mb-0"
+        >
+          One or more items above are marked{" "}
+          {PRICE_TO_BE_CONFIRMED_LABEL.toLowerCase()} and are not included in
+          this estimate. Our team will price them and confirm before you pay.
         </p>
       )}
       {isRush ? (

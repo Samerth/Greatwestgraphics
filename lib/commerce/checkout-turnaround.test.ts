@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FulfillmentSnapshotSchema } from "@gwg/contracts";
+import { readJobDetailRouteSource } from "@/lib/admin/job-detail-source";
 
 import {
   DELIVERY_OPTIONS,
@@ -28,7 +29,12 @@ const summary = stripComments(read("components/checkout/CheckoutSummary.tsx"));
 const wizard = stripComments(read("components/checkout/CheckoutWizard.tsx"));
 const pills = stripComments(read("components/checkout/StepPills.tsx"));
 const payment = stripComments(read("components/checkout/PaymentStep.tsx"));
-const adminJob = stripComments(read("app/admin/jobs/[id]/page.tsx"));
+// Reads the whole admin job detail route (page.tsx, its section components,
+// and the view model that feeds them), not just page.tsx alone — the
+// 11-point admin job page rebuild split what used to be one file into
+// several. See job-detail-source.ts for why widening the reader is correct
+// here rather than loosening what's asserted below.
+const adminJob = readJobDetailRouteSource();
 
 const ADDRESS = {
   address1: "1 Test Street",

@@ -821,6 +821,55 @@ export class CommerceClient {
     );
   }
 
+  setJobInternalNote(
+    id: string,
+    note: string,
+    adminToken: string,
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/internal-note`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          note,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
+  confirmRushRequest(
+    id: string,
+    input: { confirmed: boolean; promisedDate: string | null },
+    adminToken: string,
+  ): Promise<JobRequestResponse> {
+    return this.request(
+      `/internal/dev/job-requests/${encodeURIComponent(id)}/rush-confirmation`,
+      JobRequestResponseSchema,
+      {
+        method: "POST",
+        headers: this.headers(undefined, adminToken),
+        body: JSON.stringify({
+          context: {
+            tenantId: this.identity.tenantId,
+            accountId: this.identity.accountId,
+            storeId: this.identity.storeId,
+          },
+          confirmed: input.confirmed,
+          promisedDate: input.promisedDate,
+          source: { system: "commerce_api" },
+        }),
+      },
+    );
+  }
+
   transitionJobRequest(
     id: string,
     toStatus: string,

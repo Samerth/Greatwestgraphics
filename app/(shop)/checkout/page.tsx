@@ -6,8 +6,12 @@ import { getCustomerSession } from "@/lib/auth/session";
 import { createCommerceClient } from "@/lib/commerce/client";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+// Was untitled (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "Checkout" };
 
 export default async function CheckoutPage() {
   const session = await getCustomerSession();
@@ -41,8 +45,9 @@ export default async function CheckoutPage() {
       <div className="bg-fill-subtle border-b border-border">
         <Container className="flex flex-wrap justify-between items-center gap-sp-3 py-sp-3">
           <p className="text-sm m-0">
-            Preferencing Card, Apple Pay, Interac, or Net-30 is forward-looking —
-            checkout still submits for design review. No payment is collected today.
+            Checkout submits your order for design review — no payment is
+            collected today. Payment is arranged on the invoice once your
+            proof is approved.
           </p>
           {SHOW_PUBLIC_QUOTE_CALCULATOR ? (
             <ButtonLink href="/quote" variant="secondary" size="sm">
@@ -57,7 +62,15 @@ export default async function CheckoutPage() {
           <div className="text-[13px] text-text-tertiary mb-sp-4">
             Home / Shop / Cart / <b className="text-text-primary">Checkout</b>
           </div>
-          <CheckoutWizard />
+          {/* The account already knows a signed-in customer's name and
+              email — checkout used to ask for them again from scratch every
+              time, ignoring the session it already holds (client feedback:
+              "Pre fill check out if logged in or already entered"). No
+              phone is passed because the account has never stored one;
+              the phone field still starts blank and is not faked. */}
+          <CheckoutWizard
+            sessionContact={{ fullName: session.name, email: session.email }}
+          />
         </Container>
       </section>
     </>

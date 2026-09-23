@@ -2,6 +2,7 @@ import type {
   AcceptFinalQuote,
   Actor,
   CommerceEventType,
+  ConfirmRushRequest,
   CreateFinalQuote,
   CreateJobRequest,
   CreateProofVersion,
@@ -18,6 +19,7 @@ import type {
   RecordPayment,
   RequestInvoice,
   RespondToChanges,
+  SetJobInternalNote,
   SourceMetadata,
   SubmitJobRequest,
   TransitionJobRequest,
@@ -51,6 +53,7 @@ import {
 } from "../db/schema.js";
 import { assertJobRequestTransition } from "../domain/job-request-state.js";
 import { requireCustomerScope } from "../domain/customer-scope.js";
+import { redactStaffOnlyFields } from "../domain/staff-fields.js";
 import {
   assertProofDecidable,
   audienceForActor,
@@ -562,6 +565,7 @@ export class JobRequestService {
     accountId: string,
     jobRequestId: string,
     customerPersonId?: string,
+    options?: { includeStaffFields?: boolean },
   ): Promise<JobRequestDetailResponse> {
     const row = await this.findScoped(
       this.db,
@@ -654,31 +658,40 @@ export class JobRequestService {
       snapshot: line.snapshot,
     }));
 
-    return {
-      ...toResponse(row),
-      customerNote: row.customerNote ?? null,
-      contact: createdSnapshot.success ? createdSnapshot.data.contact : null,
-      fulfillment: createdSnapshot.success
-        ? createdSnapshot.data.fulfillment
-        : null,
-      invoiceRequestedAt:
-        invoiceObligation?.status === "invoice_requested"
-          ? invoiceObligation.updatedAt.toISOString()
+    return redactStaffOnlyFields(
+      {
+        ...toResponse(row),
+        customerNote: row.customerNote ?? null,
+        contact: createdSnapshot.success ? createdSnapshot.data.contact : null,
+        fulfillment: createdSnapshot.success
+          ? createdSnapshot.data.fulfillment
           : null,
-      inventory: await this.checkInventory(tenantId, mappedLines),
-      lines: mappedLines,
-      timeline: history.map((entry) => ({
-        id: entry.id,
-        fromStatus: entry.fromStatus,
-        toStatus: entry.toStatus,
-        reason: entry.reason,
-        actor: entry.actor,
-        source: entry.source,
-        occurredAt: entry.occurredAt.toISOString(),
-      })),
-      finalQuotes: quotes.map(toFinalQuoteResponse),
-      proofs: proofs.map(toProofResponse),
-    };
+        invoiceRequestedAt:
+          invoiceObligation?.status === "invoice_requested"
+            ? invoiceObligation.updatedAt.toISOString()
+            : null,
+        inventory: await this.checkInventory(tenantId, mappedLines),
+        lines: mappedLines,
+        timeline: history.map((entry) => ({
+          id: entry.id,
+          fromStatus: entry.fromStatus,
+          toStatus: entry.toStatus,
+          reason: entry.reason,
+          actor: entry.actor,
+          source: entry.source,
+          occurredAt: entry.occurredAt.toISOString(),
+        })),
+        finalQuotes: quotes.map(toFinalQuoteResponse),
+        proofs: proofs.map(toProofResponse),
+        internalNote: row.internalNote ?? null,
+        internalNoteUpdatedAt: row.internalNoteUpdatedAt?.toISOString() ?? null,
+        internalNoteUpdatedBy: row.internalNoteUpdatedBy ?? null,
+        rushConfirmedAt: row.rushConfirmedAt?.toISOString() ?? null,
+        promisedDate: row.promisedDate ?? null,
+        rushConfirmedBy: row.rushConfirmedBy ?? null,
+      },
+      { includeStaffFields: options?.includeStaffFields ?? false },
+    );
   }
 
   async createFinalQuote(
@@ -1203,6 +1216,99 @@ export class JobRequestService {
         command.source,
         "commerce.job_request.invoice.issued.v1",
       );
+    });
+  }
+
+  /**
+   * Staff's shared scratchpad for a job — never customer-visible (redacted
+   * on every read that isn't the internal staff route; see
+   * `redactStaffOnlyFields`). Deliberately does not go through
+   * `applyTransition`: this is not a status change, must never move a
+   * payment obligation, and must never email the customer.
+   */
+  async setInternalNote(
+    jobRequestId: string,
+    command: SetJobInternalNote,
+    actor: Actor,
+  ): Promise<JobRequestResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+      const occurredAt = new Date();
+      const [updated] = await transaction
+        .update(jobRequests)
+        .set({
+          internalNote: command.note.trim() || null,
+          internalNoteUpdatedAt: occurredAt,
+          internalNoteUpdatedBy: actor,
+          version: current.version + 1,
+          updatedAt: occurredAt,
+        })
+        .where(
+          and(
+            eq(jobRequests.tenantId, current.tenantId),
+            eq(jobRequests.accountId, current.accountId),
+            eq(jobRequests.id, current.id),
+            eq(jobRequests.version, current.version),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw new DataIntegrityError("Concurrent job request update detected");
+      }
+      return toResponse(updated);
+    });
+  }
+
+  /**
+   * Staff confirm (or retract) a rush request's date. `promisedDate` is kept
+   * separate from the customer's own requested date, which lives in the
+   * immutable created snapshot and must never be edited — shops negotiate,
+   * and what staff commit to may differ from what was first asked for.
+   * Same "not a transition" reasoning as `setInternalNote` above: no status
+   * change, no payment obligation touched, no customer email from here.
+   */
+  async confirmRushRequest(
+    jobRequestId: string,
+    command: ConfirmRushRequest,
+    actor: Actor,
+  ): Promise<JobRequestResponse> {
+    const { tenantId, accountId } = command.context;
+    return this.db.transaction(async (transaction) => {
+      const current = await this.findScoped(
+        transaction,
+        tenantId,
+        accountId,
+        jobRequestId,
+      );
+      const occurredAt = new Date();
+      const [updated] = await transaction
+        .update(jobRequests)
+        .set({
+          rushConfirmedAt: command.confirmed ? occurredAt : null,
+          rushConfirmedBy: command.confirmed ? actor : null,
+          promisedDate: command.confirmed ? command.promisedDate : null,
+          version: current.version + 1,
+          updatedAt: occurredAt,
+        })
+        .where(
+          and(
+            eq(jobRequests.tenantId, current.tenantId),
+            eq(jobRequests.accountId, current.accountId),
+            eq(jobRequests.id, current.id),
+            eq(jobRequests.version, current.version),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw new DataIntegrityError("Concurrent job request update detected");
+      }
+      return toResponse(updated);
     });
   }
 

@@ -4,6 +4,7 @@ import {
   CheckoutSessionResponseSchema,
   CodChatOrderStatusResponseSchema,
   CommerceHeaders,
+  ConfirmRushRequestSchema,
   CreateCheckoutSessionSchema,
   StripeWebhookRelaySchema,
   StripeWebhookResultSchema,
@@ -35,6 +36,7 @@ import {
   RecordPaymentSchema,
   RequestInvoiceSchema,
   RespondToChangesSchema,
+  SetJobInternalNoteSchema,
   SubmitJobRequestSchema,
   TransitionJobRequestSchema,
   UpsertPricingConfigDraftSchema,
@@ -98,6 +100,7 @@ import {
   STOREFRONT_GARMENT_ID,
   UnsupportedDecorationMethodError,
 } from "./application/storefront-quote-decorations.js";
+import { storefrontUnitPriceMinor } from "./application/storefront-quote-pricing.js";
 import { AccountService, SlugTakenError } from "./application/account-service.js";
 import {
   InviteService,
@@ -535,8 +538,10 @@ export function buildApp(input: {
 
     const breakdown = calculateQuoteV2(quoteInput, config);
 
-    const unitPrice = breakdown.garments[0]?.unitPriceMinor ?? 0;
     const total = breakdown.totals.totalMinor;
+    // All-in, not the engine's staff-facing garments[].unitPriceMinor (which
+    // deliberately excludes setup) - see storefront-quote-pricing.ts for why.
+    const unitPrice = storefrontUnitPriceMinor(breakdown, body.qty);
     const garmentPerPiece = breakdown.garments[0]?.sellPerPieceMinor ?? 0;
     const decorationPerPiece =
       breakdown.garments[0]?.decorationPerPieceMinor ?? 0;
@@ -1204,7 +1209,13 @@ export function buildApp(input: {
         (request.params as { jobRequestId?: string }).jobRequestId,
       );
       const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
-      return service.get(auth.tenantId, owner.accountId, jobRequestId);
+      return service.get(
+        auth.tenantId,
+        owner.accountId,
+        jobRequestId,
+        undefined,
+        { includeStaffFields: true },
+      );
     });
 
     app.post(
@@ -1337,6 +1348,51 @@ export function buildApp(input: {
         const command = RecordPaymentSchema.parse(request.body);
         const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
         return service.recordPayment(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
+      },
+    );
+
+    // Staff-only in both directions: there is no `/v1/...` counterpart, and
+    // unlike every route above, the response is never shown to a customer —
+    // see `redactStaffOnlyFields`.
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/internal-note",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = SetJobInternalNoteSchema.parse(request.body);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.setInternalNote(
+          jobRequestId,
+          {
+            ...command,
+            context: staffScope(auth, command.context, owner),
+          },
+          staffActor(auth),
+        );
+      },
+    );
+
+    app.post(
+      "/internal/dev/job-requests/:jobRequestId/rush-confirmation",
+      async (request) => {
+        assertAdmin(request, input.environment);
+        const auth = await input.auth.resolve(request);
+        const jobRequestId = CanonicalIdSchema.parse(
+          (request.params as { jobRequestId?: string }).jobRequestId,
+        );
+        const command = ConfirmRushRequestSchema.parse(request.body);
+        const owner = await service.locateForStaff(auth.tenantId, jobRequestId);
+        return service.confirmRushRequest(
           jobRequestId,
           {
             ...command,
