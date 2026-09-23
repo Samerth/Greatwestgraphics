@@ -176,6 +176,13 @@
       "when": 1787510000000,
       "tag": "0024_ss_on_model_images",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787520000000,
+      "tag": "0025_job_staff_note_rush_confirmation",
+      "breakpoints": true
     }
   ]
 }

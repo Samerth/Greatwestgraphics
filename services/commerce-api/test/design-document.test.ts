@@ -9,6 +9,7 @@ import {
   EphemeralArtworkError,
   ephemeralArtworkSides,
   isDurableArtworkSrc,
+  isSvgArtworkSrc,
   normalizeDesignDocument,
   toStoredDesignDocument,
   type DesignDocument,
@@ -234,6 +235,23 @@ describe("artwork durability", () => {
     expect(isDurableArtworkSrc("BLOB:http://localhost/abc")).toBe(false);
     expect(isDurableArtworkSrc("data:image/png;base64,iVBOR")).toBe(false);
     expect(isDurableArtworkSrc("   ")).toBe(false);
+  });
+});
+
+describe("SVG artwork detection", () => {
+  it("recognises an SVG by its data URL or hosted file extension", () => {
+    expect(isSvgArtworkSrc("data:image/svg+xml;base64,PHN2Zz4=")).toBe(true);
+    expect(isSvgArtworkSrc("data:image/svg+xml,%3Csvg%3E")).toBe(true);
+    expect(isSvgArtworkSrc("https://cdn.example.com/uploads/logo.svg")).toBe(true);
+    expect(isSvgArtworkSrc("/uploads/designs/a.SVG")).toBe(true);
+    expect(isSvgArtworkSrc("https://cdn.example.com/a.svg?v=2")).toBe(true);
+  });
+
+  it("does not flag a raster file as SVG", () => {
+    expect(isSvgArtworkSrc("https://cdn.example.com/a.png")).toBe(false);
+    expect(isSvgArtworkSrc("data:image/png;base64,iVBOR")).toBe(false);
+    expect(isSvgArtworkSrc("blob:http://localhost/abc")).toBe(false);
+    expect(isSvgArtworkSrc("   ")).toBe(false);
   });
 
   it("names every side holding artwork that would not survive a reload", () => {

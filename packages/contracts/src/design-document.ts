@@ -481,6 +481,26 @@ export function isDurableArtworkSrc(src: string): boolean {
 }
 
 /**
+ * True when `src` is (or plainly names) an SVG — vector markup, not pixels.
+ * The background remover is a pixel operation and cannot take an SVG as
+ * input, so the studio uses this to hide that control instead of offering
+ * it and failing.
+ *
+ * Matches a `data:image/svg+xml` draft URL (unsigned visitors) or a hosted
+ * `.svg` file (signed-in visitors, once the upload finishes). A `blob:`
+ * object URL — the moment right after a signed-in visitor picks an SVG,
+ * before the hosted upload completes — carries no type of its own and is
+ * not matched here; that narrow window is unchanged from the remover's
+ * existing (now visible, see isDurableArtworkSrc's callers) error path.
+ */
+export function isSvgArtworkSrc(src: string): boolean {
+  const trimmed = src.trim();
+  if (!trimmed) return false;
+  if (/^data:image\/svg\+xml/i.test(trimmed)) return true;
+  return /\.svg(?:[?#]|$)/i.test(trimmed);
+}
+
+/**
  * The wire shape for saving a design. `design` is what the current studio
  * sends; `artworksBySide` is accepted alongside it so a browser tab left open
  * across a deploy still saves something readable rather than 400ing.

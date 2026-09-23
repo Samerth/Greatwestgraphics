@@ -649,6 +649,41 @@ export const RecordPaymentSchema = z.object({
 });
 export type RecordPayment = z.infer<typeof RecordPaymentSchema>;
 
+/** A shared scratchpad for staff, one per job — never customer-visible. The
+ * client's own words: "This does not need CRM functionality… simply a note
+ * attached to the order." An empty string clears it. */
+export const SetJobInternalNoteSchema = z.object({
+  context: RequestContextSchema,
+  note: z.string().max(4_000),
+  source: SourceMetadataSchema.default({ system: "commerce_api" }),
+});
+export type SetJobInternalNote = z.infer<typeof SetJobInternalNoteSchema>;
+
+/** Confirming is a promise a human made, not a copy of what the customer
+ * asked for — `promisedDate` is required whenever `confirmed` is true so the
+ * date on record was always actually typed by someone, not defaulted. */
+export const ConfirmRushRequestSchema = z
+  .object({
+    context: RequestContextSchema,
+    confirmed: z.boolean(),
+    promisedDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .default(null),
+    source: SourceMetadataSchema.default({ system: "commerce_api" }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.confirmed && !value.promisedDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["promisedDate"],
+        message: "A promised date is required to confirm a rush request.",
+      });
+    }
+  });
+export type ConfirmRushRequest = z.infer<typeof ConfirmRushRequestSchema>;
+
 export const InventoryCheckLineSchema = z.object({
   lineId: CanonicalIdSchema,
   description: z.string(),
@@ -746,6 +781,25 @@ export const JobRequestDetailResponseSchema = JobRequestResponseObjectSchema.ext
   timeline: z.array(StatusHistoryEntrySchema),
   finalQuotes: z.array(FinalQuoteResponseSchema).default([]),
   proofs: z.array(ProofVersionResponseSchema).default([]),
+  // Staff-only. Redacted to null on every customer-facing read — see
+  // `redactStaffOnlyFields` in the commerce-api service, which is what
+  // actually enforces that, not this schema. `.nullable().default(null)`
+  // on all six so a web build that ships ahead of the API it's talking to
+  // can still parse a response with none of them (the two tiers deploy
+  // independently).
+  internalNote: z.string().max(4_000).nullable().default(null),
+  internalNoteUpdatedAt: z.string().datetime().nullable().default(null),
+  internalNoteUpdatedBy: ActorSchema.nullable().default(null),
+  // Not staff-only: a customer learning their rush date is confirmed is a
+  // good thing, and the portal may show this later.
+  rushConfirmedAt: z.string().datetime().nullable().default(null),
+  promisedDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .default(null),
+  // Staff-only — who made the promise.
+  rushConfirmedBy: ActorSchema.nullable().default(null),
 }).transform(withDisplayId);
 export type JobRequestDetailResponse = z.infer<
   typeof JobRequestDetailResponseSchema

@@ -2,6 +2,7 @@ import { getTableColumns, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -951,6 +952,19 @@ export const jobRequests = pgTable(
     // 0008 without applying that ALTER. The staff inbox 500'd on 42703.
     // 0020/0021 create the column; COD CRM records sync time on crm_order_syncs.
     codCrmJobId: text("cod_crm_job_id"),
+    // A shared staff scratchpad, one per job, never customer-visible —
+    // 0025. Nullable, no default: an ALTER this shape cannot rewrite the
+    // table, per the codCrmJobId warning just above.
+    internalNote: text("internal_note"),
+    internalNoteUpdatedAt: timestamp("internal_note_updated_at", { withTimezone: true }),
+    internalNoteUpdatedBy: jsonb("internal_note_updated_by").$type<Actor>(),
+    // Staff confirmation of a rush request — 0025. `promisedDate` is kept
+    // separate from the customer's own `requestedDate` (which lives in the
+    // immutable created snapshot) because shops negotiate: what staff
+    // actually commit to may differ from what was first asked for.
+    rushConfirmedAt: timestamp("rush_confirmed_at", { withTimezone: true }),
+    promisedDate: date("promised_date"),
+    rushConfirmedBy: jsonb("rush_confirmed_by").$type<Actor>(),
     ...auditColumns,
   },
   (table) => [

@@ -1543,6 +1543,25 @@ export class CatalogService {
       .where(eq(ssProductCategories.productUuid, productUuid));
     const decorationRules = await this.loadDecorationRules(cats);
 
+    // Same hat flag `listProducts` computes for catalog-card pricing
+    // (embroidery instead of a screen-print default), but the PDP's own
+    // starting price and Live Estimate Calculator never received it — both
+    // quoted every product, hats included, against the site's single global
+    // default method. Same expand-then-membership-check pattern as there:
+    // "hats" and everything under it, matched against this product's own
+    // assigned categories (a product can be tagged directly on a hat
+    // subcategory, not just the parent).
+    const [hatsCategory] = await this.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.tenantId, tenantId), eq(categories.slug, "hats")))
+      .limit(1);
+    const hatCategoryIds = hatsCategory
+      ? await this.expandCategoryIds(tenantId, hatsCategory.id)
+      : [];
+    const isHat =
+      hatCategoryIds.length > 0 && cats.some((c) => hatCategoryIds.includes(c.id));
+
     // Mirrors the same allow-list `listCategories` applies to browsing: a
     // store curated down to specific categories must not be reachable by a
     // direct link either. Without this, "curate which categories a store
@@ -1626,6 +1645,7 @@ export class CatalogService {
         priceCurve: garmentPricing.curveFor(variant.customerPriceMinor),
       })),
       categories: cats,
+      isHat,
       colorways,
       retailMarkup: markup,
       /** Quantity the `retailMinor` prices above are quoted at. */
