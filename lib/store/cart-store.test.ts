@@ -4,6 +4,7 @@ import {
   cartItemBelongsToStore,
   cartItemEditHref,
   cartLineIsCustomized,
+  computeCartTotals,
   visibleCartItems,
   type CartItem,
 } from "./cart";
@@ -117,5 +118,64 @@ describe("visibleCartItems", () => {
   it("shows only the current storefront's lines", () => {
     expect(visibleCartItems(items, retail).map((item) => item.id)).toEqual(["tee"]);
     expect(visibleCartItems(items, acme).map((item) => item.id)).toEqual(["hoodie"]);
+  });
+});
+
+describe("computeCartTotals", () => {
+  const priced: CartItem = {
+    id: "tee",
+    name: "Tee",
+    meta: "Size M",
+    color: "navy",
+    qty: 24,
+    unit: 10,
+    image: "",
+  };
+
+  /**
+   * 22 Sep: the Input Quantity step used to dead-end on a configuration it
+   * could not price automatically — a disabled "Continue" under copy that
+   * promised the team would confirm a quote it could never reach. It is
+   * unlocked now, and the line it adds carries `priceUnavailable: true`
+   * with `unit: 0` rather than any invented price. These pin that a cart
+   * holding one of those lines still totals correctly for the lines that
+   * *are* priced, and surfaces which is missing rather than hiding it.
+   */
+  const unpriced: CartItem = {
+    id: "hoodie",
+    name: "Hoodie",
+    meta: "Custom design · Size L",
+    color: "black",
+    qty: 6,
+    unit: 0,
+    image: "",
+    priceUnavailable: true,
+  };
+
+  it("flags no unpriced items when every line has a real price", () => {
+    const totals = computeCartTotals([priced]);
+    expect(totals.hasUnpricedItems).toBe(false);
+  });
+
+  it("flags the cart when any line is priceUnavailable", () => {
+    const totals = computeCartTotals([priced, unpriced]);
+    expect(totals.hasUnpricedItems).toBe(true);
+  });
+
+  it("never lets an unpriced line's 0 contribute a fake amount to the subtotal", () => {
+    const pricedOnly = computeCartTotals([priced]);
+    const withUnpriced = computeCartTotals([priced, unpriced]);
+    // Adding the unpriced hoodie must not change the priced total by a cent
+    // — its qty * 0 is the honest "we don't know" contribution, not a
+    // discount and not a charge.
+    expect(withUnpriced.subtotal).toBe(pricedOnly.subtotal);
+    expect(withUnpriced.pieces).toBe(pricedOnly.pieces + unpriced.qty);
+  });
+
+  it("still totals correctly when every line in the cart is unpriced", () => {
+    const totals = computeCartTotals([unpriced]);
+    expect(totals.subtotal).toBe(0);
+    expect(totals.total).toBe(0);
+    expect(totals.hasUnpricedItems).toBe(true);
   });
 });

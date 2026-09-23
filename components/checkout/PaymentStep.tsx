@@ -1,14 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Field, Textarea } from "./FormField";
 import { Button } from "@/components/shared/Button";
-import { cn } from "@/lib/utils/cn";
-import { useVisibleCartItems } from "@/lib/store/cart";
-import { money } from "@/lib/utils/quote-pricing";
 
 /**
  * No card fields here on purpose. This step used to render Card Number,
@@ -18,51 +14,22 @@ import { money } from "@/lib/utils/quote-pricing";
  * nothing except invite browsers and password managers to autofill and store
  * a real card, and put the storefront in PCI scope for data it had no
  * processor to hand off to. Payment lands via Stripe on the payment-ready
- * invoice; until then this step captures a *preference* only, exactly as the
- * Apple Pay, Interac and Net-30 tabs already did.
+ * invoice.
+ *
+ * This step used to also offer Card / Apple Pay / Interac / Net-30 tabs, each
+ * recording a "preference" nothing downstream read. Removed entirely (client
+ * feedback: Net-30 is not a real offering, and the other three tabs added a
+ * choice with no effect) — replaced with one sentence, since there is
+ * genuinely nothing left to choose here. See also the FAQ and the CodChat
+ * knowledge base, both of which said Net-30 was available and needed the
+ * same correction.
  */
 const reviewSchema = z.object({
-  // The API caps `customerNote` at 4,000 and the payment-preference line is
-  // prepended to whatever is typed here, so leave it room rather than let the
-  // submission fail validation after the wizard is complete.
+  // The API caps `customerNote` at 4,000, so leave it room rather than let
+  // the submission fail validation after the wizard is complete.
   studioNotes: z.string().max(3_800, "Keep notes under 3,800 characters").optional(),
-  depositNow: z.boolean().optional(),
 });
 type ReviewValues = z.infer<typeof reviewSchema>;
-
-type PayTab = "card" | "apple" | "interac" | "net30";
-
-const TABS: Array<{ id: PayTab; label: string; note: string }> = [
-  { id: "card", label: "Card", note: "Card" },
-  { id: "apple", label: "Apple Pay", note: "Apple Pay" },
-  { id: "interac", label: "Interac", note: "Interac e-Transfer" },
-  { id: "net30", label: "Net-30", note: "Net-30 terms" },
-];
-
-/**
- * Folds the payment preference into the note that actually travels with the
- * job request.
- *
- * Every panel in this step promises the choice "tells the studio how you plan
- * to settle", and the deposit checkbox reads as a commitment. Neither `tab`
- * nor `depositNow` left the component: `onSubmit` was called with the free
- * text alone, so the studio saw a job request that never mentioned Net-30 or
- * the deposit. There is no field on the request contract for a payment
- * preference and inventing one would mean a schema, a migration and an admin
- * surface for something no processor reads yet, so it rides along in the
- * customer note the studio already reads.
- */
-function buildCustomerNote(
-  tab: PayTab,
-  // depositNow no longer used to build the note — deposit checkbox is disabled above
-  _depositNow: boolean,
-  studioNotes: string | undefined,
-): string | undefined {
-  const preference = TABS.find((item) => item.id === tab)?.note ?? tab;
-  const line = `Payment preference: ${preference}`;
-  const typed = studioNotes?.trim();
-  return typed ? `${line}\n\n${typed}` : line;
-}
 
 export function PaymentStep({
   onBack,
@@ -73,41 +40,23 @@ export function PaymentStep({
   onSubmit: (notes: string | undefined) => Promise<void>;
   error?: string;
 }) {
-  const items = useVisibleCartItems();
-  const [tab, setTab] = useState<PayTab>("card");
   const {
     register,
     handleSubmit,
-    control,
     formState: { errors, isSubmitting },
   } = useForm<ReviewValues>({
     resolver: zodResolver(reviewSchema),
-    defaultValues: { depositNow: true },
   });
-
-  const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + item.unit * item.qty, 0),
-    [items],
-  );
-  // No delivery fee is added here any more. Shipping is either free or not
-  // yet quoted, and a rush charge is confirmed by staff afterwards, so the
-  // estimate is goods plus tax and matches the summary alongside it exactly
-  // (UAT rows 49 and 50).
-  const gst = subtotal * 0.05;
-  const estimated = subtotal + gst;
-  //const deposit = estimated * 0.5;
-  //const depositNow = useWatch({ control, name: "depositNow" });
 
   return (
     <form
       onSubmit={handleSubmit(({ studioNotes }) =>
-        onSubmit(buildCustomerNote(tab, false, studioNotes)),
+        onSubmit(studioNotes?.trim() || undefined),
       )}
     >
       <h2 className="font-display font-bold text-header mb-sp-2">Payment</h2>
       <p className="text-sm text-text-secondary mt-0 mb-sp-4">
-        Choose how you&apos;d like to pay when the job is ready. Today we still
-        submit for design review — no charge is captured yet.
+        Today we still submit for design review — no charge is captured yet.
       </p>
 
       {/* Verbatim from the client (UAT row 49), replacing a longer notice
@@ -120,79 +69,20 @@ export function PaymentStep({
         confirm all details before payment.
       </div>
 
+      {/* Card / Apple Pay / Interac / Net-30 tabs used to live here, each
+          recording a "preference" nothing downstream ever read. Net-30 in
+          particular was never a real offering — removed entirely rather than
+          reworded, along with the same claim on the FAQ page and in the
+          CodChat knowledge base (client feedback). Card details are still
+          never collected here, on purpose: they're entered on the secure
+          invoice sent once final pricing is confirmed. */}
       <div
-        role="tablist"
-        aria-label="Payment method"
-        className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-sp-4"
+        data-checkout="payment-method-notice"
+        className="rounded-md border border-border bg-bg-raised p-sp-4 mb-sp-4 text-sm text-text-secondary"
       >
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            onClick={() => setTab(item.id)}
-            className={cn(
-              "rounded-md border px-3 py-2.5 text-sm font-bold transition-colors",
-              tab === item.id
-                ? "border-accent bg-accent text-white"
-                : "border-border bg-bg-raised hover:border-accent",
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
+        Payment is arranged on the invoice, after your proof is approved —
+        there&apos;s nothing to choose here.
       </div>
-
-      {tab === "card" && (
-        <div className="space-y-sp-3 mb-sp-4">
-          <div className="rounded-md border border-border bg-bg-raised p-sp-4 text-sm text-text-secondary">
-            Card details are entered on the secure invoice we send once final
-            pricing is confirmed — never here. Choosing Card now just tells the
-            studio how you plan to settle.
-          </div>
-          {/* Deposit-preference checkbox disabled for now. Stripe checkout
-              charges the full accepted-quote amount in one shot, so a
-              "50% deposit" preference set here has no downstream effect —
-              re-enable once partial/deposit payments are actually wired up
-              in the Stripe flow, or drop it for good.
-          <label className="flex items-start gap-3 text-sm cursor-pointer rounded-md border border-border bg-bg-raised p-sp-3">
-            <input type="checkbox" className="mt-1" {...register("depositNow")} />
-            <span>
-              Pay 50% deposit on the invoice ({money(deposit)}) — balance due on
-              proof approval
-              {!depositNow ? (
-                <span className="block text-text-tertiary mt-1">
-                  Optional preference noted; still no charge until payment-ready.
-                </span>
-              ) : null}
-            </span>
-          </label>
-          */}
-        </div>
-      )}
-
-      {tab === "apple" && (
-        <div className="rounded-md border border-border bg-bg-raised p-sp-4 mb-sp-4 text-sm text-text-secondary">
-          Apple Pay will be offered on the payment-ready invoice for supported
-          devices. Preferencing it here tells the studio how you plan to settle.
-        </div>
-      )}
-
-      {tab === "interac" && (
-        <div className="rounded-md border border-border bg-bg-raised p-sp-4 mb-sp-4 text-sm text-text-secondary">
-          Interac e-Transfer instructions are sent with final pricing. Use this
-          option for Canadian business accounts that prefer bank transfer.
-        </div>
-      )}
-
-      {tab === "net30" && (
-        <div className="rounded-md border border-border bg-bg-raised p-sp-4 mb-sp-4 text-sm text-text-secondary">
-          Net-30 is available for approved corporate accounts. Mention your
-          account code in the studio notes below and we&apos;ll confirm eligibility
-          during review.
-        </div>
-      )}
 
       <Field label="Notes to the Studio" error={errors.studioNotes?.message}>
         <Textarea

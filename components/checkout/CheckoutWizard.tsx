@@ -21,7 +21,7 @@ import {
   useCartStore,
   useVisibleCartItems,
 } from "@/lib/store/cart";
-import { lineSnapshotTotalMinor } from "@/lib/utils/quote-pricing";
+import { checkoutLineTotalMinor } from "@/lib/commerce/checkout-line-total";
 import type {
   ContactValues,
   ShippingValues,
@@ -36,7 +36,15 @@ interface CheckoutData {
   turnaround: TurnaroundSelection;
 }
 
-export function CheckoutWizard() {
+export function CheckoutWizard({
+  sessionContact,
+}: {
+  /** The signed-in customer's account name and email, so the contact step
+   *  does not ask for them again from scratch. Only a default: a contact
+   *  already saved from an earlier visit to this step (in `data.contact`,
+   *  restored from localStorage below) always wins over this. */
+  sessionContact?: { fullName: string; email: string };
+} = {}) {
   const items = useVisibleCartItems();
   const clearCart = useCartStore((s) => s.clear);
 
@@ -106,7 +114,7 @@ export function CheckoutWizard() {
 
         {step === 1 && (
           <ContactStep
-            defaultValues={data.contact ?? {}}
+            defaultValues={data.contact ?? sessionContact ?? {}}
             onNext={(contact) => {
               setData((d) => ({ ...d, contact }));
               setStep(2);
@@ -201,10 +209,26 @@ export function CheckoutWizard() {
                       },
                 customerNote: customerNote || undefined,
                 lines: items.map((item) => {
-                  const unitPriceEstimateMinor = Math.round(item.unit * 100);
-                  const snapshotTotal = lineSnapshotTotalMinor(item.pricingSnapshot);
-                  const lineTotalMinor =
-                    snapshotTotal ?? Math.round(item.qty * item.unit * 100);
+                  // A price that could not be computed on the Input Quantity
+                  // step is never sent as 0 — that would read to staff as a
+                  // free line rather than an unpriced one. Leaving both
+                  // fields out is what the API already treats as "price this
+                  // for real" (job-request-service.ts `repriceLine`: no
+                  // snapshot means the line is flagged pricingUnverified,
+                  // which is exactly what a `priceUnavailable` line is).
+                  const unitPriceEstimateMinor = item.priceUnavailable
+                    ? undefined
+                    : Math.round(item.unit * 100);
+                  // This line's own total — never read off the pricing
+                  // snapshot's totalMinor, which is the whole run's combined
+                  // total and is attached identically to every line a
+                  // multi-colour order produces (see checkoutLineTotalMinor's
+                  // own doc comment for the full story).
+                  const lineTotalMinor = checkoutLineTotalMinor(
+                    item.qty,
+                    item.unit,
+                    item.priceUnavailable,
+                  );
                   return {
                     description: item.name,
                     quantity: item.qty,
@@ -223,6 +247,16 @@ export function CheckoutWizard() {
                       // designs. This used to read a browser store that nothing
                       // ever wrote, so every order arrived with no artwork.
                       artworkProofUrl: item.artworkProofUrl,
+                      // A frozen copy of this line's own design layout and
+                      // colourway photos, so the admin job page and the
+                      // portal can each redraw it on this line's actual
+                      // colour instead of showing the flattened proof above,
+                      // which is only ever one colour (see
+                      // DesignLineThumbnail). Both omitted the same way
+                      // artworkProofUrl already is when there is nothing to
+                      // send.
+                      designSnapshot: item.designSnapshot,
+                      garmentPhotos: item.garmentPhotos,
                       designProjectId: item.designProjectId,
                       roster: item.roster,
                       designNotes: item.designNotes,

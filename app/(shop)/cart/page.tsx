@@ -8,9 +8,10 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
-import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, cartLineIsCustomized, type CartItem } from "@/lib/store/cart";
+import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, cartLineIsCustomized, PRICE_TO_BE_CONFIRMED_LABEL, type CartItem } from "@/lib/store/cart";
 import { money } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
+import { DesignLineThumbnail } from "@/components/design/DesignLineThumbnail";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
 
@@ -37,6 +38,7 @@ export default function CartPage() {
   const removeItem = useCartStore((s) => s.removeItem);
   const addItem = useCartStore((s) => s.addItem);
   const totals = computeCartTotals(items);
+  const unpricedCount = items.filter((i) => i.priceUnavailable).length;
 
   const [mounted, setMounted] = useState(false);
   const [saved, setSaved] = useState<CartItem[]>([]);
@@ -200,24 +202,29 @@ export default function CartPage() {
                 key={`${item.id}-${item.color}-${item.variantId ?? ""}-${item.designProjectId ?? item.artworkProofUrl ?? "blank"}`}
                 className="flex flex-col sm:flex-row gap-sp-4 border border-border rounded-md p-sp-4 bg-bg-raised"
               >
-                <div className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle">
-                  {item.image ? (
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      fill
-                      unoptimized={isPrivateUploadUrl(item.image)}
-                      className="object-cover object-top"
-                    />
-                  ) : (
-                    // Neither this colourway's own photo nor the style's
-                    // general one was available — an empty grey box reads as
-                    // broken, so this always shows something instead.
-                    <div className="absolute inset-0 grid place-items-center text-text-tertiary/50">
-                      <Shirt aria-hidden size={32} strokeWidth={1.5} />
-                    </div>
-                  )}
-                </div>
+                <DesignLineThumbnail
+                  design={item.designSnapshot}
+                  garmentPhotos={item.garmentPhotos}
+                  className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle"
+                  fallback={
+                    item.image ? (
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        fill
+                        unoptimized={isPrivateUploadUrl(item.image)}
+                        className="object-cover object-top"
+                      />
+                    ) : (
+                      // Neither this colourway's own photo nor the style's
+                      // general one was available — an empty grey box reads as
+                      // broken, so this always shows something instead.
+                      <div className="absolute inset-0 grid place-items-center text-text-tertiary/50">
+                        <Shirt aria-hidden size={32} strokeWidth={1.5} />
+                      </div>
+                    )
+                  }
+                />
 
                 <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-start justify-between gap-sp-3">
                   <div className="min-w-0">
@@ -327,8 +334,16 @@ export default function CartPage() {
                     <div className="text-[11px] uppercase tracking-wide text-text-tertiary font-bold mb-0.5">
                       Line total
                     </div>
-                    <div className="font-display font-bold text-[17px]">
-                      {money(item.qty * item.unit)}
+                    <div
+                      className={
+                        item.priceUnavailable
+                          ? "font-display font-bold text-[13px] text-text-tertiary"
+                          : "font-display font-bold text-[17px]"
+                      }
+                    >
+                      {item.priceUnavailable
+                        ? PRICE_TO_BE_CONFIRMED_LABEL
+                        : money(item.qty * item.unit)}
                     </div>
                   </div>
                 </div>
@@ -414,12 +429,30 @@ export default function CartPage() {
                 so Apply only printed "your rep applies it at quote
                 confirmation" and threw the code away. The rep never saw it. */}
 
+            {/* "Total" on a figure that is netSubtotal — no tax, no shipping
+                — read as the final charge and then grew at checkout with no
+                explanation beyond the small print below (client-meeting
+                note, 21 Sep: "per unit cost should include all other
+                prices" applies here too). "Estimated subtotal" pairs with
+                checkout's own "Estimated Total" (which is this same figure
+                plus GST and shipping) instead of repeating the "Subtotal (N
+                pieces)" row above verbatim. */}
             <div className="flex justify-between items-center border-t border-border mt-sp-3 pt-sp-4 mb-sp-4">
-              <span className="font-display font-bold text-[16px]">Total</span>
+              <span className="font-display font-bold text-[16px]">
+                Estimated subtotal
+              </span>
               <span className="font-display font-bold text-[22px] text-accent">
                 {money(totals.netSubtotal)}
               </span>
             </div>
+            {unpricedCount > 0 && (
+              <p className="text-[12px] text-text-tertiary text-center mb-sp-3 -mt-sp-2">
+                This does not include the {unpricedCount === 1 ? "item" : `${unpricedCount} items`}{" "}
+                marked {PRICE_TO_BE_CONFIRMED_LABEL.toLowerCase()} above — our
+                team will price {unpricedCount === 1 ? "it" : "them"} and
+                confirm before you pay.
+              </p>
+            )}
             <ButtonLink href="/checkout" className="w-full">
               Continue to Checkout
             </ButtonLink>

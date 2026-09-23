@@ -8,19 +8,62 @@ export const contactSchema = z.object({
 });
 export type ContactValues = z.infer<typeof contactSchema>;
 
-export const shippingSchema = z.object({
-  address1: z.string().min(3, "Street address is required"),
-  address2: z.string().optional(),
-  city: z.string().min(2, "City is required"),
-  region: z.string().min(2, "Province is required"),
-  postalCode: z
-    .string()
-    .min(6, "Enter a valid postal code")
-    .regex(/^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/, "Format: V6A 1A1"),
-  country: z.string().min(2, "Country is required"),
-  notes: z.string().optional(),
-  sameBilling: z.boolean().default(true),
-});
+const CANADA_POSTAL_CODE = /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/;
+const US_ZIP_CODE = /^\d{5}(-\d{4})?$/;
+
+/**
+ * `country` is free text (`ShippingStep.tsx`'s Country field is an `<Input>`,
+ * not a dropdown, defaulting to "Canada"), so the postal-code check has to
+ * read what was actually typed rather than a code we control. Covers the
+ * spellings a customer or a pasted address actually uses; anything else
+ * falls through to "other" rather than guessing.
+ */
+function normalizedCountry(value: string): "CA" | "US" | "other" {
+  const key = value.trim().toLowerCase().replace(/[.\s]/g, "");
+  if (["canada", "ca", "can"].includes(key)) return "CA";
+  if (["unitedstates", "unitedstatesofamerica", "us", "usa"].includes(key)) {
+    return "US";
+  }
+  return "other";
+}
+
+export const shippingSchema = z
+  .object({
+    address1: z.string().min(3, "Street address is required"),
+    address2: z.string().optional(),
+    city: z.string().min(2, "City is required"),
+    region: z.string().min(2, "Province is required"),
+    // Format is checked below, once the country is known — a Canadian
+    // format enforced on every address regardless of country used to make a
+    // real Seattle address (98101) impossible to enter on a site that
+    // promises shipping "anywhere in Canada and the United States".
+    postalCode: z.string().min(1, "Postal code is required"),
+    country: z.string().min(2, "Country is required"),
+    notes: z.string().optional(),
+    sameBilling: z.boolean().default(true),
+  })
+  .superRefine((data, ctx) => {
+    const country = normalizedCountry(data.country);
+    if (country === "CA" && !CANADA_POSTAL_CODE.test(data.postalCode)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["postalCode"],
+        message: "Format: V6A 1A1",
+      });
+    } else if (country === "US" && !US_ZIP_CODE.test(data.postalCode)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["postalCode"],
+        message: "Format: 98101 or 98101-1234",
+      });
+    } else if (country === "other" && data.postalCode.trim().length < 3) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["postalCode"],
+        message: "Enter a valid postal code",
+      });
+    }
+  });
 export type ShippingValues = z.infer<typeof shippingSchema>;
 
 export type PaymentMethod = "card" | "apple-pay" | "interac" | "net-30";
