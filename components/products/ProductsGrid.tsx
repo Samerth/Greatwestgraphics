@@ -84,6 +84,10 @@ type Props = {
   activePriceMinMinor?: number | null;
   activePriceMaxMinor?: number | null;
   activeSearch?: string | null;
+  /** "new" is the only value the catalogue query actually sorts by (see
+   *  ProductsPage) — everything else is read here only to keep the select
+   *  showing what's in the URL after a reload or a shared link. */
+  activeSort?: SortKey | null;
   /** Published v2 pricing config, used to price cards as a real decorated
    * estimate at the customer's browsing quantity rather than a blank cost. */
   pricingConfig?: PricingConfigV2 | null;
@@ -103,6 +107,7 @@ export function ProductsGrid({
   activePriceMinMinor = null,
   activePriceMaxMinor = null,
   activeSearch = null,
+  activeSort = null,
   pricingConfig = null,
   brandScope = null,
 }: Props) {
@@ -131,7 +136,10 @@ export function ProductsGrid({
   useEffect(() => {
     setActiveCategory(activeCategorySlug || ALL_CATEGORIES);
   }, [activeCategorySlug]);
-  const [sort, setSort] = useState<SortKey>("popular");
+  const [sort, setSort] = useState<SortKey>(activeSort ?? "popular");
+  useEffect(() => {
+    setSort(activeSort ?? "popular");
+  }, [activeSort]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>(activeBrands);
   const [priceMinInput, setPriceMinInput] = useState(
     activePriceMinMinor != null ? String(activePriceMinMinor / 100) : "",
@@ -203,18 +211,23 @@ export function ProductsGrid({
     priceMin?: string;
     priceMax?: string;
     search?: string;
+    sort?: SortKey;
   }) {
     const category = next.category !== undefined ? next.category : activeCategory;
     const brands = next.brands !== undefined ? next.brands : selectedBrands;
     const priceMin = next.priceMin !== undefined ? next.priceMin : priceMinInput;
     const priceMax = next.priceMax !== undefined ? next.priceMax : priceMaxInput;
     const search = next.search !== undefined ? next.search : searchInput;
+    const sortNext = next.sort !== undefined ? next.sort : sort;
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
     if (category && category !== ALL_CATEGORIES) params.set("category", category);
     for (const brand of brands) params.append("brand", brand);
     if (priceMin) params.set("priceMin", String(Math.round(parseFloat(priceMin) * 100)));
     if (priceMax) params.set("priceMax", String(Math.round(parseFloat(priceMax) * 100)));
+    // "popular" is the default and gets no URL param, same as every other
+    // filter's empty/default state here.
+    if (sortNext && sortNext !== "popular") params.set("sort", sortNext);
     const qs = params.toString();
     router.push(`/products${qs ? `?${qs}` : ""}`);
   }
@@ -226,12 +239,22 @@ export function ProductsGrid({
   // offers a quote or a phone call instead of a fake catalogue.
   const tiles = useMemo(() => {
     const list = [...dbProducts];
+    // "New arrivals" is sorted by the catalogue query itself (see
+    // ProductsPage — `sort: "updated"`), because the query already knows
+    // real update timestamps for the *whole* catalogue; re-sorting here
+    // would only reorder the one page already on screen, which is the
+    // exact bug this replaced ("New arrivals" was `list.reverse()` on
+    // whatever page happened to be loaded — not new, and not arrivals).
+    //
+    // Price has no such query support yet, so it stays a client-side sort
+    // of only this page's results — narrower than "new" used to be wrong,
+    // but not what "Price: Low to High" implies across the whole
+    // catalogue. Real cross-catalogue price sorting needs a change on the
+    // commerce API's own query, which is out of scope here.
     if (sort === "price-asc") {
       list.sort((a, b) => a.retailMinor - b.retailMinor);
     } else if (sort === "price-desc") {
       list.sort((a, b) => b.retailMinor - a.retailMinor);
-    } else if (sort === "new") {
-      list.reverse();
     }
     return list.map((p) => {
       const priced = catalogCardPricing(p, pricingConfig, qty);
@@ -472,7 +495,7 @@ export function ProductsGrid({
 
           <select
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
+            onChange={(e) => navigate({ sort: e.target.value as SortKey })}
             className="border border-border rounded-md bg-bg-raised px-3 py-2 text-sm font-semibold"
           >
             <option value="popular">Sort: Popular</option>

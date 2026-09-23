@@ -9,9 +9,13 @@ import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
 import { getCustomerSession } from "@/lib/auth/session";
 import { CommerceApiError, createCommerceClient } from "@/lib/commerce/client";
-import { deleteDesignAction } from "./actions";
+import { DesignCardActions } from "@/components/portal/DesignCardActions";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+// Was untitled (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "My Designs" };
 
 export default async function MyDesignsPage({
   searchParams,
@@ -115,28 +119,11 @@ export default async function MyDesignsPage({
                           .join(" · ")
                       : "No artwork placed yet"}
                   </p>
-                  <div className="mt-auto flex gap-2 pt-sp-2">
-                    <ButtonLink
-                      href={`/design?loadDesignId=${encodeURIComponent(id)}`}
-                      variant="secondary"
-                      size="sm"
-                      className="flex-1"
-                    >
-                      Open
-                    </ButtonLink>
-                    <form
-                      action={async () => {
-                        "use server";
-                        await deleteDesignAction(id);
-                      }}
-                    >
-                      <button
-                        type="submit"
-                        className="text-sm font-bold px-3 py-2 rounded-sm border border-border hover:border-red-300 hover:text-red-700 transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </form>
+                  <div className="mt-auto flex pt-sp-2">
+                    <DesignCardActions
+                      id={id}
+                      openHref={`/design?loadDesignId=${encodeURIComponent(id)}`}
+                    />
                   </div>
                 </div>
               </article>

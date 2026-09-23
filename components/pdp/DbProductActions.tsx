@@ -11,6 +11,7 @@ import { rosterWeightedCostMinor, shopperUnitMinor } from "@/lib/utils/shopper-p
 import { priceGarmentFromCurve, type GarmentPriceCurve } from "@gwg/pricing";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import { RosterEditor, type RosterRow } from "@/components/shared/RosterEditor";
+import { rosterMissingNameError } from "@/lib/commerce/roster-validation";
 import { publicQuoteOrFallback } from "@/lib/features";
 import { usePdpStudioHandoff } from "@/lib/store/pdp-studio-handoff";
 import { InfoNote } from "@/components/shared/InfoNote";
@@ -348,8 +349,13 @@ export function DbProductActions({
               setRosterError("Add at least one person.");
               return;
             }
-            if (roster.some((r) => !r.name.trim())) {
-              setRosterError("Every row needs a name.");
+            // Every row counts here, including a still-blank one — the
+            // customer already ticked "this is a team order," so an empty
+            // roster at this point is the omission to catch, not a design
+            // that simply isn't a team order (see roster-validation.ts).
+            const nameIssue = rosterMissingNameError(roster, { skipBlankRows: false });
+            if (nameIssue) {
+              setRosterError(nameIssue);
               return;
             }
             const priceVariant =

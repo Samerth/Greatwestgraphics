@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { Container } from "@/components/shared/Container";
 import { ButtonLink } from "@/components/shared/Button";
+
+// Was untitled — every unmatched URL on the site read the homepage's own
+// title (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "Page Not Found" };
 
 export default function NotFound() {
   return (

@@ -198,6 +198,12 @@ export default async function ProductPage({
     const style = detail.style as Record<string, unknown>;
     const variants = (detail.variants as Record<string, unknown>[]) || [];
     const colorways = (detail.colorways as Record<string, unknown>[]) || [];
+    // Headwear is conventionally embroidered rather than screen printed —
+    // the catalogue cards already priced hats this way; the PDP's own
+    // starting price and Live Estimate Calculator did not (client
+    // feedback, confirmed: garments default to screen print, hats to
+    // embroidery).
+    const isHat = Boolean(detail.isHat);
     const sizeChart = readProductSizeChart(detail);
     const validSizeChart =
       sizeChart && sizeChart.sizes.length > 0 && sizeChart.specNames.length > 0
@@ -420,13 +426,20 @@ export default async function ProductPage({
                   </div>
                 )}
 
-               <PdpStartingPrice
-                  productId={String(product.id)}
-                  name={title}
-                  color={String(product.colorName || "")}
-                  variants={pdpVariants}
-                  pricingConfig={pdpPricingConfig}
-                />
+               {/* An unavailable colourway kept its "Estimated from $X"
+                   headline while the estimate card and Design button next
+                   to it were both hidden - a price with nothing to act on,
+                   sitting beside the banner saying it cannot be ordered. */}
+                {available && (
+                  <PdpStartingPrice
+                    productId={String(product.id)}
+                    name={title}
+                    color={String(product.colorName || "")}
+                    variants={pdpVariants}
+                    pricingConfig={pdpPricingConfig}
+                    isHat={isHat}
+                  />
+                )}
 
                 {!available && (
                   <PdpOutOfStockBanner
@@ -442,6 +455,7 @@ export default async function ProductPage({
                     variants={pdpVariants}
                     pricingConfig={pdpPricingConfig}
                     decorationRules={pdpDecorationRules}
+                    isHat={isHat}
                   />
                 )}
 

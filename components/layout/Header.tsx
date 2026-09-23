@@ -294,10 +294,54 @@ export function Header({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Hide on scroll down, bring it back on scroll up (client feedback: "Have
+  // the header hide not lock on all pages. Once scroll up, have it
+  // reappear"). One shared header, so this applies on every page at once.
+  //
+  // A dropdown that opens from the header (department panel, Shop or Brands
+  // mega menu, account menu) must never have the header slide out from
+  // under it while it's open — the mobile nav already can't trigger this at
+  // all, since opening it locks body scroll entirely, so no scroll event
+  // fires while it's up. The floating CodChat widget is not included here:
+  // it's a third-party iframe with its own fixed position, not a child of
+  // this header, and it exposes no event this code can read to know
+  // whether its panel is open — nothing here can suppress hide-on-scroll
+  // for it the way it can for the header's own menus.
+  const anyHeaderMenuOpen =
+    Boolean(openDeptId) || shopOpen || brandsOpen || accountOpen || mobileOpen;
+  const [headerHidden, setHeaderHidden] = useState(false);
+  useEffect(() => {
+    if (anyHeaderMenuOpen) setHeaderHidden(false);
+  }, [anyHeaderMenuOpen]);
+  useEffect(() => {
+    // Below this, a small scroll jiggle (trackpad momentum, mobile
+    // rubber-banding) must not flip the header back and forth — only a
+    // deliberate scroll of at least this many pixels counts.
+    const MIN_DELTA = 10;
+    // Never hide this close to the top: arriving at a page, or scrolling
+    // back up to it, should not be greeted by the header vanishing again.
+    const NEAR_TOP = 96;
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const delta = y - lastY;
+      if (Math.abs(delta) < MIN_DELTA) return;
+      lastY = y;
+      if (anyHeaderMenuOpen || y <= NEAR_TOP) {
+        setHeaderHidden(false);
+        return;
+      }
+      setHeaderHidden(delta > 0);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [anyHeaderMenuOpen]);
+
   return (
     <header
       ref={headerRef}
       data-scrolled={scrolled ? "true" : undefined}
+      data-hidden={headerHidden ? "true" : undefined}
       // Height is fixed by the UAT doc (96px logo/search/actions row + a 64px
       // nav row = 160px, recorded as delivered and accepted), so this
       // deliberately does not shrink on scroll. It only gains a shadow once
@@ -311,7 +355,13 @@ export function Header({
       // whole thing before; it now lives in the same row as the logo, which
       // is both what the mockup does and satisfies the UAT ask for search
       // "in or directly below the main navigation".
-      className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border transition-shadow duration-med ease-out-custom data-[scrolled]:shadow-card"
+      //
+      // `data-hidden` slides the whole header off the top of the viewport
+      // rather than unmounting or collapsing it — `sticky` positioning and
+      // every dropdown's own math both assume the header is always exactly
+      // where its layout box says it is, and a transform is the one way to
+      // move it visually without disturbing either.
+      className="sticky top-0 z-[60] bg-bg-90 backdrop-blur-lg border-b border-border transition-[transform,box-shadow] duration-med ease-out-custom data-[scrolled]:shadow-card data-[hidden]:-translate-y-full"
     >
       <Container className="h-[96px] flex items-center gap-sp-4">
         {/* Logo — size is fixed by the UAT doc ("enlarge the logo about

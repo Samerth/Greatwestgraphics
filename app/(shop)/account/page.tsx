@@ -8,8 +8,13 @@ import { createCommerceClient } from "@/lib/commerce/client";
 import { destinationAfterSignIn } from "@/lib/commerce/membership";
 import { backToSiteHref } from "@/lib/navigation/back-to-site";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+// Was untitled, so this page — like the other pages here — read the
+// homepage's own title (audit: "Ten routes share the home page's title").
+export const metadata: Metadata = { title: "My Account" };
 
 export default async function AccountPage({
   searchParams,

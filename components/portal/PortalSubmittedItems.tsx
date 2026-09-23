@@ -6,6 +6,8 @@ import { money, getAuthoritativeLineTotalMinor } from "@/lib/utils/quote-pricing
 // customer's own summary has exactly the same problem to solve.
 import { groupAdminJobLines, formatSizeBreakdown } from "@/lib/admin/job-lines";
 import { portalDecorations } from "@/lib/commerce/portal-progress";
+import { designSnapshotFromConfiguration } from "@/lib/commerce/design-line-snapshot";
+import { DesignLineThumbnail } from "@/components/design/DesignLineThumbnail";
 
 type LineSnapshot = {
   description: string;
@@ -69,6 +71,10 @@ export function PortalSubmittedItems({
         const designNotes = text(config.designNotes);
         const roster = config.roster as RosterEntry[] | undefined;
         const decorations = portalDecorations(config.pricing);
+        // A frozen copy of the design's own layout, drawn on this line's own
+        // colourway photo — null on any order placed before this existed
+        // (falls back to `image` below, exactly as it always has).
+        const snapshot = designSnapshotFromConfiguration(config);
 
         return (
           <article
@@ -76,12 +82,21 @@ export function PortalSubmittedItems({
             className="border border-border rounded-md p-sp-3 bg-bg-raised"
           >
             <div className="flex gap-sp-3">
-              {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={image}
-                  alt=""
-                  className="h-20 w-20 shrink-0 rounded-sm border border-border bg-white object-contain"
+              {snapshot || image ? (
+                <DesignLineThumbnail
+                  design={snapshot?.design}
+                  garmentPhotos={snapshot?.garmentPhotos}
+                  className="relative h-20 w-20 shrink-0 rounded-sm border border-border bg-white overflow-hidden"
+                  fallback={
+                    image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={image}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-contain"
+                      />
+                    ) : null
+                  }
                 />
               ) : null}
               <div className="min-w-0 flex-1">

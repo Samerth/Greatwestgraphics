@@ -11,6 +11,7 @@ export function Pagination({
   priceMinMinor,
   priceMaxMinor,
   search,
+  sort,
 }: {
   page: number;
   pageCount: number;
@@ -21,6 +22,10 @@ export function Pagination({
   priceMinMinor?: number;
   priceMaxMinor?: number;
   search?: string;
+  /** Carried into every page link so paging doesn't quietly drop the sort
+   *  the customer picked (undefined/"popular" — the default — adds nothing
+   *  to the URL, matching every other filter here). */
+  sort?: string;
 }) {
   if (pageCount <= 1) return null;
 
@@ -31,6 +36,7 @@ export function Pagination({
     for (const brand of brands ?? []) params.append("brand", brand);
     if (priceMinMinor != null) params.set("priceMin", String(priceMinMinor));
     if (priceMaxMinor != null) params.set("priceMax", String(priceMaxMinor));
+    if (sort && sort !== "popular") params.set("sort", sort);
     if (target > 1) params.set("page", String(target));
     const qs = params.toString();
     return `/products${qs ? `?${qs}` : ""}`;

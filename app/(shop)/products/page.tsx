@@ -79,6 +79,13 @@ export async function generateMetadata({
 
 const PAGE_SIZE = 60;
 
+const SORT_KEYS = ["popular", "price-asc", "price-desc", "new"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+
+function parseSort(raw: string | undefined): SortKey | undefined {
+  return SORT_KEYS.find((key) => key === raw);
+}
+
 /** The brand a listing is "of", when exactly one is selected. Two brands
  * ticked is a comparison, not a brand page, and stays the plain catalogue. */
 function singleBrand(brand: string | string[] | undefined): string | null {
@@ -108,14 +115,17 @@ export default async function ProductsPage({
     brand?: string | string[];
     priceMin?: string;
     priceMax?: string;
+    sort?: string;
   }>;
 }) {
-  const { q, category, page: pageParam, brand, priceMin, priceMax } = await searchParams;
+  const { q, category, page: pageParam, brand, priceMin, priceMax, sort: sortParam } =
+    await searchParams;
   const search = q?.trim() || undefined;
   const page = Math.max(1, Number(pageParam) || 1);
   const brands = brand ? (Array.isArray(brand) ? brand : [brand]) : undefined;
   const priceMinMinor = priceMin ? Number(priceMin) : undefined;
   const priceMaxMinor = priceMax ? Number(priceMax) : undefined;
+  const sort = parseSort(sortParam);
   // One brand selected: this is that brand's listing (UAT V2 row 62, second
   // pass), so it is headed by the brand and its sidebar shows the brand's own
   // categories with counts rather than the whole taxonomy.
@@ -129,6 +139,11 @@ export default async function ProductsPage({
       brands,
       priceMinMinor,
       priceMaxMinor,
+      // "New arrivals" is the only sort the catalogue can do server-side
+      // today (price has no matching query support yet — see
+      // ProductsGrid.tsx) — every other choice falls through to the
+      // catalogue's own default order, sorted with the rest of the page.
+      sort: sort === "new" ? "updated" : undefined,
     }),
     // Lets card prices reflect a real decorated estimate (1-colour screen
     // print, embroidery for hats) at the customer's browsing quantity,
@@ -150,6 +165,7 @@ export default async function ProductsPage({
   for (const b of brands ?? []) retryParams.append("brand", b);
   if (priceMinMinor != null) retryParams.set("priceMin", String(priceMinMinor));
   if (priceMaxMinor != null) retryParams.set("priceMax", String(priceMaxMinor));
+  if (sort && sort !== "popular") retryParams.set("sort", sort);
   const retryQuery = retryParams.toString();
   const retryHref = `/products${retryQuery ? `?${retryQuery}` : ""}`;
   // The heading was hardcoded to "Shop All Products" whatever the filter was,
@@ -257,6 +273,7 @@ export default async function ProductsPage({
                 activePriceMinMinor={priceMinMinor}
                 activePriceMaxMinor={priceMaxMinor}
                 activeSearch={search ?? null}
+                activeSort={sort ?? null}
                 pricingConfig={pricingConfig}
                 brandScope={brandScope}
               />
@@ -271,6 +288,7 @@ export default async function ProductsPage({
                 priceMinMinor={priceMinMinor}
                 priceMaxMinor={priceMaxMinor}
                 search={search}
+                sort={sort}
               />
             </>
           )}
