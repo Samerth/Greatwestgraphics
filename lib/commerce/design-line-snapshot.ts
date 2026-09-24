@@ -1,5 +1,5 @@
 import {
-  ephemeralArtworkSides,
+  DesignSides,
   normalizeDesignDocument,
   type DesignDocument,
   type DesignSide,
@@ -8,16 +8,46 @@ import { decoratedDesignSides } from "@/lib/commerce/studio-placement";
 import type { GarmentPhotoSet } from "@/lib/commerce/garment-backdrop";
 
 /**
+ * A laxer durability check than `@gwg/contracts`' `isDurableArtworkSrc`,
+ * used only for drawing a cart-line thumbnail in *this* render — not for
+ * saving a design to storage, which is what that stricter check guards
+ * (`assertDesignDocumentDurable`, `DesignProjectWriteSchema`).
+ *
+ * A signed-out visitor's artwork is deliberately held as a `data:` URL until
+ * they sign in (`DesignStudio.tsx`, so a draft survives the round trip
+ * through account creation), and that URL draws in a thumbnail exactly like
+ * a hosted file — a `data:` URL is the image, inline. Refusing to *save* one
+ * is right (bloats the row, and it should become a real hosted file once the
+ * customer is signed in); refusing to *show* one meant every cart line fell
+ * back to the single flattened proof and displayed the wrong colour for
+ * every guest checkout (Pavin: "cart still showing wrong colors of
+ * garment"). `blob:` is still refused here: it is a per-tab object handle
+ * that a reload or a later render genuinely cannot resolve, unlike `data:`.
+ */
+function isRenderableArtworkSrc(src: string): boolean {
+  const trimmed = src.trim();
+  return trimmed !== "" && !/^blob:/i.test(trimmed);
+}
+
+function unrenderableArtworkSides(design: DesignDocument): DesignSide[] {
+  return DesignSides.filter((side) =>
+    design.artworksBySide[side].some(
+      (artwork) => !isRenderableArtworkSrc(artwork.src),
+    ),
+  );
+}
+
+/**
  * True when `design` is safe to freeze onto an order line as a per-colour
  * rendering source (see `CartItem.designSnapshot`): it has at least one
  * side carrying real artwork or text — a roster-only (names/numbers) design
  * has neither, and is drawn only by the flattened proof today, not by this
- * — and every artwork file link on it will still resolve after this
- * browser tab closes. A `blob:`/`data:` URL would not, which is exactly
- * what `ephemeralArtworkSides` exists to catch.
+ * — and every artwork file link on it will render in this cart, this visit
+ * (`isRenderableArtworkSrc` — deliberately looser than the save-time
+ * durability check, see its own comment).
  */
 export function designSnapshotIsUsable(design: DesignDocument): boolean {
-  if (ephemeralArtworkSides(design).length > 0) return false;
+  if (unrenderableArtworkSides(design).length > 0) return false;
   return decoratedDesignSides(design.artworksBySide, design.textsBySide).length > 0;
 }
 

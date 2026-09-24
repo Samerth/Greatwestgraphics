@@ -33,6 +33,7 @@ import {
   matrixWeightedCost,
   mergeMatrixBlocks,
   blockQuantity,
+  blocksWithUnionSizes,
   type ColourMatrixBlock,
 } from "@/lib/commerce/design-colour-matrix";
 import { OptionalImage } from "@/components/shared/OptionalImage";
@@ -343,6 +344,12 @@ export function QuantityStep({
     [rosterMode, rosterBlocks, blocks],
   );
 
+  // Display only — every colour's size grid shown to the customer, not what
+  // is priced or submitted (that stays `blocks`/`activeBlocks` above,
+  // untouched). See `blocksWithUnionSizes` (Pavin: "not all sizes appear
+  // after design studio").
+  const blocksForGrid = useMemo(() => blocksWithUnionSizes(blocks), [blocks]);
+
   const totalQty = matrixTotalQuantity(activeBlocks);
   const outOfStock = matrixOutOfStockLines(activeBlocks);
   const unsizedCount = rosterMode
@@ -545,7 +552,13 @@ export function QuantityStep({
             color: d?.product.colorName ?? "",
             qty: rows.length,
             unit,
-            image: proofUrl || (d ? detailImageUrl(d) : null) || "",
+            // This line's own colour photo first, the flattened proof only
+            // as a last resort — the fallback thumbnail (used whenever
+            // `designSnapshot` can't be redrawn, e.g. `DesignLineThumbnail`
+            // before sign-in) was `proofUrl` first, so every roster colour
+            // showed the one colour the design started on (Pavin: "cart
+            // still showing wrong colors of garment").
+            image: (d ? detailImageUrl(d) : null) || proofUrl || "",
             artworkProofUrl: proofUrl ?? undefined,
             designSnapshot,
             garmentPhotos: d ? garmentPhotosFromDetail(d) : undefined,
@@ -589,7 +602,9 @@ export function QuantityStep({
           size: size.sizeName,
           qty: size.quantity,
           unit,
-          image: proofUrl || block.imageUrl || "",
+          // Same fix as the roster branch above: this colour's own photo
+          // first, the flattened single-colour proof only as a fallback.
+          image: block.imageUrl || proofUrl || "",
           artworkProofUrl: proofUrl ?? undefined,
           designSnapshot,
           garmentPhotos: d ? garmentPhotosFromDetail(d) : undefined,
@@ -772,7 +787,7 @@ export function QuantityStep({
           )}
 
           <div className="flex flex-col gap-sp-4">
-            {blocks.map((block) => {
+            {blocksForGrid.map((block) => {
               const qty = blockQuantity(block);
               return (
                 <section
@@ -839,48 +854,69 @@ export function QuantityStep({
                   </header>
 
                   <div className="p-sp-3 grid gap-2 grid-cols-[repeat(auto-fill,minmax(5rem,1fr))]">
-                    {block.sizes.map((size) => (
-                      <label
-                        key={size.variantId}
-                        className={cn(
-                          "flex flex-col gap-1 rounded-md border p-2 transition-colors",
-                          size.quantity > 0
-                            ? "border-accent bg-accent/5"
-                            : "border-border",
-                          !size.inStock && "opacity-60",
-                        )}
-                      >
-                        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-secondary flex items-center justify-between gap-1">
-                          {size.sizeName}
-                          {!size.inStock && (
-                            <span
-                              title="Out of stock"
-                              className="text-amber-600 text-[10px]"
-                            >
-                              !
-                            </span>
+                    {block.sizes.map((size) =>
+                      // A size the order has established (another colour
+                      // carries it) but this colour's own catalogue record
+                      // does not — shown so the gap is visible instead of
+                      // the grid silently being shorter, but never an input:
+                      // there is no real variant here to order against
+                      // (`blocksWithUnionSizes`).
+                      size.offeredInColour === false ? (
+                        <div
+                          key={size.variantId}
+                          title={`${size.sizeName} is not offered in ${block.colorName}`}
+                          className="flex flex-col gap-1 rounded-md border border-border p-2 opacity-50"
+                        >
+                          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-secondary">
+                            {size.sizeName}
+                          </span>
+                          <span className="w-full min-h-9 flex items-center justify-center text-[15px] font-bold text-text-tertiary">
+                            –
+                          </span>
+                        </div>
+                      ) : (
+                        <label
+                          key={size.variantId}
+                          className={cn(
+                            "flex flex-col gap-1 rounded-md border p-2 transition-colors",
+                            size.quantity > 0
+                              ? "border-accent bg-accent/5"
+                              : "border-border",
+                            !size.inStock && "opacity-60",
                           )}
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="numeric"
-                          value={size.quantity === 0 ? "" : size.quantity}
-                          placeholder="0"
-                          aria-label={`${block.colorName} ${size.sizeName} quantity`}
-                          onChange={(e) =>
-                            setSizeQty(
-                              block.productId,
-                              size.variantId,
-                              e.target.value === ""
-                                ? 0
-                                : Number.parseInt(e.target.value, 10) || 0,
-                            )
-                          }
-                          className="w-full min-h-9 rounded-sm border border-border bg-bg px-2 text-center text-[15px] font-bold tabular-nums outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </label>
-                    ))}
+                        >
+                          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-secondary flex items-center justify-between gap-1">
+                            {size.sizeName}
+                            {!size.inStock && (
+                              <span
+                                title="Out of stock"
+                                className="text-amber-600 text-[10px]"
+                              >
+                                !
+                              </span>
+                            )}
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            value={size.quantity === 0 ? "" : size.quantity}
+                            placeholder="0"
+                            aria-label={`${block.colorName} ${size.sizeName} quantity`}
+                            onChange={(e) =>
+                              setSizeQty(
+                                block.productId,
+                                size.variantId,
+                                e.target.value === ""
+                                  ? 0
+                                  : Number.parseInt(e.target.value, 10) || 0,
+                              )
+                            }
+                            className="w-full min-h-9 rounded-sm border border-border bg-bg px-2 text-center text-[15px] font-bold tabular-nums outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </label>
+                      ),
+                    )}
                   </div>
                 </section>
               );

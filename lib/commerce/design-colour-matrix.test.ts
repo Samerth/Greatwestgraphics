@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockQuantity,
+  blocksWithUnionSizes,
   matrixIsEmpty,
   matrixOrderedLines,
   matrixOutOfStockLines,
@@ -200,5 +201,69 @@ describe("matrixWeightedCost", () => {
     );
     expect(withEmpty.unitCostMinor).toBe(1000);
     expect(withEmpty.quantity).toBe(10);
+  });
+});
+
+describe("blocksWithUnionSizes", () => {
+  // Pavin's own screenshot: Forest carries only XL, Ash carries S/M/XL/2XL/3XL,
+  // Royal carries only S — three colours of the same crewneck, three
+  // different size grids.
+  const forest = block("Forest", [size("XL", 5)]);
+  const ash = block("Ash", [size("S", 5), size("M", 0), size("XL", 7), size("2XL", 0), size("3XL", 0)]);
+  const royal = block("Royal", [size("S", 10)]);
+
+  it("gives every colour the full union of sizes across the order", () => {
+    const [f, a, r] = blocksWithUnionSizes([forest, ash, royal]);
+    const names = (b: ColourMatrixBlock) => b.sizes.map((s) => s.sizeName);
+    expect(names(f!)).toEqual(["S", "M", "XL", "2XL", "3XL"]);
+    expect(names(a!)).toEqual(["S", "M", "XL", "2XL", "3XL"]);
+    expect(names(r!)).toEqual(["S", "M", "XL", "2XL", "3XL"]);
+  });
+
+  it("orders sizes by real garment size, not by which colour introduced them first", () => {
+    // Forest (XL only) comes first in the array, so a naive "order of first
+    // appearance" union would put XL before S and M.
+    const [f] = blocksWithUnionSizes([forest, ash, royal]);
+    expect(f!.sizes.map((s) => s.sizeName)).toEqual(["S", "M", "XL", "2XL", "3XL"]);
+  });
+
+  it("marks a synthesized size as not offered in that colour, disabled, quantity 0", () => {
+    const [f] = blocksWithUnionSizes([forest, ash, royal]);
+    const sSize = f!.sizes.find((s) => s.sizeName === "S")!;
+    expect(sSize.offeredInColour).toBe(false);
+    expect(sSize.inStock).toBe(false);
+    expect(sSize.quantity).toBe(0);
+    // A real size this colour actually carries is untouched.
+    const xlSize = f!.sizes.find((s) => s.sizeName === "XL")!;
+    expect(xlSize.offeredInColour).toBeUndefined();
+    expect(xlSize.quantity).toBe(5);
+  });
+
+  it("leaves a colour that already has every union size completely untouched", () => {
+    const [, a] = blocksWithUnionSizes([forest, ash, royal]);
+    expect(a).toBe(ash); // same object reference — no synthesized entries needed
+  });
+
+  it("is a no-op for a single colour — nothing to compare it against", () => {
+    const blocks = [ash];
+    expect(blocksWithUnionSizes(blocks)).toBe(blocks);
+  });
+
+  it("is a no-op for an empty order", () => {
+    expect(blocksWithUnionSizes([])).toEqual([]);
+  });
+
+  it("never touches the real per-block sizes used for pricing and submission", () => {
+    const unioned = blocksWithUnionSizes([forest, ash, royal]);
+    // The original blocks passed in are not mutated.
+    expect(forest.sizes).toHaveLength(1);
+    expect(royal.sizes).toHaveLength(1);
+    // A placeholder size never counts toward quantity or an ordered line —
+    // it stays 0 and matrixOrderedLines only ever includes quantity > 0.
+    expect(blockQuantity(unioned[0]!)).toBe(5); // Forest: only its real XL
+    // Forest XL(5), Ash S(5) + XL(7) [M/2XL/3XL are 0, excluded], Royal S(10).
+    expect(
+      matrixOrderedLines(unioned).map((l) => l.size.sizeName).sort(),
+    ).toEqual(["S", "S", "XL", "XL"]);
   });
 });
