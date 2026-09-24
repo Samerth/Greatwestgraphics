@@ -3,6 +3,7 @@ import {
   dollarsToMinor,
   groupSpecsByStyleId,
   normalizeInventoryRow,
+  parseSsCategory,
   parseSsSpec,
   parseSsSpecs,
   sumInventoryQty,
@@ -131,5 +132,56 @@ describe("dollarsToMinor", () => {
   it("converts customerPrice dollars to cents", () => {
     expect(dollarsToMinor(2.72)).toBe(272);
     expect(dollarsToMinor(undefined)).toBe(0);
+  });
+});
+
+/**
+ * Pavin: "under the unmapped products in categories can we change the
+ * numbers to names... no way to know what product 1248 is". S&S's Styles
+ * feed sometimes sends a bare numeric category id (e.g. "1248") instead of
+ * a name; this is the parser for the separate category *master list*
+ * (`/v2/categories/`) that resolves those ids to real names.
+ */
+describe("parseSsCategory", () => {
+  it("pairs a numeric categoryID with its name", () => {
+    expect(parseSsCategory({ categoryID: 1248, name: "Youth Apparel" })).toEqual({
+      id: "1248",
+      name: "Youth Apparel",
+    });
+  });
+
+  it("prefers name over categoryName when both are present", () => {
+    expect(
+      parseSsCategory({ categoryID: 5, name: "Headwear", categoryName: "Hats" }),
+    ).toEqual({ id: "5", name: "Headwear" });
+  });
+
+  it("falls back to categoryName when name is absent", () => {
+    expect(
+      parseSsCategory({ categoryID: 5, categoryName: "Hats" }),
+    ).toEqual({ id: "5", name: "Hats" });
+  });
+
+  it("trims whitespace on both id and name", () => {
+    expect(
+      parseSsCategory({ categoryID: " 1248 ", name: "  Youth Apparel  " }),
+    ).toEqual({ id: "1248", name: "Youth Apparel" });
+  });
+
+  it("is null without a usable id", () => {
+    expect(parseSsCategory({ name: "Youth Apparel" })).toBeNull();
+    expect(parseSsCategory({ categoryID: "", name: "Youth Apparel" })).toBeNull();
+  });
+
+  it("is null without a usable name", () => {
+    expect(parseSsCategory({ categoryID: 1248 })).toBeNull();
+    expect(parseSsCategory({ categoryID: 1248, name: "  " })).toBeNull();
+  });
+
+  it("accepts a string categoryID, not only numeric", () => {
+    expect(parseSsCategory({ categoryID: "youth-apparel", name: "Youth Apparel" })).toEqual({
+      id: "youth-apparel",
+      name: "Youth Apparel",
+    });
   });
 });

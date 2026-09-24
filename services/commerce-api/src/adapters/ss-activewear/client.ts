@@ -392,6 +392,23 @@ function asTrimmedString(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * Parse one row of S&S's category master list (`/v2/categories/`) into a
+ * usable id/name pair. Skips a row that carries neither — there is nothing
+ * useful to index it under.
+ *
+ * S&S's own field naming is inconsistent between `name` and `categoryName`
+ * across API versions/responses; `name` is preferred when both are present.
+ */
+export function parseSsCategory(
+  raw: SsCategory,
+): { id: string; name: string } | null {
+  const id = asTrimmedString(raw.categoryID);
+  const name = asTrimmedString(raw.name) ?? asTrimmedString(raw.categoryName);
+  if (!id || !name) return null;
+  return { id, name };
+}
+
 /** Parse one S&S specs API object. Skips rows that cannot build a chart cell. */
 export function parseSsSpec(raw: unknown): SsSpec | null {
   if (!raw || typeof raw !== "object") return null;

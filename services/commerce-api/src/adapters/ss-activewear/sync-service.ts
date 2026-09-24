@@ -21,7 +21,9 @@ import {
   groupSpecsByStyleId,
   isDarkHex,
   parseSizeOrder,
+  parseSsCategory,
   slugify,
+  type SsCategory,
   type SsProductSku,
   type SsSizeSpecRow,
   type SsStyle,
@@ -53,6 +55,38 @@ function normalizeCategories(
     }
   }
   return [...keys];
+}
+
+/**
+ * `ssCategoryKey` (above) comes off the Styles feed's `categories`/
+ * `baseCategory` fields, which is usually already a readable name — but for
+ * some categories S&S sends a bare numeric id instead ("1248"), with no
+ * name attached, because the Styles feed simply doesn't carry one for
+ * those. This maps that id to the real name from S&S's separate category
+ * *master list* (`/v2/categories/`), keyed on the id as a trimmed string so
+ * it matches however `ssCategoryKey` normalized it.
+ *
+ * Pavin: "under the unmapped products in categories can we change the
+ * numbers to names so we know what the product is that needs mapping...
+ * no way to know what product 1248 is."
+ */
+function buildCategoryNameIndex(categories: readonly SsCategory[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const raw of categories) {
+    const parsed = parseSsCategory(raw);
+    if (parsed) index.set(parsed.id, parsed.name);
+  }
+  return index;
+}
+
+/** The label to show staff for an S&S category key: the real name when it
+ *  resolves against the master list, the key itself otherwise — never
+ *  blank, and never worse than showing the raw key already was. */
+function resolveCategoryLabel(
+  key: string,
+  categoryNames: ReadonlyMap<string, string>,
+): string {
+  return categoryNames.get(key.trim()) ?? key;
 }
 
 function groupSkusByColor(skus: SsProductSku[]): Map<string, SsProductSku[]> {
@@ -106,6 +140,7 @@ export class SsSyncService {
       const specsIndex = await this.loadSpecsIndex(
         allowedStyles.map((style) => style.styleID),
       );
+      const categoryNames = await this.fetchCategoryNameIndex();
 
       for (const style of allowedStyles) {
         try {
@@ -114,6 +149,7 @@ export class SsSyncService {
             style,
             actor,
             specsIndex,
+            categoryNames,
           );
           stylesProcessed += 1;
           skusUpserted += result.skusUpserted;
@@ -202,11 +238,13 @@ export class SsSyncService {
     try {
       const style = await this.client.getStyle(styleId);
       const specsIndex = await this.loadSpecsIndex([styleId]);
+      const categoryNames = await this.fetchCategoryNameIndex();
       const result = await this.upsertStyleTree(
         tenantId,
         style,
         actor,
         specsIndex,
+        categoryNames,
       );
       await this.db
         .update(syncRuns)
@@ -437,6 +475,23 @@ export class SsSyncService {
     }
   }
 
+  /**
+   * S&S's category master list, fetched once per sync run (not cached
+   * across runs — this service is constructed fresh per sync, but even if
+   * it weren't, a stale list is exactly the failure mode to avoid here) and
+   * turned into an id → name lookup. A failure here must not fail the
+   * product sync it's a small enhancement to — same tolerance
+   * `loadSpecsIndex` above already applies to specs — so an unresolved key
+   * just keeps showing as the raw id, same as before this existed.
+   */
+  private async fetchCategoryNameIndex(): Promise<Map<string, string>> {
+    try {
+      return buildCategoryNameIndex(await this.client.listCategories());
+    } catch {
+      return new Map();
+    }
+  }
+
   private async persistStyleSizeSpecs(
     styleUuid: string,
     rows: SsSizeSpecRow[],
@@ -457,6 +512,7 @@ export class SsSyncService {
     style: SsStyle,
     actor: Actor,
     specsIndex?: SpecsIndex,
+    categoryNames?: ReadonlyMap<string, string>,
   ) {
     const ssCategories = normalizeCategories(style.categories, style.baseCategory);
     const brandImageUrl = await this.images.ensure(style.brandImage);
@@ -652,7 +708,13 @@ export class SsSyncService {
         });
       }
 
-      await this.assignCategories(tenantId, productRow!.id, ssCategories, style);
+      await this.assignCategories(
+        tenantId,
+        productRow!.id,
+        ssCategories,
+        style,
+        categoryNames ?? new Map(),
+      );
 
       for (const sku of colorSkus) {
         const [existingVariant] = await this.db
@@ -719,6 +781,7 @@ export class SsSyncService {
     productUuid: string,
     ssCategories: string[],
     style: SsStyle,
+    categoryNames: ReadonlyMap<string, string>,
   ) {
     const overrides = await this.db
       .select()
@@ -803,7 +866,7 @@ export class SsSyncService {
           await this.db.insert(ssUnmappedCategories).values({
             tenantId,
             ssCategoryKey: key,
-            ssCategoryLabel: key,
+            ssCategoryLabel: resolveCategoryLabel(key, categoryNames),
             styleCount: 1,
             sampleStyleIds: [style.styleID],
           });
@@ -812,11 +875,23 @@ export class SsSyncService {
             ...(existingUnmapped.sampleStyleIds ?? []),
             style.styleID,
           ]);
+          // A row created before this existed has its label still equal to
+          // its raw key (that used to be the only value it was ever given —
+          // see the insert above) — resolve it now that a real name might
+          // be available, so every row already sitting unmapped heals on
+          // its next sync instead of needing a separate backfill. A label a
+          // staff member has since typed by hand (label !== key) is never
+          // overwritten.
+          const label =
+            existingUnmapped.ssCategoryLabel === existingUnmapped.ssCategoryKey
+              ? resolveCategoryLabel(key, categoryNames)
+              : existingUnmapped.ssCategoryLabel;
           await this.db
             .update(ssUnmappedCategories)
             .set({
               styleCount: existingUnmapped.styleCount + 1,
               sampleStyleIds: [...samples].slice(0, 20),
+              ssCategoryLabel: label,
               updatedAt: new Date(),
             })
             .where(eq(ssUnmappedCategories.id, existingUnmapped.id));
