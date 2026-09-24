@@ -204,3 +204,98 @@ export function formatSizeBreakdown(
 ): string {
   return sizes.map((entry) => `${entry.size} ${entry.quantity}`).join(" · ");
 }
+
+export type AdminDecorationBucket = {
+  key: string;
+  /** Whatever distinguishes this decoration from another one on the same
+   *  product — a real placement note where one exists, the product's own
+   *  description otherwise (never blank). */
+  label: string;
+  colours: AdminLineGroup[];
+  quantity: number;
+  totalMinor: number | null;
+};
+
+export type AdminProductBucket = {
+  key: string;
+  description: string;
+  decorations: AdminDecorationBucket[];
+  quantity: number;
+  totalMinor: number | null;
+};
+
+/** Sums whatever `totalMinor` values are real, landing on `null` only when
+ *  every one of them was — the same rule `groupAdminJobLines` itself uses
+ *  when folding a `totalMinor` that may be missing on some lines. */
+function sumTotalMinor(values: readonly (number | null)[]): number | null {
+  let sum: number | null = null;
+  for (const value of values) {
+    if (value == null) continue;
+    sum = (sum ?? 0) + value;
+  }
+  return sum;
+}
+
+/**
+ * Wraps `groupAdminJobLines`'s own colour-level groups into **Product →
+ * Decoration → Colour** — the tree the cart (`groupCartItemsByProduct`,
+ * `lib/commerce/cart-groups.ts`) and the admin job page
+ * (`groupProductLinesByStyle`, `lib/admin/job-view.ts`) already use. Pavin,
+ * once he saw the cart rebuilt this way: "Yeah they should look similar...
+ * Product and design / Color then size". The customer's own order summary
+ * (`PortalSubmittedItems`) gets the identical fold, reusing this rather than
+ * restating it a third time.
+ *
+ * Keyed on `description` for the product level (a garment's plain name
+ * never includes its colour, so every colourway of one style already
+ * shares it byte-for-byte) and on `placement` for the decoration level —
+ * both fields `AdminLineGroup` already carries, so this needs nothing new
+ * from callers beyond the groups `groupAdminJobLines` already gives them.
+ */
+export function groupAdminLineGroupsByProduct(
+  groups: readonly AdminLineGroup[],
+): AdminProductBucket[] {
+  const byProduct = new Map<
+    string,
+    { description: string; decorations: Map<string, AdminLineGroup[]> }
+  >();
+
+  for (const group of groups) {
+    const pKey = group.description;
+    const dKey = group.placement ?? group.description;
+
+    let product = byProduct.get(pKey);
+    if (!product) {
+      product = { description: group.description, decorations: new Map() };
+      byProduct.set(pKey, product);
+    }
+
+    const bucket = product.decorations.get(dKey);
+    if (bucket) bucket.push(group);
+    else product.decorations.set(dKey, [group]);
+  }
+
+  const result: AdminProductBucket[] = [];
+  for (const [pKey, product] of byProduct) {
+    const decorations: AdminDecorationBucket[] = [];
+    for (const [dKey, colours] of product.decorations) {
+      decorations.push({
+        key: `${pKey}||${dKey}`,
+        label: dKey,
+        colours,
+        quantity: colours.reduce((sum, c) => sum + c.quantity, 0),
+        totalMinor: sumTotalMinor(colours.map((c) => c.totalMinor)),
+      });
+    }
+
+    result.push({
+      key: pKey,
+      description: product.description,
+      decorations,
+      quantity: decorations.reduce((sum, d) => sum + d.quantity, 0),
+      totalMinor: sumTotalMinor(decorations.map((d) => d.totalMinor)),
+    });
+  }
+
+  return result;
+}

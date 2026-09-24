@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { OrderSummaryCard } from "./_components/OrderSummaryCard";
 import { RushBanner } from "./_components/RushBanner";
 import { OrderStatusCard } from "./_components/OrderStatusCard";
-import { ProductLineCard } from "./_components/ProductLineCard";
+import { ProductGroupCard } from "./_components/ProductGroupCard";
 import { InventorySummary } from "./_components/InventorySummary";
 import { ArtworkAndProofs } from "./_components/ArtworkAndProofs";
 import { CustomerCard } from "./_components/CustomerCard";
@@ -150,14 +150,15 @@ export default async function AdminJobDetailPage({
             aside={
               <span className="text-sm text-text-tertiary">
                 {view.summary.quantity.toLocaleString("en-CA")}{" "}
-                {view.summary.quantity === 1 ? "piece" : "pieces"} across {view.products.length}{" "}
-                {view.products.length === 1 ? "product" : "products"}
+                {view.summary.quantity === 1 ? "piece" : "pieces"} across{" "}
+                {view.productGroups.length}{" "}
+                {view.productGroups.length === 1 ? "product" : "products"}
               </span>
             }
           >
             <div className="space-y-sp-3">
-              {view.products.map((product) => (
-                <ProductLineCard key={product.key} product={product} />
+              {view.productGroups.map((product) => (
+                <ProductGroupCard key={product.key} product={product} />
               ))}
             </div>
           </SectionCard>

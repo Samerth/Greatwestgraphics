@@ -83,6 +83,113 @@ export interface ProductLineView {
   stock: GroupStock | null;
 }
 
+/** Every colour of one design, decorated the same way. Almost always
+ *  exactly one per product — every colour of a design was decorated
+ *  identically in the Design Studio — but the shape allows more than one
+ *  where a product genuinely carries two. */
+export interface AdminDecorationGroup {
+  key: string;
+  /** `placementNote` (or the product's own description as a last resort) —
+   *  shown once for the whole decoration, not repeated per colour, since
+   *  every colour inside it shares it. */
+  label: string;
+  colours: ProductLineView[];
+  quantity: number;
+  totalMinor: number | null;
+}
+
+/** One garment, however many colours it was ordered in. */
+export interface AdminProductGroup {
+  key: string;
+  description: string;
+  decorations: AdminDecorationGroup[];
+  quantity: number;
+  totalMinor: number | null;
+}
+
+/** Mirrors `groupAdminJobLines`'s own rule for combining a `totalMinor`
+ *  that may be null on some lines: sum whatever real values exist, and
+ *  land on `null` only when every one of them was null. */
+function sumTotalMinor(values: readonly (number | null)[]): number | null {
+  let sum: number | null = null;
+  for (const value of values) {
+    if (value == null) continue;
+    sum = (sum ?? 0) + value;
+  }
+  return sum;
+}
+
+/**
+ * Groups the already-built per-colour product lines into the tree Pavin
+ * asked for once he saw the cart rebuilt this way: **Product → Decoration →
+ * Colour → Sizes** (sizes already nested inside each `ProductLineView` via
+ * `sizeBreakdown`). One card per garment regardless of how many colours it
+ * was ordered in, instead of GWG-1034 reading as three near-identical
+ * "Allmade Unisex Organic Cotton Tee" cards for Matcha Green, Deep Black and
+ * Arctic Blue.
+ *
+ * Built on top of `products` — the same `ProductLineView[]` `buildJobView`
+ * already produces via `groupAdminJobLines` — so the colour-and-size fold
+ * itself, and everything that already reads it (stock, money, the files
+ * list, every existing test), is untouched. This only adds two wrapping
+ * levels above it, the same shape `groupCartItemsByProduct`
+ * (`lib/commerce/cart-groups.ts`) already gives the cart.
+ *
+ * Keyed on `description` for the product level — the garment's plain name
+ * (`storefrontProductName`, e.g. "Allmade Unisex Organic Cotton Tee"),
+ * which is already shared byte-for-byte across every colour of one style
+ * (it never includes a colour), unlike `productKey`/`storefrontProductId`,
+ * which is a specific colourway's own catalogue row and therefore differs
+ * per colour by construction.
+ */
+export function groupProductLinesByStyle(
+  products: readonly ProductLineView[],
+): AdminProductGroup[] {
+  const byProduct = new Map<
+    string,
+    { description: string; decorations: Map<string, ProductLineView[]> }
+  >();
+
+  for (const line of products) {
+    const pKey = line.description;
+    const dKey = line.placementNote ?? line.description;
+
+    let product = byProduct.get(pKey);
+    if (!product) {
+      product = { description: line.description, decorations: new Map() };
+      byProduct.set(pKey, product);
+    }
+
+    const bucket = product.decorations.get(dKey);
+    if (bucket) bucket.push(line);
+    else product.decorations.set(dKey, [line]);
+  }
+
+  const result: AdminProductGroup[] = [];
+  for (const [pKey, product] of byProduct) {
+    const decorations: AdminDecorationGroup[] = [];
+    for (const [dKey, colours] of product.decorations) {
+      decorations.push({
+        key: `${pKey}||${dKey}`,
+        label: dKey,
+        colours,
+        quantity: colours.reduce((sum, c) => sum + c.quantity, 0),
+        totalMinor: sumTotalMinor(colours.map((c) => c.totalMinor)),
+      });
+    }
+
+    result.push({
+      key: pKey,
+      description: product.description,
+      decorations,
+      quantity: decorations.reduce((sum, d) => sum + d.quantity, 0),
+      totalMinor: sumTotalMinor(decorations.map((d) => d.totalMinor)),
+    });
+  }
+
+  return result;
+}
+
 export interface JobView {
   /** The raw job id — what every server action and API call actually
    *  addresses. `header.displayId` ("GWG-1034") is for people; this is for
@@ -114,6 +221,11 @@ export interface JobView {
   contact: JobRequestDetailResponse["contact"];
   fulfillment: JobRequestDetailResponse["fulfillment"];
   products: ProductLineView[];
+  /** `products`, grouped Product → Decoration → Colour for the page's own
+   *  rendering (`groupProductLinesByStyle`). `products` itself stays flat —
+   *  the files list and the tests that pin "one product per colour" both
+   *  read that one, untouched. */
+  productGroups: AdminProductGroup[];
   stock: JobStock;
   money: JobMoney;
   computedTotalMinor: number;
@@ -288,6 +400,7 @@ export function buildJobView(
     contact: detail.contact,
     fulfillment: detail.fulfillment,
     products,
+    productGroups: groupProductLinesByStyle(products),
     stock,
     money,
     computedTotalMinor: orderTotalMinor,

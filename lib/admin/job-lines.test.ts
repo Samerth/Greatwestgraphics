@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatSizeBreakdown,
   groupAdminJobLines,
+  groupAdminLineGroupsByProduct,
   placementKey,
   productKeyFromStorefrontId,
   sizeSortKey,
@@ -260,5 +261,71 @@ describe("a size run is one block, however the size leaks in", () => {
     expect(page).toContain("placement: placementKey(config)");
     expect(page).toContain("withoutSizeSegment(configuration?.productMetadata)");
     expect(page).not.toMatch(/placement: config\.productMetadata/);
+  });
+});
+
+/**
+ * Pavin, once he saw the cart rebuilt as Product → Decoration → Colour →
+ * Sizes: "Yeah they should look similar... Product and design / Color then
+ * size". The admin job page and the customer portal both wrap
+ * `groupAdminJobLines`'s own colour-level fold with this.
+ */
+describe("groupAdminLineGroupsByProduct", () => {
+  // GWG-1034: one garment, three colourways.
+  const matcha = { key: "m", ids: ["1"], description: "Allmade Unisex Organic Cotton Tee", color: "Matcha Green", placement: "Front: Screen Print · 1 colour", sizes: [{ size: "XL", quantity: 24 }], quantity: 24, totalMinor: 50060, unitPriceEstimateMinor: 2086 };
+  const black = { key: "b", ids: ["2"], description: "Allmade Unisex Organic Cotton Tee", color: "Deep Black", placement: "Front: Screen Print · 1 colour", sizes: [{ size: "M", quantity: 24 }], quantity: 24, totalMinor: 50060, unitPriceEstimateMinor: 2086 };
+  const blue = { key: "r", ids: ["3"], description: "Allmade Unisex Organic Cotton Tee", color: "Arctic Blue", placement: "Front: Screen Print · 1 colour", sizes: [{ size: "S", quantity: 15 }], quantity: 15, totalMinor: 37670, unitPriceEstimateMinor: 2511 };
+
+  it("folds every colour of one garment into a single product bucket", () => {
+    const products = groupAdminLineGroupsByProduct([matcha, black, blue]);
+    expect(products).toHaveLength(1);
+    expect(products[0]!.description).toBe("Allmade Unisex Organic Cotton Tee");
+    expect(products[0]!.quantity).toBe(63); // 24 + 24 + 15
+  });
+
+  it("nests one decoration holding all three colours, since they share the same placement", () => {
+    const products = groupAdminLineGroupsByProduct([matcha, black, blue]);
+    const decorations = products[0]!.decorations;
+    expect(decorations).toHaveLength(1);
+    expect(decorations[0]!.colours.map((c) => c.color)).toEqual([
+      "Matcha Green",
+      "Deep Black",
+      "Arctic Blue",
+    ]);
+  });
+
+  it("sums totalMinor up through decoration and product level — the real GWG-1034 numbers", () => {
+    const products = groupAdminLineGroupsByProduct([matcha, black, blue]);
+    expect(products[0]!.decorations[0]!.totalMinor).toBe(50060 + 50060 + 37670);
+    expect(products[0]!.totalMinor).toBe(137790); // $1,377.90
+  });
+
+  it("keeps two genuinely different products apart, even sharing a colour name", () => {
+    const otherGarment = { ...matcha, key: "o", description: "Gildan Unisex DryBlend Crewneck" };
+    const products = groupAdminLineGroupsByProduct([matcha, otherGarment]);
+    expect(products).toHaveLength(2);
+  });
+
+  it("keeps two different decorations of the same product apart", () => {
+    const embroidered = { ...matcha, key: "e", placement: "Left Chest: Embroidery · Small" };
+    const products = groupAdminLineGroupsByProduct([matcha, embroidered]);
+    expect(products).toHaveLength(1);
+    expect(products[0]!.decorations).toHaveLength(2);
+  });
+
+  it("lands on null totalMinor only when every colour's total is null — never invents a number", () => {
+    const noPrice = { ...matcha, key: "n", totalMinor: null };
+    const products = groupAdminLineGroupsByProduct([noPrice]);
+    expect(products[0]!.totalMinor).toBeNull();
+  });
+
+  it("sums the totals it does have rather than nulling the whole group over one missing line", () => {
+    const noPrice = { ...black, key: "n", totalMinor: null };
+    const products = groupAdminLineGroupsByProduct([matcha, noPrice]);
+    expect(products[0]!.decorations[0]!.totalMinor).toBe(50060);
+  });
+
+  it("returns an empty list for no groups", () => {
+    expect(groupAdminLineGroupsByProduct([])).toEqual([]);
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { JobRequestDetailResponse } from "@gwg/contracts";
-import { buildJobView, safeProofUrl } from "@/lib/admin/job-view";
+import {
+  buildJobView,
+  groupProductLinesByStyle,
+  safeProofUrl,
+  type ProductLineView,
+} from "@/lib/admin/job-view";
 
 const V2_SNAPSHOT = {
   schemaVersion: 2 as const,
@@ -193,6 +198,148 @@ describe("buildJobView", () => {
     const view = buildJobView(legacy, "Main store");
     expect(view.header.customerName).toBeNull();
     expect(view.summary.method).toBe("unknown");
+  });
+});
+
+function productLine(
+  over: Partial<ProductLineView> & { key: string; color: string },
+): ProductLineView {
+  return {
+    description: "Allmade Unisex Organic Cotton Tee",
+    quantity: 1,
+    unitPriceEstimateMinor: null,
+    totalMinor: null,
+    sizes: [],
+    sizeBreakdown: "",
+    pricingUnverified: false,
+    decorations: [],
+    placementNote: "Front: Screen Print · 1 colour",
+    catalogHint: null,
+    styleName: null,
+    styleTitle: null,
+    artworkProofUrl: null,
+    snapshot: null,
+    designProjectId: null,
+    designNotes: null,
+    artworkLayers: [],
+    roster: null,
+    stock: null,
+    ...over,
+  };
+}
+
+describe("groupProductLinesByStyle", () => {
+  // GWG-1034: one garment, three colourways.
+  const matcha = productLine({
+    key: "matcha",
+    color: "Matcha Green",
+    quantity: 24,
+    totalMinor: 50060,
+    sizeBreakdown: "XL 24",
+  });
+  const black = productLine({
+    key: "black",
+    color: "Deep Black",
+    quantity: 24,
+    totalMinor: 50060,
+    sizeBreakdown: "M 24",
+  });
+  const blue = productLine({
+    key: "blue",
+    color: "Arctic Blue",
+    quantity: 15,
+    totalMinor: 37670,
+    sizeBreakdown: "S 15",
+  });
+
+  it("folds every colour of one garment into a single product group", () => {
+    const products = groupProductLinesByStyle([matcha, black, blue]);
+    expect(products).toHaveLength(1);
+    const product = products[0]!;
+    expect(product.description).toBe("Allmade Unisex Organic Cotton Tee");
+    expect(product.quantity).toBe(63); // 24 + 24 + 15
+  });
+
+  it("nests one decoration holding all three colours, since they share the same placement note", () => {
+    const products = groupProductLinesByStyle([matcha, black, blue]);
+    const decorations = products[0]!.decorations;
+    expect(decorations).toHaveLength(1);
+    expect(decorations[0]!.colours.map((c) => c.color)).toEqual([
+      "Matcha Green",
+      "Deep Black",
+      "Arctic Blue",
+    ]);
+  });
+
+  it("sums totalMinor up through decoration and product level", () => {
+    const products = groupProductLinesByStyle([matcha, black, blue]);
+    const product = products[0]!;
+    expect(product.decorations[0]!.totalMinor).toBe(50060 + 50060 + 37670);
+    expect(product.totalMinor).toBe(50060 + 50060 + 37670);
+  });
+
+  it("keeps two genuinely different products apart, even sharing a colour name", () => {
+    const otherGarment = productLine({
+      key: "other",
+      color: "Matcha Green",
+      description: "Gildan Unisex DryBlend Crewneck",
+      totalMinor: 15773,
+    });
+    const products = groupProductLinesByStyle([matcha, otherGarment]);
+    expect(products).toHaveLength(2);
+  });
+
+  it("keeps two different decorations of the same product apart", () => {
+    const embroidered = productLine({
+      key: "embroidered",
+      color: "Matcha Green",
+      placementNote: "Left Chest: Embroidery · Small",
+      totalMinor: 22000,
+    });
+    const products = groupProductLinesByStyle([matcha, embroidered]);
+    expect(products).toHaveLength(1);
+    expect(products[0]!.decorations).toHaveLength(2);
+  });
+
+  it("lands on null totalMinor only when every colour's total is null — never invents a number", () => {
+    const noPrice = productLine({ key: "no-price", color: "Matcha Green", totalMinor: null });
+    const products = groupProductLinesByStyle([noPrice]);
+    expect(products[0]!.totalMinor).toBeNull();
+  });
+
+  it("sums the totals it does have rather than nulling the whole group over one missing line, matching groupAdminJobLines' own rule", () => {
+    const noPrice = productLine({ key: "no-price", color: "Royal", totalMinor: null });
+    const products = groupProductLinesByStyle([matcha, noPrice]);
+    expect(products[0]!.decorations[0]!.totalMinor).toBe(50060);
+  });
+
+  it("returns an empty list for no products", () => {
+    expect(groupProductLinesByStyle([])).toEqual([]);
+  });
+});
+
+describe("buildJobView with multiple colours", () => {
+  it("folds a multi-colour order into one productGroups entry, leaving the flat products list untouched", () => {
+    const withTwoColours = detail({
+      lines: [
+        line({ id: "line-1", configuration: { color: "Matcha Green", size: "XL" } }),
+        line({
+          id: "line-2",
+          configuration: {
+            color: "Deep Black",
+            size: "M",
+            storefrontProductId: "prod-2:variant-m",
+          },
+        }),
+      ],
+    });
+    const view = buildJobView(withTwoColours, "Main store");
+    // The flat list — what the files list and existing "one per colour"
+    // test still read — is unaffected.
+    expect(view.products).toHaveLength(2);
+    // The new grouped view folds them into one product card.
+    expect(view.productGroups).toHaveLength(1);
+    expect(view.productGroups[0]!.decorations[0]!.colours).toHaveLength(2);
   });
 });
 
