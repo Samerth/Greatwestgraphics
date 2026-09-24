@@ -131,6 +131,51 @@ export function blankGarmentMergeTarget(
   );
 }
 
+/** Two decorated lines came from the same design, not two different
+ *  customers' garments that merely share a SKU and colour. */
+function sameDesignIdentity(a: CartItem, b: CartItem): boolean {
+  if (a.designProjectId || b.designProjectId) {
+    return a.designProjectId === b.designProjectId;
+  }
+  if (a.artworkProofUrl || b.artworkProofUrl) {
+    return a.artworkProofUrl === b.artworkProofUrl;
+  }
+  return false;
+}
+
+/**
+ * A decorated line re-added with the same product, colour, size and design
+ * as one already in the cart — the customer going back to Input Quantity
+ * and pressing Continue again, not a second order that happens to share a
+ * garment. `blankGarmentMergeTarget` above deliberately refuses to fold any
+ * decorated line into anything, which is right for two genuinely different
+ * customized garments but meant this exact case appended a whole second set
+ * of lines instead of updating the quantity on the one already there.
+ *
+ * Roster (team/named) lines are excluded: `CartItem.roster` carries the
+ * invariant `qty === roster.length` elsewhere in the app, and summing `qty`
+ * here without also concatenating the roster rows would break it. A roster
+ * re-add still lands as a second line rather than risk that.
+ */
+export function decoratedLineMergeTarget(
+  items: CartItem[],
+  incoming: CartItem,
+  store: ActiveCartStore,
+): CartItem | undefined {
+  if (incoming.roster) return undefined;
+  if (!cartLineIsCustomized(incoming)) return undefined;
+  return items.find(
+    (candidate) =>
+      !candidate.roster &&
+      cartLineIsCustomized(candidate) &&
+      candidate.id === incoming.id &&
+      candidate.color === incoming.color &&
+      candidate.variantId === incoming.variantId &&
+      sameDesignIdentity(candidate, incoming) &&
+      cartItemBelongsToStore(candidate, store),
+  );
+}
+
 /** Cart "Edit" must reopen the studio for decorated lines — never a UUID as a PDP slug. */
 export function cartItemEditHref(
   item: Pick<
@@ -221,12 +266,13 @@ export const useCartStore = create<CartState>()(
           // Blank catalog lines of the same SKU can stack. A studio design
           // (proof, saved project, or roster) is its own line — merging it
           // into a blank tee dropped the artwork and left "Edit" pointing at
-          // a catalog PDP instead of the customized item.
-          const existing = blankGarmentMergeTarget(
-            state.items,
-            stamped,
-            state.activeStore,
-          );
+          // a catalog PDP instead of the customized item. A decorated line
+          // that matches one already in the cart down to its design is a
+          // resubmission (Back to Input Quantity, Continue again) rather
+          // than a second order, so it merges too.
+          const existing =
+            blankGarmentMergeTarget(state.items, stamped, state.activeStore) ??
+            decoratedLineMergeTarget(state.items, stamped, state.activeStore);
           if (existing) {
             return {
               items: state.items.map((c) =>
