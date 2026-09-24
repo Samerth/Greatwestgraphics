@@ -32,11 +32,18 @@ describe("designSnapshotIsUsable", () => {
     );
   });
 
-  it("is not usable while any artwork is still a blob or data URL", () => {
+  it("is not usable while any artwork is still a blob URL — a per-tab handle a reload cannot resolve", () => {
     expect(designSnapshotIsUsable(withFrontArtwork("blob:http://localhost/abc"))).toBe(false);
+  });
+
+  it("is usable with a data URL — how a signed-out visitor's draft artwork is held until sign-in, and it draws fine in a thumbnail as-is (Pavin: cart showed the wrong colours for exactly this case)", () => {
     expect(
       designSnapshotIsUsable(withFrontArtwork("data:image/png;base64,iVBOR")),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("is not usable when the src is blank", () => {
+    expect(designSnapshotIsUsable(withFrontArtwork("   "))).toBe(false);
   });
 
   it("is not usable for a blank or roster-only design — nothing for DesignSidePreview to draw", () => {

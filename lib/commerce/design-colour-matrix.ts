@@ -1,4 +1,5 @@
 import { rosterWeightedCostMinor } from "../utils/shopper-price";
+import { sizeSortKey } from "../admin/job-lines";
 
 /** One size within a colour block: the variant the customer would actually
  *  order, plus how many of it they want. */
@@ -9,6 +10,16 @@ export interface ColourMatrixSize {
   mapPriceMinor: number | null;
   inStock: boolean;
   quantity: number;
+  /**
+   * `false` only for a size `blocksWithUnionSizes` synthesized to keep every
+   * colour's grid the same shape — this colour's own catalogue record
+   * carries no variant for this size at all, a more permanent gap than
+   * `inStock: false` (a real variant that's simply out of stock right now).
+   * Undefined for every size read straight off the API, which is the
+   * overwhelming majority, so call sites that build a real size never need
+   * to state `true` explicitly.
+   */
+  offeredInColour?: boolean;
 }
 
 /** One garment colour being ordered, with its own size breakdown. The client
@@ -191,4 +202,62 @@ export function matrixOutOfStockLines(
       colorName: block.colorName,
       sizeName: size.sizeName,
     }));
+}
+
+/**
+ * `blocks`, with every size any *other* block carries added as a disabled
+ * placeholder to a block that lacks it — so every colour on the Input
+ * Quantity page shows the same size grid instead of each colour showing
+ * only whatever `ss_variants` rows happen to exist for that one colourway.
+ *
+ * Each colourway is its own catalogue row, and nothing upstream guarantees
+ * the sync wrote a complete set of sizes for every colour of a style — one
+ * colour can genuinely end up with a single variant while its sibling has
+ * six (Pavin: "not all sizes appear after design studio"; Forest showed only
+ * XL while Ash showed S/M/XL/2XL/3XL for the same garment). Rather than let
+ * that gap read as "this colour only comes in XL", every colour now shows
+ * the full range the *order* has established across its colours, with the
+ * sizes a given colour doesn't actually carry shown as a disabled,
+ * non-orderable placeholder — the gap is visible instead of silent.
+ *
+ * Presentation only: the real per-block `sizes` — what pricing, submission
+ * and every other calculation in this file reads — is untouched. Callers
+ * should build this only for the grid that is actually drawn, from the same
+ * `blocks` array used everywhere else, never in place of it.
+ */
+export function blocksWithUnionSizes(
+  blocks: ColourMatrixBlock[],
+): ColourMatrixBlock[] {
+  if (blocks.length <= 1) return blocks;
+
+  const seen = new Set<string>();
+  for (const block of blocks) {
+    for (const size of block.sizes) seen.add(size.sizeName);
+  }
+  if (seen.size === 0) return blocks;
+
+  const order = [...seen].sort(
+    (a, b) => sizeSortKey(a) - sizeSortKey(b) || a.localeCompare(b),
+  );
+
+  return blocks.map((block) => {
+    const bySizeName = new Map(block.sizes.map((s) => [s.sizeName, s]));
+    if (order.every((name) => bySizeName.has(name))) return block;
+
+    return {
+      ...block,
+      sizes: order.map(
+        (sizeName) =>
+          bySizeName.get(sizeName) ?? {
+            variantId: `placeholder:${block.productId}:${sizeName}`,
+            sizeName,
+            unitCostMinor: null,
+            mapPriceMinor: null,
+            inStock: false,
+            quantity: 0,
+            offeredInColour: false,
+          },
+      ),
+    };
+  });
 }

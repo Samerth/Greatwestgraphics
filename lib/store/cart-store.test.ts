@@ -5,6 +5,7 @@ import {
   cartItemEditHref,
   cartLineIsCustomized,
   computeCartTotals,
+  decoratedLineMergeTarget,
   visibleCartItems,
   type CartItem,
 } from "./cart";
@@ -73,6 +74,80 @@ describe("blankGarmentMergeTarget", () => {
     expect(cartLineIsCustomized(team)).toBe(true);
     expect(blankGarmentMergeTarget([blank], team, store)).toBeUndefined();
     expect(blankGarmentMergeTarget([team], { ...team }, store)).toBeUndefined();
+  });
+});
+
+describe("decoratedLineMergeTarget", () => {
+  const store = { slug: "great-west-graphics", isPublic: true };
+  const designed: CartItem = {
+    id: "tee",
+    name: "Tee",
+    meta: "Custom design · Size M",
+    color: "navy",
+    qty: 24,
+    unit: 10,
+    image: "",
+    variantId: "m",
+    artworkProofUrl: "https://cdn.example/proof.png",
+    designProjectId: "design-1",
+  };
+
+  it("merges a re-add of the exact same design — Back to Input Quantity, Continue again", () => {
+    expect(
+      decoratedLineMergeTarget([designed], { ...designed, qty: 6 }, store),
+    ).toBe(designed);
+  });
+
+  it("does not merge a different design on the same product, colour and size", () => {
+    const otherDesign: CartItem = {
+      ...designed,
+      artworkProofUrl: "https://cdn.example/other-proof.png",
+      designProjectId: "design-2",
+    };
+    expect(decoratedLineMergeTarget([designed], otherDesign, store)).toBeUndefined();
+  });
+
+  it("does not merge the same design in a different colour or size", () => {
+    expect(
+      decoratedLineMergeTarget([designed], { ...designed, color: "black" }, store),
+    ).toBeUndefined();
+    expect(
+      decoratedLineMergeTarget([designed], { ...designed, variantId: "l" }, store),
+    ).toBeUndefined();
+  });
+
+  it("never merges a blank (non-customized) line", () => {
+    const blank: CartItem = {
+      id: "tee",
+      name: "Tee",
+      meta: "Size M",
+      color: "navy",
+      qty: 24,
+      unit: 10,
+      image: "",
+      variantId: "m",
+    };
+    expect(decoratedLineMergeTarget([blank], { ...blank }, store)).toBeUndefined();
+  });
+
+  it("never merges roster lines, even identical ones — qty === roster.length must stay true", () => {
+    const team: CartItem = {
+      id: "tee",
+      name: "Tee",
+      meta: "Custom design · Team order",
+      color: "navy",
+      qty: 2,
+      unit: 10,
+      image: "",
+      artworkProofUrl: "https://cdn.example/proof.png",
+      roster: [{ size: "M", name: "Alex" }, { size: "L", name: "Sam" }],
+    };
+    expect(decoratedLineMergeTarget([team], { ...team }, store)).toBeUndefined();
+  });
+
+  it("respects the store boundary, same as blankGarmentMergeTarget", () => {
+    const acme = { slug: "acme", isPublic: false };
+    expect(decoratedLineMergeTarget([designed], { ...designed }, acme)).toBeUndefined();
   });
 });
 

@@ -9,11 +9,12 @@ import { ButtonLink } from "@/components/shared/Button";
 import { CrossSellGrid, type CrossSellItem } from "@/components/shared/CrossSellGrid";
 import { trackCartItemAdded } from "@/lib/analytics/gtag";
 import { useCartStore, useVisibleCartItems, computeCartTotals, cartItemEditHref, cartLineIsCustomized, PRICE_TO_BE_CONFIRMED_LABEL, type CartItem } from "@/lib/store/cart";
-import { money } from "@/lib/utils/quote-pricing";
+import { money, moneyFromMinor } from "@/lib/utils/quote-pricing";
 import { RosterTable } from "@/components/shared/RosterTable";
 import { DesignLineThumbnail } from "@/components/design/DesignLineThumbnail";
 import type { StorefrontCatalogProduct } from "@/lib/commerce/catalog";
 import { SHOW_PUBLIC_QUOTE_CALCULATOR } from "@/lib/features";
+import { cartGroupSizeBreakdown, groupCartItemsByProduct } from "@/lib/commerce/cart-groups";
 
 /**
  * True for our own private, cookie-gated upload route (customer artwork,
@@ -197,156 +198,246 @@ export default function CartPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-sp-6 items-start">
           <div className="space-y-sp-3">
-            {items.map((item) => (
+            {/*
+              One card per product — Product > Decoration > Colour > Sizes,
+              the tree Pavin asked for once he saw the two options. Before
+              this, a design ordered in three colours across four sizes was
+              four near-identical cards, each showing the same picture
+              (Pavin: "cart shows different lines for the same product with
+              different size variants, make it clean like the input quantity
+              page" — and "1 image with variables on left"). Grouping is
+              presentation only (`groupCartItemsByProduct`,
+              `lib/commerce/cart-groups.ts`): every original line is still
+              its own `CartItem` underneath, so Remove, the quantity stepper
+              and Save for later below still act on one specific size's own
+              identity, exactly as before.
+            */}
+            {groupCartItemsByProduct(items).map((product) => (
               <div
-                key={`${item.id}-${item.color}-${item.variantId ?? ""}-${item.designProjectId ?? item.artworkProofUrl ?? "blank"}`}
-                className="flex flex-col sm:flex-row gap-sp-4 border border-border rounded-md p-sp-4 bg-bg-raised"
+                key={product.key}
+                className="border border-border rounded-md bg-bg-raised overflow-hidden"
               >
-                <DesignLineThumbnail
-                  design={item.designSnapshot}
-                  garmentPhotos={item.garmentPhotos}
-                  className="relative w-full sm:w-28 h-28 shrink-0 rounded-md overflow-hidden bg-fill-subtle"
-                  fallback={
-                    item.image ? (
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        unoptimized={isPrivateUploadUrl(item.image)}
-                        className="object-cover object-top"
-                      />
-                    ) : (
-                      // Neither this colourway's own photo nor the style's
-                      // general one was available — an empty grey box reads as
-                      // broken, so this always shows something instead.
-                      <div className="absolute inset-0 grid place-items-center text-text-tertiary/50">
-                        <Shirt aria-hidden size={32} strokeWidth={1.5} />
-                      </div>
-                    )
-                  }
-                />
-
-                <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-start justify-between gap-sp-3">
+                <div className="flex items-start justify-between gap-sp-3 px-sp-4 py-sp-3 border-b border-border bg-bg">
                   <div className="min-w-0">
-                    <h4 className="font-bold text-[15.5px] mb-1.5 truncate">
-                      {item.name}
+                    <h4 className="font-bold text-[15.5px] truncate m-0">
+                      {product.name}
                     </h4>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-text-tertiary mb-sp-3">
-                      <span>{item.meta}</span>
-                      <span className="text-border">·</span>
-                      <span>{item.color}</span>
-                      <span className="text-border">·</span>
-                      <span>{item.qty.toLocaleString()} pieces</span>
-                    </div>
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {cartLineIsCustomized(item) ? (
-                        // Decorated lines (roster or single-item design) are priced
-                        // for one specific quantity at add-to-cart time. Letting
-                        // qty change here would keep charging that frozen unit
-                        // price at a different volume tier — send them back to
-                        // Edit to re-quote instead.
-                        <span className="text-[13.5px] font-bold text-text-secondary">
-                          {item.qty} {item.qty === 1 ? "piece" : "pieces"}
-                          {item.roster ? " · team order" : ""} · quantity locked
-                        </span>
-                      ) : (
-                        <div className="flex items-center border border-border rounded-full overflow-hidden w-fit">
-                          <button
-                            aria-label="Decrease quantity"
-                            className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
-                            onClick={() =>
-                              updateQty(
-                                item.id,
-                                item.color,
-                                item.qty - 1,
-                                item.variantId,
-                              )
-                            }
-                          >
-                            −
-                          </button>
-                          <span className="w-11 text-center font-bold text-[13.5px]">
-                            {item.qty}
-                          </span>
-                          <button
-                            aria-label="Increase quantity"
-                            className="w-8 h-8 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
-                            onClick={() =>
-                              updateQty(
-                                item.id,
-                                item.color,
-                                item.qty + 1,
-                                item.variantId,
-                              )
-                            }
-                          >
-                            +
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-sp-3 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] font-semibold">
-                      <Link
-                        href={cartItemEditHref(item)}
-                        className="text-text-tertiary hover:text-accent transition-colors"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        type="button"
-                        className="text-text-tertiary hover:text-accent transition-colors"
-                        onClick={() =>
-                          removeItem(item.id, item.color, item.variantId)
-                        }
-                      >
-                        Remove
-                      </button>
-                      <button
-                        type="button"
-                        className="text-text-tertiary hover:text-accent transition-colors"
-                        onClick={() => saveForLater(item)}
-                      >
-                        Save for later
-                      </button>
-                    </div>
-
-                    {/* Always visible, not tucked behind a click: this is
-                        who each shirt in the order actually goes to. */}
-                    {item.roster && (
-                      <div className="mt-sp-3">
-                        <span className="block text-[12.5px] font-bold text-text-secondary mb-1.5">
-                          Names &amp; numbers ({item.roster.length})
-                        </span>
-                        <RosterTable roster={item.roster} />
-                      </div>
-                    )}
-                    {item.designNotes ? (
-                      <p className="mt-sp-2 mb-0 text-[12.5px] text-text-secondary">
-                        <span className="font-bold text-text-tertiary">Notes: </span>
-                        {item.designNotes}
-                      </p>
-                    ) : null}
+                    <p className="text-[12.5px] text-text-tertiary m-0 mt-0.5">
+                      {product.quantity.toLocaleString()} pieces
+                    </p>
                   </div>
-
-                  <div className="shrink-0 text-right sm:text-right">
+                  <div className="shrink-0 text-right">
                     <div className="text-[11px] uppercase tracking-wide text-text-tertiary font-bold mb-0.5">
-                      Line total
+                      Product total
                     </div>
                     <div
                       className={
-                        item.priceUnavailable
-                          ? "font-display font-bold text-[13px] text-text-tertiary"
+                        product.hasUnpriced
+                          ? "font-display font-bold text-[15px] text-text-tertiary"
                           : "font-display font-bold text-[17px]"
                       }
                     >
-                      {item.priceUnavailable
+                      {product.hasUnpriced
                         ? PRICE_TO_BE_CONFIRMED_LABEL
-                        : money(item.qty * item.unit)}
+                        : moneyFromMinor(product.totalMinor)}
                     </div>
                   </div>
                 </div>
+
+                {product.decorations.map((decoration) => (
+                  <div
+                    key={decoration.key}
+                    className="px-sp-4 py-sp-3 border-b border-border last:border-b-0"
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-sp-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-text-tertiary">
+                        {decoration.label}
+                      </span>
+                      <Link
+                        href={cartItemEditHref(decoration.representative)}
+                        className="text-[12.5px] font-semibold text-text-tertiary hover:text-accent transition-colors"
+                      >
+                        Edit
+                      </Link>
+                    </div>
+
+                    <div className="space-y-sp-3">
+                      {decoration.colours.map((colourGroup) => {
+                        const rep = colourGroup.representative;
+                        const sizeBreakdown = cartGroupSizeBreakdown(
+                          colourGroup.items,
+                        );
+                        return (
+                          <div
+                            key={colourGroup.key}
+                            className="flex flex-col sm:flex-row gap-sp-3 rounded-md border border-border p-sp-3"
+                          >
+                            <DesignLineThumbnail
+                              design={rep.designSnapshot}
+                              garmentPhotos={rep.garmentPhotos}
+                              className="relative w-full sm:w-16 h-16 shrink-0 rounded-md overflow-hidden bg-fill-subtle"
+                              fallback={
+                                rep.image ? (
+                                  <Image
+                                    src={rep.image}
+                                    alt={`${product.name} — ${rep.color}`}
+                                    fill
+                                    unoptimized={isPrivateUploadUrl(rep.image)}
+                                    className="object-cover object-top"
+                                  />
+                                ) : (
+                                  // Neither this colourway's own photo nor
+                                  // the style's general one was available —
+                                  // an empty grey box reads as broken, so
+                                  // this always shows something instead.
+                                  <div className="absolute inset-0 grid place-items-center text-text-tertiary/50">
+                                    <Shirt aria-hidden size={22} strokeWidth={1.5} />
+                                  </div>
+                                )
+                              }
+                            />
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="font-bold text-[14px]">
+                                  {rep.color}
+                                </span>
+                                <span
+                                  className={
+                                    colourGroup.hasUnpriced
+                                      ? "font-bold text-[13px] text-text-tertiary shrink-0"
+                                      : "font-bold text-[14px] shrink-0"
+                                  }
+                                >
+                                  {colourGroup.hasUnpriced
+                                    ? PRICE_TO_BE_CONFIRMED_LABEL
+                                    : moneyFromMinor(colourGroup.totalMinor)}
+                                </span>
+                              </div>
+                              {sizeBreakdown && (
+                                <p className="text-[13px] font-semibold text-text-secondary tabular-nums m-0 mt-0.5">
+                                  {sizeBreakdown}
+                                </p>
+                              )}
+
+                              {/* Always visible, not tucked behind a click:
+                                  this is who each shirt in the order
+                                  actually goes to. A roster group always
+                                  holds exactly one item — see
+                                  `groupCartItems`. */}
+                              {rep.roster && (
+                                <div className="mt-sp-2">
+                                  <span className="block text-[12px] font-bold text-text-secondary mb-1">
+                                    Names &amp; numbers ({rep.roster.length})
+                                  </span>
+                                  <RosterTable roster={rep.roster} />
+                                </div>
+                              )}
+                              {rep.designNotes ? (
+                                <p className="mt-sp-1.5 mb-0 text-[12px] text-text-secondary">
+                                  <span className="font-bold text-text-tertiary">
+                                    Notes:{" "}
+                                  </span>
+                                  {rep.designNotes}
+                                </p>
+                              ) : null}
+
+                              {/* One row per size — the underlying
+                                  `CartItem` each belongs to, so its own
+                                  quantity, Remove and Save for later still
+                                  address that exact line. */}
+                              <div className="mt-sp-2 space-y-1.5">
+                                {colourGroup.items.map((item) => (
+                                  <div
+                                    key={`${item.id}-${item.color}-${item.variantId ?? ""}`}
+                                    className="flex items-center gap-3 flex-wrap text-[12.5px]"
+                                  >
+                                    <span className="font-bold text-text-secondary w-10 shrink-0">
+                                      {item.size ?? "—"}
+                                    </span>
+
+                                    {cartLineIsCustomized(item) ? (
+                                      // Decorated lines (roster or
+                                      // single-item design) are priced for
+                                      // one specific quantity at
+                                      // add-to-cart time. Letting qty
+                                      // change here would keep charging
+                                      // that frozen unit price at a
+                                      // different volume tier — send them
+                                      // back to Edit to re-quote instead.
+                                      <span className="text-text-tertiary">
+                                        {item.qty.toLocaleString()}{" "}
+                                        {item.qty === 1 ? "piece" : "pieces"}{" "}
+                                        · quantity locked
+                                      </span>
+                                    ) : (
+                                      <div className="flex items-center border border-border rounded-full overflow-hidden w-fit">
+                                        <button
+                                          aria-label={`Decrease quantity for size ${item.size ?? ""}`}
+                                          className="w-6 h-6 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
+                                          onClick={() =>
+                                            updateQty(
+                                              item.id,
+                                              item.color,
+                                              item.qty - 1,
+                                              item.variantId,
+                                            )
+                                          }
+                                        >
+                                          −
+                                        </button>
+                                        <span className="w-8 text-center font-bold">
+                                          {item.qty}
+                                        </span>
+                                        <button
+                                          aria-label={`Increase quantity for size ${item.size ?? ""}`}
+                                          className="w-6 h-6 grid place-items-center font-bold text-text-secondary hover:bg-fill-subtle-15 transition-colors"
+                                          onClick={() =>
+                                            updateQty(
+                                              item.id,
+                                              item.color,
+                                              item.qty + 1,
+                                              item.variantId,
+                                            )
+                                          }
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    <div className="flex gap-3 ml-auto font-semibold">
+                                      <button
+                                        type="button"
+                                        className="text-text-tertiary hover:text-accent transition-colors"
+                                        onClick={() =>
+                                          removeItem(
+                                            item.id,
+                                            item.color,
+                                            item.variantId,
+                                          )
+                                        }
+                                      >
+                                        Remove
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-text-tertiary hover:text-accent transition-colors"
+                                        onClick={() => saveForLater(item)}
+                                      >
+                                        Save for later
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
 
