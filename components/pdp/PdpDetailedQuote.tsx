@@ -4,12 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PricingConfigV2 } from "@gwg/contracts";
 import {
+  customerUnitMinor,
   priceStorefrontQuote,
   type StorefrontQuoteRequest,
 } from "@/lib/commerce/storefront-quote";
 import { Button } from "@/components/shared/Button";
 import { InfoNote } from "@/components/shared/InfoNote";
 import { moneyFromMinor } from "@/lib/utils/quote-pricing";
+import {
+  qtyFromSliderPosition,
+  sliderMaxPosition,
+  sliderPositionFromQty,
+} from "@/lib/commerce/quantity-slider";
 import {
   LOCATIONS,
   STITCH_PRESET_DISCLAIMER,
@@ -247,13 +253,22 @@ export function PdpDetailedQuote({
 
   const breakdown = result?.breakdown ?? null;
 
-  /** Per-row price, read straight off the lines the engine already tagged
-   * with this row's decorationId — no separate calc. */
+  /**
+   * Per-row price, read straight off the lines the engine already tagged
+   * with this row's decorationId — no separate calc.
+   *
+   * `unitMinor` is rounded the same way the summary box's per-piece figure
+   * is (`customerUnitMinor`), rather than left as a raw division. Left raw,
+   * this row's own two numbers didn't multiply back out — $4.76 × 81 pieces
+   * is $385.56, not the $385.73 `totalMinor` actually shown beside it —
+   * which is confusing on its own before it's even compared to the summary
+   * box below (Pavin: "two different price per units").
+   */
   function rowPricing(rowId: string) {
     if (!breakdown) return null;
     const rowLines = breakdown.lines.filter((line) => line.decorationId === rowId);
     const totalMinor = rowLines.reduce((sum, l) => sum + l.extendedAmountMinor, 0);
-    return { totalMinor, unitMinor: totalMinor / Math.max(1, qty) };
+    return { totalMinor, unitMinor: customerUnitMinor(totalMinor, qty) };
   }
 
   /** Quantity-break table (also drives the tick labels under the slider),
@@ -348,6 +363,29 @@ export function PdpDetailedQuote({
   // capped so the row stays readable.
   const tickBreaks = quantityBreaks.filter((b) => b.qty <= 500).slice(0, 6);
   const hasHigherAnchor = quantityBreaks.some((b) => b.qty > 500);
+
+  // The slider's own scale — exactly the values printed under it, so the
+  // handle and the labels finally agree (Pavin: "qty in the bar and the
+  // number don't match"). Previously the track ran linearly 1..500 under
+  // labels spaced evenly by `flex justify-between`, so a typed 71 or 81
+  // landed the handle right under the unrelated "6" label. A final entry
+  // stands in for the open-ended "500+" bucket when one applies, using the
+  // engine's real highest anchor (`quantityBreaks` is sorted ascending) so
+  // that segment still has a real width instead of collapsing to a point.
+  const sliderAnchors =
+    tickBreaks.length > 0
+      ? [
+          ...tickBreaks.map((b) => b.qty),
+          ...(hasHigherAnchor
+            ? [
+                Math.max(
+                  500,
+                  quantityBreaks[quantityBreaks.length - 1]?.qty ?? 500,
+                ),
+              ]
+            : []),
+        ]
+      : [1, 500];
 
   return (
     <div
@@ -517,8 +555,14 @@ export function PdpDetailedQuote({
                 </div>
 
                 <div>
+                  {/* "Price/unit" read as the same kind of figure as the
+                      summary box's "Total per unit" below, but this one is
+                      decoration only — it does not include the garment
+                      (Pavin: "two different price per units... make it more
+                      clear if its price decoration and per piece with
+                      decoration"). Named for what it actually is instead. */}
                   <span className="block text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
-                    Price/unit
+                    Decoration / pc
                   </span>
                   <p className="m-0 py-2 text-sm font-semibold truncate">
                     {pricing ? moneyFromMinor(pricing.unitMinor) : "—"}
@@ -527,7 +571,7 @@ export function PdpDetailedQuote({
 
                 <div>
                   <span className="block text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">
-                    Total
+                    Decoration total
                   </span>
                   <p className="m-0 py-2 text-sm font-bold truncate">
                     {pricing ? moneyFromMinor(pricing.totalMinor) : "—"}
@@ -571,10 +615,15 @@ export function PdpDetailedQuote({
           </p>
           <input
             type="range"
-            min={1}
-            max={500}
-            value={Math.min(qty, 500)}
-            onChange={(e) => setQuantity(Number(e.target.value))}
+            min={0}
+            max={sliderMaxPosition(sliderAnchors)}
+            value={sliderPositionFromQty(qty, sliderAnchors)}
+            onChange={(e) =>
+              setQuantity(
+                qtyFromSliderPosition(Number(e.target.value), sliderAnchors),
+              )
+            }
+            aria-label="Quantity slider"
             className="w-full accent-accent"
           />
           {tickBreaks.length > 0 && (
@@ -629,13 +678,23 @@ export function PdpDetailedQuote({
           {breakdown ? (
             <>
               <div className="flex justify-between items-baseline">
-                <span className="text-sm font-bold">Total per unit</span>
+                {/* "Total per unit" sat beside the decoration row's own
+                    "Price/unit" with nothing to tell them apart — both said
+                    "unit", neither said unit of what, and the garment cost
+                    was never named on the panel at all. This one is the
+                    finished piece: garment + every decoration combined
+                    (Pavin: "make it more clear if its price decoration and
+                    per piece with decoration"). */}
+                <span className="text-sm font-bold">Price per piece</span>
                 <span className="text-lg font-bold text-accent">
                   {moneyFromMinor(
-                    Math.round(breakdown.totals.totalMinor / Math.max(1, qty)),
+                    customerUnitMinor(breakdown.totals.totalMinor, qty),
                   )}
                 </span>
               </div>
+              <p className="text-[11px] text-text-secondary -mt-0.5">
+                Garment + decoration
+              </p>
               <div className="flex justify-between items-baseline mt-1.5">
                 <span className="text-sm font-bold">Estimated Total</span>
                 <span className="text-xl font-display font-bold text-accent">
