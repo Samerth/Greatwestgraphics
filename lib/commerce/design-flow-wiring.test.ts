@@ -148,19 +148,38 @@ describe("studio canvas interaction", () => {
     expect(studio).toContain('className="pointer-events-auto absolute z-[3]');
   });
 
-  it("keeps artwork partly on the canvas while dragging", () => {
+  // Changed on purpose (print-area notes after the client meeting). These used
+  // to pin "at least 24 px stays on the canvas", which let a small logo be
+  // dropped completely off the left or top edge and left text unguarded. The
+  // rule is now that the whole of a logo or text stays on the canvas, because
+  // anything past the edge is cut from the proof but still ordered. The maths
+  // is tested directly in studio-canvas-bounds.test.ts; these check it is wired.
+  const textLayer = read("components/design/TextLayer.tsx");
+
+  it("keeps the whole artwork and text on the canvas while dragging", () => {
     expect(artworkLayer).toContain("dragBoundFunc");
-    expect(artworkLayer).toContain("KEEP_ON_CANVAS_PX");
+    expect(artworkLayer).toContain("keepDraggedNodeOnCanvas");
+    expect(textLayer).toContain("dragBoundFunc");
+    expect(textLayer).toContain("keepDraggedNodeOnCanvas");
+    expect(artworkLayer).not.toContain("KEEP_ON_CANVAS_PX");
   });
 
   it("checks position as well as size when resizing", () => {
     // Size was capped before; position was not, so a corner drag could grow
     // artwork straight off the canvas at a legal size.
-    expect(artworkLayer).toMatch(/boundBoxFunc[\s\S]{0,600}?offCanvas/);
+    expect(artworkLayer).toMatch(
+      /boundBoxFunc[\s\S]{0,900}?resizeWouldPushOffCanvas/,
+    );
+    expect(textLayer).toMatch(
+      /boundBoxFunc[\s\S]{0,600}?resizeWouldPushOffCanvas/,
+    );
   });
 
-  it("passes the canvas bound down to the artwork layer", () => {
-    expect(canvas).toContain("canvasSize={displaySize}");
+  it("passes the canvas span, which moves with zoom, to both layers", () => {
+    expect(canvas).toContain(
+      "const canvasBounds = { min: offset, max: offset + displaySize * zoom };",
+    );
+    expect(canvas.match(/canvasBounds=\{canvasBounds\}/g)).toHaveLength(2);
   });
 });
 

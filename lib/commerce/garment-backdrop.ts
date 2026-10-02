@@ -287,6 +287,17 @@ export function studioBackdropFallbackUrl(
   return GARMENT_FALLBACK;
 }
 
+/**
+ * Width, in pixels, the studio asks the image optimizer for. The canvas is
+ * shown at roughly 600 to 820 px and the proof image staff receive is drawn
+ * from the same picture, so 640 left it soft: enlarged on a laptop and more so
+ * on a high-resolution screen. 1080 is one of Next's standard widths. The
+ * optimizer never enlarges, so a smaller original (S&S colour photos are 500 px
+ * wide) is served as it is; SanMar's Bulk photos are 1,500 to 2,000 px and get
+ * the full benefit.
+ */
+export const STUDIO_CANVAS_IMAGE_WIDTH = 1080;
+
 /** Konva proofs need a same-origin URL. Local `/images/` and SVGs must not
  * go through the image optimizer — Next 16 rejects SVG there and the stage
  * stays blank. */
@@ -300,7 +311,7 @@ export function studioCanvasImageUrl(backdrop: GarmentBackdrop): string {
   ) {
     return backdrop.url;
   }
-  return `/_next/image?url=${encodeURIComponent(backdrop.url)}&w=640&q=75`;
+  return `/_next/image?url=${encodeURIComponent(backdrop.url)}&w=${STUDIO_CANVAS_IMAGE_WIDTH}&q=75`;
 }
 
 /**

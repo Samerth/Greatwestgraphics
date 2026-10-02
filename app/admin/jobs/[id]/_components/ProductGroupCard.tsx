@@ -96,23 +96,36 @@ export function ProductGroupCard({ product }: { product: AdminProductGroup }) {
             {(rep.artworkProofUrl || rep.designProjectId) && (
               <div className="flex flex-wrap items-center gap-3 mb-1.5">
                 {rep.designProjectId && (
-                  <Link
-                    href={`/admin/designs/${rep.designProjectId}/edit`}
-                    className="text-sm underline"
-                  >
-                    Open this design in the studio
-                  </Link>
+                  <>
+                    <Link
+                      href={`/admin/designs/${rep.designProjectId}/edit`}
+                      className="text-sm underline"
+                    >
+                      Open this design in the studio
+                    </Link>
+                    {/* The edit link above opens the canvas to change the
+                        design; this one opens the plain record — every
+                        saved layer with its own download, no editor. Two
+                        different jobs, so two links rather than one link
+                        doing double duty. */}
+                    <Link
+                      href={`/admin/designs/${rep.designProjectId}`}
+                      className="text-sm underline"
+                    >
+                      View full design record
+                    </Link>
+                  </>
                 )}
               </div>
             )}
 
             {rep.artworkLayers.length > 0 && (
-              <details className="mb-1.5">
-                <summary className="text-sm cursor-pointer">
+              <div className="mb-1.5">
+                <p className="text-sm font-semibold m-0 mb-1.5">
                   Original artwork files · {rep.artworkLayers.length} file
                   {rep.artworkLayers.length === 1 ? "" : "s"}
-                </summary>
-                <ul className="m-0 mt-2 p-0 list-none border border-border rounded-md divide-y divide-border">
+                </p>
+                <ul className="m-0 p-0 list-none border border-border rounded-md divide-y divide-border">
                   {rep.artworkLayers.map((layer) => (
                     <li
                       key={layer.id}
@@ -121,14 +134,11 @@ export function ProductGroupCard({ product }: { product: AdminProductGroup }) {
                       <div>
                         <p className="font-bold text-sm m-0">{layer.label}</p>
                         <p className="text-xs text-text-tertiary m-0 mt-1">
-                          <ArtworkFileSize src={layer.src} />
+                          {layer.filename} · <ArtworkFileSize src={layer.src} />
                         </p>
                       </div>
                       <a
-                        href={layer.src}
-                        download={`${layer.side}-artwork-${layer.index + 1}`}
-                        target="_blank"
-                        rel="noreferrer"
+                        href={layer.downloadHref}
                         className="text-sm font-bold text-accent"
                       >
                         Download original
@@ -136,7 +146,7 @@ export function ProductGroupCard({ product }: { product: AdminProductGroup }) {
                     </li>
                   ))}
                 </ul>
-              </details>
+              </div>
             )}
 
             {rep.roster && (

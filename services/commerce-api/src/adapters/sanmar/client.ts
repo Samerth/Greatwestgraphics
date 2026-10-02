@@ -14,6 +14,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { ProxyAgent, type Dispatcher } from "undici";
 
 export class SanmarAuthError extends Error {
   readonly code = "SANMAR_AUTH_ERROR";
@@ -47,7 +48,13 @@ export class SanmarBulkLimitError extends Error {
   readonly code = "SANMAR_BULK_LIMIT";
 }
 
-/** Bulk Data entitlement miss — not a login-email failure, not Media. */
+/**
+ * Bulk Data refused this call (code 120, "not authorized user for this
+ * call") — not a general authentication failure and not Media. SanMar's own
+ * EDI team confirmed Bulk is on for this account, so this is about *who* is
+ * calling: the login e-mail (`SanmarClientOptions.bulkLoginEmail`) and the
+ * calling address (`vendorProxyUrl`).
+ */
 export class SanmarBulkUnauthorizedError extends Error {
   readonly code = "SANMAR_BULK_UNAUTHORIZED";
 }
@@ -122,7 +129,15 @@ export type SanmarBulkProduct = {
   sizeName?: string;
   quantity: number;
   price?: number;
+  /**
+   * SanMar's sale price. In the 1 Oct 2026 reply 3,702 parts carried one, and
+   * for 3,064 of them `price` already equalled it, i.e. `price` is the sale
+   * price while a sale runs (see `bulkPriceInstruction`).
+   */
+  salePrice?: number;
   imageUrl?: string;
+  /** SanMar's "Discontinue Code" (X, S, C or M on 5,408 of 20,583 parts). */
+  discountCode?: string;
   /** Present only when Bulk XML includes a hex/htmlColor field. */
   colorHex?: string;
   productName?: string;
@@ -154,6 +169,31 @@ export type SanmarClientOptions = {
   pricingUrl?: string;
   mediaUrl?: string;
   bulkUrl?: string;
+  /**
+   * SanMar Canada login e-mail used only for Bulk Data; unset means
+   * `loginEmail`. Bulk refused the shared shop inbox that works for every
+   * other call ("You are not authorized user for this call", code 120) and
+   * succeeded — 1 Oct 2026, 20,583 parts across 693 styles — once the login
+   * was the individual one SanMar's own working test used. Kept separate
+   * rather than swapped everywhere, so a login that is proven for Bulk does
+   * not also have to be proven for Product Data, Inventory, Pricing and Media.
+   */
+  bulkLoginEmail?: string;
+  /**
+   * Route every SanMar call through one fixed-address relay. SanMar's EDI
+   * agreement asks for a registered static IP, and ECS has no stable outbound
+   * address of its own (`assignPublicIp: ENABLED`, no NAT — a new one on every
+   * deploy), so calls leave through the single small box
+   * infra/cloudshell/scripts/26-create-vendor-egress.sh creates; SanMar added
+   * that address on 30 Sep 2026. Whether the address was ever the deciding
+   * factor is not settled: Bulk first succeeded only after the *login* changed
+   * (see `bulkLoginEmail`), from this address. Keep it until a Bulk call from
+   * an unregistered address with that login has been tried.
+   */
+  vendorProxyUrl?: string;
+  /** Basic-auth pair the vendor-egress box requires — see infra/cloudshell/scripts/26-create-vendor-egress.sh. */
+  vendorProxyUsername?: string;
+  vendorProxyPassword?: string;
 };
 
 const NS_PD =
@@ -228,17 +268,25 @@ export function soapFaultString(xml: string): string | undefined {
   return firstTag(xml, "faultstring") || firstTag(xml, "Text");
 }
 
-/** SOAP 200/500 body that means Bulk already ran today (not a missing xmlns). */
+/**
+ * SOAP 200/500 body that means Bulk already ran today (not a missing xmlns).
+ * SanMar's guide lists code 125 as "Reached maximum limit of call"; a fault
+ * body can carry that wording without the code.
+ */
 export function isBulkLimitResponse(xml: string): boolean {
   return (
-    /daily.?limit|rate.?limit|already.?called|1 call/i.test(xml) ||
-    serviceCode(xml) === "125"
+    /daily.?limit|rate.?limit|maximum.?limit|already.?called|1 call/i.test(
+      xml,
+    ) || serviceCode(xml) === "125"
   );
 }
 
 /**
- * Bulk Data entitlement miss. The account can still call Product / Inventory /
- * Pricing / Media. The media password does not fix this.
+ * Bulk Data refused this call (code 120). The same login can still call
+ * Product / Inventory / Pricing / Media, and the media password does not fix
+ * this. Not a missing entitlement: SanMar's own EDI team tested Bulk with
+ * this account and it worked, and it worked for us on 1 Oct 2026 with the
+ * individual login (`SanmarClientOptions.bulkLoginEmail`).
  */
 export function isBulkUnauthorizedResponse(xml: string): boolean {
   return /not authorized user for this call/i.test(xml);
@@ -413,35 +461,145 @@ export function parseMediaContentXml(xml: string): string[] {
 }
 
 /** Parse Bulk Data product list XML (qty + price + image per part). */
+/**
+ * V8 does not copy a long substring, it keeps a window onto the string it was
+ * cut from. A product name taken from a streamed chunk would therefore keep
+ * that whole ~64 KB chunk alive for as long as the row exists — measured on the
+ * real reply, 20,583 small rows held 121 MB instead of the ~20 MB they
+ * contain, which cancels the point of streaming. Prefixing and slicing forces
+ * a fresh, right-sized copy.
+ */
+function detach(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : (" " + value).slice(1);
+}
+
+function parseBulkProductBlock(block: string): SanmarBulkProduct | null {
+  const partId = detach(firstTag(block, "productId"));
+  const styleId = detach(firstTag(block, "style"));
+  // A refused call still carries one <Product> with every field empty.
+  if (!partId || !styleId) return null;
+  const quantity = Number.parseInt(firstTag(block, "quantity") || "0", 10) || 0;
+  const priceText = firstTag(block, "price");
+  const price = priceText ? Number.parseFloat(priceText) : undefined;
+  const saleText = firstTag(block, "salePrice");
+  const salePrice = saleText ? Number.parseFloat(saleText) : undefined;
+  const discountCode = firstTag(block, "discountCode");
+  const colorHex = detach(firstVendorHex(block));
+  return {
+    partId,
+    styleId,
+    colorName: detach(
+      firstTag(block, "swatchColor") || firstTag(block, "colorName"),
+    ),
+    sizeName: detach(firstTag(block, "size")),
+    quantity,
+    price: Number.isFinite(price) ? price : undefined,
+    ...(salePrice !== undefined && Number.isFinite(salePrice)
+      ? { salePrice }
+      : {}),
+    imageUrl: detach(firstTag(block, "image")),
+    ...(discountCode ? { discountCode: detach(discountCode) } : {}),
+    ...(colorHex ? { colorHex } : {}),
+    productName: detach(firstTag(block, "productName")),
+    brandName: detach(firstTag(block, "brand")),
+  };
+}
+
 export function parseBulkProductsXml(xml: string): SanmarBulkProduct[] {
   const blocks =
     xml.match(/<(?:[\w.-]+:)?Product\b[\s\S]*?<\/(?:[\w.-]+:)?Product>/gi) ??
     [];
-
   const products: SanmarBulkProduct[] = [];
   for (const block of blocks) {
-    const partId = firstTag(block, "productId");
-    const styleId = firstTag(block, "style");
-    if (!partId || !styleId) continue;
-    const quantity = Number.parseInt(firstTag(block, "quantity") || "0", 10) || 0;
-    const priceText = firstTag(block, "price");
-    const price = priceText ? Number.parseFloat(priceText) : undefined;
-    const colorHex = firstVendorHex(block);
-    products.push({
-      partId,
-      styleId,
-      colorName:
-        firstTag(block, "swatchColor") || firstTag(block, "colorName"),
-      sizeName: firstTag(block, "size"),
-      quantity,
-      price: Number.isFinite(price) ? price : undefined,
-      imageUrl: firstTag(block, "image"),
-      ...(colorHex ? { colorHex } : {}),
-      productName: firstTag(block, "productName"),
-      brandName: firstTag(block, "brand"),
-    });
+    const product = parseBulkProductBlock(block);
+    if (product) products.push(product);
   }
   return products;
+}
+
+/**
+ * Longest stretch of non-product text kept from a Bulk reply. The reply is
+ * the whole catalogue wrapped in a few hundred bytes of envelope and status
+ * message; this only exists so an unexpected non-XML page cannot grow the
+ * buffer without limit.
+ */
+const BULK_RESIDUAL_LIMIT = 256 * 1024;
+
+/**
+ * Reads a Bulk Data reply as it arrives instead of holding it whole.
+ *
+ * The real reply is ~50 MB of XML (20,583 parts on 1 Oct 2026). Collected
+ * into one string that is ~100 MB (two bytes a character, because the French
+ * text has accents) on top of the bytes it was decoded from, inside an API
+ * task that has 512 MB. Here each `<Product>` is parsed the moment its closing
+ * tag lands and then dropped, so memory stays at one network chunk plus the
+ * result list.
+ *
+ * Returns the parsed products and `residual`: everything that was not inside
+ * a `<Product>` — the envelope and the `ServiceMessage` that says what
+ * happened — which is what the "not authorized" / daily-limit checks read.
+ */
+export async function parseBulkProductsFromStream(
+  body: AsyncIterable<Uint8Array>,
+): Promise<{ products: SanmarBulkProduct[]; residual: string }> {
+  const decoder = new TextDecoder("utf-8");
+  const openTag = /<(?:[\w.-]+:)?Product\b/gi;
+  const closeTag = /<\/(?:[\w.-]+:)?Product>/gi;
+  // A chunk can end inside "<ns1:Prod", so the last few characters are held
+  // back from "not a product" until more text arrives.
+  const HOLD_BACK = 48;
+
+  const products: SanmarBulkProduct[] = [];
+  let buffer = "";
+  let residual = "";
+  const keepResidual = (text: string) => {
+    if (!text) return;
+    residual += text;
+    if (residual.length > BULK_RESIDUAL_LIMIT) {
+      residual = residual.slice(-BULK_RESIDUAL_LIMIT);
+    }
+  };
+
+  const drain = (final: boolean) => {
+    for (;;) {
+      openTag.lastIndex = 0;
+      const open = openTag.exec(buffer);
+      if (!open) {
+        if (final) {
+          keepResidual(buffer);
+          buffer = "";
+        } else if (buffer.length > HOLD_BACK) {
+          keepResidual(buffer.slice(0, buffer.length - HOLD_BACK));
+          buffer = buffer.slice(buffer.length - HOLD_BACK);
+        }
+        return;
+      }
+      closeTag.lastIndex = open.index;
+      const close = closeTag.exec(buffer);
+      if (!close) {
+        keepResidual(buffer.slice(0, open.index));
+        buffer = buffer.slice(open.index);
+        if (final) {
+          keepResidual(buffer);
+          buffer = "";
+        }
+        return;
+      }
+      const end = close.index + close[0].length;
+      keepResidual(buffer.slice(0, open.index));
+      const product = parseBulkProductBlock(buffer.slice(open.index, end));
+      if (product) products.push(product);
+      buffer = buffer.slice(end);
+    }
+  };
+
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    drain(false);
+  }
+  buffer += decoder.decode();
+  drain(true);
+  return { products, residual };
 }
 
 export function parseProductColorBlocks(
@@ -539,6 +697,27 @@ export function parseSellableProductId(raw: string): {
 }
 
 /**
+ * Pure config builder for the vendor-egress proxy — split out from
+ * `ProxyAgent` construction so the credential/URI logic is testable without a
+ * real dispatcher. `vendorProxyUrl` unset means "call SanMar directly," which
+ * is what every environment did before 26 Sep 2026 and is still fine for a
+ * local/dev run against sandbox credentials.
+ */
+export function buildVendorProxyConfig(
+  options: Pick<
+    SanmarClientOptions,
+    "vendorProxyUrl" | "vendorProxyUsername" | "vendorProxyPassword"
+  >,
+): { uri: string; token?: string } | undefined {
+  if (!options.vendorProxyUrl) return undefined;
+  if (!options.vendorProxyUsername) return { uri: options.vendorProxyUrl };
+  const token = `Basic ${Buffer.from(
+    `${options.vendorProxyUsername}:${options.vendorProxyPassword ?? ""}`,
+  ).toString("base64")}`;
+  return { uri: options.vendorProxyUrl, token };
+}
+
+/**
  * SanMar Canada / ATC PromoStandards SOAP + EDI client.
  */
 export class SanmarClient {
@@ -549,6 +728,12 @@ export class SanmarClient {
     media: string;
     bulk: string;
   };
+  /**
+   * Every call this client makes goes out through this dispatcher when set —
+   * see the `vendorProxyUrl` doc comment on `SanmarClientOptions` for why.
+   * `undefined` means "call SanMar directly," Node's normal default path.
+   */
+  private readonly dispatcher?: Dispatcher;
   rateLimitRemaining: number | null = null;
 
   constructor(private readonly options: SanmarClientOptions) {
@@ -569,6 +754,8 @@ export class SanmarClient {
         `${base}/pstd/mediacontent1.1/MediaContentService.php`,
       bulk: options.bulkUrl || `${base}/bulk-data/BulkDataService.php`,
     };
+    const proxyConfig = buildVendorProxyConfig(options);
+    this.dispatcher = proxyConfig ? new ProxyAgent(proxyConfig) : undefined;
   }
 
   get accountId() {
@@ -815,17 +1002,23 @@ export class SanmarClient {
 
   /**
    * Bulk Data — limited to ~1 call/day. Returns part-level qty + price + base image.
+   *
+   * The reply is read as a stream (see `parseBulkProductsFromStream`) because
+   * it is ~50 MB; the verdict lives in the few hundred bytes around the
+   * products, which is what the refusal / daily-limit / login checks read.
    */
   async getBulkProducts(): Promise<SanmarBulkProduct[]> {
-    let xml: string;
+    const bulkLogin =
+      this.options.bulkLoginEmail?.trim() || this.options.loginEmail;
+    const refusal =
+      "You are not authorized user for this call (SanMar refused Bulk Data for this login and calling address; the media password does not unlock it — see bulkLoginEmail and vendorProxyUrl on SanmarClientOptions)";
+
+    let response: Response;
     try {
-      xml = await this.postSoap(
+      response = await this.sendSoap(
         this.endpoints.bulk,
         "getBulkData",
-        buildGetBulkDataRequestXml(
-          this.options.accountId,
-          this.options.loginEmail,
-        ),
+        buildGetBulkDataRequestXml(this.options.accountId, bulkLogin),
       );
     } catch (error) {
       if (
@@ -848,32 +1041,43 @@ export class SanmarClient {
             }`
           : String(error);
       if (isBulkUnauthorizedResponse(unauthorizedText)) {
-        throw new SanmarBulkUnauthorizedError(
-          "You are not authorized user for this call (Bulk Data is a separate SanMar entitlement; SANMAR_MEDIA_PASSWORD does not unlock Bulk)",
-        );
+        throw new SanmarBulkUnauthorizedError(refusal);
       }
       throw error;
     }
-    if (isBulkUnauthorizedResponse(xml)) {
-      throw new SanmarBulkUnauthorizedError(
-        firstTag(xml, "description") ||
-          "You are not authorized user for this call (Bulk Data is a separate SanMar entitlement; SANMAR_MEDIA_PASSWORD does not unlock Bulk)",
+
+    const body = response.body as unknown as AsyncIterable<Uint8Array> | null;
+    let parsed: { products: SanmarBulkProduct[]; residual: string };
+    try {
+      parsed = body
+        ? await parseBulkProductsFromStream(body)
+        : { products: [], residual: "" };
+    } catch (error) {
+      throw new SanmarSOAPError(
+        "Bulk Data reply could not be read to the end",
+        error instanceof Error ? error.message : error,
       );
     }
-    this.assertAuth(xml);
+    const { products, residual } = parsed;
 
-    if (isBulkLimitResponse(xml)) {
+    if (isBulkUnauthorizedResponse(residual)) {
+      throw new SanmarBulkUnauthorizedError(
+        firstTag(residual, "description") || refusal,
+      );
+    }
+    this.assertAuth(residual);
+
+    if (isBulkLimitResponse(residual)) {
       throw new SanmarBulkLimitError(
-        firstTag(xml, "description") ||
+        firstTag(residual, "description") ||
           "Bulk Data daily limit reached (1 call/day)",
       );
     }
 
-    const products = parseBulkProductsXml(xml);
     if (products.length === 0) {
       const description =
-        firstTag(xml, "description") || "Bulk Data returned no products";
-      throw new SanmarSOAPError(description, xml.slice(0, 2000));
+        firstTag(residual, "description") || "Bulk Data returned no products";
+      throw new SanmarSOAPError(description, residual.slice(0, 2000));
     }
     return products;
   }
@@ -1046,6 +1250,21 @@ export class SanmarClient {
     soapAction: string,
     innerBody: string,
   ): Promise<string> {
+    const response = await this.sendSoap(endpoint, soapAction, innerBody);
+    return response.text();
+  }
+
+  /**
+   * Sends the call and hands back a successful (2xx) response with its body
+   * still unread, so a caller that expects a very large reply can stream it.
+   * Transport failures and non-2xx statuses are thrown here, with the body
+   * read (it is small) only to build the error.
+   */
+  private async sendSoap(
+    endpoint: string,
+    soapAction: string,
+    innerBody: string,
+  ): Promise<Response> {
     const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
@@ -1063,7 +1282,8 @@ export class SanmarClient {
         },
         body: envelope,
         signal: AbortSignal.timeout(120_000),
-      });
+        ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
+      } as RequestInit & { dispatcher?: Dispatcher });
     } catch (error) {
       throw new SanmarSOAPError(
         `SOAP request failed (${soapAction})`,
@@ -1071,13 +1291,14 @@ export class SanmarClient {
       );
     }
 
-    const text = await response.text();
     if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel().catch(() => undefined);
       throw new SanmarAuthError(
         `SOAP authentication failed (${response.status})`,
       );
     }
     if (!response.ok) {
+      const text = await response.text();
       const fault = soapFaultString(text);
       throw new SanmarSOAPError(
         fault
@@ -1086,7 +1307,7 @@ export class SanmarClient {
         text.slice(0, 2000),
       );
     }
-    return text;
+    return response;
   }
 
   private async readCsvFile(name: string): Promise<string | null> {
@@ -1116,6 +1337,12 @@ export function createSanmarClientFromEnv(env: {
   SANMAR_PRICING_URL?: string;
   SANMAR_MEDIA_URL?: string;
   SANMAR_BULK_URL?: string;
+  /** Login e-mail for Bulk Data only — see the `bulkLoginEmail` doc on SanmarClientOptions. */
+  SANMAR_BULK_LOGIN_EMAIL?: string;
+  /** Fixed-address forward proxy — see the `vendorProxyUrl` doc on SanmarClientOptions. */
+  SANMAR_VENDOR_PROXY_URL?: string;
+  SANMAR_VENDOR_PROXY_USERNAME?: string;
+  SANMAR_VENDOR_PROXY_PASSWORD?: string;
 }): SanmarClient | null {
   const loginEmail = env.SANMAR_LOGIN_EMAIL || env.SANMAR_API_PASSWORD;
   if (!env.SANMAR_ACCOUNT_ID || !loginEmail) {
@@ -1143,5 +1370,9 @@ export function createSanmarClientFromEnv(env: {
     pricingUrl: env.SANMAR_PRICING_URL,
     mediaUrl: env.SANMAR_MEDIA_URL,
     bulkUrl: env.SANMAR_BULK_URL,
+    bulkLoginEmail: env.SANMAR_BULK_LOGIN_EMAIL,
+    vendorProxyUrl: env.SANMAR_VENDOR_PROXY_URL,
+    vendorProxyUsername: env.SANMAR_VENDOR_PROXY_USERNAME,
+    vendorProxyPassword: env.SANMAR_VENDOR_PROXY_PASSWORD,
   });
 }

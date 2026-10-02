@@ -2544,6 +2544,9 @@ export function DesignStudio({
           current="design"
           reached={hasActiveArtwork(design) ? "quantity" : "design"}
           className="md:col-span-3 mb-sp-1"
+          onNavigate={(step) => {
+            if (step === "quantity") continueToQuantity();
+          }}
         />
       )}
       {/* Tool rail. A column of its own rather than a strip of tabs inside
@@ -2600,6 +2603,83 @@ export function DesignStudio({
 
       {/* Product and artwork controls. Every visible control is interactive. */}
       <aside className="bg-bg-raised border border-border rounded-lg overflow-hidden flex flex-col min-w-0 md:sticky md:top-[calc(var(--header-offset)+1rem)] md:max-h-[calc(100dvh-var(--header-offset)-2rem)] md:overflow-y-auto">
+        {/* Primary action, first thing in the controls panel rather than last
+            thing on the page (Pavin, client meeting: "buttons on the bottom
+            of studio, move to top so no having to scroll"). This panel is
+            already pinned beside the canvas and scrolls on its own, so
+            `sticky top-0` keeps the button in view for as long as the studio
+            is — and, unlike a bar pinned above the canvas, it never sits on
+            top of the garment or the layer controls. (That was tried first:
+            in the browser it covered the middle of the canvas and half of the
+            Delete button.) */}
+        {productDetail && selectedColorwayReady && !isStaff && (
+          <div className="sticky top-0 z-20 bg-bg-raised border-b border-border p-sp-3 shadow-sm">
+            {cartError && (
+              <p className="text-sm text-red-600 mt-0 mb-2" role="alert">
+                {cartError}
+              </p>
+            )}
+            {/* Step 1's real exit. Sizes and quantities belong to the Input
+                Quantity step, so the studio's job ends at "the design is
+                finished". Gated on uploads finishing because a blob: URL does
+                not survive the navigation — the artwork has to be durable
+                before the design leaves this page. Ordering (including named
+                team orders) happens on Input Quantity, not here — CodSphere
+                UAT: "Design Studio should be focused exclusively on creating
+                the garment design," and "rather than asking the customer to
+                select quantities/add pieces to cart directly from the Design
+                Studio." */}
+            <Button
+              type="button"
+              className="w-full whitespace-normal text-center px-3"
+              variant="primary"
+              disabled={
+                pendingUploads > 0 ||
+                !selectedColorwayReady ||
+                decoratedSides.length === 0 ||
+                pendingDecorations.length > 0
+              }
+              onClick={continueToQuantity}
+            >
+              {continuing
+                ? "Preparing your design…"
+                : pendingUploads > 0
+                  ? "Uploading artwork…"
+                  : decoratedSides.length === 0
+                    ? "Add artwork or names to continue"
+                    : pendingDecorations.length > 0
+                      ? "Confirm decoration to continue"
+                      : "Continue to Quantity"}
+            </Button>
+            {/* Naming the logo that still needs a decision, and going there on
+                click — being told "something is unconfirmed" without being
+                told which is worse than not being stopped at all (row 46). */}
+            {pendingDecorations.length > 0 ? (
+              <p
+                data-studio="pending-decorations"
+                className="mt-1.5 mb-0 text-center text-[12px] text-text-secondary"
+              >
+                Needs a decoration choice:{" "}
+                {pendingDecorations.map((pending, position) => (
+                  <span key={pending.artworkId}>
+                    {position > 0 ? ", " : ""}
+                    <button
+                      type="button"
+                      onClick={() => goToPendingDecoration(pending)}
+                      className="font-semibold text-accent hover:underline"
+                    >
+                      {DESIGN_SIDE_LABELS[pending.side]} logo {pending.index + 1}
+                    </button>
+                  </span>
+                ))}
+              </p>
+            ) : (
+              <p className="text-[12px] text-text-tertiary text-center mt-1.5 mb-0">
+                Choose colours, sizes and quantities on the next step.
+              </p>
+            )}
+          </div>
+        )}
         <div className="p-sp-4 flex flex-col gap-2.5 flex-1 min-w-0">
         {garmentOptions.length > 0 && (
           <div className="relative z-10 mb-sp-2 min-w-0">
@@ -3741,91 +3821,6 @@ export function DesignStudio({
           <p className="text-[12px] text-text-tertiary text-center -mt-1">
             Downloads every decorated view — front, back and sleeves — as one mockup.
           </p>
-
-          {productDetail && selectedColorwayReady && !isStaff && (
-            <div className="mt-sp-3 pt-sp-3 border-t border-border">
-              {/* Size, quantity, quantity presets, print method and the
-                  decoration pricing inputs used to live here. They are
-                  ordering decisions, not design ones, so they now belong to
-                  the Input Quantity step — the studio is only about what the
-                  garment looks like. (CodSphere UAT: "Design Studio should be
-                  focused exclusively on creating the garment design.") */}
-              {cartError && (
-                <p className="text-sm text-red-600 mt-2 mb-0" role="alert">
-                  {cartError}
-                </p>
-              )}
-
-              {/* Step 1's real exit. Sizes and quantities now belong to the
-                  Input Quantity step, so the studio's job ends at "the design
-                  is finished". Gated on uploads finishing because a blob: URL
-                  does not survive the navigation — the artwork has to be
-                  durable before the design leaves this page. */}
-              {!isStaff && (
-                <>
-                  <Button
-                    type="button"
-                    className="w-full"
-                    variant="primary"
-                    disabled={
-                      pendingUploads > 0 ||
-                      !selectedColorwayReady ||
-                      decoratedSides.length === 0 ||
-                      pendingDecorations.length > 0
-                    }
-                    onClick={continueToQuantity}
-                  >
-                    {continuing
-                      ? "Preparing your design…"
-                      : pendingUploads > 0
-                        ? "Uploading artwork…"
-                        : decoratedSides.length === 0
-                          ? "Add artwork or names to continue"
-                          : pendingDecorations.length > 0
-                            ? "Confirm decoration to continue"
-                            : "Continue to Quantity"}
-                  </Button>
-                  {/* Naming the logo that still needs a decision, and
-                      going there on click — being told "something is
-                      unconfirmed" without being told which is worse than
-                      not being stopped at all (row 46). */}
-                  {pendingDecorations.length > 0 ? (
-                    <p
-                      data-studio="pending-decorations"
-                      className="mt-1.5 mb-sp-3 text-center text-[12px] text-text-secondary"
-                    >
-                      Needs a decoration choice:{" "}
-                      {pendingDecorations.map((pending, position) => (
-                        <span key={pending.artworkId}>
-                          {position > 0 ? ", " : ""}
-                          <button
-                            type="button"
-                            onClick={() => goToPendingDecoration(pending)}
-                            className="font-semibold text-accent hover:underline"
-                          >
-                            {DESIGN_SIDE_LABELS[pending.side]} logo{" "}
-                            {pending.index + 1}
-                          </button>
-                        </span>
-                      ))}
-                    </p>
-                  ) : (
-                    <p className="text-[12px] text-text-tertiary text-center mt-1.5 mb-sp-3">
-                      Choose colours, sizes and quantities on the next step.
-                    </p>
-                  )}
-                </>
-              )}
-
-              {/* Add to Cart lived here. Ordering now happens on the Input
-                  Quantity step — including named team orders, which arrive
-                  there as one row per person — so the studio ends at
-                  "Continue to Quantity" and asks no ordering question at
-                  all. (CodSphere UAT: "rather than asking the customer to
-                  select quantities/add pieces to cart directly from the
-                  Design Studio.") */}
-             </div>
-          )}
 
           {/* Discarding the in-progress design used to be possible only from
               the header chip, which row 56 removed. Without a replacement a

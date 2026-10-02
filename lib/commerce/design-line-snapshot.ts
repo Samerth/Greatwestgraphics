@@ -90,3 +90,23 @@ export function designSnapshotFromConfiguration(
   };
   return { design, garmentPhotos, heroSide };
 }
+
+/**
+ * The design document alone, for callers that only need the artwork files
+ * themselves (e.g. admin's "download the original artwork" list) rather
+ * than a drawable per-colour thumbnail. `designSnapshotFromConfiguration`
+ * above also requires a valid `garmentPhotos` object, which exists only to
+ * pick a backdrop to redraw the art onto — an older job line, or one saved
+ * before `garmentPhotos` was captured, can have perfectly good artwork with
+ * no photos at all, and gating the download list on that requirement was
+ * why staff sometimes saw no download option despite artwork being right
+ * there in the job. Returns `null` only when there's truly nothing to
+ * download: no configuration, or no side carries artwork or text.
+ */
+export function designArtworkLayersFromConfiguration(
+  configuration: Record<string, unknown> | null | undefined,
+): DesignDocument | null {
+  if (!configuration) return null;
+  const design = normalizeDesignDocument(configuration.designSnapshot);
+  return designSnapshotHeroSide(design) ? design : null;
+}

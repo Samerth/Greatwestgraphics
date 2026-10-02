@@ -7,7 +7,11 @@ import {
 import { jobStatusPresentation, type StatusTone } from "@/lib/commerce/status";
 import { portalDecorations } from "@/lib/commerce/portal-progress";
 import type { PortalDecoration } from "@/lib/commerce/portal-progress";
-import { designSnapshotFromConfiguration } from "@/lib/commerce/design-line-snapshot";
+import {
+  designSnapshotFromConfiguration,
+  designArtworkLayersFromConfiguration,
+} from "@/lib/commerce/design-line-snapshot";
+import { uploadKeyFromUrl } from "@/lib/storage/upload-access";
 import { getAuthoritativeLineTotalMinor } from "@/lib/utils/quote-pricing";
 import {
   formatSizeBreakdown,
@@ -78,6 +82,8 @@ export interface ProductLineView {
     id: string;
     src: string;
     label: string;
+    filename: string;
+    downloadHref: string;
   }[];
   roster: { size: string; name: string; number?: string }[] | null;
   stock: GroupStock | null;
@@ -305,18 +311,48 @@ export function buildJobView(
 
   const proofsSummary = summarizeJobProofs(detail.proofs ?? []);
 
+  /** Best-effort file extension from a stored artwork URL. Every upload's
+   *  storage key carries the real one (`uploadObjectKey`), so this is exact
+   *  for anything saved through the normal upload route; anything odder
+   *  (a `data:` URL, a URL with none) just gets no extension rather than a
+   *  guessed-wrong one. */
+  function artworkExtension(src: string): string {
+    const withoutQuery = src.split(/[?#]/)[0] ?? "";
+    const match = /\.([a-zA-Z0-9]{2,5})$/.exec(withoutQuery);
+    return match ? `.${match[1]!.toLowerCase()}` : "";
+  }
+
+  /** Routes the download through the staff-gated /api/uploads proxy with a
+   *  real filename, instead of linking the artwork's own stored URL
+   *  directly — that URL is cross-origin (so the `download` attribute is
+   *  silently ignored and the file just opens in a new tab) whenever
+   *  AWS_S3_PUBLIC_BASE_URL is configured. Falls back to the raw src when
+   *  the storage key can't be recovered from it, so the link still opens
+   *  the file even then. */
+  function artworkDownloadHref(src: string, filename: string): string {
+    const key = uploadKeyFromUrl(src);
+    if (!key) return src;
+    return `/api/uploads/${key}?download=${encodeURIComponent(filename)}`;
+  }
+
   const products: ProductLineView[] = lineGroups.map((group) => {
     const configuration = configOf(group.ids[0]!);
     const snapshot = designSnapshotFromConfiguration(configuration);
-    const artworkLayers = snapshot
+    const artworkDesign = designArtworkLayersFromConfiguration(configuration);
+    const artworkLayers = artworkDesign
       ? DesignSides.flatMap((side) =>
-          snapshot.design.artworksBySide[side].map((artwork, index) => ({
-            side,
-            index,
-            id: artwork.id,
-            src: artwork.src,
-            label: `${DESIGN_SIDE_LABELS[side]} · ${snapshot.design.placementBySide[side]}`,
-          })),
+          artworkDesign.artworksBySide[side].map((artwork, index) => {
+            const filename = `${side}-artwork-${index + 1}${artworkExtension(artwork.src)}`;
+            return {
+              side,
+              index,
+              id: artwork.id,
+              src: artwork.src,
+              label: `${DESIGN_SIDE_LABELS[side]} · ${artworkDesign.placementBySide[side]}`,
+              filename,
+              downloadHref: artworkDownloadHref(artwork.src, filename),
+            };
+          }),
         )
       : [];
     const catalogHintRaw = configuration.productMetadata || configuration.storefrontProductId || null;
@@ -348,7 +384,11 @@ export function buildJobView(
   const files: JobFile[] = [];
   for (const product of products) {
     for (const layer of product.artworkLayers) {
-      files.push({ label: `${product.description} — ${layer.label}`, href: layer.src, download: `${layer.side}-artwork` });
+      files.push({
+        label: `${product.description} — ${layer.label}`,
+        href: layer.downloadHref,
+        download: layer.filename,
+      });
     }
     if (product.artworkProofUrl) {
       files.push({ label: `${product.description} — mockup`, href: product.artworkProofUrl });

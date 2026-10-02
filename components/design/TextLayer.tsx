@@ -9,6 +9,11 @@ import {
   estimateTextDisplaySize,
   studioTextArcSvgPath,
 } from "@/lib/commerce/studio-text";
+import {
+  keepDraggedNodeOnCanvas,
+  resizeWouldPushOffCanvas,
+  type CanvasBounds,
+} from "@/lib/commerce/studio-canvas-bounds";
 
 export function TextLayer({
   layer,
@@ -16,6 +21,7 @@ export function TextLayer({
   onSelect,
   onChange,
   onDragMove,
+  canvasBounds,
 }: {
   layer: PlacedText;
   isSelected: boolean;
@@ -28,6 +34,8 @@ export function TextLayer({
     width: number;
     height: number;
   }) => void;
+  /** Where the canvas spans in the stage's pixels; text is kept wholly inside. */
+  canvasBounds?: CanvasBounds;
 }) {
   const shapeRef = useRef<Konva.Text | Konva.TextPath>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -67,6 +75,12 @@ export function TextLayer({
     stroke: layer.outline ? (layer.outlineColor ?? "#111111") : undefined,
     strokeWidth: layer.outline ? (layer.outlineWidth ?? 1.5) : 0,
     draggable: true,
+    // Text had no guard at all and could be dragged completely off the canvas.
+    dragBoundFunc: (pos: { x: number; y: number }) => {
+      const node = shapeRef.current;
+      if (!canvasBounds || !node) return pos;
+      return keepDraggedNodeOnCanvas(node, pos, canvasBounds);
+    },
     onClick: onSelect,
     onTap: onSelect,
     onDragMove: (event: Konva.KonvaEventObject<DragEvent>) => {
@@ -121,9 +135,17 @@ export function TextLayer({
             "bottom-left",
             "bottom-right",
           ]}
-          boundBoxFunc={(oldBox, newBox) =>
-            newBox.width < 16 || newBox.height < 12 ? oldBox : newBox
-          }
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 16 || newBox.height < 12) return oldBox;
+            if (
+              canvasBounds &&
+              Math.abs(newBox.rotation) < 0.001 &&
+              resizeWouldPushOffCanvas(oldBox, newBox, canvasBounds)
+            ) {
+              return oldBox;
+            }
+            return newBox;
+          }}
         />
       )}
     </>

@@ -9,7 +9,7 @@ import {
 } from "@/lib/storage/upload-access";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ key: string[] }> },
 ) {
   const { key } = await params;
@@ -54,12 +54,25 @@ export async function GET(
     return NextResponse.json({ error: { message: "Not found" } }, { status: 404 });
   }
 
-  return new NextResponse(new Uint8Array(stored.data), {
-    headers: {
-      "content-type": stored.contentType,
-      "cache-control": isPublicUploadKey(relative)
-        ? "public, max-age=31536000, immutable"
-        : "private, max-age=31536000, immutable",
-    },
-  });
+  const headers: Record<string, string> = {
+    "content-type": stored.contentType,
+    "cache-control": isPublicUploadKey(relative)
+      ? "public, max-age=31536000, immutable"
+      : "private, max-age=31536000, immutable",
+  };
+
+  // `<a download>` is silently ignored by the browser once this file's URL
+  // is cross-origin — which is exactly the case whenever AWS_S3_PUBLIC_BASE_URL
+  // is set — so a caller that wants a real save-to-disk (the admin artwork
+  // download links) asks for it explicitly instead of relying on that
+  // attribute. The name is attacker-controlled input reflected into a
+  // header, so it is quoted and stripped of quote/control characters rather
+  // than passed through raw.
+  const downloadName = request.nextUrl.searchParams.get("download");
+  if (downloadName) {
+    const safeName = downloadName.replace(/[\r\n"]/g, "").slice(0, 200) || "download";
+    headers["content-disposition"] = `attachment; filename="${safeName}"`;
+  }
+
+  return new NextResponse(new Uint8Array(stored.data), { headers });
 }

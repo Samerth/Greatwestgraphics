@@ -19,10 +19,21 @@ export function DesignStepBar({
    *  failure the sequential flow exists to prevent. */
   reached,
   className,
+  /**
+   * Intercepts a step click instead of the plain `<Link>` navigation.
+   * Design → Input Quantity has to export and upload the proof and save
+   * the design first (see `continueToQuantity` in DesignStudio) — a bare
+   * link here would jump straight to `/design/quantity` and skip all of
+   * that, which is exactly the gap the primary "Continue to Quantity"
+   * button below the canvas exists to close. Omit it on pages where a step
+   * genuinely is just a link (e.g. stepping back from Quantity to Design).
+   */
+  onNavigate,
 }: {
   current: DesignStepId;
   reached: DesignStepId;
   className?: string;
+  onNavigate?: (step: DesignStepId, href: string) => void;
 }) {
   const currentIndex = STEPS.findIndex((s) => s.id === current);
   const reachedIndex = STEPS.findIndex((s) => s.id === reached);
@@ -66,6 +77,14 @@ export function DesignStepBar({
               {isNavigable ? (
                 <Link
                   href={step.href}
+                  onClick={
+                    onNavigate
+                      ? (event) => {
+                          event.preventDefault();
+                          onNavigate(step.id, step.href);
+                        }
+                      : undefined
+                  }
                   className="flex items-center gap-2 rounded-sm px-1.5 py-1 -mx-0.5 hover:bg-fill-subtle-15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent transition-colors"
                 >
                   {marker}

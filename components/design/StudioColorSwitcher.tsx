@@ -66,7 +66,7 @@ export function StudioColorSwitcher({
                 aria-label={colorway.colorName}
                 onClick={() => onChange(colorway.id)}
                 className={cn(
-                  "relative h-9 w-9 shrink-0 overflow-hidden rounded-md border-2 transition-colors",
+                  "relative h-7 w-7 shrink-0 overflow-hidden rounded-md border-2 transition-colors",
                   active
                     ? "border-accent"
                     : canvas
