@@ -51,6 +51,27 @@ describe("isModelShot", () => {
     ).toBe(false);
   });
 
+  it("recognizes a _modl_ shot even when it is not named studio-front/back/side", () => {
+    // Real staging filenames. Underscore is a word character to `\b`, so these
+    // used to read as flat product photos.
+    for (const file of [
+      "s350_modl_atomic-blue_studio-3_2021_cil.jpg",
+      "l4047_modl_duck-brown_crop-2_2025_cil.jpg",
+      "x_omf_black.jpg",
+      "a_lifestyle_b.jpg",
+      "a_model_b.jpg",
+    ]) {
+      expect(isModelShot(`https://media.sanmarcanada.com/catalog/product/x/y/${file}`)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("does not mistake a word that merely contains model for a model shot", () => {
+    expect(isModelShot("https://media.example.com/modelling_black.jpg")).toBe(false);
+    expect(isModelShot("https://media.example.com/ATC_models_front.jpg")).toBe(false);
+  });
+
   it("recognizes the words model/lifestyle in a filename", () => {
     expect(isModelShot("https://media.example.com/108085-black-model.jpg")).toBe(true);
     expect(isModelShot("https://media.example.com/108085-black-on-model.jpg")).toBe(true);

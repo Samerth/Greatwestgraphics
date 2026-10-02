@@ -498,6 +498,9 @@ export default function DesignCanvas({
   // middle of the design stays put. Clamping it to 0 above 1x anchored the
   // zoom at the top-left corner instead, pushing the garment out of frame.
   const offset = (displaySize - displaySize * zoom) / 2;
+  // Where the canvas itself spans in the stage's pixels. At 100% that is 0 to
+  // the stage size; zoomed in, the canvas is larger than the stage and centred.
+  const canvasBounds = { min: offset, max: offset + displaySize * zoom };
 
   const stacked = [
     ...artworks.map((layer) => ({
@@ -552,7 +555,7 @@ export default function DesignCanvas({
                   onChange={onChangeArtwork}
                   onDragMove={onDragMove}
                   maxSize={maxArtworkDisplaySize(activeSide, displaySize)}
-                  canvasSize={displaySize}
+                  canvasBounds={canvasBounds}
                 />
               ) : (
                 <TextLayer
@@ -562,6 +565,7 @@ export default function DesignCanvas({
                   onSelect={() => onSelect(item.id)}
                   onChange={onChangeText}
                   onDragMove={onDragMove}
+                  canvasBounds={canvasBounds}
                 />
               ),
             )}

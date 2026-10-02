@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildGetBulkDataRequestXml,
   buildGetMediaContentRequestXml,
+  buildVendorProxyConfig,
   createSanmarClientFromEnv,
   extractVendorHex,
   isBulkLimitResponse,
@@ -13,10 +14,14 @@ import {
   parseInventoryLevelsXml,
   parseMediaContentXml,
   parsePartInventoryQuantity,
+  parseBulkProductsFromStream,
   parseBulkProductsXml,
   parseProductColorBlocks,
   parseSellableProductId,
   productPartsToSkus,
+  SanmarBulkLimitError,
+  SanmarBulkUnauthorizedError,
+  SanmarClient,
   soapFaultString,
 } from "./client.js";
 
@@ -218,7 +223,7 @@ describe("getBulkData request / SOAP faults", () => {
     expect(isBulkLimitResponse(xml)).toBe(true);
   });
 
-  it("treats Bulk 'not authorized user' as an entitlement miss, not the daily limit", () => {
+  it("treats Bulk 'not authorized user' as a refusal, not the daily limit", () => {
     const xml = `
       <GetBulkDataResponse>
         <ServiceMessage>
@@ -278,6 +283,52 @@ describe("Media vs Bulk credentials", () => {
   });
 });
 
+/**
+ * SanMar registered one fixed address for account 161 (30 Sep 2026 — see the
+ * doc comment on SanmarClientOptions.vendorProxyUrl). Every SanMar call routes
+ * through one small always-on box at that address when configured.
+ */
+describe("buildVendorProxyConfig", () => {
+  it("calls SanMar directly when no proxy URL is configured", () => {
+    expect(buildVendorProxyConfig({})).toBeUndefined();
+  });
+
+  it("builds a plain proxy config with no credentials", () => {
+    expect(
+      buildVendorProxyConfig({ vendorProxyUrl: "http://198.51.100.10:8888" }),
+    ).toEqual({ uri: "http://198.51.100.10:8888" });
+  });
+
+  it("adds a Basic auth token when a username is set", () => {
+    const config = buildVendorProxyConfig({
+      vendorProxyUrl: "http://198.51.100.10:8888",
+      vendorProxyUsername: "gwg",
+      vendorProxyPassword: "s3cret",
+    });
+    expect(config?.uri).toBe("http://198.51.100.10:8888");
+    expect(config?.token).toBe(
+      `Basic ${Buffer.from("gwg:s3cret").toString("base64")}`,
+    );
+  });
+
+  it("never puts the raw password in the token — only the base64 pair", () => {
+    const config = buildVendorProxyConfig({
+      vendorProxyUrl: "http://198.51.100.10:8888",
+      vendorProxyUsername: "gwg",
+      vendorProxyPassword: "s3cret",
+    });
+    expect(config?.token).not.toContain("s3cret");
+  });
+
+  it("tolerates a username with no password rather than throwing", () => {
+    const config = buildVendorProxyConfig({
+      vendorProxyUrl: "http://198.51.100.10:8888",
+      vendorProxyUsername: "gwg",
+    });
+    expect(config?.token).toBe(`Basic ${Buffer.from("gwg:").toString("base64")}`);
+  });
+});
+
 describe("parseBulkProductsXml", () => {
   it("reads part qty and price from Bulk Data Product nodes", () => {
     const xml = `
@@ -326,6 +377,244 @@ describe("parseBulkProductsXml", () => {
       </BulkDataResponse>
     `;
     expect(parseBulkProductsXml(xml)[0]?.colorHex).toBe("#111111");
+  });
+});
+
+/**
+ * Shaped like the real 1 Oct 2026 reply (20,583 parts, ~50 MB): one namespace
+ * prefix on everything, French text with accents and trademark glyphs, a
+ * $0 part, a part with no image, and the ServiceMessage after the product list.
+ */
+const BULK_ENVELOPE_HEAD =
+  '<?xml version="1.0" encoding="UTF-8"?>\n<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="https://edi.atc-apparel.com/bulk-data/"><SOAP-ENV:Body><ns1:GetBulkDataResponse><ns1:ProductInventoryArray>';
+const BULK_ENVELOPE_TAIL =
+  '</ns1:ProductInventoryArray><ns1:ServiceMessageArray><ns1:ServiceMessage><ns1:code>200</ns1:code><ns1:description>No Error - Information Requested.</ns1:description><ns1:severity>Information</ns1:severity></ns1:ServiceMessage></ns1:ServiceMessageArray></ns1:GetBulkDataResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>';
+
+function bulkPart(input: {
+  id: string;
+  style: string;
+  color: string;
+  size: string;
+  price: string;
+  qty?: number;
+  image?: string;
+  name?: string;
+}): string {
+  return (
+    `<ns1:Product><ns1:productId>${input.id}</ns1:productId>` +
+    `<ns1:productName>${input.name ?? "ATC™ YUPOONG® CASQUETTE"}</ns1:productName>` +
+    `<ns1:frProductName>ATCᴹᶜ CASQUETTE CAMIONNEUR RÉTRO</ns1:frProductName>` +
+    `<ns1:style>${input.style}</ns1:style><ns1:size>${input.size}</ns1:size>` +
+    `<ns1:swatchColor>${input.color}</ns1:swatchColor><ns1:frSwatchColor>Pétrole</ns1:frSwatchColor>` +
+    `<ns1:description>Poign&amp;eacute;es &amp;quot;h&amp;quot;</ns1:description>` +
+    `<ns1:brand>Yupoong</ns1:brand><ns1:image>${input.image ?? ""}</ns1:image>` +
+    `<ns1:weight>0.25</ns1:weight><ns1:caseSize>144</ns1:caseSize><ns1:youth xsi:nil="true"/>` +
+    `<ns1:discountCode>S</ns1:discountCode><ns1:quantity>${input.qty ?? 5}</ns1:quantity>` +
+    `<ns1:price>${input.price}</ns1:price><ns1:salePrice></ns1:salePrice>` +
+    `<ns1:saleEndDate></ns1:saleEndDate><ns1:priceGroup>4</ns1:priceGroup></ns1:Product>`
+  );
+}
+
+const BULK_PARTS = [
+  bulkPart({
+    id: "36533-1",
+    style: "ATC6606",
+    color: "Royal/White",
+    size: "OSFA",
+    price: "10.99",
+    qty: 530,
+    image:
+      "https://media.sanmarcanada.com/catalog/product/a/t/atc6606_royal_white.jpg",
+  }),
+  bulkPart({ id: "17977-1", style: "NF0A529K", color: "Noir", size: "S", price: "0.00", qty: 0 }),
+  bulkPart({
+    id: "17977-2",
+    style: "NF0A529K",
+    color: "Noir",
+    size: "M",
+    price: "89.5",
+    qty: 12,
+    image: "https://media.sanmarcanada.com/catalog/product/n/f/nf0a529k_flat_noir.jpg",
+  }),
+];
+const BULK_REPLY = BULK_ENVELOPE_HEAD + BULK_PARTS.join("") + BULK_ENVELOPE_TAIL;
+
+/** Splits text into byte chunks of `size`, which cuts through multi-byte characters. */
+async function* bytesIn(text: string, size: number): AsyncGenerator<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < bytes.length; i += size) yield bytes.slice(i, i + size);
+}
+
+describe("parseBulkProductsFromStream", () => {
+  const expected = parseBulkProductsXml(BULK_REPLY);
+
+  it("sanity: the fixture has three parts, one of them priced 0", () => {
+    expect(expected).toHaveLength(3);
+    expect(expected.map((row) => row.price)).toEqual([10.99, 0, 89.5]);
+  });
+
+  it.each([1, 2, 3, 7, 64, 1000, 1_000_000])(
+    "gives the same rows as the whole-string parser with %i-byte chunks",
+    async (size) => {
+      const { products } = await parseBulkProductsFromStream(
+        bytesIn(BULK_REPLY, size),
+      );
+      expect(products).toEqual(expected);
+    },
+  );
+
+  it("keeps the envelope and ServiceMessage, and none of the product text, as residual", async () => {
+    const { residual } = await parseBulkProductsFromStream(
+      bytesIn(BULK_REPLY, 5),
+    );
+    expect(residual).toContain("<ns1:code>200</ns1:code>");
+    expect(residual).toContain("No Error - Information Requested.");
+    expect(residual).not.toContain("17977-1");
+    expect(residual).not.toContain("CASQUETTE");
+  });
+
+  it("reads a refusal: no products, the message intact", async () => {
+    const refusal =
+      '<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="https://edi.atc-apparel.com/bulk-data/"><SOAP-ENV:Body><ns1:GetBulkDataResponse><ns1:ProductInventoryArray><ns1:Product><ns1:productId/><ns1:style/></ns1:Product></ns1:ProductInventoryArray><ns1:ServiceMessageArray><ns1:ServiceMessage><ns1:code>120</ns1:code><ns1:description>You are not authorized user for this call.</ns1:description></ns1:ServiceMessage></ns1:ServiceMessageArray></ns1:GetBulkDataResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>';
+    const { products, residual } = await parseBulkProductsFromStream(
+      bytesIn(refusal, 9),
+    );
+    expect(products).toEqual([]);
+    expect(isBulkUnauthorizedResponse(residual)).toBe(true);
+  });
+
+  it("does not mistake ProductInventoryArray or <productId> for a Product block", async () => {
+    const { products } = await parseBulkProductsFromStream(
+      bytesIn(BULK_ENVELOPE_HEAD + BULK_ENVELOPE_TAIL, 3),
+    );
+    expect(products).toEqual([]);
+  });
+
+  it("reads an unprefixed reply too", async () => {
+    const plain =
+      "<BulkDataResponse><Product><productId>1-1</productId><style>S1</style><quantity>2</quantity><price>3.5</price></Product></BulkDataResponse>";
+    const { products } = await parseBulkProductsFromStream(bytesIn(plain, 4));
+    expect(products).toEqual(parseBulkProductsXml(plain));
+    expect(products).toHaveLength(1);
+  });
+
+  it("bounds what it keeps of a huge reply that has no products", async () => {
+    const junk = "x".repeat(2_000_000);
+    const { products, residual } = await parseBulkProductsFromStream(
+      bytesIn(junk, 65_536),
+    );
+    expect(products).toEqual([]);
+    expect(residual.length).toBeLessThanOrEqual(256 * 1024);
+  });
+});
+
+describe("SanmarClient.getBulkProducts", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubBulkFetch(body: string, status = 200) {
+    const sent: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: { body: string }) => {
+        sent.push(init.body);
+        return new Response(body, { status });
+      }),
+    );
+    return sent;
+  }
+
+  const client = (extra: Partial<ConstructorParameters<typeof SanmarClient>[0]> = {}) =>
+    new SanmarClient({
+      accountId: "161",
+      loginEmail: "info@shop.example",
+      ...extra,
+    });
+
+  it("returns every part from a real-shaped reply", async () => {
+    stubBulkFetch(BULK_REPLY);
+    const rows = await client().getBulkProducts();
+    expect(rows.map((row) => row.partId)).toEqual([
+      "36533-1",
+      "17977-1",
+      "17977-2",
+    ]);
+  });
+
+  it("sends the shop login to Bulk when no Bulk login is set", async () => {
+    const sent = stubBulkFetch(BULK_REPLY);
+    await client().getBulkProducts();
+    expect(sent[0]).toContain("<password>info@shop.example</password>");
+    expect(sent[0]).toContain("<id>161</id>");
+  });
+
+  it("sends the Bulk login, not the shop login, when one is set", async () => {
+    const sent = stubBulkFetch(BULK_REPLY);
+    await client({ bulkLoginEmail: " harvey@shop.example " }).getBulkProducts();
+    expect(sent[0]).toContain("<password>harvey@shop.example</password>");
+    expect(sent[0]).not.toContain("info@shop.example");
+  });
+
+  it("reads SANMAR_BULK_LOGIN_EMAIL from env", async () => {
+    const sent = stubBulkFetch(BULK_REPLY);
+    const fromEnv = createSanmarClientFromEnv({
+      SANMAR_ACCOUNT_ID: "161",
+      SANMAR_LOGIN_EMAIL: "info@shop.example",
+      SANMAR_BULK_LOGIN_EMAIL: "harvey@shop.example",
+    });
+    await fromEnv!.getBulkProducts();
+    expect(sent[0]).toContain("<password>harvey@shop.example</password>");
+  });
+
+  it("throws the not-authorized error for a code 120 reply", async () => {
+    stubBulkFetch(
+      '<Envelope><Body><GetBulkDataResponse><ProductInventoryArray><Product><productId/></Product></ProductInventoryArray><ServiceMessageArray><ServiceMessage><code>120</code><description>You are not authorized user for this call.</description></ServiceMessage></ServiceMessageArray></GetBulkDataResponse></Body></Envelope>',
+    );
+    await expect(client().getBulkProducts()).rejects.toBeInstanceOf(
+      SanmarBulkUnauthorizedError,
+    );
+  });
+
+  it("throws the daily-limit error for a code 125 reply", async () => {
+    stubBulkFetch(
+      "<Envelope><Body><GetBulkDataResponse><ServiceMessageArray><ServiceMessage><code>125</code><description>Reached maximum limit of call</description></ServiceMessage></ServiceMessageArray></GetBulkDataResponse></Body></Envelope>",
+    );
+    await expect(client().getBulkProducts()).rejects.toBeInstanceOf(
+      SanmarBulkLimitError,
+    );
+  });
+
+  it("still classifies a refusal or limit that arrives as an HTTP 500 fault", async () => {
+    stubBulkFetch(
+      "<Envelope><Body><Fault><faultstring>Reached maximum limit of call</faultstring></Fault></Body></Envelope>",
+      500,
+    );
+    await expect(client().getBulkProducts()).rejects.toBeInstanceOf(
+      SanmarBulkLimitError,
+    );
+  });
+
+  it("is not fooled by product text that mentions a limit", async () => {
+    stubBulkFetch(
+      BULK_ENVELOPE_HEAD +
+        bulkPart({
+          id: "1-1",
+          style: "S1",
+          color: "Black",
+          size: "M",
+          price: "5",
+          name: "Rate limit already called 1 call mug",
+        }) +
+        BULK_ENVELOPE_TAIL,
+    );
+    const rows = await client().getBulkProducts();
+    expect(rows).toHaveLength(1);
+  });
+
+  it("refuses an empty success rather than reporting zero parts as fine", async () => {
+    stubBulkFetch(BULK_ENVELOPE_HEAD + BULK_ENVELOPE_TAIL);
+    await expect(client().getBulkProducts()).rejects.toThrow(
+      /No Error - Information Requested/,
+    );
   });
 });
 

@@ -23,7 +23,9 @@ import {
   type SanmarSKU,
   type SanmarSellablePart,
 } from "./client.js";
+import { bulkPriceInstruction } from "./bulk-price.js";
 import {
+  alignPatchesToCatalogueColours,
   applySanmarImagesToCatalogRows,
   assignSanmarColorImages,
   bulkProductsToColorwayPatches,
@@ -395,8 +397,15 @@ export class SanmarSyncService implements VendorCatalogAdapter {
   /**
    * Prefer Bulk Data (1 call/day, qty+price for all parts). Fall back to
    * concurrent per-style inventory + pricing SOAP over catalog style keys.
-   * Bulk "not authorized" is an entitlement miss — do not treat it as a
-   * login failure, and do not send SANMAR_MEDIA_PASSWORD to Bulk.
+   * Bulk "not authorized" (code 120) is SanMar refusing this login/address
+   * for Bulk only — Product, Inventory and Pricing still answer for the same
+   * account — so it falls back to the per-style calls rather than failing the
+   * sync. Do not send SANMAR_MEDIA_PASSWORD to Bulk; Bulk takes the login
+   * e-mail (`SANMAR_BULK_LOGIN_EMAIL`, else `SANMAR_LOGIN_EMAIL`).
+   *
+   * Bulk rows for parts that are not in the catalogue yet are skipped by
+   * `updateInventory` (it only updates existing variants); a full sync, not
+   * this refresh, is what adds new parts.
    */
   private async refreshQtyAndPrice(
     tenantId: string,
@@ -407,18 +416,67 @@ export class SanmarSyncService implements VendorCatalogAdapter {
     try {
       const bulk = await this.client.getBulkProducts();
       console.log(`[sanmar] bulk products=${bulk.length}`);
-      const items: InventoryRow[] = bulk.map((row) => ({
-        skuKey: row.partId,
-        qty: row.quantity,
-        priceDollars: row.price,
-      }));
+      // A part on sale keeps the price on file until it is decided whether
+      // garment cost should follow SanMar's sales (see `bulkPriceInstruction`).
+      const followSalePrices =
+        process.env.SANMAR_BULK_FOLLOW_SALE_PRICES?.trim().toLowerCase() ===
+        "true";
+      const priceCounts = { written: 0, onSaleKeptOrFilled: 0, none: 0 };
+      const items: InventoryRow[] = bulk.map((row) => {
+        const instruction = bulkPriceInstruction(row, followSalePrices);
+        if (instruction.kind === "none") {
+          priceCounts.none += 1;
+          return { skuKey: row.partId, qty: row.quantity };
+        }
+        if (instruction.kind === "fillIfMissing") {
+          priceCounts.onSaleKeptOrFilled += 1;
+          return {
+            skuKey: row.partId,
+            qty: row.quantity,
+            priceDollars: instruction.priceDollars,
+            priceOnlyIfMissing: true,
+          };
+        }
+        priceCounts.written += 1;
+        return {
+          skuKey: row.partId,
+          qty: row.quantity,
+          priceDollars: instruction.priceDollars,
+        };
+      });
+      console.log(
+        `[sanmar] bulk prices: written=${priceCounts.written} on-sale (kept existing, filled only if missing)=${priceCounts.onSaleKeptOrFilled} no-price=${priceCounts.none} follow-sales=${followSalePrices}`,
+      );
       const { updated, errors: writeErrors } = await this.writer.updateInventory(
         tenantId,
         VENDOR,
         items,
       );
       errors.push(...writeErrors);
-      const imagePatches = bulkProductsToColorwayPatches(bulk);
+      let imagePatches = bulkProductsToColorwayPatches(bulk);
+      // The catalogue was first imported from SanMar's sellable feed, which
+      // shortens colour names ("Charcoal Hthr"); Bulk spells them out
+      // ("Charcoal Heather"). Without this, those colourways got no photo and
+      // the studio drew a generic white tee. Best effort: stock and price are
+      // already written above, so a failure here must not send the whole
+      // refresh down the per-style fallback.
+      try {
+        const catalogue = await this.writer.listColourNamesByStyle(
+          tenantId,
+          VENDOR,
+        );
+        const aligned = alignPatchesToCatalogueColours(imagePatches, catalogue);
+        imagePatches = aligned.patches;
+        console.log(
+          `[sanmar] bulk colour names matched to catalogue spelling=${aligned.renamed}`,
+        );
+      } catch (alignError) {
+        console.log(
+          `[sanmar] bulk colour-name alignment skipped: ${
+            alignError instanceof Error ? alignError.message : String(alignError)
+          }`,
+        );
+      }
       const imagesWritten = await this.writer.patchColorwayMedia(
         tenantId,
         VENDOR,

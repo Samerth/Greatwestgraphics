@@ -47,6 +47,24 @@ export function isPublicUploadKey(relative: string): boolean {
   );
 }
 
+/**
+ * Recovers the storage key from a stored artwork URL, regardless of which
+ * shape `S3ImageStore.put` handed back: `/api/uploads/<key>` (no public CDN
+ * configured) or `<AWS_S3_PUBLIC_BASE_URL>/<key>` (one configured). Every key
+ * starts with `designs/` (`uploadObjectKey`), so that's the anchor — reading
+ * the env var back here would need one path when it's set and a different
+ * one when it isn't, and would still need this same fallback for artwork
+ * saved before a base URL existed.
+ */
+export function uploadKeyFromUrl(url: string): string | null {
+  const withoutQuery = url.split(/[?#]/)[0] ?? "";
+  const marker = `${DESIGN_PREFIX}`;
+  const index = withoutQuery.indexOf(marker);
+  if (index === -1) return null;
+  const key = withoutQuery.slice(index);
+  return isSafeUploadKey(key) ? key : null;
+}
+
 export function canReadUploadedObject(
   relative: string,
   access: { isStaff: boolean; personId?: string | null; guestId?: string | null },

@@ -890,6 +890,43 @@ export class CatalogWriter {
   }
 
   /**
+   * Colour names the catalogue holds for each style, keyed by the vendor's
+   * style code. Lets a feed that spells a colour differently from the one the
+   * catalogue was first imported with be matched to the right row (see
+   * `alignPatchesToCatalogueColours`).
+   */
+  async listColourNamesByStyle(
+    tenantId: string,
+    vendor: string,
+  ): Promise<Map<string, string[]>> {
+    const rows = await this.db
+      .select({
+        styleKey: ssStyles.externalKey,
+        colorName: ssProducts.colorName,
+      })
+      .from(ssProducts)
+      .innerJoin(
+        ssStyles,
+        and(
+          eq(ssStyles.tenantId, ssProducts.tenantId),
+          eq(ssStyles.vendor, ssProducts.vendor),
+          eq(ssStyles.styleId, ssProducts.styleId),
+        ),
+      )
+      .where(
+        and(eq(ssProducts.tenantId, tenantId), eq(ssProducts.vendor, vendor)),
+      );
+    const byStyle = new Map<string, string[]>();
+    for (const row of rows) {
+      if (!row.styleKey || !row.colorName) continue;
+      const list = byStyle.get(row.styleKey) ?? [];
+      list.push(row.colorName);
+      byStyle.set(row.styleKey, list);
+    }
+    return byStyle;
+  }
+
+  /**
    * Write per-colour photos / vendor hex onto existing ss_products rows.
    * Used after SanMar enrich (media bag) and Bulk qty/price (part <image>).
    * Does not invent hex. Empty fields are left untouched.
@@ -904,6 +941,9 @@ export class CatalogWriter {
       imageSide?: string | null;
       imageBack?: string | null;
       colorHex?: string | null;
+      imageFrontOnModel?: string | null;
+      imageSideOnModel?: string | null;
+      imageBackOnModel?: string | null;
     }>,
   ): Promise<number> {
     if (patches.length === 0) return 0;
@@ -934,17 +974,31 @@ export class CatalogWriter {
         colorSideImageUrl?: string;
         colorBackImageUrl?: string;
         color1?: string;
+        colorOnModelFrontImageUrl?: string;
+        colorOnModelSideImageUrl?: string;
+        colorOnModelBackImageUrl?: string;
         updatedAt: Date;
       } = { updatedAt: new Date() };
       if (patch.imageFront) set.colorFrontImageUrl = patch.imageFront;
       if (patch.imageSide) set.colorSideImageUrl = patch.imageSide;
       if (patch.imageBack) set.colorBackImageUrl = patch.imageBack;
       if (patch.colorHex) set.color1 = patch.colorHex;
+      // Additive, same as S&S's own on-model columns — never overwrites the
+      // flat shots above, and it's what keeps the catalogue tile showing a
+      // model shot (`catalogCardImageUrl` prefers this column outright) now
+      // that `colorFrontImageUrl` itself is the flat shot rather than
+      // whichever of the two the vendor happened to list.
+      if (patch.imageFrontOnModel) set.colorOnModelFrontImageUrl = patch.imageFrontOnModel;
+      if (patch.imageSideOnModel) set.colorOnModelSideImageUrl = patch.imageSideOnModel;
+      if (patch.imageBackOnModel) set.colorOnModelBackImageUrl = patch.imageBackOnModel;
       if (
         !set.colorFrontImageUrl &&
         !set.colorSideImageUrl &&
         !set.colorBackImageUrl &&
-        !set.color1
+        !set.color1 &&
+        !set.colorOnModelFrontImageUrl &&
+        !set.colorOnModelSideImageUrl &&
+        !set.colorOnModelBackImageUrl
       ) {
         continue;
       }
@@ -1098,14 +1152,22 @@ export class CatalogWriter {
       try {
         const patch: {
           qty: number;
-          customerPriceMinor?: number;
+          customerPriceMinor?: number | ReturnType<typeof sql>;
           updatedAt: Date;
         } = {
           qty: item.qty,
           updatedAt: new Date(),
         };
-        if (item.priceDollars != null) {
-          patch.customerPriceMinor = dollarsToMinor(item.priceDollars);
+        // A vendor feed can carry "0.00" for a part it has no price for (31 of
+        // the 20,583 SanMar Bulk parts on 1 Oct 2026). Writing it would turn
+        // the part into a free garment, so a zero keeps the price already on
+        // file and only refreshes stock.
+        if (item.priceDollars != null && item.priceDollars > 0) {
+          const minor = dollarsToMinor(item.priceDollars);
+          patch.customerPriceMinor = item.priceOnlyIfMissing
+            ? // Keep an existing price, fill a missing one (0.00 on file).
+              sql`CASE WHEN ${ssVariants.customerPriceMinor} = 0 THEN ${minor} ELSE ${ssVariants.customerPriceMinor} END`
+            : minor;
         }
 
         if (item.skuKey) {

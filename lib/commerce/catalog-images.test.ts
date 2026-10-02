@@ -7,6 +7,21 @@ import {
 } from "./catalog-images";
 
 describe("catalog card image", () => {
+  it("reads a _modl_ shot as on-model even without studio-front/back/side in the name", () => {
+    // `\b` treats `_` as a word character, so these used to read as flat photos.
+    expect(
+      isCatalogModelShot(
+        "https://media.sanmarcanada.com/catalog/product/s/3/s350_modl_atomic-blue_studio-3_2021_cil.jpg",
+      ),
+    ).toBe(true);
+    expect(
+      isCatalogFlatShot("https://media.example.com/x_ghost_black.jpg"),
+    ).toBe(true);
+    expect(
+      isCatalogModelShot("https://media.example.com/ATC_models_front.jpg"),
+    ).toBe(false);
+  });
+
   it("prefers a SanMar on-model studio shot over the flat garment photo", () => {
     const flat =
       "https://media.sanmarcanada.com/catalog/product/a/l/al2004ca_flat_huckleberry_front_2025_cil.jpg";

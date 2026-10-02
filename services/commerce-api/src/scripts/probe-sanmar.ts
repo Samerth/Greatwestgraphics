@@ -122,20 +122,33 @@ async function main() {
     );
   } catch (error) {
     if (error instanceof SanmarBulkUnauthorizedError) {
-      line("  ENTITLED", "NO");
+      line("  ENTITLED", "REFUSED (not a missing entitlement — see below)");
       console.log("");
       console.log(
-        "  Bulk Data is a separate SanMar entitlement and this account does not have it.",
+        "  Bulk is enabled for this account (SanMar's own EDI team tested it, and it",
       );
       console.log(
-        "  The full sync still works — it falls back to per-style inventory and pricing calls —",
+        "  returned the full catalogue on 1 Oct 2026). This 'not authorized' (error 120)",
       );
       console.log(
-        "  but photos beyond the first 50 styles need either Bulk enabled by SanMar's EDI team",
+        "  is SanMar refusing who is calling: the login e-mail (the individual login that",
       );
-      console.log("  or SANMAR_MEDIA_PASSWORD with the per-style cap raised.");
-      console.log("");
-      console.log("  Action: raise the entitlement request with SanMar EDI (11 Sep, action 6).");
+      console.log(
+        "  worked on 1 Oct goes in SANMAR_BULK_LOGIN_EMAIL; the shop's general inbox was",
+      );
+      console.log(
+        "  refused) and/or the address (SANMAR_VENDOR_PROXY_URL routes through the fixed",
+      );
+      console.log(
+        "  address, infra/cloudshell/scripts/26-create-vendor-egress.sh).",
+      );
+      console.log(
+        "  The full sync still works meanwhile — it falls back to per-style inventory and",
+      );
+      console.log(
+        "  pricing calls — but photos beyond the first 50 styles need Bulk working, or",
+      );
+      console.log("  SANMAR_MEDIA_PASSWORD with the per-style cap raised.");
       process.exit(0);
     }
     if (error instanceof SanmarBulkLimitError) {

@@ -14,6 +14,7 @@ import {
   proxyExternalImageUrl,
   sleeveGuideRect,
   studioBackdropFallbackUrl,
+  STUDIO_CANVAS_IMAGE_WIDTH,
   studioCanvasImageUrl,
   studioSideViewTemplate,
   usableSidePhoto,
@@ -281,6 +282,24 @@ describe("studioCanvasImageUrl", () => {
         mirror: false,
       }),
     ).toContain("/_next/image?url=");
+  });
+
+  it("asks the optimizer for 1080 px, not the 640 px the side previews use", () => {
+    // 640 left the canvas, and the proof image drawn from it, soft.
+    const url = studioCanvasImageUrl({
+      url: "https://media.sanmarcanada.com/catalog/product/a/t/atc8064l_form_front_charcoalheather_062019.jpg",
+      source: "photo",
+      mirror: false,
+    });
+    expect(url).toContain("&w=1080&q=75");
+    // A width Next actually serves by default (deviceSizes), or the optimizer
+    // answers 400 and the canvas stays blank.
+    expect([640, 750, 828, 1080, 1200, 1920, 2048, 3840]).toContain(
+      STUDIO_CANVAS_IMAGE_WIDTH,
+    );
+    expect(
+      proxyExternalImageUrl("https://cdn.ssactivewear.com/Images/Color/1_f_fm.jpg"),
+    ).toContain("&w=640&q=75");
   });
 });
 

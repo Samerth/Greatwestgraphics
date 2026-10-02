@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Container } from "@/components/shared/Container";
 import { QuoteBuilder } from "@/components/quote-builder/QuoteBuilder";
 import { loadStorefrontCatalog } from "@/lib/commerce/catalog";
@@ -58,6 +59,24 @@ export default async function QuotePage({
 }: {
   searchParams: Promise<{ method?: string; type?: string }>;
 }) {
+  // `/quote` and `/get-a-quote` (which renders this same component, see
+  // app/(shop)/get-a-quote/page.tsx) stay live routes on purpose — the flag
+  // is meant to be flippable without a code change — but with it off there
+  // is no in-app link to either path anymore (`withoutPublicQuoteLinks`,
+  // Header/Hero/Footer's own `SHOW_PUBLIC_QUOTE_CALCULATOR ?` branches). A
+  // stale bookmark, an old marketing link, or CodChat's own deep-link
+  // setting (a platform config this repo doesn't control — see
+  // docs/CODCHAT_KNOWLEDGE_BASE.md) can still land someone here, on a page
+  // that adds straight to cart with no artwork and bypasses the Design
+  // Studio the rest of the site is built around. Redirecting here, in the
+  // page itself, keeps the route protected in `lib/seo/protected-paths.ts`
+  // (a next.config redirect entry would be silently dropped for exactly
+  // that reason) and keeps this one `SHOW_PUBLIC_QUOTE_CALCULATOR` constant
+  // as the single place that decides whether the page is reachable at all.
+  if (!SHOW_PUBLIC_QUOTE_CALCULATOR) {
+    redirect("/best-sellers");
+  }
+
   const params = await searchParams;
   const pricingConfig = await loadPublishedPricingV2();
 

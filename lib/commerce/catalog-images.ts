@@ -12,16 +12,22 @@ export function vendorImagePath(url: string): string {
   }
 }
 
+/**
+ * Same rule as `isModelShot` in the commerce API's `image-views.ts`; keep the
+ * two in step. Word tests use "not a letter or digit" rather than `\b`, because
+ * `\b` counts `_` as part of a word and `s350_modl_atomic-blue_studio-3.jpg`
+ * then has no `modl` word at all.
+ */
 export function isCatalogModelShot(url: string): boolean {
   const file = (vendorImagePath(url).split("/").pop() ?? url).toLowerCase();
-  return /_om[fsb]\b|\bmodl\b|\bmodel\b|on[-_]?model|\blifestyle\b|studio[-_](front|back|side)/.test(
+  return /_om[fsb](?![a-z0-9])|(?<![a-z0-9])(modl|model|lifestyle)(?![a-z0-9])|on[-_]?model|studio[-_](front|back|side)/.test(
     file,
   );
 }
 
 export function isCatalogFlatShot(url: string): boolean {
   const file = (vendorImagePath(url).split("/").pop() ?? url).toLowerCase();
-  return /_flat_|\bflat\b|\bghost\b/.test(file);
+  return /(?<![a-z0-9])(flat|ghost)(?![a-z0-9])/.test(file);
 }
 
 /** S&S style-level hero (often on-body). Colour folder is the garment shot. */

@@ -45,6 +45,11 @@ export type InventoryRow = {
   sku?: string;
   qty: number;
   priceDollars?: number | null;
+  /**
+   * Use `priceDollars` only where the price on file is still 0.00; an existing
+   * price is left alone. Stock is updated either way.
+   */
+  priceOnlyIfMissing?: boolean;
 };
 
 export type SyncRunResult = {

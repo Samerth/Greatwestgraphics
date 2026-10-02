@@ -5,11 +5,13 @@ import { Group, Image as KonvaImage, Rect, Transformer } from "react-konva";
 import useImage from "use-image";
 import type Konva from "konva";
 import type { PlacedArtwork } from "@gwg/contracts";
+import {
+  keepDraggedNodeOnCanvas,
+  resizeWouldPushOffCanvas,
+  type CanvasBounds,
+} from "@/lib/commerce/studio-canvas-bounds";
 
 export type { PlacedArtwork };
-
-/** How much of the artwork must stay on the canvas, in display pixels. */
-const KEEP_ON_CANVAS_PX = 24;
 
 export function ArtworkLayer({
   artwork,
@@ -18,7 +20,7 @@ export function ArtworkLayer({
   onChange,
   onDragMove,
   maxSize = Infinity,
-  canvasSize,
+  canvasBounds,
 }: {
   artwork: PlacedArtwork;
   isSelected: boolean;
@@ -34,9 +36,9 @@ export function ArtworkLayer({
   /** Upper bound (display pixels) a resize handle can grow the artwork to —
    * keeps it from being dragged past the visible canvas. */
   maxSize?: number;
-  /** Canvas edge, in display pixels. Artwork is kept at least partly inside
-   * it while dragging and resizing. */
-  canvasSize?: number;
+  /** Where the canvas spans in the stage's pixels (it moves with zoom).
+   * Artwork is kept wholly inside it while dragging and resizing. */
+  canvasBounds?: CanvasBounds;
 }) {
   const [img] = useImage(artwork.src, "anonymous");
   const shapeRef = useRef<Konva.Group>(null);
@@ -62,18 +64,17 @@ export function ArtworkLayer({
         scaleY={artwork.scaleY}
         rotation={artwork.rotation}
         draggable
-        /* Keeps a graspable part of the artwork on the canvas. Without this
-           a logo could be dragged entirely off the stage, leaving nothing to
-           click and no way back but delete-and-redo (Pavin, 10 Sep). A
-           margin rather than a hard box, so artwork may still overhang the
-           edge — which is legitimate for a wrap-around print. */
+        /* Keeps the whole artwork on the canvas. Anything past the edge is
+           cut from the proof image but still goes into the order, so a logo
+           dragged half off the shirt looked fine on screen and arrived at the
+           print shop cropped. Before this, only 24 px had to stay on, and the
+           check ignored the artwork's size, so a small logo could still be
+           dropped completely off the left or top edge (Pavin, 10 Sep, and the
+           print-area notes after the client meeting). */
         dragBoundFunc={(pos) => {
-          if (!canvasSize) return pos;
-          const keep = KEEP_ON_CANVAS_PX;
-          return {
-            x: Math.min(Math.max(pos.x, -canvasSize + keep), canvasSize - keep),
-            y: Math.min(Math.max(pos.y, -canvasSize + keep), canvasSize - keep),
-          };
+          const node = shapeRef.current;
+          if (!canvasBounds || !node) return pos;
+          return keepDraggedNodeOnCanvas(node, pos, canvasBounds);
         }}
         onClick={onSelect}
         onTap={onSelect}
@@ -148,9 +149,11 @@ export function ArtworkLayer({
           /* Size was already capped here; position was not, so a corner
              drag could grow a logo straight off the canvas even though its
              dimensions were legal (Pavin, 10 Sep: "increasing the size of the
-             image gets it out of bound from the canvas"). Both are checked
-             now, and a rejected box returns the previous one so the shape
-             stops at the edge rather than snapping back. */
+             image gets it out of bound from the canvas"). A resize is refused
+             when it would push the artwork further past the edge than it
+             already was, so artwork that overhangs can still be shrunk back
+             in. A rejected box returns the previous one so the shape stops
+             at the edge rather than snapping back. */
           boundBoxFunc={(oldBox, newBox) => {
             if (
               newBox.width < 20 ||
@@ -160,14 +163,14 @@ export function ArtworkLayer({
             ) {
               return oldBox;
             }
-            if (canvasSize) {
-              const keep = KEEP_ON_CANVAS_PX;
-              const offCanvas =
-                newBox.x > canvasSize - keep ||
-                newBox.y > canvasSize - keep ||
-                newBox.x + newBox.width < keep ||
-                newBox.y + newBox.height < keep;
-              if (offCanvas) return oldBox;
+            // Unrotated boxes only: for a rotated one x/y/width/height are not
+            // the visible extent, and the drag guard still applies afterwards.
+            if (
+              canvasBounds &&
+              Math.abs(newBox.rotation) < 0.001 &&
+              resizeWouldPushOffCanvas(oldBox, newBox, canvasBounds)
+            ) {
+              return oldBox;
             }
             return newBox;
           }}

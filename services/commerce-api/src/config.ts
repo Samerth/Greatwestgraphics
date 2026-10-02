@@ -125,6 +125,29 @@ const EnvironmentSchema = z
     SANMAR_MEDIA_URL: z.string().url().optional(),
     SANMAR_BULK_URL: z.string().url().optional(),
     /**
+     * Login e-mail used only for Bulk Data (the PromoStandards `password`
+     * field). Unset = the same SANMAR_LOGIN_EMAIL every other call uses. Bulk
+     * worked on 1 Oct 2026 with the individual login SanMar's own test used and
+     * was refused with the shop's general inbox — see the doc comment on
+     * SanmarClientOptions.bulkLoginEmail.
+     */
+    SANMAR_BULK_LOGIN_EMAIL: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().email().optional(),
+    ),
+    /**
+     * ECS has no fixed outbound address, and SanMar registered one for this
+     * account on 30 Sep 2026 (see the doc comment on
+     * SanmarClientOptions.vendorProxyUrl), so every SanMar call routes through
+     * one small always-on box at this address instead —
+     * infra/cloudshell/scripts/26-create-vendor-egress.sh provisions it.
+     * Unset = call SanMar directly.
+     */
+    SANMAR_VENDOR_PROXY_URL: z.string().url().optional(),
+    SANMAR_VENDOR_PROXY_USERNAME: z.string().optional(),
+    SANMAR_VENDOR_PROXY_PASSWORD: z.string().optional(),
+    /**
      * Default tenant/account/store IDs for external connectors (e.g. Cod Chat)
      * that authenticate with COMMERCE_SERVICE_TOKEN but cannot send tenant
      * headers. When missing, falls back to staging GWG test UUIDs.
