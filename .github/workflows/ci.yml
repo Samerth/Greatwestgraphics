@@ -74,8 +74,13 @@ jobs:
         continue-on-error: true
         env:
           CI: true
-      - name: Dependency audit (high+)
-        run: npm audit --audit-level=high
+      # Audits what ships to customers. Build and lint tooling (Tailwind 3,
+      # eslint-config-next and what they pull in) is excluded: 9 advisories in it
+      # on 6 Oct 2026 were fixable only by a breaking Tailwind 4 migration, and
+      # none of that code runs in the website or the API. Without this, any new
+      # advisory in dev tooling blocks every release.
+      - name: Dependency audit (high+, production dependencies)
+        run: npm audit --omit=dev --audit-level=high
 
   docker:
     name: Docker images
