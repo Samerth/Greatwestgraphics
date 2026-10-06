@@ -78,6 +78,9 @@ type ProductFilterQuery = {
   groupByStyle?: boolean;
 };
 
+/** How long a "running" sync may go without reporting before it counts as interrupted. */
+export const SYNC_RUN_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+
 export class CatalogService {
   constructor(private readonly db: CommerceDatabase) {}
 
@@ -1659,12 +1662,49 @@ export class CatalogService {
   }
 
   async listSyncRuns(tenantId: string) {
+    // A sync runs inside the API process, so a restart or a deploy during one
+    // leaves its record saying "running" forever. The admin sync page greys out
+    // a vendor's buttons for as long as any of its runs says "running", so a
+    // single orphan locked SanMar's refresh for good (one from 26 Aug 2026 was
+    // still blocking it on 2 Oct). Close such records before listing them.
+    await this.failInterruptedSyncRuns(tenantId);
     return this.db
       .select()
       .from(syncRuns)
       .where(eq(syncRuns.tenantId, tenantId))
       .orderBy(desc(syncRuns.startedAt))
       .limit(20);
+  }
+
+  /**
+   * Marks a run that is still "running" but has not reported for
+   * `SYNC_RUN_STALE_AFTER_MS` as failed. A live run touches `updated_at` as it
+   * works, and the longest real one (a full SanMar import) takes minutes, so
+   * two hours of silence means the process that owned it is gone.
+   */
+  async failInterruptedSyncRuns(
+    tenantId: string,
+    now: Date = new Date(),
+  ): Promise<number> {
+    const cutoff = new Date(now.getTime() - SYNC_RUN_STALE_AFTER_MS);
+    const closed = await this.db
+      .update(syncRuns)
+      .set({
+        status: "failed",
+        errorSummary:
+          "Interrupted: the server restarted, or the job stopped reporting, before it finished.",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(syncRuns.tenantId, tenantId),
+          eq(syncRuns.status, "running"),
+          lte(syncRuns.updatedAt, cutoff),
+        ),
+      )
+      .returning({ id: syncRuns.id });
+    return closed.length;
   }
 
   async dashboard(tenantId: string) {
