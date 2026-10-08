@@ -81,6 +81,25 @@ type ProductFilterQuery = {
 /** How long a "running" sync may go without reporting before it counts as interrupted. */
 export const SYNC_RUN_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * A search word and the singular forms it can stand for, lower-cased. Product
+ * titles are singular ("Hoodie", "Jacket", "Beanie", "Trucker Cap"), so a
+ * plural search word matched nothing: on 8 Oct hoodies, jackets, hats, caps,
+ * beanies, sweatshirts, vests, jerseys and toques all returned 0 results while
+ * the singular found dozens. "tshirts" also stands for "t-shirt".
+ */
+export function searchWordForms(word: string): string[] {
+  const lower = word.toLowerCase();
+  const forms = new Set([lower]);
+  if (/^t-?shirts?$/.test(lower)) forms.add("t-shirt");
+  if (lower.length > 3 && lower.endsWith("s") && !lower.endsWith("ss")) {
+    forms.add(lower.slice(0, -1));
+    if (lower.length > 4 && lower.endsWith("ies")) forms.add(`${lower.slice(0, -3)}y`);
+    else if (lower.length > 4 && /(ches|shes|xes|sses)$/.test(lower)) forms.add(lower.slice(0, -2));
+  }
+  return [...forms];
+}
+
 export class CatalogService {
   constructor(private readonly db: CommerceDatabase) {}
 
@@ -866,32 +885,13 @@ export class CatalogService {
     // necessarily in the same column — "navy hoodie" is colour on the
     // product and garment type in the style title, so matching the raw
     // phrase against any single column would return nothing.
+    //
+    // A word also matches its singular: titles say "Hoodie", "Jacket",
+    // "Beanie", so "hoodies" used to find nothing at all - and a chat quote
+    // for "50 hoodies" failed with it (8 Oct).
     const searchTerms = this.searchTermsOf(query?.search);
-    const searchClauses = searchTerms.map((term) =>
-      or(
-        ilike(ssProducts.colorName, `%${term}%`),
-        ilike(ssStyles.brandName, `%${term}%`),
-        ilike(ssStyles.styleName, `%${term}%`),
-        ilike(ssStyles.title, `%${term}%`),
-        ilike(ssStyles.baseCategory, `%${term}%`),
-        ilike(ssProducts.slug, `%${term}%`),
-        ilike(ssStyles.externalKey, `%${term}%`),
-        ilike(ssStyles.partNumber, `%${term}%`),
-        exists(
-          this.db
-            .select({ id: ssVariants.id })
-            .from(ssVariants)
-            .where(
-              and(
-                eq(ssVariants.productUuid, ssProducts.id),
-                or(
-                  ilike(ssVariants.sku, `%${term}%`),
-                  ilike(ssVariants.externalKey, `%${term}%`),
-                ),
-              ),
-            ),
-        ),
-      ),
+    const searchClauses = searchTerms.map((word) =>
+      or(...searchWordForms(word).map((term) => this.searchWordClause(term))),
     );
 
     const storefrontOnly = query?.storefrontOnly === true;
@@ -936,6 +936,34 @@ export class CatalogService {
     return { whereClause, empty: false };
   }
 
+  /** Where one search word may match: colour, brand, style, title, category, slug, keys, or a variant SKU. */
+  private searchWordClause(term: string) {
+    return or(
+      ilike(ssProducts.colorName, `%${term}%`),
+      ilike(ssStyles.brandName, `%${term}%`),
+      ilike(ssStyles.styleName, `%${term}%`),
+      ilike(ssStyles.title, `%${term}%`),
+      ilike(ssStyles.baseCategory, `%${term}%`),
+      ilike(ssProducts.slug, `%${term}%`),
+      ilike(ssStyles.externalKey, `%${term}%`),
+      ilike(ssStyles.partNumber, `%${term}%`),
+      exists(
+        this.db
+          .select({ id: ssVariants.id })
+          .from(ssVariants)
+          .where(
+            and(
+              eq(ssVariants.productUuid, ssProducts.id),
+              or(
+                ilike(ssVariants.sku, `%${term}%`),
+                ilike(ssVariants.externalKey, `%${term}%`),
+              ),
+            ),
+          ),
+      ),
+    );
+  }
+
   /**
    * How well one row answers a search, as a number the query can sort by.
    *
@@ -950,8 +978,7 @@ export class CatalogService {
    */
   private searchRelevance(terms: readonly string[]) {
     if (terms.length === 0) return null;
-    const perTerm = terms.map((raw) => {
-      const term = raw.toLowerCase();
+    const scoreOf = (term: string) => {
       const prefix = `${term}%`;
       const anywhere = `%${term}%`;
       return sql`(CASE
@@ -966,6 +993,13 @@ export class CatalogService {
         WHEN ${ssStyles.styleName} ILIKE ${anywhere} THEN 20
         WHEN ${ssProducts.colorName} ILIKE ${anywhere} THEN 10
         ELSE 0 END)`;
+    };
+    // A plural word scores as well as its best form ("hoodies" as "hoodie").
+    const perTerm = terms.map((raw) => {
+      const forms = searchWordForms(raw);
+      return forms.length > 1
+        ? sql`GREATEST(${sql.join(forms.map(scoreOf), sql`, `)})`
+        : scoreOf(raw.toLowerCase());
     });
     return sql`(${sql.join(perTerm, sql` + `)})`;
   }
