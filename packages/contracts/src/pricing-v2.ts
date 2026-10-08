@@ -626,6 +626,13 @@ export const StorefrontQuoteResponseSchema = z.object({
   total: z.number(),
   turnaround_days: z.number().int(),
   currency: z.string().length(3),
+  /**
+   * The garment the price is for, so a chat can link to it. Absent when the
+   * caller supplied the cost itself, or the garment has no page address.
+   */
+  product_id: z.string().uuid().optional(),
+  product_slug: z.string().min(1).optional(),
+  product_name: z.string().min(1).optional(),
   breakdown: z
     .object({
       garment_per_piece: z.number(),

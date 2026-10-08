@@ -7,6 +7,10 @@ import type { CatalogService } from "./catalog-service.js";
  */
 export type CatalogProductHit = {
   id: string;
+  /** Page address of the colourway - lets a chat link to the garment it priced. */
+  slug?: string | null;
+  brandName?: string | null;
+  title?: string | null;
   styleName?: string | null;
   partNumber?: string | null;
   externalKey?: string | null;
@@ -24,8 +28,41 @@ export type CatalogSkuLookup = {
     tenantId: string,
     productId: string,
     opts: { storeId?: string },
-  ) => Promise<{ variants: Array<{ customerPriceMinor: number }> }>;
+  ) => Promise<{
+    variants: Array<{ customerPriceMinor: number }>;
+    product?: { slug?: string | null } | null;
+    style?: {
+      brandName?: string | null;
+      title?: string | null;
+      styleName?: string | null;
+    } | null;
+  }>;
 };
+
+/** The garment a quote was priced for - enough for a chat to link to it. */
+export type QuoteProduct = { id: string; slug: string; name: string };
+
+function productName(parts: {
+  brandName?: string | null;
+  title?: string | null;
+  styleName?: string | null;
+}): string {
+  const named = [parts.brandName, parts.title ?? parts.styleName]
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .join(" ")
+    .trim();
+  return named;
+}
+
+function quoteProduct(
+  id: string,
+  slug: string | null | undefined,
+  parts: Parameters<typeof productName>[0],
+): QuoteProduct | undefined {
+  // A link needs a page address; without one there is nothing true to say.
+  if (!slug) return undefined;
+  return { id, slug, name: productName(parts) || slug };
+}
 
 function identifiers(hit: CatalogProductHit): string[] {
   return [hit.styleName, hit.partNumber, hit.externalKey]
@@ -92,6 +129,9 @@ export function storefrontCatalogLookup(
         externalKey: product.externalKey,
         costMinor: product.costMinor,
         isBestSeller: product.isBestSeller,
+        slug: product.slug,
+        brandName: product.brandName,
+        title: product.title,
       }));
     },
     getProductDetail: (tenantId, productId, opts) =>
@@ -99,15 +139,16 @@ export function storefrontCatalogLookup(
   };
 }
 
-export async function resolveGarmentCostMinor(input: {
+export async function resolveQuoteGarment(input: {
   tenantId: string;
   storeId?: string;
   productId?: string;
   sku?: string;
   garmentCostMinor?: number;
   catalog: CatalogSkuLookup;
-}): Promise<number | undefined> {
+}): Promise<{ costMinor?: number; product?: QuoteProduct }> {
   let garmentCostMinor = input.garmentCostMinor;
+  let product: QuoteProduct | undefined;
 
   if (garmentCostMinor === undefined && input.productId) {
     const detail = await input.catalog.getProductDetail(
@@ -118,6 +159,9 @@ export async function resolveGarmentCostMinor(input: {
     const firstVariant = detail.variants[0];
     if (firstVariant) {
       garmentCostMinor = firstVariant.customerPriceMinor;
+      product = quoteProduct(input.productId, detail.product?.slug, {
+        ...detail.style,
+      });
     }
   }
 
@@ -130,6 +174,7 @@ export async function resolveGarmentCostMinor(input: {
     const exact = pickCatalogHit(input.sku, matches);
     if (exact?.costMinor != null && exact.costMinor >= 0) {
       garmentCostMinor = exact.costMinor;
+      product = quoteProduct(exact.id, exact.slug, exact);
     } else if (exact?.id) {
       const detail = await input.catalog.getProductDetail(
         input.tenantId,
@@ -139,9 +184,19 @@ export async function resolveGarmentCostMinor(input: {
       const firstVariant = detail.variants[0];
       if (firstVariant) {
         garmentCostMinor = firstVariant.customerPriceMinor;
+        product = quoteProduct(exact.id, detail.product?.slug ?? exact.slug, {
+          ...exact,
+          ...detail.style,
+        });
       }
     }
   }
 
-  return garmentCostMinor;
+  return { costMinor: garmentCostMinor, product };
+}
+
+export async function resolveGarmentCostMinor(
+  input: Parameters<typeof resolveQuoteGarment>[0],
+): Promise<number | undefined> {
+  return (await resolveQuoteGarment(input)).costMinor;
 }

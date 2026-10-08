@@ -8,6 +8,7 @@ import {
   buildQuoteForward,
   isCodChatAuthorized,
   isForwardableQuoteBody,
+  withProductUrl,
 } from "./codchat-relay";
 
 /**
@@ -86,6 +87,47 @@ describe("the route", () => {
   });
 
   it("hands the pricing engine's own status back", () => {
-    expect(route).toContain("NextResponse.json(payload, { status: response.status })");
+    expect(route).toContain("{ status: response.status }");
+  });
+
+  it("adds the product link to a successful quote only, never to an error", () => {
+    expect(route).toContain("response.ok ? withProductUrl(payload, process.env.NEXT_PUBLIC_SITE_URL) : payload");
+  });
+});
+
+/** CodChat links the visitor to the garment a price is for. */
+describe("the product link on a quote reply", () => {
+  const quote = {
+    unit_price: 12.15,
+    total: 607.5,
+    currency: "CAD",
+    turnaround_days: 7,
+    product_id: "6adbf644-9a1a-4005-b24b-4772a39920a2",
+    product_slug: "gildan-5000-black-1",
+    product_name: "Gildan Heavy Cotton Tee",
+  };
+
+  it("points at the product page, in the shape the storefront uses", () => {
+    const result = withProductUrl(quote, "https://shop.example.com/") as Record<string, unknown>;
+    expect(result.product_url).toBe(
+      "https://shop.example.com/product/gildan-5000-black-1?id=6adbf644-9a1a-4005-b24b-4772a39920a2",
+    );
+    expect(result.unit_price).toBe(12.15);
+  });
+
+  it("adds nothing when the product has no page address", () => {
+    const { product_slug: _slug, ...noSlug } = quote;
+    expect(withProductUrl(noSlug, "https://shop.example.com")).toEqual(noSlug);
+  });
+
+  it("adds nothing when the site address is unknown or not a web address", () => {
+    expect(withProductUrl(quote, undefined)).toEqual(quote);
+    expect(withProductUrl(quote, "")).toEqual(quote);
+    expect(withProductUrl(quote, "localhost:3000")).toEqual(quote);
+  });
+
+  it("leaves anything that is not a quote body alone", () => {
+    expect(withProductUrl(null, "https://shop.example.com")).toBeNull();
+    expect(withProductUrl([1], "https://shop.example.com")).toEqual([1]);
   });
 });

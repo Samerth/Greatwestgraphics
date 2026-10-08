@@ -57,6 +57,26 @@ export function buildQuoteForward(input: {
   };
 }
 
+/**
+ * Adds a ready-made product page link to a quote reply, so CodChat can show
+ * the visitor the garment the price is for.
+ *
+ * The commerce API names the product (id, slug, name); only the web tier knows
+ * the public address of the site, so the link is finished here. Nothing is
+ * added unless there is a product page address AND a site address to put in
+ * front of it - a wrong link is worse than none. Product pages live at
+ * `/product/<slug>?id=<colourway id>`.
+ */
+export function withProductUrl(payload: unknown, siteUrl: string | undefined): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const quote = payload as { product_id?: unknown; product_slug?: unknown };
+  const base = siteUrl?.trim().replace(/\/+$/, "");
+  if (!base || !/^https?:\/\//i.test(base)) return payload;
+  if (typeof quote.product_slug !== "string" || !quote.product_slug) return payload;
+  const id = typeof quote.product_id === "string" && quote.product_id ? `?id=${encodeURIComponent(quote.product_id)}` : "";
+  return { ...payload, product_url: `${base}/product/${encodeURIComponent(quote.product_slug)}${id}` };
+}
+
 /** A body is forwardable when it is a JSON object with a positive quantity;
  * anything else is refused here rather than costing a round trip. */
 export function isForwardableQuoteBody(body: unknown): body is Record<string, unknown> {
