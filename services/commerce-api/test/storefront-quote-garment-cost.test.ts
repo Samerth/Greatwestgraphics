@@ -3,6 +3,7 @@ import type { CatalogService } from "../src/application/catalog-service.js";
 import {
   pickCatalogHit,
   resolveGarmentCostMinor,
+  resolveQuoteGarment,
   storefrontCatalogLookup,
 } from "../src/application/storefront-quote-garment-cost.js";
 
@@ -120,6 +121,80 @@ describe("pickCatalogHit", () => {
   });
 });
 
+/**
+ * The chat links to the garment it priced, so the answer to "which garment?"
+ * has to come back with the price - and only when it is known for certain.
+ */
+describe("resolveQuoteGarment", () => {
+  it("names the garment a style search picked", async () => {
+    const listProducts = vi.fn().mockResolvedValue([
+      {
+        id: "6adbf644-9a1a-4005-b24b-4772a39920a2",
+        slug: "adidas-a230-black-7269",
+        brandName: "Adidas",
+        title: "Men's Performance Polo",
+        styleName: "A230",
+        costMinor: 3150,
+      },
+    ]);
+    const result = await resolveQuoteGarment({
+      tenantId: "t",
+      sku: "A230",
+      catalog: { listProducts, getProductDetail: vi.fn() },
+    });
+    expect(result).toEqual({
+      costMinor: 3150,
+      product: {
+        id: "6adbf644-9a1a-4005-b24b-4772a39920a2",
+        slug: "adidas-a230-black-7269",
+        name: "Adidas Men's Performance Polo",
+      },
+    });
+  });
+
+  it("names the garment when the caller sent its id", async () => {
+    const getProductDetail = vi.fn().mockResolvedValue({
+      variants: [{ customerPriceMinor: 4200 }],
+      product: { slug: "gildan-5000-black-1" },
+      style: { brandName: "Gildan", title: "Heavy Cotton Tee" },
+    });
+    const result = await resolveQuoteGarment({
+      tenantId: "t",
+      productId: "11111111-1111-4111-8111-111111111111",
+      catalog: { listProducts: vi.fn(), getProductDetail },
+    });
+    expect(result.costMinor).toBe(4200);
+    expect(result.product).toEqual({
+      id: "11111111-1111-4111-8111-111111111111",
+      slug: "gildan-5000-black-1",
+      name: "Gildan Heavy Cotton Tee",
+    });
+  });
+
+  it("names no garment when it has no page address - a link needs one", async () => {
+    const result = await resolveQuoteGarment({
+      tenantId: "t",
+      sku: "5000",
+      catalog: {
+        listProducts: vi.fn().mockResolvedValue([{ id: "x", styleName: "5000", costMinor: 650 }]),
+        getProductDetail: vi.fn(),
+      },
+    });
+    expect(result.costMinor).toBe(650);
+    expect(result.product).toBeUndefined();
+  });
+
+  it("names no garment when the caller supplied the cost itself", async () => {
+    const result = await resolveQuoteGarment({
+      tenantId: "t",
+      garmentCostMinor: 900,
+      sku: "5000",
+      catalog: { listProducts: vi.fn(), getProductDetail: vi.fn() },
+    });
+    expect(result).toEqual({ costMinor: 900, product: undefined });
+  });
+});
+
 describe("storefrontCatalogLookup", () => {
   it("searches storefront-visible products grouped by style, and carries isBestSeller", async () => {
     const listProducts = vi.fn().mockResolvedValue([
@@ -130,8 +205,9 @@ describe("storefrontCatalogLookup", () => {
         externalKey: "sanmar:5000",
         costMinor: 650,
         isBestSeller: true,
-        title: "Gildan Heavy Cotton Tee",
-        brand: "Gildan",
+        title: "Heavy Cotton Tee",
+        brandName: "Gildan",
+        slug: "gildan-5000-black-1",
       },
     ]);
     const getProductDetail = vi.fn().mockResolvedValue({ variants: [] });
@@ -157,6 +233,9 @@ describe("storefrontCatalogLookup", () => {
         externalKey: "sanmar:5000",
         costMinor: 650,
         isBestSeller: true,
+        slug: "gildan-5000-black-1",
+        brandName: "Gildan",
+        title: "Heavy Cotton Tee",
       },
     ]);
   });

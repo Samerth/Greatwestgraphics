@@ -3,6 +3,7 @@ import {
   buildQuoteForward,
   isCodChatAuthorized,
   isForwardableQuoteBody,
+  withProductUrl,
 } from "@/lib/commerce/codchat-relay";
 import { resolveStoreContext } from "@/lib/commerce/store-context";
 
@@ -93,5 +94,9 @@ export async function POST(request: Request) {
       message: "The pricing service returned an unexpected response",
     },
   }));
-  return NextResponse.json(payload, { status: response.status });
+  // Only a successful quote names a product; an error body passes through as is.
+  return NextResponse.json(
+    response.ok ? withProductUrl(payload, process.env.NEXT_PUBLIC_SITE_URL) : payload,
+    { status: response.status },
+  );
 }

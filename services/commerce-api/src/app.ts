@@ -91,7 +91,7 @@ import { StoreService } from "./application/store-service.js";
 import { CodChatOrderLookupService } from "./application/codchat-order-lookup-service.js";
 import { PersonService } from "./application/person-service.js";
 import {
-  resolveGarmentCostMinor,
+  resolveQuoteGarment,
   storefrontCatalogLookup,
 } from "./application/storefront-quote-garment-cost.js";
 import {
@@ -487,7 +487,7 @@ export function buildApp(input: {
 
     const catalogAdapter = storefrontCatalogLookup(catalogService);
 
-    const garmentCostMinor = await resolveGarmentCostMinor({
+    const { costMinor: garmentCostMinor, product } = await resolveQuoteGarment({
       tenantId: auth.tenantId,
       storeId: auth.storeId,
       productId: body.product_id,
@@ -528,7 +528,13 @@ export function buildApp(input: {
       ],
       decorations,
       options: {
-        rush: body.rush,
+        // A chat cannot promise a rush job: "needed by Friday" in a message
+        // is a wish, not a rush order, and the chat's own reply already says
+        // the deadline needs confirming. Quoting +30% for it silently
+        // overstated every estimate (6 Oct test: $47.97 -> $62.36). Staff
+        // price real rush jobs. The request field is still accepted, and
+        // ignored here.
+        rush: false,
         includePacking: false,
         namesNumbers: false,
         shippingCostMinor: 0,
@@ -558,6 +564,13 @@ export function buildApp(input: {
       total: total / 100,
       turnaround_days: standardTurnaroundDays,
       currency: breakdown.currency,
+      ...(product
+        ? {
+            product_id: product.id,
+            product_slug: product.slug,
+            product_name: product.name,
+          }
+        : {}),
       breakdown: {
         garment_per_piece: garmentPerPiece / 100,
         decoration_per_piece: decorationPerPiece / 100,
