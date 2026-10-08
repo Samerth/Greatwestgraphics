@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { CatalogService } from "../src/application/catalog-service.js";
+import { CatalogService, searchWordForms } from "../src/application/catalog-service.js";
 import type { CommerceDatabase } from "../src/db/client.js";
 
 /**
@@ -35,6 +35,44 @@ describe("search words", () => {
     expect(internals.searchTermsOf("  gildan   5000 ")).toEqual(["gildan", "5000"]);
     expect(internals.searchTermsOf(undefined)).toEqual([]);
     expect(internals.searchTermsOf("   ")).toEqual([]);
+  });
+});
+
+/**
+ * 8 Oct: "hoodies", "jackets", "hats", "caps", "beanies", "vests", "jerseys"
+ * all returned 0 results (titles are singular), and a chat quote for "50
+ * hoodies" failed with it. A plural word now also matches its singular.
+ */
+describe("plural search words", () => {
+  it("also stand for their singular", () => {
+    // "hoody" too - some brands spell it that way
+    expect(searchWordForms("hoodies")).toEqual(["hoodies", "hoodie", "hoody"]);
+    expect(searchWordForms("Jackets")).toEqual(["jackets", "jacket"]);
+    expect(searchWordForms("caps")).toEqual(["caps", "cap"]);
+    expect(searchWordForms("beanies")).toEqual(["beanies", "beanie", "beany"]);
+    expect(searchWordForms("jerseys")).toEqual(["jerseys", "jersey"]);
+    expect(searchWordForms("sweatshirts")).toEqual(["sweatshirts", "sweatshirt"]);
+    expect(searchWordForms("watches")).toEqual(["watches", "watche", "watch"]);
+  });
+
+  it("'tshirts' also stands for 't-shirt'", () => {
+    expect(searchWordForms("tshirts")).toEqual(["tshirts", "t-shirt", "tshirt"]);
+    expect(searchWordForms("t-shirts")).toEqual(["t-shirts", "t-shirt"]);
+  });
+
+  it("leaves style numbers, brands, short words and -ss words alone", () => {
+    expect(searchWordForms("5000")).toEqual(["5000"]);
+    expect(searchWordForms("Gildan")).toEqual(["gildan"]);
+    expect(searchWordForms("dress")).toEqual(["dress"]);
+    expect(searchWordForms("its")).toEqual(["its"]);
+  });
+
+  it("score as well as their best form", () => {
+    const { sql, params } = render(internals.searchRelevance(["hoodies"])!);
+    expect(sql).toContain("GREATEST(");
+    expect(sql.match(/CASE/g)).toHaveLength(3);
+    expect(params).toContain("%hoodie%");
+    expect(params).toContain("%hoodies%");
   });
 });
 
